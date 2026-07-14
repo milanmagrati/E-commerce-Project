@@ -379,3 +379,57 @@ class CRMSocialComment(models.Model):
 
     class Meta:
         ordering = ['-created_time']
+
+
+class CommentAutomation(models.Model):
+    """
+    ManyChat-style comment automation rule.
+    When a comment matches the trigger keyword on a connected page,
+    the system auto-replies publicly and optionally sends a private DM.
+    """
+    MATCH_TYPE_CHOICES = [
+        ('exact', 'Exact Match'),
+        ('contains', 'Contains Keyword'),
+        ('any', 'Any Comment'),
+    ]
+
+    integration = models.ForeignKey(
+        CRMIntegration, on_delete=models.CASCADE,
+        related_name='comment_automations',
+        help_text='The social page this automation applies to'
+    )
+    name = models.CharField(max_length=200, help_text='Friendly name for this automation')
+    trigger_keyword = models.CharField(
+        max_length=200, blank=True,
+        help_text='Keyword to match (leave blank if match_type=any)'
+    )
+    match_type = models.CharField(
+        max_length=20, choices=MATCH_TYPE_CHOICES, default='contains'
+    )
+    public_reply = models.TextField(
+        help_text='The public comment reply text shown on the post'
+    )
+    send_dm = models.BooleanField(
+        default=False,
+        help_text='Also send a private DM to the commenter'
+    )
+    dm_message = models.TextField(
+        blank=True,
+        help_text='The private DM body (can include links, product details, etc.)'
+    )
+    is_active = models.BooleanField(default=True)
+    trigger_count = models.IntegerField(
+        default=0,
+        help_text='How many times this automation has fired'
+    )
+    last_triggered_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} [{self.integration}]"
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Comment Automation'
+        verbose_name_plural = 'Comment Automations'

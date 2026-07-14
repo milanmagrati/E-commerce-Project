@@ -1,0 +1,1166 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Comment Automations — Trendy CRM{% endblock %}
+{% block topbar_title %}
+<span style="display:flex;align-items:center;gap:.5rem;">
+    <span style="background:linear-gradient(135deg,#7c3aed,#6d28d9);border-radius:8px;padding:.3rem .55rem;display:inline-flex;align-items:center;justify-content:center;">
+        <i class="fas fa-bolt" style="color:#fff;font-size:.85rem;"></i>
+    </span>
+    Comment Automations
+</span>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'trendycrm:social_posts' %}" class="btn-crm-outline btn-sm me-2">
+    <i class="fas fa-arrow-left"></i> Back to Posts
+</a>
+<button class="btn-crm-primary btn-sm" id="btnOpenCreate" onclick="openCreateModal()">
+    <i class="fas fa-plus"></i> New Automation
+</button>
+{% endblock %}
+
+{% block extra_style %}
+/* ── Automation page root ── */
+.auto-page {
+    padding: 1.5rem 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    overflow-y: auto;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+/* ── Hero stats bar ── */
+.auto-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+}
+.auto-stat-card {
+    background: #fff;
+    border: 1px solid #e4e6ea;
+    border-radius: 14px;
+    padding: 1.2rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    transition: box-shadow .2s, transform .2s;
+}
+.auto-stat-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.08); transform: translateY(-2px); }
+.auto-stat-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.25rem; flex-shrink: 0;
+}
+.auto-stat-icon.purple { background: linear-gradient(135deg,#ede9fe,#ddd6fe); color: #7c3aed; }
+.auto-stat-icon.green  { background: linear-gradient(135deg,#d1fae5,#a7f3d0); color: #059669; }
+.auto-stat-icon.blue   { background: linear-gradient(135deg,#dbeafe,#bfdbfe); color: #1d4ed8; }
+.auto-stat-val { font-size: 1.6rem; font-weight: 800; color: #050505; line-height: 1; }
+.auto-stat-lbl { font-size: .75rem; color: #65676b; margin-top: .15rem; }
+
+/* ── Section heading ── */
+.auto-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+.auto-section-head h5 {
+    font-weight: 700; font-size: 1rem; color: #050505; margin: 0;
+}
+
+/* ── Cards grid ── */
+.auto-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1rem;
+}
+
+/* ── Automation card ── */
+.auto-card {
+    background: #fff;
+    border: 1px solid #e4e6ea;
+    border-radius: 14px;
+    padding: 1.25rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    transition: box-shadow .25s, transform .25s, border-color .25s;
+    position: relative;
+    overflow: hidden;
+}
+.auto-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #7c3aed, #6d28d9);
+    border-radius: 14px 14px 0 0;
+}
+.auto-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,.1); transform: translateY(-3px); border-color: #ddd6fe; }
+.auto-card.paused { opacity: .65; }
+.auto-card.paused::before { background: #c4c9d0; }
+
+/* Card header */
+.auto-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: .85rem;
+    gap: .5rem;
+}
+.auto-card-title {
+    font-weight: 700;
+    font-size: .92rem;
+    color: #050505;
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+}
+.auto-card-page {
+    font-size: .7rem;
+    color: #65676b;
+    margin-top: .15rem;
+}
+
+/* Toggle switch */
+.auto-toggle-wrap { display: flex; align-items: center; gap: .4rem; flex-shrink: 0; }
+.auto-toggle {
+    position: relative;
+    width: 42px; height: 24px;
+    cursor: pointer;
+}
+.auto-toggle input { opacity: 0; width: 0; height: 0; }
+.auto-slider {
+    position: absolute;
+    inset: 0;
+    background: #c4c9d0;
+    border-radius: 24px;
+    transition: background .25s;
+}
+.auto-slider::before {
+    content: '';
+    position: absolute;
+    width: 18px; height: 18px;
+    left: 3px; top: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform .25s;
+    box-shadow: 0 1px 4px rgba(0,0,0,.2);
+}
+.auto-toggle input:checked + .auto-slider { background: #7c3aed; }
+.auto-toggle input:checked + .auto-slider::before { transform: translateX(18px); }
+
+/* Keyword chip */
+.auto-keyword-row { margin-bottom: .75rem; }
+.auto-chip {
+    display: inline-flex; align-items: center; gap: .35rem;
+    background: #f5f3ff;
+    border: 1px solid #ddd6fe;
+    border-radius: 20px;
+    padding: .25rem .65rem;
+    font-size: .75rem;
+    color: #6d28d9;
+    font-weight: 600;
+    max-width: 100%;
+    word-break: break-all;
+}
+.auto-chip i { font-size: .7rem; color: #7c3aed; flex-shrink: 0; }
+.auto-chip.any { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+.auto-chip.exact { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+
+/* Reply preview */
+.auto-reply-preview {
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: .7rem .9rem;
+    font-size: .8rem;
+    color: #050505;
+    line-height: 1.5;
+    margin-bottom: .75rem;
+    border-left: 3px solid #7c3aed;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* DM badge */
+.auto-dm-badge {
+    display: inline-flex; align-items: center; gap: .3rem;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 20px;
+    padding: .2rem .55rem;
+    font-size: .7rem;
+    color: #1d4ed8;
+    font-weight: 600;
+}
+
+/* Fired stat */
+.auto-fired-stat {
+    font-size: .72rem;
+    color: #65676b;
+    display: flex; align-items: center; gap: .25rem;
+}
+.auto-fired-stat i { color: #7c3aed; }
+
+/* Card footer */
+.auto-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: .9rem;
+    padding-top: .75rem;
+    border-top: 1px solid #f0f2f5;
+    gap: .4rem;
+    flex-wrap: wrap;
+}
+.auto-foot-actions { display: flex; gap: .35rem; }
+.auto-btn {
+    padding: .3rem .7rem;
+    border-radius: 8px;
+    font-size: .75rem;
+    font-weight: 600;
+    border: 1px solid #e4e6ea;
+    background: #fff;
+    color: #65676b;
+    cursor: pointer;
+    transition: all .2s;
+    display: inline-flex; align-items: center; gap: .3rem;
+}
+.auto-btn:hover { background: #f0f2f5; color: #050505; }
+.auto-btn.danger { border-color: #fecaca; color: #b91c1c; }
+.auto-btn.danger:hover { background: #fef2f2; }
+
+/* ── Empty state ── */
+.auto-empty {
+    grid-column: 1 / -1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #65676b;
+}
+.auto-empty-icon {
+    width: 90px; height: 90px; border-radius: 50%;
+    background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.2rem; color: #7c3aed;
+    margin-bottom: 1.25rem;
+    animation: pulse-soft 2.5s ease-in-out infinite;
+}
+@keyframes pulse-soft {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(124,58,237,.2); }
+    50% { transform: scale(1.04); box-shadow: 0 0 0 10px rgba(124,58,237,.0); }
+}
+.auto-empty h5 { font-weight: 700; color: #050505; margin-bottom: .5rem; }
+.auto-empty p { font-size: .85rem; max-width: 320px; margin: 0 auto 1.5rem; }
+
+/* ══════════════════════════════════════════
+   MODAL — Create / Edit Automation
+══════════════════════════════════════════ */
+.auto-modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.45);
+    z-index: 1050;
+    animation: fadeInBack .2s;
+}
+@keyframes fadeInBack { from { opacity: 0; } to { opacity: 1; } }
+.auto-modal-backdrop.show { display: flex; align-items: center; justify-content: center; padding: 1rem; }
+
+.auto-modal {
+    background: #fff;
+    border-radius: 20px;
+    width: 100%;
+    max-width: 640px;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 60px rgba(0,0,0,.25);
+    animation: slideUp .25s cubic-bezier(.4,0,.2,1);
+}
+@keyframes slideUp {
+    from { transform: translateY(30px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+}
+
+.auto-modal-head {
+    padding: 1.4rem 1.75rem 1rem;
+    border-bottom: 1px solid #e4e6ea;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+}
+.auto-modal-head h5 {
+    margin: 0; font-weight: 800; font-size: 1.05rem;
+    display: flex; align-items: center; gap: .5rem; color: #050505;
+}
+.auto-modal-head h5 .modal-icon {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(135deg,#7c3aed,#6d28d9);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: .9rem;
+}
+.auto-modal-close {
+    width: 30px; height: 30px; border-radius: 8px;
+    border: none; background: #f0f2f5; color: #65676b;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: .85rem; transition: all .15s;
+}
+.auto-modal-close:hover { background: #e4e6ea; color: #050505; }
+
+.auto-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem 1.75rem;
+}
+.auto-modal-body::-webkit-scrollbar { width: 4px; }
+.auto-modal-body::-webkit-scrollbar-thumb { background: #c4c9d0; border-radius: 2px; }
+
+/* Form groups */
+.auto-field { margin-bottom: 1.1rem; }
+.auto-label {
+    display: block;
+    font-size: .78rem;
+    font-weight: 700;
+    color: #050505;
+    margin-bottom: .35rem;
+}
+.auto-label span { font-weight: 400; color: #65676b; margin-left: .25rem; }
+.auto-input, .auto-select, .auto-textarea {
+    width: 100%;
+    padding: .52rem .85rem;
+    border: 1.5px solid #e4e6ea;
+    border-radius: 10px;
+    font-size: .85rem;
+    color: #050505;
+    background: #fff;
+    transition: border-color .2s, box-shadow .2s;
+    outline: none;
+}
+.auto-input:focus, .auto-select:focus, .auto-textarea:focus {
+    border-color: #7c3aed;
+    box-shadow: 0 0 0 3px rgba(124,58,237,.12);
+}
+.auto-textarea { resize: vertical; min-height: 80px; line-height: 1.55; }
+
+.auto-char-count {
+    font-size: .7rem; color: #65676b;
+    text-align: right; margin-top: .2rem;
+}
+
+/* Match type radio group */
+.auto-match-group {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .5rem;
+}
+.auto-match-opt input { display: none; }
+.auto-match-opt label {
+    display: flex; flex-direction: column; align-items: center;
+    padding: .65rem .5rem;
+    border: 1.5px solid #e4e6ea;
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: center;
+    font-size: .73rem;
+    font-weight: 600;
+    color: #65676b;
+    transition: all .2s;
+    gap: .3rem;
+}
+.auto-match-opt label i { font-size: 1rem; }
+.auto-match-opt input:checked + label {
+    border-color: #7c3aed;
+    background: #f5f3ff;
+    color: #7c3aed;
+}
+.auto-match-opt label:hover { border-color: #ddd6fe; background: #f9f8ff; }
+
+/* DM toggle field */
+.auto-dm-toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .75rem 1rem;
+    background: #f8fafc;
+    border: 1.5px solid #e4e6ea;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color .2s;
+}
+.auto-dm-toggle-row:hover { border-color: #ddd6fe; }
+.auto-dm-toggle-row-left { display: flex; align-items: center; gap: .65rem; }
+.auto-dm-toggle-icon {
+    width: 36px; height: 36px; border-radius: 9px;
+    background: linear-gradient(135deg,#dbeafe,#bfdbfe);
+    display: flex; align-items: center; justify-content: center;
+    color: #1d4ed8; font-size: .9rem;
+}
+.auto-dm-toggle-title { font-weight: 700; font-size: .84rem; color: #050505; }
+.auto-dm-toggle-sub { font-size: .72rem; color: #65676b; }
+.auto-dm-field { display: none; margin-top: .75rem; }
+.auto-dm-field.show { display: block; }
+
+/* Section divider */
+.auto-divider {
+    border: none;
+    border-top: 1px solid #e4e6ea;
+    margin: 1rem 0;
+}
+
+/* Preview section */
+.auto-preview-wrap {
+    background: linear-gradient(135deg, #fafafa, #f5f3ff);
+    border: 1px solid #e4e6ea;
+    border-radius: 12px;
+    padding: 1rem 1.1rem;
+}
+.auto-preview-label {
+    font-size: .7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: #65676b; margin-bottom: .65rem;
+    display: flex; align-items: center; gap: .35rem;
+}
+.auto-preview-comment {
+    display: flex; gap: .55rem; margin-bottom: .6rem;
+}
+.preview-ava {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: linear-gradient(135deg,#e5e7eb,#d1d5db);
+    display: flex; align-items: center; justify-content: center;
+    font-size: .65rem; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.preview-ava.page { background: linear-gradient(135deg,#7c3aed,#6d28d9); }
+.preview-bubble {
+    background: #f0f2f5;
+    border-radius: 0 14px 14px 14px;
+    padding: .45rem .75rem;
+    font-size: .8rem; color: #050505;
+    max-width: 85%;
+    line-height: 1.45;
+}
+.preview-bubble.reply { background: #f5f3ff; border-radius: 0 14px 14px 14px; }
+.preview-name { font-weight: 700; font-size: .73rem; margin-bottom: .1rem; }
+.preview-dm-note {
+    font-size: .72rem; color: #1d4ed8;
+    margin-top: .5rem;
+    display: flex; align-items: center; gap: .35rem;
+}
+.preview-dm-note i { color: #1d4ed8; }
+
+/* Modal footer */
+.auto-modal-foot {
+    padding: 1rem 1.75rem 1.25rem;
+    border-top: 1px solid #e4e6ea;
+    display: flex; justify-content: flex-end; gap: .65rem;
+    flex-shrink: 0;
+}
+.auto-modal-cancel {
+    padding: .55rem 1.2rem;
+    border: 1.5px solid #e4e6ea;
+    border-radius: 10px;
+    background: #fff;
+    color: #65676b;
+    font-weight: 600;
+    font-size: .85rem;
+    cursor: pointer;
+    transition: all .15s;
+}
+.auto-modal-cancel:hover { background: #f0f2f5; color: #050505; }
+.auto-modal-save {
+    padding: .55rem 1.5rem;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    color: #fff;
+    font-weight: 700;
+    font-size: .85rem;
+    cursor: pointer;
+    transition: all .2s;
+    display: flex; align-items: center; gap: .45rem;
+    box-shadow: 0 4px 14px rgba(124,58,237,.3);
+}
+.auto-modal-save:hover { background: linear-gradient(135deg,#6d28d9,#5b21b6); transform: translateY(-1px); }
+.auto-modal-save:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+
+/* Toast notification */
+.auto-toast {
+    position: fixed;
+    bottom: 1.5rem; right: 1.5rem;
+    background: #050505;
+    color: #fff;
+    padding: .75rem 1.25rem;
+    border-radius: 12px;
+    font-size: .82rem; font-weight: 600;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    z-index: 2000;
+    display: flex; align-items: center; gap: .5rem;
+    animation: toastIn .3s ease;
+    max-width: 340px;
+}
+.auto-toast.success { border-left: 3px solid #10b981; }
+.auto-toast.error { border-left: 3px solid #ef4444; }
+@keyframes toastIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+@media (max-width: 700px) {
+    .auto-page { padding: 1rem; }
+    .auto-stats { grid-template-columns: 1fr 1fr; }
+    .auto-grid { grid-template-columns: 1fr; }
+    .auto-match-group { grid-template-columns: 1fr 1fr; }
+    .auto-modal { border-radius: 16px 16px 0 0; max-height: 95vh; }
+}
+{% endblock %}
+
+{% block crm_content %}
+<div class="auto-page">
+
+    <!-- ── Stats ── -->
+    <div class="auto-stats">
+        <div class="auto-stat-card">
+            <div class="auto-stat-icon purple"><i class="fas fa-bolt"></i></div>
+            <div>
+                <div class="auto-stat-val">{{ active_count }}</div>
+                <div class="auto-stat-lbl">Active Automations</div>
+            </div>
+        </div>
+        <div class="auto-stat-card">
+            <div class="auto-stat-icon green"><i class="fas fa-fire-alt"></i></div>
+            <div>
+                <div class="auto-stat-val">{{ total_fired }}</div>
+                <div class="auto-stat-lbl">Total Times Fired</div>
+            </div>
+        </div>
+        <div class="auto-stat-card">
+            <div class="auto-stat-icon blue"><i class="fab fa-facebook"></i></div>
+            <div>
+                <div class="auto-stat-val">{{ integrations.count }}</div>
+                <div class="auto-stat-lbl">Connected Pages</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Automation cards ── -->
+    <div class="auto-section-head">
+        <h5><i class="fas fa-robot" style="color:#7c3aed;margin-right:.4rem;"></i> Your Automation Rules</h5>
+        {% if automations %}
+        <button class="auto-btn" onclick="openCreateModal()" style="border-color:#ddd6fe;color:#7c3aed;background:#f5f3ff;">
+            <i class="fas fa-plus"></i> Add Rule
+        </button>
+        {% endif %}
+    </div>
+
+    <div class="auto-grid">
+        {% for auto in automations %}
+        <div class="auto-card {% if not auto.is_active %}paused{% endif %}" id="auto-card-{{ auto.pk }}">
+
+            <!-- Card header -->
+            <div class="auto-card-head">
+                <div>
+                    <div class="auto-card-title">{{ auto.name }}</div>
+                    <div class="auto-card-page">
+                        <i class="fab fa-{{ auto.integration.channel_type|default:'facebook' }}" style="color:#1877f2;font-size:.72rem;margin-right:2px;"></i>
+                        {{ auto.integration.parsed_name|default:auto.integration.account_name }}
+                    </div>
+                </div>
+                <div class="auto-toggle-wrap">
+                    <label class="auto-toggle" title="{% if auto.is_active %}Pause{% else %}Activate{% endif %}">
+                        <input type="checkbox" {% if auto.is_active %}checked{% endif %}
+                               onchange="toggleAutomation({{ auto.pk }}, this)"
+                               id="toggle-{{ auto.pk }}">
+                        <span class="auto-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Keyword chip -->
+            <div class="auto-keyword-row">
+                {% if auto.match_type == 'any' %}
+                    <span class="auto-chip any"><i class="fas fa-asterisk"></i> Any comment triggers this</span>
+                {% elif auto.match_type == 'exact' %}
+                    <span class="auto-chip exact"><i class="fas fa-equals"></i> Exact: "{{ auto.trigger_keyword }}"</span>
+                {% else %}
+                    <span class="auto-chip"><i class="fas fa-search"></i> Contains: "{{ auto.trigger_keyword }}"</span>
+                {% endif %}
+            </div>
+
+            <!-- Public reply preview -->
+            <div class="auto-reply-preview">
+                <span style="font-size:.68rem;font-weight:700;color:#7c3aed;display:block;margin-bottom:.25rem;">💬 PUBLIC REPLY</span>
+                {{ auto.public_reply }}
+            </div>
+
+            <!-- Badges row -->
+            <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.4rem;">
+                {% if auto.send_dm %}
+                <span class="auto-dm-badge"><i class="fas fa-paper-plane"></i> DM included</span>
+                {% endif %}
+                <span class="auto-fired-stat">
+                    <i class="fas fa-bolt"></i>
+                    Fired {{ auto.trigger_count }} time{{ auto.trigger_count|pluralize }}
+                </span>
+                {% if auto.last_triggered_at %}
+                <span class="auto-fired-stat" style="color:#8a8d91;">· Last: {{ auto.last_triggered_at|timesince }} ago</span>
+                {% endif %}
+            </div>
+
+            <!-- Card footer -->
+            <div class="auto-card-foot">
+                <div class="auto-foot-actions">
+                    <button class="auto-btn" onclick="editAutomation({{ auto.pk }})">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button class="auto-btn danger" onclick="deleteAutomation({{ auto.pk }}, '{{ auto.name|escapejs }}')">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+                <div>
+                    {% if auto.is_active %}
+                    <span style="font-size:.72rem;color:#059669;font-weight:700;display:flex;align-items:center;gap:.3rem;">
+                        <span style="width:6px;height:6px;border-radius:50%;background:#10b981;display:inline-block;"></span> Active
+                    </span>
+                    {% else %}
+                    <span style="font-size:.72rem;color:#8a8d91;font-weight:700;display:flex;align-items:center;gap:.3rem;">
+                        <span style="width:6px;height:6px;border-radius:50%;background:#c4c9d0;display:inline-block;"></span> Paused
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <!-- Empty state -->
+        <div class="auto-empty">
+            <div class="auto-empty-icon"><i class="fas fa-robot"></i></div>
+            <h5>No Automations Yet</h5>
+            <p>Set up your first keyword-trigger automation. When someone comments the keyword, your page auto-replies — just like ManyChat!</p>
+            <button class="btn-crm-primary btn-sm" onclick="openCreateModal()" style="padding:.65rem 1.5rem;font-size:.85rem;">
+                <i class="fas fa-bolt"></i> Create First Automation
+            </button>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if automations %}
+    <!-- How it works note -->
+    <div style="margin-top:2rem;padding:1rem 1.25rem;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:12px;font-size:.8rem;color:#6d28d9;">
+        <strong><i class="fas fa-lightbulb"></i> How it works:</strong>
+        When someone comments on any of your Facebook/Instagram posts, our system checks all active automation rules for that page.
+        If the comment matches your keyword, the public reply is posted instantly — and a private DM is sent if enabled.
+        This happens automatically via webhook or on every page sync.
+    </div>
+    {% endif %}
+
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL — Create / Edit Automation
+══════════════════════════════════════════ -->
+<div class="auto-modal-backdrop" id="autoModalBackdrop" onclick="closeModalBackdrop(event)">
+    <div class="auto-modal" onclick="event.stopPropagation()">
+        <div class="auto-modal-head">
+            <h5>
+                <span class="modal-icon"><i class="fas fa-bolt"></i></span>
+                <span id="modalTitle">New Automation</span>
+            </h5>
+            <button class="auto-modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
+        </div>
+
+        <div class="auto-modal-body">
+            <form id="autoForm">
+                {% csrf_token %}
+                <input type="hidden" id="formPk" name="pk" value="">
+
+                <!-- Page selector -->
+                <div class="auto-field">
+                    <label class="auto-label" for="formPage">Connected Page <span>*</span></label>
+                    <select class="auto-select" id="formPage" name="integration_id" required>
+                        <option value="">— Select a page —</option>
+                        {% for integ in integrations %}
+                        <option value="{{ integ.pk }}">
+                            {% if integ.channel_type == 'facebook' %}📘{% elif integ.channel_type == 'instagram' %}📸{% endif %}
+                            {{ integ.parsed_name|default:integ.account_name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Automation name -->
+                <div class="auto-field">
+                    <label class="auto-label" for="formName">Automation Name <span>*</span></label>
+                    <input type="text" class="auto-input" id="formName" name="name"
+                           placeholder='e.g. "chayapoto" keyword promo' required
+                           oninput="updatePreview()">
+                </div>
+
+                <!-- Match type -->
+                <div class="auto-field">
+                    <label class="auto-label">Trigger Type</label>
+                    <div class="auto-match-group">
+                        <div class="auto-match-opt">
+                            <input type="radio" name="match_type" id="matchContains" value="contains" checked onchange="updatePreview(); toggleKeywordField()">
+                            <label for="matchContains"><i class="fas fa-search"></i> Contains<br><span style="font-size:.65rem;font-weight:400;">Comment includes keyword</span></label>
+                        </div>
+                        <div class="auto-match-opt">
+                            <input type="radio" name="match_type" id="matchExact" value="exact" onchange="updatePreview(); toggleKeywordField()">
+                            <label for="matchExact"><i class="fas fa-equals"></i> Exact Match<br><span style="font-size:.65rem;font-weight:400;">Comment = keyword only</span></label>
+                        </div>
+                        <div class="auto-match-opt">
+                            <input type="radio" name="match_type" id="matchAny" value="any" onchange="updatePreview(); toggleKeywordField()">
+                            <label for="matchAny"><i class="fas fa-asterisk"></i> Any Comment<br><span style="font-size:.65rem;font-weight:400;">Always fires on this page</span></label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trigger keyword (hidden when type=any) -->
+                <div class="auto-field" id="keywordFieldWrap">
+                    <label class="auto-label" for="formKeyword">Trigger Keyword <span>*</span></label>
+                    <input type="text" class="auto-input" id="formKeyword" name="trigger_keyword"
+                           placeholder='e.g. chayapoto, price, info, order'
+                           oninput="updatePreview()">
+                    <div style="font-size:.7rem;color:#65676b;margin-top:.25rem;">
+                        <i class="fas fa-info-circle"></i> Case-insensitive. No need to add multiple — one keyword per rule.
+                    </div>
+                </div>
+
+                <hr class="auto-divider">
+
+                <!-- Public reply -->
+                <div class="auto-field">
+                    <label class="auto-label" for="formPublicReply">Public Comment Reply <span>*</span></label>
+                    <textarea class="auto-textarea" id="formPublicReply" name="public_reply"
+                              rows="3"
+                              placeholder='e.g. Thanks for your interest! 🙌 Check your DMs for exclusive details...'
+                              oninput="updatePreview(); countChars('formPublicReply','publicReplyCount')"
+                              required></textarea>
+                    <div class="auto-char-count"><span id="publicReplyCount">0</span> chars</div>
+                </div>
+
+                <!-- Send DM toggle -->
+                <div class="auto-field">
+                    <label class="auto-label">Private DM <span>optional</span></label>
+                    <!-- DM send toggle row: clicking the row area also toggles the checkbox -->
+                    <div class="auto-dm-toggle-row" id="dmToggleRow" onclick="handleDmRowClick(event)">
+                        <div class="auto-dm-toggle-row-left">
+                            <div class="auto-dm-toggle-icon"><i class="fas fa-paper-plane"></i></div>
+                            <div>
+                                <div class="auto-dm-toggle-title">Also send a Private DM</div>
+                                <div class="auto-dm-toggle-sub">Send a message privately to the commenter with links or details</div>
+                            </div>
+                        </div>
+                        <label class="auto-toggle" id="dmToggleLabel" onclick="event.stopPropagation()">
+                            <input type="checkbox" id="formSendDm" name="send_dm"
+                                   onchange="onDmCheckboxChange()">
+                            <span class="auto-slider"></span>
+                        </label>
+                    </div>
+                    <div class="auto-dm-field" id="dmMessageField">
+                        <textarea class="auto-textarea" id="formDmMessage" name="dm_message"
+                                  rows="4" style="margin-top:.55rem;"
+                                  placeholder="Hi! Here's the link you were asking about 👇&#10;&#10;🛒 Order link: https://yourshop.com/product&#10;💰 Price: NPR 1,200&#10;&#10;Reply to this message for more info!"
+                                  oninput="updatePreview(); countChars('formDmMessage','dmMsgCount')"></textarea>
+                        <div class="auto-char-count"><span id="dmMsgCount">0</span> chars</div>
+                    </div>
+                </div>
+
+                <hr class="auto-divider">
+
+                <!-- Live Preview -->
+                <div class="auto-field">
+                    <div class="auto-preview-wrap">
+                        <div class="auto-preview-label">
+                            <i class="fas fa-eye"></i> Live Preview
+                        </div>
+
+                        <!-- Commenter comment -->
+                        <div class="auto-preview-comment">
+                            <div class="preview-ava">U</div>
+                            <div>
+                                <div class="preview-name" style="color:#65676b;font-size:.68rem;">Facebook User</div>
+                                <div class="preview-bubble" id="previewTriggerText">
+                                    <span style="color:#aaa;font-style:italic;">Your keyword will appear here...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Auto-reply -->
+                        <div class="auto-preview-comment" style="padding-left:1rem;">
+                            <div class="preview-ava page">P</div>
+                            <div>
+                                <div class="preview-name" style="color:#7c3aed;font-size:.68rem;">Your Page (Auto-reply)</div>
+                                <div class="preview-bubble reply" id="previewReplyText">
+                                    <span style="color:#aaa;font-style:italic;">Your public reply will appear here...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- DM note -->
+                        <div class="preview-dm-note" id="previewDmNote" style="display:none;">
+                            <i class="fas fa-paper-plane"></i>
+                            <span>A private DM is also sent to the commenter automatically.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active toggle -->
+                <div class="auto-field">
+                    <div class="auto-dm-toggle-row" style="padding:.6rem .9rem;">
+                        <div class="auto-dm-toggle-row-left">
+                            <div style="width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:.4rem;"></div>
+                            <div>
+                                <div class="auto-dm-toggle-title" style="font-size:.82rem;">Activate immediately</div>
+                                <div class="auto-dm-toggle-sub">This automation starts working as soon as you save</div>
+                            </div>
+                        </div>
+                        <label class="auto-toggle">
+                            <input type="checkbox" id="formIsActive" name="is_active" checked>
+                            <span class="auto-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+            </form>
+        </div>
+
+        <div class="auto-modal-foot">
+            <button class="auto-modal-cancel" onclick="closeModal()">Cancel</button>
+            <button class="auto-modal-save" id="modalSaveBtn" onclick="saveAutomation()">
+                <i class="fas fa-bolt"></i> Save Automation
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast container -->
+<div id="autoToastContainer"></div>
+
+{% endblock %}
+
+{% block extra_script %}
+<script>
+const SAVE_URL    = "{% url 'trendycrm:comment_automation_save' %}";
+const DELETE_BASE = "/trendy-crm/comment-automations/";
+const CSRF        = "{{ csrf_token }}";
+
+// ─── Modal open / close ───────────────────────────────────────────────────────
+function openCreateModal() {
+    document.getElementById('formPk').value = '';
+    document.getElementById('modalTitle').textContent = 'New Automation';
+    document.getElementById('autoForm').reset();
+    document.getElementById('formIsActive').checked = true;
+    document.getElementById('formSendDm').checked = false;
+
+    // Reset DM section
+    document.getElementById('dmMessageField').classList.remove('show');
+    document.getElementById('previewDmNote').style.display = 'none';
+
+    // Reset match type to 'contains'
+    document.getElementById('matchContains').checked = true;
+    toggleKeywordField();
+    updatePreview();
+
+    // Reset char counts
+    document.getElementById('publicReplyCount').textContent = '0';
+    document.getElementById('dmMsgCount').textContent = '0';
+
+    document.getElementById('autoModalBackdrop').classList.add('show');
+    // Focus first input
+    setTimeout(() => document.getElementById('formPage').focus(), 100);
+}
+
+function closeModal() {
+    document.getElementById('autoModalBackdrop').classList.remove('show');
+}
+function closeModalBackdrop(e) {
+    if (e.target === document.getElementById('autoModalBackdrop')) closeModal();
+}
+
+// ─── Edit (load from server) ──────────────────────────────────────────────────
+function editAutomation(pk) {
+    fetch(`${DELETE_BASE}${pk}/get/`)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('formPk').value = pk;
+            document.getElementById('modalTitle').textContent = 'Edit Automation';
+            document.getElementById('formPage').value = data.integration_id;
+            document.getElementById('formName').value = data.name;
+            document.getElementById('formKeyword').value = data.trigger_keyword || '';
+            document.getElementById('formPublicReply').value = data.public_reply;
+            document.getElementById('formSendDm').checked = data.send_dm === true;
+            document.getElementById('formDmMessage').value = data.dm_message || '';
+            document.getElementById('formIsActive').checked = data.is_active === true;
+
+            // Set match type radio
+            const mt = data.match_type || 'contains';
+            const mtRadio = document.querySelector(`input[name="match_type"][value="${mt}"]`);
+            if (mtRadio) mtRadio.checked = true;
+
+            toggleKeywordField();
+            toggleDmField();
+            updatePreview();
+
+            countChars('formPublicReply', 'publicReplyCount');
+            countChars('formDmMessage', 'dmMsgCount');
+
+            document.getElementById('autoModalBackdrop').classList.add('show');
+        })
+        .catch(err => {
+            console.error('Edit load error:', err);
+            showToast('Failed to load automation data.', 'error');
+        });
+}
+
+// ─── DM toggle row click — clicking row body (not label) toggles checkbox ─────
+function handleDmRowClick(e) {
+    // If click was on the label or its children, stop (they handle it)
+    if (e.target.closest('#dmToggleLabel')) return;
+    const cb = document.getElementById('formSendDm');
+    cb.checked = !cb.checked;
+    onDmCheckboxChange();
+}
+function onDmCheckboxChange() {
+    toggleDmField();
+    updatePreview();
+}
+
+// ─── Toggle keyword field based on match type ─────────────────────────────────
+function toggleKeywordField() {
+    const mt = document.querySelector('input[name="match_type"]:checked')?.value;
+    const wrap = document.getElementById('keywordFieldWrap');
+    if (wrap) wrap.style.display = (mt === 'any') ? 'none' : 'block';
+}
+
+// ─── Toggle DM message field ──────────────────────────────────────────────────
+function toggleDmField() {
+    const cb = document.getElementById('formSendDm');
+    const field = document.getElementById('dmMessageField');
+    if (!cb || !field) return;
+    if (cb.checked) {
+        field.classList.add('show');
+    } else {
+        field.classList.remove('show');
+    }
+}
+
+// ─── Live preview ─────────────────────────────────────────────────────────────
+function updatePreview() {
+    const mt      = document.querySelector('input[name="match_type"]:checked')?.value;
+    const keyword = (document.getElementById('formKeyword')?.value || '').trim();
+    const reply   = (document.getElementById('formPublicReply')?.value || '').trim();
+    const sendDm  = document.getElementById('formSendDm')?.checked;
+
+    const triggerEl = document.getElementById('previewTriggerText');
+    const replyEl   = document.getElementById('previewReplyText');
+    const dmNote    = document.getElementById('previewDmNote');
+
+    if (!triggerEl || !replyEl || !dmNote) return;
+
+    // Trigger comment preview
+    if (mt === 'any') {
+        triggerEl.innerHTML = '<span style="color:#65676b;font-style:italic;">← Any comment on your post</span>';
+    } else if (keyword) {
+        triggerEl.textContent = keyword;
+        triggerEl.style.color = '#050505';
+    } else {
+        triggerEl.innerHTML = '<span style="color:#aaa;font-style:italic;">Your keyword will appear here...</span>';
+    }
+
+    // Reply preview
+    if (reply) {
+        replyEl.textContent = reply;
+        replyEl.style.color = '#050505';
+    } else {
+        replyEl.innerHTML = '<span style="color:#aaa;font-style:italic;">Your public reply will appear here...</span>';
+    }
+
+    // DM note
+    dmNote.style.display = sendDm ? 'flex' : 'none';
+}
+
+// ─── Character counter ────────────────────────────────────────────────────────
+function countChars(inputId, countId) {
+    const val = document.getElementById(inputId)?.value || '';
+    const el  = document.getElementById(countId);
+    if (el) el.textContent = val.length;
+}
+
+// ─── Save automation — manually build POST body to capture checkbox states ─────
+function saveAutomation() {
+    const btn = document.getElementById('modalSaveBtn');
+
+    // Collect values explicitly (FormData skips unchecked checkboxes for checkbox)
+    const integrationId = document.getElementById('formPage').value.trim();
+    const pk            = document.getElementById('formPk').value.trim();
+    const name          = document.getElementById('formName').value.trim();
+    const keyword       = document.getElementById('formKeyword').value.trim();
+    const matchType     = document.querySelector('input[name="match_type"]:checked')?.value || 'contains';
+    const publicReply   = document.getElementById('formPublicReply').value.trim();
+    const sendDm        = document.getElementById('formSendDm').checked;
+    const dmMessage     = document.getElementById('formDmMessage').value.trim();
+    const isActive      = document.getElementById('formIsActive').checked;
+
+    // Client-side validation
+    if (!integrationId) { showToast('Please select a page.', 'error'); return; }
+    if (!name)          { showToast('Please enter an automation name.', 'error'); return; }
+    if (!publicReply)   { showToast('Public reply cannot be empty.', 'error'); return; }
+    if (matchType !== 'any' && !keyword) {
+        showToast('A trigger keyword is required for this match type.', 'error');
+        return;
+    }
+    if (sendDm && !dmMessage) {
+        showToast('Please enter a DM message, or disable the DM option.', 'error');
+        return;
+    }
+
+    // Build URL-encoded body
+    const params = new URLSearchParams();
+    params.set('csrfmiddlewaretoken', CSRF);
+    if (pk) params.set('pk', pk);
+    params.set('integration_id', integrationId);
+    params.set('name', name);
+    params.set('trigger_keyword', keyword);
+    params.set('match_type', matchType);
+    params.set('public_reply', publicReply);
+    if (sendDm)    params.set('send_dm', 'on');
+    if (dmMessage) params.set('dm_message', dmMessage);
+    if (isActive)  params.set('is_active', 'on');
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+
+    fetch(SAVE_URL, {
+        method: 'POST',
+        body: params,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-bolt"></i> Save Automation';
+        if (data.status === 'ok') {
+            closeModal();
+            showToast(data.message || 'Automation saved!', 'success');
+            setTimeout(() => location.reload(), 900);
+        } else {
+            showToast(data.message || 'Error saving automation.', 'error');
+        }
+    })
+    .catch(err => {
+        console.error('Save error:', err);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-bolt"></i> Save Automation';
+        showToast('Network error. Please try again.', 'error');
+    });
+}
+
+// ─── Toggle active/paused ─────────────────────────────────────────────────────
+function toggleAutomation(pk, checkbox) {
+    const params = new URLSearchParams();
+    params.set('csrfmiddlewaretoken', CSRF);
+
+    fetch(`${DELETE_BASE}${pk}/toggle/`, {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': CSRF,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: params
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            const card = document.getElementById(`auto-card-${pk}`);
+            if (card) {
+                if (data.is_active) {
+                    card.classList.remove('paused');
+                } else {
+                    card.classList.add('paused');
+                }
+            }
+            // Sync the status dot text
+            const statusEl = card ? card.querySelector('.auto-card-foot > div:last-child span') : null;
+            if (statusEl) {
+                statusEl.innerHTML = data.is_active
+                    ? '<span style="width:6px;height:6px;border-radius:50%;background:#10b981;display:inline-block;"></span> Active'
+                    : '<span style="width:6px;height:6px;border-radius:50%;background:#c4c9d0;display:inline-block;"></span> Paused';
+            }
+            showToast(data.message, 'success');
+        } else {
+            // Revert checkbox state on failure
+            checkbox.checked = !checkbox.checked;
+            showToast('Failed to toggle automation.', 'error');
+        }
+    })
+    .catch(() => {
+        checkbox.checked = !checkbox.checked;
+        showToast('Network error.', 'error');
+    });
+}
+
+// ─── Delete automation ────────────────────────────────────────────────────────
+function deleteAutomation(pk, name) {
+    if (!confirm(`Delete automation "${name}"?\n\nThis cannot be undone.`)) return;
+
+    const params = new URLSearchParams();
+    params.set('csrfmiddlewaretoken', CSRF);
+
+    fetch(`${DELETE_BASE}${pk}/delete/`, {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': CSRF,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: params
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            const card = document.getElementById(`auto-card-${pk}`);
+            if (card) {
+                card.style.transition = 'all .3s';
+                card.style.opacity = '0';
+                card.style.transform = 'scale(.95)';
+                setTimeout(() => {
+                    card.remove();
+                    const grid = document.querySelector('.auto-grid');
+                    if (grid && grid.querySelectorAll('.auto-card').length === 0) {
+                        location.reload();
+                    }
+                }, 300);
+            }
+            showToast('Automation deleted.', 'success');
+        } else {
+            showToast('Failed to delete automation.', 'error');
+        }
+    })
+    .catch(() => showToast('Network error.', 'error'));
+}
+
+// ─── Toast notification ───────────────────────────────────────────────────────
+function showToast(msg, type = 'success') {
+    const container = document.getElementById('autoToastContainer');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = `auto-toast ${type}`;
+    toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> ${msg}`;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.transition = 'all .3s';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// ─── Keyboard shortcut: Escape to close modal ─────────────────────────────────
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+});
+</script>
+{% endblock %}

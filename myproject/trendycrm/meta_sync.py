@@ -329,6 +329,13 @@ def _process_comment(post, comment_data, parent_id):
             except Exception as e:
                 logger.error(f"trigger_comment_to_dm raised an exception: {e}")
 
+            # ManyChat-style keyword automations
+            try:
+                from trendycrm.views import _check_comment_automations
+                _check_comment_automations(post.integration, obj)
+            except Exception as e:
+                logger.error(f"_check_comment_automations raised an exception: {e}")
+
 
 def reply_to_meta_comment(integration, comment_id, message_text):
     if not integration.access_token:

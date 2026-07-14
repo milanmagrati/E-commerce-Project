@@ -38,7 +38,7 @@ from .models import (
     CRMContact, CRMConversation, CRMMessage,
     CRMQuickReply, CRMChatbotConfig, CRMIntegration, CRMTicket,
     CRMSocialPost, CRMSocialComment, CRMPageProfile, CRMCreditLog,
-    CRMLabel, CRMNote
+    CRMLabel, CRMNote, CommentAutomation
 )
 
 
@@ -1342,3 +1342,170 @@ def crm_ai_test(request):
         logger.exception("AI test failed")
         return JsonResponse({'error': str(e)}, status=500)
 
+
+# ─── Comment Automation (ManyChat-style) ──────────────────────────────────────
+
+def _check_comment_automations(integration, comment_obj):
+    """
+    Internal trigger: checks all active CommentAutomation rules for the given
+    integration, fires matching ones (public reply + optional DM).
+
+    Args:
+        integration: CRMIntegration instance
+        comment_obj: CRMSocialComment instance (the new comment)
+    """
+    from .meta_sync import reply_to_meta_comment, send_meta_message
+
+    comment_text = (comment_obj.message or '').strip()
+    sender_id = comment_obj.sender_id or ''
+    comment_meta_id = comment_obj.meta_comment_id
+
+    automations = CommentAutomation.objects.filter(
+        integration=integration,
+        is_active=True
+    )
+
+    for auto in automations:
+        matched = False
+        kw = auto.trigger_keyword.strip().lower()
+
+        if auto.match_type == 'any':
+            matched = True
+        elif auto.match_type == 'exact':
+            matched = comment_text.lower() == kw
+        elif auto.match_type == 'contains':
+            matched = bool(kw) and kw in comment_text.lower()
+
+        if matched:
+            try:
+                # 1. Public reply on the comment
+                if auto.public_reply:
+                    reply_to_meta_comment(integration, comment_meta_id, auto.public_reply)
+
+                # 2. Optional private DM
+                if auto.send_dm and auto.dm_message and sender_id:
+                    send_meta_message(integration, sender_id, auto.dm_message)
+
+                # 3. Update stats
+                auto.trigger_count += 1
+                auto.last_triggered_at = timezone.now()
+                auto.save(update_fields=['trigger_count', 'last_triggered_at'])
+
+                logger.info(
+                    f"CommentAutomation fired | rule={auto.name} | "
+                    f"comment={comment_meta_id} | match={auto.match_type}"
+                )
+            except Exception as e:
+                logger.error(f"CommentAutomation '{auto.name}' failed to fire: {e}")
+
+
+@login_required
+def crm_comment_automations(request):
+    """List / manage all comment automation rules."""
+    integrations = CRMIntegration.objects.filter(status='connected')
+    automations = CommentAutomation.objects.select_related('integration').all()
+
+    # Stats
+    active_count = automations.filter(is_active=True).count()
+    total_fired = sum(a.trigger_count for a in automations)
+
+    context = {
+        'crm_section': 'social_posts',
+        'automations': automations,
+        'integrations': integrations,
+        'active_count': active_count,
+        'total_fired': total_fired,
+    }
+    return render(request, 'trendycrm/comment_automations.html', context)
+
+
+@login_required
+@require_POST
+def crm_comment_automation_save(request):
+    """Create or update a CommentAutomation rule via AJAX POST."""
+    pk = request.POST.get('pk') or None  # treat empty string as None
+    integration_id = request.POST.get('integration_id', '').strip()
+    name = request.POST.get('name', '').strip()
+    trigger_keyword = request.POST.get('trigger_keyword', '').strip()
+    # match_type: valid values are 'exact', 'contains', 'any'
+    match_type = request.POST.get('match_type', 'contains')
+    if match_type not in ('exact', 'contains', 'any'):
+        match_type = 'contains'
+    public_reply = request.POST.get('public_reply', '').strip()
+    # Checkboxes are only sent when checked; default to False
+    send_dm = request.POST.get('send_dm') == 'on'
+    dm_message = request.POST.get('dm_message', '').strip()
+    # BUG FIX: default must be '' not 'on', else is_active always True when unchecked
+    is_active = request.POST.get('is_active', '') == 'on'
+
+    if not name or not public_reply or not integration_id:
+        return JsonResponse({'status': 'error', 'message': 'Name, public reply, and page are required.'}, status=400)
+
+    # keyword required for non-'any' rules
+    if match_type != 'any' and not trigger_keyword:
+        return JsonResponse({'status': 'error', 'message': 'A trigger keyword is required for this match type.'}, status=400)
+
+    integration = get_object_or_404(CRMIntegration, pk=integration_id)
+
+    if pk:
+        auto = get_object_or_404(CommentAutomation, pk=pk)
+    else:
+        auto = CommentAutomation(integration=integration)
+
+    auto.integration = integration
+    auto.name = name
+    auto.trigger_keyword = trigger_keyword
+    auto.match_type = match_type
+    auto.public_reply = public_reply
+    auto.send_dm = send_dm
+    auto.dm_message = dm_message
+    auto.is_active = is_active
+    auto.save()
+
+    return JsonResponse({
+        'status': 'ok',
+        'pk': auto.pk,
+        'name': auto.name,
+        'is_active': auto.is_active,
+        'message': 'Automation saved successfully!'
+    })
+
+
+@login_required
+@require_POST
+def crm_comment_automation_delete(request, pk):
+    """Delete a CommentAutomation rule."""
+    auto = get_object_or_404(CommentAutomation, pk=pk)
+    auto.delete()
+    return JsonResponse({'status': 'ok', 'message': 'Automation deleted.'})
+
+
+@login_required
+@require_POST
+def crm_comment_automation_toggle(request, pk):
+    """Toggle active/paused state of a CommentAutomation rule."""
+    auto = get_object_or_404(CommentAutomation, pk=pk)
+    auto.is_active = not auto.is_active
+    auto.save(update_fields=['is_active'])
+    return JsonResponse({
+        'status': 'ok',
+        'is_active': auto.is_active,
+        'message': f"Automation {'activated' if auto.is_active else 'paused'}."
+    })
+
+
+@login_required
+def crm_comment_automation_get(request, pk):
+    """Return automation data as JSON for editing."""
+    auto = get_object_or_404(CommentAutomation, pk=pk)
+    return JsonResponse({
+        'pk': auto.pk,
+        'integration_id': auto.integration_id,
+        'name': auto.name,
+        'trigger_keyword': auto.trigger_keyword,
+        'match_type': auto.match_type,
+        'public_reply': auto.public_reply,
+        'send_dm': auto.send_dm,
+        'dm_message': auto.dm_message,
+        'is_active': auto.is_active,
+    })
