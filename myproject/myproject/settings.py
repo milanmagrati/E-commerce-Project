@@ -210,14 +210,13 @@ NCM_WEBHOOK_SECRET = config('NCM_WEBHOOK_SECRET', default=None)
 WOOCOMMERCE_WEBHOOK_SECRET = config('WOOCOMMERCE_WEBHOOK_SECRET', default='')
 SITE_URL = config('SITE_URL', default='https://office.orajil.com.np').rstrip('/')
 
-# Meta / Instagram Configuration
 META_PAGE_ACCESS_TOKEN = config('META_PAGE_ACCESS_TOKEN', default='')
 FACEBOOK_APP_ID = config('FACEBOOK_APP_ID', default='')
 FACEBOOK_APP_SECRET = config('FACEBOOK_APP_SECRET', default='')
 INSTAGRAM_APP_ID = config('INSTAGRAM_APP_ID', default='')
 INSTAGRAM_APP_SECRET = config('INSTAGRAM_APP_SECRET', default='')
-TIKTOK_APP_ID = config('TIKTOK_APP_ID', default='')
-TIKTOK_APP_SECRET = config('TIKTOK_APP_SECRET', default='')
+TIKTOK_CLIENT_ID = config('TIKTOK_CLIENT_ID', default='')
+TIKTOK_CLIENT_SECRET = config('TIKTOK_CLIENT_SECRET', default='')
 
 # Kept for backward compatibility
 FACEBOOK_CLIENT_ID = config('FACEBOOK_CLIENT_ID', default=FACEBOOK_APP_ID)
@@ -369,9 +368,4 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
 # Run synchronously for local dev unless redis is available and explicit
-CELERY_TASK_ALWAYS_EAGER = config('CELERY_TASK_ALWAYS_EAGER', default=True, cast=bool)
-
-# ===================== Google Sheets Integration =====================
-GOOGLE_SHEETS_CREDENTIALS_PATH = BASE_DIR / 'google_service_account.json'
-
 # Trigger reload

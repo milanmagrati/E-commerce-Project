@@ -9,6 +9,9 @@ from django.contrib import messages
 import json
 import requests
 import logging
+import base64
+import hashlib
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -793,12 +796,22 @@ def connect_instagram(request):
 
 def connect_tiktok(request):
     redirect_uri = build_absolute_callback(request, 'trendycrm:tiktok_callback')
-    tiktok_app_id = getattr(settings, 'TIKTOK_APP_ID', '')
-    if not tiktok_app_id:
-        messages.error(request, 'TikTok App ID is not configured in settings.')
+    tiktok_client_id = getattr(settings, 'TIKTOK_CLIENT_ID', '')
+    if not tiktok_client_id:
+        messages.error(request, 'TikTok Client ID is not configured in settings.')
         return redirect(reverse('trendycrm:integrations') + "?channel=tiktok")
         
-    auth_url = f"https://business-api.tiktok.com/portal/auth?app_id={tiktok_app_id}&state=tiktok_auth&redirect_uri={redirect_uri}"
+    # Generate PKCE code verifier and challenge
+    code_verifier = base64.urlsafe_b64encode(os.urandom(32)).decode('utf-8').rstrip('=')
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode('utf-8')).digest()
+    ).decode('utf-8').rstrip('=')
+    
+    # Store verifier in session for token exchange
+    request.session['tiktok_code_verifier'] = code_verifier
+        
+    # Redirect to TikTok standard Login Kit authorization page
+    auth_url = f"https://www.tiktok.com/v2/auth/authorize/?client_key={tiktok_client_id}&response_type=code&scope=user.info.basic,video.list&redirect_uri={redirect_uri}&state=tiktok_auth&code_challenge={code_challenge}&code_challenge_method=S256"
     return redirect(auth_url)
 
 def _handle_oauth_callback(request, channel_key):
@@ -890,40 +903,68 @@ def instagram_callback(request):
     return _handle_oauth_callback(request, 'instagram')
 
 def tiktok_callback(request):
-    auth_code = request.GET.get('auth_code')
-    if not auth_code:
-        messages.error(request, 'TikTok authorization failed.')
+    code = request.GET.get('code')
+    if not code:
+        # User might have denied access, resulting in error being returned
+        err = request.GET.get('error_description', 'TikTok authorization failed.')
+        messages.error(request, err)
         return redirect(reverse('trendycrm:integrations') + "?channel=tiktok")
         
-    tiktok_app_id = getattr(settings, 'TIKTOK_APP_ID', '')
-    tiktok_app_secret = getattr(settings, 'TIKTOK_APP_SECRET', '')
+    tiktok_client_id = getattr(settings, 'TIKTOK_CLIENT_ID', '')
+    tiktok_client_secret = getattr(settings, 'TIKTOK_CLIENT_SECRET', '')
+    redirect_uri = build_absolute_callback(request, 'trendycrm:tiktok_callback')
     
-    # Exchange auth_code for access token
-    url = "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/"
+    # Exchange code for access token using standard TikTok Login Kit endpoint
+    url = "https://open.tiktokapis.com/v2/oauth/token/"
+    
+    # Retrieve code_verifier from session
+    code_verifier = request.session.get('tiktok_code_verifier', '')
+    
     payload = {
-        "app_id": tiktok_app_id,
-        "secret": tiktok_app_secret,
-        "auth_code": auth_code
+        "client_key": tiktok_client_id,
+        "client_secret": tiktok_client_secret,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": redirect_uri,
+        "code_verifier": code_verifier
+    }
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded"
     }
     try:
-        resp = requests.post(url, json=payload)
+        resp = requests.post(url, data=payload, headers=headers)
         data = resp.json()
-        if data.get('code') == 0:
-            access_token = data['data']['access_token']
-            advertiser_id = data['data'].get('advertiser_ids', [''])[0]
+        
+        # TikTok API v2 sometimes nests the response inside a 'data' key
+        token_data = data.get('data', data)
+        
+        if 'access_token' in token_data:
+            access_token = token_data['access_token']
+            open_id = token_data.get('open_id', '')
+            refresh_token = token_data.get('refresh_token', '')
+            expires_in = token_data.get('expires_in', 0)
             
             integ = CRMIntegration.objects.filter(channel_type='tiktok', status='not_connected').first()
             if not integ:
                 integ = CRMIntegration(channel_type='tiktok')
             
             integ.status = 'connected'
-            integ.account_name = f'TikTok Account ({advertiser_id})'
+            integ.account_name = f'TikTok Account ({open_id})' if open_id else 'TikTok Account'
             integ.access_token = access_token
             integ.connected_at = timezone.now()
+            
+            # Store refresh token in meta field if present
+            if refresh_token:
+                meta = integ.meta or {}
+                meta['refresh_token'] = refresh_token
+                meta['expires_in'] = expires_in
+                integ.meta = meta
+                
             integ.save()
             messages.success(request, 'TikTok connected successfully.')
         else:
-            messages.error(request, f"TikTok error: {data.get('message', 'Unknown error')}")
+            err_msg = data.get('message', data.get('error_description', data.get('error', 'Unknown error')))
+            messages.error(request, f"TikTok error: {err_msg}")
     except Exception as e:
         messages.error(request, f"Error connecting to TikTok: {str(e)}")
         
