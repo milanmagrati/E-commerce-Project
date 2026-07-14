@@ -1065,6 +1065,16 @@ def crm_social_posts(request):
     else:
         posts = CRMSocialPost.objects.all()
     
+    page_filters = request.GET.getlist('page_filter')
+    valid_page_ids = []
+    if page_filters and 'all' not in page_filters:
+        for pf in page_filters:
+            if pf.isdigit():
+                valid_page_ids.append(int(pf))
+                
+    if valid_page_ids:
+        posts = posts.filter(integration_id__in=valid_page_ids)
+    
     selected_post_id = request.GET.get('post_id')
     active_post = None
     comments = []
@@ -1102,6 +1112,8 @@ def crm_social_posts(request):
         'current_filter': request.GET.get('filter', 'all'),
         'current_sort': request.GET.get('sort', '-created_time'),
         'current_post_filter': post_filter,
+        'integrations': integrations,
+        'page_filters': valid_page_ids if valid_page_ids else ['all'],
     }
     return render(request, 'trendycrm/social_posts.html', context)
 
@@ -1132,6 +1144,36 @@ def crm_social_post_action(request, post_id):
             return JsonResponse({'status': 'ok'})
         else:
             return JsonResponse({'status': 'error', 'message': 'Failed to post comment to Facebook'}, status=500)
+            
+    elif action == 'react':
+        from trendycrm.meta_sync import react_meta_object
+        reaction_type = request.POST.get('reaction_type', 'LIKE')
+        
+        if not isinstance(post.reactions_data, dict):
+            post.reactions_data = {}
+            
+        current_reaction = post.reactions_data.get('my_reaction')
+        if current_reaction == reaction_type:
+            success = react_meta_object(post.integration, post.meta_post_id, 'DELETE')
+            if success:
+                post.reactions_data['my_reaction'] = None
+                if post.reactions_data.get(reaction_type, 0) > 0:
+                    post.reactions_data[reaction_type] -= 1
+                post.likes_count = sum(v for k, v in post.reactions_data.items() if k != 'my_reaction' and isinstance(v, (int, float)))
+                post.save(update_fields=['reactions_data', 'likes_count'])
+                return JsonResponse({'status': 'ok'})
+        else:
+            success = react_meta_object(post.integration, post.meta_post_id, reaction_type)
+            if success:
+                if current_reaction and post.reactions_data.get(current_reaction, 0) > 0:
+                    post.reactions_data[current_reaction] -= 1
+                post.reactions_data['my_reaction'] = reaction_type
+                post.reactions_data[reaction_type] = post.reactions_data.get(reaction_type, 0) + 1
+                post.likes_count = sum(v for k, v in post.reactions_data.items() if k != 'my_reaction' and isinstance(v, (int, float)))
+                post.save(update_fields=['reactions_data', 'likes_count'])
+                return JsonResponse({'status': 'ok'})
+                
+        return JsonResponse({'status': 'error', 'message': 'Failed to react to Facebook post'}, status=500)
     
     return JsonResponse({'status': 'error', 'message': 'Invalid action'}, status=400)
 
@@ -1181,6 +1223,36 @@ def crm_social_action(request, comment_id):
     elif action == 'mark_spam':
         comment.visibility_status = 'spam'
         comment.save(update_fields=['visibility_status'])
+        
+    elif action == 'react':
+        from trendycrm.meta_sync import react_meta_object
+        reaction_type = request.POST.get('reaction_type', 'LIKE')
+        
+        if not isinstance(comment.reactions_data, dict):
+            comment.reactions_data = {}
+            
+        current_reaction = comment.reactions_data.get('my_reaction')
+        if current_reaction == reaction_type:
+            success = react_meta_object(comment.post.integration, comment.meta_comment_id, 'DELETE')
+            if success:
+                comment.reactions_data['my_reaction'] = None
+                if comment.reactions_data.get(reaction_type, 0) > 0:
+                    comment.reactions_data[reaction_type] -= 1
+                comment.like_count = sum(v for k, v in comment.reactions_data.items() if k != 'my_reaction' and isinstance(v, (int, float)))
+                comment.save(update_fields=['reactions_data', 'like_count'])
+                return JsonResponse({'status': 'ok'})
+        else:
+            success = react_meta_object(comment.post.integration, comment.meta_comment_id, reaction_type)
+            if success:
+                if current_reaction and comment.reactions_data.get(current_reaction, 0) > 0:
+                    comment.reactions_data[current_reaction] -= 1
+                comment.reactions_data['my_reaction'] = reaction_type
+                comment.reactions_data[reaction_type] = comment.reactions_data.get(reaction_type, 0) + 1
+                comment.like_count = sum(v for k, v in comment.reactions_data.items() if k != 'my_reaction' and isinstance(v, (int, float)))
+                comment.save(update_fields=['reactions_data', 'like_count'])
+                return JsonResponse({'status': 'ok'})
+                
+        return JsonResponse({'status': 'error', 'message': 'Failed to react to Facebook comment'}, status=500)
         
     return redirect(f"{reverse('trendycrm:social_posts')}?post_id={comment.post.pk}")
 

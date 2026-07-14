@@ -189,7 +189,7 @@ def sync_meta_posts(integration):
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{page_id}/posts" if page_id else f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/posts"
     params = {
         'access_token': integration.access_token,
-        'fields': 'id,message,created_time,full_picture,likes.summary(true),comments.summary(true)',
+        'fields': 'id,message,created_time,full_picture,comments.summary(true),reactions.type(LIKE).limit(0).summary(total_count).as(like),reactions.type(LOVE).limit(0).summary(total_count).as(love),reactions.type(HAHA).limit(0).summary(total_count).as(haha),reactions.type(WOW).limit(0).summary(total_count).as(wow),reactions.type(SAD).limit(0).summary(total_count).as(sad),reactions.type(ANGRY).limit(0).summary(total_count).as(angry),reactions.type(CARE).limit(0).summary(total_count).as(care)',
         'limit': 25
     }
     
@@ -201,8 +201,24 @@ def sync_meta_posts(integration):
                 created_time_str = p.get('created_time')
                 created_at = parse(created_time_str) if created_time_str else timezone.now()
                 
-                likes_count = p.get('likes', {}).get('summary', {}).get('total_count', 0)
                 comments_count = p.get('comments', {}).get('summary', {}).get('total_count', 0)
+                
+                old_post = CRMSocialPost.objects.filter(meta_post_id=p.get('id')).first()
+                my_reaction = old_post.reactions_data.get('my_reaction') if old_post and isinstance(old_post.reactions_data, dict) else None
+                
+                reactions_data = {
+                    'LIKE': p.get('like', {}).get('summary', {}).get('total_count', 0),
+                    'LOVE': p.get('love', {}).get('summary', {}).get('total_count', 0),
+                    'HAHA': p.get('haha', {}).get('summary', {}).get('total_count', 0),
+                    'WOW': p.get('wow', {}).get('summary', {}).get('total_count', 0),
+                    'SAD': p.get('sad', {}).get('summary', {}).get('total_count', 0),
+                    'ANGRY': p.get('angry', {}).get('summary', {}).get('total_count', 0),
+                    'CARE': p.get('care', {}).get('summary', {}).get('total_count', 0),
+                }
+                if my_reaction:
+                    reactions_data['my_reaction'] = my_reaction
+                    
+                likes_count = sum(v for k, v in reactions_data.items() if k != 'my_reaction' and isinstance(v, (int, float)))
                 
                 CRMSocialPost.objects.update_or_create(
                     meta_post_id=p.get('id'),
@@ -212,6 +228,7 @@ def sync_meta_posts(integration):
                         'picture_url': p.get('full_picture', ''),
                         'created_time': created_at,
                         'likes_count': likes_count,
+                        'reactions_data': reactions_data,
                         'comments_count': comments_count
                     }
                 )
@@ -225,7 +242,7 @@ def sync_meta_comments(post):
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{post.meta_post_id}/comments"
     params = {
         'access_token': post.integration.access_token,
-        'fields': 'id,from,message,created_time,like_count,user_likes,can_hide,comments{id,from,message,created_time,like_count}',
+        'fields': 'id,from,message,created_time,can_hide,reactions.type(LIKE).limit(0).summary(total_count).as(like),reactions.type(LOVE).limit(0).summary(total_count).as(love),reactions.type(HAHA).limit(0).summary(total_count).as(haha),reactions.type(WOW).limit(0).summary(total_count).as(wow),reactions.type(SAD).limit(0).summary(total_count).as(sad),reactions.type(ANGRY).limit(0).summary(total_count).as(angry),reactions.type(CARE).limit(0).summary(total_count).as(care),comments{id,from,message,created_time,reactions.type(LIKE).limit(0).summary(total_count).as(like),reactions.type(LOVE).limit(0).summary(total_count).as(love),reactions.type(HAHA).limit(0).summary(total_count).as(haha),reactions.type(WOW).limit(0).summary(total_count).as(wow),reactions.type(SAD).limit(0).summary(total_count).as(sad),reactions.type(ANGRY).limit(0).summary(total_count).as(angry),reactions.type(CARE).limit(0).summary(total_count).as(care)}',
         'limit': 100,
         'filter': 'stream',
     }
@@ -265,13 +282,31 @@ def _process_comment(post, comment_data, parent_id):
     if parent_id:
         parent_comment = CRMSocialComment.objects.filter(meta_comment_id=parent_id).first()
 
+    old_comment = CRMSocialComment.objects.filter(meta_comment_id=comment_data.get('id')).first()
+    my_reaction = old_comment.reactions_data.get('my_reaction') if old_comment and isinstance(old_comment.reactions_data, dict) else None
+
+    reactions_data = {
+        'LIKE': comment_data.get('like', {}).get('summary', {}).get('total_count', 0),
+        'LOVE': comment_data.get('love', {}).get('summary', {}).get('total_count', 0),
+        'HAHA': comment_data.get('haha', {}).get('summary', {}).get('total_count', 0),
+        'WOW': comment_data.get('wow', {}).get('summary', {}).get('total_count', 0),
+        'SAD': comment_data.get('sad', {}).get('summary', {}).get('total_count', 0),
+        'ANGRY': comment_data.get('angry', {}).get('summary', {}).get('total_count', 0),
+        'CARE': comment_data.get('care', {}).get('summary', {}).get('total_count', 0),
+    }
+    if my_reaction:
+        reactions_data['my_reaction'] = my_reaction
+        
+    like_count = sum(v for k, v in reactions_data.items() if k != 'my_reaction' and isinstance(v, (int, float)))
+
     defaults = {
         'post': post,
         'parent_comment': parent_comment,
         'sender_id': sender_id,
         'message': comment_data.get('message', ''),
         'created_time': created_at,
-        'like_count': comment_data.get('like_count', 0),
+        'like_count': like_count,
+        'reactions_data': reactions_data,
     }
 
     obj, created = CRMSocialComment.objects.get_or_create(
@@ -325,6 +360,31 @@ def hide_meta_comment(integration, comment_id, is_hidden=True):
         logger.error(f"Failed to hide comment: {e}")
         return False
         
+def react_meta_object(integration, object_id, reaction_type='LIKE'):
+    if not integration.access_token:
+        return False
+    try:
+        url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{object_id}/reactions"
+        if reaction_type == 'DELETE':
+            res = requests.delete(url, params={'access_token': integration.access_token}, timeout=10)
+            if res.status_code == 200:
+                return True
+            url_likes = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{object_id}/likes"
+            res_likes = requests.delete(url_likes, params={'access_token': integration.access_token}, timeout=10)
+            return res_likes.status_code == 200
+        else:
+            res = requests.post(url, params={'access_token': integration.access_token, 'type': reaction_type}, timeout=10)
+            if res.status_code == 200:
+                return True
+            # Fallback to likes endpoint if reactions endpoint is not supported
+            url_likes = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{object_id}/likes"
+            res_likes = requests.post(url_likes, params={'access_token': integration.access_token}, timeout=10)
+            res_likes.raise_for_status()
+            return True
+    except Exception as e:
+        logger.error(f"Failed to react to object: {e}")
+        return False
+
 def delete_meta_comment(integration, comment_id):
     if not integration.access_token:
         return False

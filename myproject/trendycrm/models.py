@@ -330,6 +330,7 @@ class CRMSocialPost(models.Model):
     comments_count = models.IntegerField(default=0)
     is_starred = models.BooleanField(default=False)
     is_reviewed = models.BooleanField(default=False)
+    reactions_data = models.JSONField(default=dict, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -366,6 +367,7 @@ class CRMSocialComment(models.Model):
     message = models.TextField()
     created_time = models.DateTimeField(null=True, blank=True)
     like_count = models.IntegerField(default=0)
+    reactions_data = models.JSONField(default=dict, blank=True, null=True)
     assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     workflow_status = models.CharField(max_length=20, choices=WORKFLOW_CHOICES, default='open')
     visibility_status = models.CharField(max_length=20, choices=VISIBILITY_CHOICES, default='visible')
