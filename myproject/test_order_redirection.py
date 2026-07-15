@@ -23,7 +23,7 @@ print("ORDER REDIRECTION IMPLEMENTATION TEST SUITE")
 print("="*80)
 
 # Test 1: Verify Migration Applied
-print("\n✅ TEST 1: Verify Migration 0054 Applied")
+print("\n[OK] TEST 1: Verify Migration 0054 Applied")
 print("-" * 80)
 loader = MigrationLoader(None, ignore_no_migrations=True)
 migrated_apps = loader.disk_migrations
