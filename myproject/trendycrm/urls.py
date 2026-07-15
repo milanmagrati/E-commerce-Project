@@ -55,10 +55,12 @@ urlpatterns = [
     path('ai/test/', views.crm_ai_test, name='ai_test'),
 
     # Comment Automations (ManyChat-style)
-    # path('comment-automations/', views.crm_comment_automations, name='comment_automations'),
-    # path('comment-automations/save/', views.crm_comment_automation_save, name='comment_automation_save'),
-    # path('comment-automations/<int:pk>/delete/', views.crm_comment_automation_delete, name='comment_automation_delete'),
-    # path('comment-automations/<int:pk>/toggle/', views.crm_comment_automation_toggle, name='comment_automation_toggle'),
-    # path('comment-automations/<int:pk>/get/', views.crm_comment_automation_get, name='comment_automation_get'),
+    path('comment-automations/', views.crm_comment_automations, name='comment_automations'),
+    path('comment-automations/save/', views.crm_comment_automation_save, name='comment_automation_save'),
+    path('comment-automations/<int:pk>/delete/', views.crm_comment_automation_delete, name='comment_automation_delete'),
+    path('comment-automations/<int:pk>/toggle/', views.crm_comment_automation_toggle, name='comment_automation_toggle'),
+    path('comment-automations/<int:pk>/get/', views.crm_comment_automation_get, name='comment_automation_get'),
+    # Fire automation manually on an existing comment
+    path('social/comment/<int:comment_id>/fire-automation/', views.crm_fire_automation_on_comment, name='fire_automation_on_comment'),
 ]
 

@@ -244,7 +244,7 @@ def sync_meta_comments(post):
         'access_token': post.integration.access_token,
         'fields': 'id,from,message,created_time,can_hide,reactions.type(LIKE).limit(0).summary(total_count).as(like),reactions.type(LOVE).limit(0).summary(total_count).as(love),reactions.type(HAHA).limit(0).summary(total_count).as(haha),reactions.type(WOW).limit(0).summary(total_count).as(wow),reactions.type(SAD).limit(0).summary(total_count).as(sad),reactions.type(ANGRY).limit(0).summary(total_count).as(angry),reactions.type(CARE).limit(0).summary(total_count).as(care),comments{id,from,message,created_time,reactions.type(LIKE).limit(0).summary(total_count).as(like),reactions.type(LOVE).limit(0).summary(total_count).as(love),reactions.type(HAHA).limit(0).summary(total_count).as(haha),reactions.type(WOW).limit(0).summary(total_count).as(wow),reactions.type(SAD).limit(0).summary(total_count).as(sad),reactions.type(ANGRY).limit(0).summary(total_count).as(angry),reactions.type(CARE).limit(0).summary(total_count).as(care)}',
         'limit': 100,
-        'filter': 'stream',
+        'filter': 'toplevel',
     }
 
     try:
@@ -262,18 +262,35 @@ def sync_meta_comments(post):
     except Exception as e:
         logger.exception("Failed to sync meta comments")
 
+def _fetch_user_name(sender_id, access_token):
+    """
+    Secondary Graph API call to fetch the real display name for a user ID.
+    Returns the name string, or '' if lookup fails or is not permitted.
+    """
+    if not sender_id or not access_token:
+        return ''
+    try:
+        url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{sender_id}"
+        resp = requests.get(url, params={'fields': 'name', 'access_token': access_token}, timeout=5)
+        if resp.status_code == 200:
+            name = resp.json().get('name', '').strip()
+            return name
+    except Exception as e:
+        logger.debug(f"Secondary name lookup failed for {sender_id}: {e}")
+    return ''
+
+
 def _process_comment(post, comment_data, parent_id):
     from_data = comment_data.get('from') or {}
     sender_name = (from_data.get('name') or '').strip()
     sender_id = (from_data.get('id') or '').strip()
 
-    # Build a display name — never show raw 'Unknown'
+    # Build a display name — try a secondary lookup before falling back
+    if not sender_name and sender_id:
+        sender_name = _fetch_user_name(sender_id, post.integration.access_token)
+
     if not sender_name:
-        if sender_id:
-            # Use a friendly short ID e.g. "FB User ·7893"
-            sender_name = f"Facebook User"
-        else:
-            sender_name = "Facebook User"
+        sender_name = "Facebook User"
 
     created_time_str = comment_data.get('created_time')
     created_at = parse(created_time_str) if created_time_str else timezone.now()
@@ -309,15 +326,23 @@ def _process_comment(post, comment_data, parent_id):
         'reactions_data': reactions_data,
     }
 
+    comment_meta_id = comment_data.get('id')
+    if not comment_meta_id:
+        logger.warning("_process_comment: comment has no id, skipping")
+        return
+
     obj, created = CRMSocialComment.objects.get_or_create(
-        meta_comment_id=comment_data.get('id'),
+        meta_comment_id=comment_meta_id,
         defaults={**defaults, 'sender_name': sender_name}
     )
 
     if not created:
         for k, v in defaults.items():
             setattr(obj, k, v)
-        if sender_name != 'Facebook User' or obj.sender_name in ('Unknown', 'Facebook User', ''):
+        # Always update name if we now have a better one
+        if sender_name and sender_name != 'Facebook User':
+            obj.sender_name = sender_name
+        elif obj.sender_name in ('Unknown', 'Facebook User', '') and sender_name:
             obj.sender_name = sender_name
         obj.save()
     else:
@@ -338,8 +363,14 @@ def _process_comment(post, comment_data, parent_id):
 
 
 def reply_to_meta_comment(integration, comment_id, message_text):
+    """
+    Post a reply to a Facebook comment.
+    Returns (success: bool, new_comment_id: str | None).
+    The new_comment_id is the real Facebook ID of the reply — callers should
+    store it so the next sync doesn't re-import the reply as a top-level comment.
+    """
     if not integration.access_token:
-        return False
+        return False, None
         
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{comment_id}/comments"
     params = {'access_token': integration.access_token}
@@ -348,9 +379,33 @@ def reply_to_meta_comment(integration, comment_id, message_text):
     try:
         response = requests.post(url, params=params, json=payload, timeout=10)
         response.raise_for_status()
-        return True
+        data = response.json()
+        new_id = data.get('id')  # Facebook returns {"id": "<new_comment_id>"}
+        return True, new_id
     except Exception as e:
         logger.error(f"Failed to send comment reply: {e}")
+        return False, None
+        
+
+def reply_to_meta_comment_privately(integration, comment_id, message_text):
+    """
+    Send a direct message (DM) to a user who commented, using the Private Replies API.
+    This bypasses the usual 24-hour PSID window requirement by linking the DM to their comment.
+    Returns boolean indicating success.
+    """
+    if not integration.access_token:
+        return False
+        
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{comment_id}/private_replies"
+    params = {'access_token': integration.access_token}
+    payload = {'message': message_text}
+    
+    try:
+        response = requests.post(url, params=params, json=payload, timeout=10)
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send private reply for comment {comment_id}: {e}")
         return False
         
 def hide_meta_comment(integration, comment_id, is_hidden=True):

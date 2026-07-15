@@ -5,10 +5,10 @@
 {% block topbar_title %}Posts & Comments{% endblock %}
 
 {% block topbar_actions %}
-{# <a href="{% url 'trendycrm:comment_automations' %}" class="btn-crm-outline btn-sm me-2"
+<a href="{% url 'trendycrm:comment_automations' %}" class="btn-crm-outline btn-sm me-2"
    style="border-color:#ddd6fe;color:#7c3aed;background:linear-gradient(135deg,#f5f3ff,#ede9fe);font-weight:700;display:inline-flex;align-items:center;gap:.35rem;">
     <i class="fas fa-bolt" style="color:#7c3aed;"></i> Automate
-</a> #}
+</a>
 <a href="{% url 'trendycrm:conversations' %}" class="btn-crm-outline btn-sm me-2">
     <i class="fas fa-comments"></i> Messages
 </a>
@@ -842,7 +842,11 @@
 
                 <!-- ── Main comment ── -->
                 <div class="fb-comment" id="cmt{{ comment.pk }}">
-                    <div class="fb-comment-ava">{{ comment.sender_name|make_list|first|upper }}</div>
+                    <!-- User avatar: colored initial -->
+                    <div class="fb-comment-ava" style="background: hsl({{ comment.sender_name|length|add:200 }}, 55%, 50%);"
+                         title="{{ comment.sender_name }}">
+                        {{ comment.sender_name|make_list|first|upper }}
+                    </div>
                     <div class="fb-comment-body">
                         <div class="fb-comment-bubble {% if comment.visibility_status == 'hidden' %}hidden-c{% endif %}">
                             <div class="fb-comment-name">{{ comment.sender_name }}</div>
@@ -921,6 +925,11 @@
                                     <button class="fb-cact done-btn" type="submit">Done</button>
                                 </form>
                                 {% endif %}
+                                <!-- Manual automation fire button -->
+                                <span class="fb-cact sep">·</span>
+                                <button class="fb-cact" style="color:#7c3aed;font-weight:600;"
+                                        onclick="fbFireAuto({{ comment.pk }}, this)"
+                                        title="Fire comment automations now">⚡ Auto</button>
                             </div>
                         </div>
 
@@ -944,12 +953,26 @@
                         <div class="fb-replies">
                             {% for reply in comment.replies.all %}
                             <div class="fb-comment" style="margin-bottom:.6rem;">
-                                <div class="fb-comment-ava {% if reply.sender_name == page_name %}fb-page-ava{% endif %}" style="width:28px;height:28px;font-size:.62rem;">
+                                {% if reply.sender_name|lower == page_name|lower %}
+                                <!-- Page reply — blue branded avatar -->
+                                <div class="fb-comment-ava fb-page-ava" style="width:28px;height:28px;font-size:.62rem;background:linear-gradient(135deg,#1877f2,#0d65d9);" title="{{ reply.sender_name }}">
                                     {{ reply.sender_name|make_list|first|upper }}
                                 </div>
+                                {% else %}
+                                <div class="fb-comment-ava" style="width:28px;height:28px;font-size:.62rem;background:hsl({{ reply.sender_name|length|add:200 }},55%,50%);" title="{{ reply.sender_name }}">
+                                    {{ reply.sender_name|make_list|first|upper }}
+                                </div>
+                                {% endif %}
                                 <div class="fb-comment-body">
-                                    <div class="fb-comment-bubble {% if reply.visibility_status == 'hidden' %}hidden-c{% endif %}">
-                                        <div class="fb-comment-name">{{ reply.sender_name }}</div>
+                                    <div class="fb-comment-bubble {% if reply.visibility_status == 'hidden' %}hidden-c{% endif %}"
+                                         {% if reply.sender_name|lower == page_name|lower %}style="background:#e7f3ff;border-left:3px solid #1877f2;"{% endif %}>
+                                        <div class="fb-comment-name" {% if reply.sender_name|lower == page_name|lower %}style="color:#1877f2;"{% endif %}>
+                                            {{ reply.sender_name }}
+                                            {% if reply.sender_name|lower == page_name|lower %}
+                                            <span style="font-size:.65rem;font-weight:600;color:#7c3aed;margin-left:4px;"
+                                                  title="Auto-reply by Trendy CRM">⚡ Auto</span>
+                                            {% endif %}
+                                        </div>
                                         <div class="fb-comment-text">{{ reply.message }}</div>
                                     </div>
                                     <div class="fb-comment-meta">
@@ -1045,6 +1068,36 @@ function fbToggleReply(pk) {
         if (inp) inp.focus();
     }
 }
+
+// ── Fire Comment Automations ──────────────────────
+function fbFireAuto(commentId, btn) {
+    if (!confirm('Fire automations on this comment?')) return;
+    btn.disabled = true;
+    
+    fetch('/trendy-crm/social/comment/' + commentId + '/fire-automation/', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': '{{ csrf_token }}'
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        btn.disabled = false;
+        if (data.status === 'ok') {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert(data.message || 'Error firing automations.');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        btn.disabled = false;
+        alert('Network error.');
+    });
+}
+
 
 // ── Composer: post top-level comment ─────────────
 function fbComposerSubmit(postId) {

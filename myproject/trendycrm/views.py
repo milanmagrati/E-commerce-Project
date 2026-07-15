@@ -1099,6 +1099,7 @@ def crm_social_posts(request):
     integrations = CRMIntegration.objects.filter(channel_type__in=['facebook', 'instagram'], status='connected')
     for integration in integrations:
         sync_meta_posts(integration)
+        _backfill_facebook_user_names(integration)
         
     post_filter = request.GET.get('post_filter', 'all')
     if post_filter == 'follow_up':
@@ -1419,13 +1420,66 @@ def _check_comment_automations(integration, comment_obj):
 
         if matched:
             try:
+                page_name = integration.parsed_name or integration.account_name
+
                 # 1. Public reply on the comment
                 if auto.public_reply:
-                    reply_to_meta_comment(integration, comment_meta_id, auto.public_reply)
+                    success, new_fb_id = reply_to_meta_comment(integration, comment_meta_id, auto.public_reply)
+                    if success:
+                        stable_id = new_fb_id if new_fb_id else f"auto_{auto.pk}_{comment_meta_id}"
+                        CRMSocialComment.objects.get_or_create(
+                            meta_comment_id=stable_id,
+                            defaults={
+                                'post': comment_obj.post,
+                                'parent_comment': comment_obj,
+                                'sender_name': page_name,
+                                'message': auto.public_reply,
+                                'created_time': timezone.now(),
+                            }
+                        )
+                        logger.info(f"Auto-reply posted | rule='{auto.name}' | fb_id={stable_id} | parent={comment_meta_id}")
+                    else:
+                        logger.error(f"Auto-reply FAILED to post to Facebook | rule='{auto.name}' | comment={comment_meta_id}")
 
                 # 2. Optional private DM
-                if auto.send_dm and auto.dm_message and sender_id:
-                    send_meta_message(integration, sender_id, auto.dm_message)
+                if auto.send_dm and auto.dm_message:
+                    from .meta_sync import reply_to_meta_comment_privately
+                    try:
+                        dm_success = reply_to_meta_comment_privately(integration, comment_meta_id, auto.dm_message)
+                        if dm_success:
+                            logger.info(f"Private Reply DM sent | rule='{auto.name}' | comment={comment_meta_id}")
+                            contact_name = comment_obj.sender_name or 'Facebook User'
+                            contact_meta_id = sender_id if sender_id else f"commenter_{comment_meta_id}"
+                            
+                            contact, _ = CRMContact.objects.get_or_create(
+                                meta_id=contact_meta_id,
+                                defaults={'name': contact_name}
+                            )
+                            page_id = integration.account_name.split('(')[-1].strip(')') if '(' in integration.account_name else None
+                            conversation, _ = CRMConversation.objects.get_or_create(
+                                contact=contact,
+                                channel=integration.channel_type,
+                                account_id=page_id,
+                                defaults={
+                                    'integration': integration,
+                                    'status': 'open',
+                                    'subject': f"{integration.get_channel_type_display()} Chat"
+                                }
+                            )
+                            CRMMessage.objects.create(
+                                conversation=conversation,
+                                sender=page_name,
+                                body=auto.dm_message,
+                                is_outbound=True,
+                                created_at=timezone.now()
+                            )
+                            conversation.last_message = auto.dm_message
+                            conversation.updated_at = timezone.now()
+                            conversation.save(update_fields=['last_message', 'updated_at'])
+                        else:
+                            logger.warning(f"Private Reply DM failed for rule '{auto.name}' on comment {comment_meta_id}")
+                    except Exception as dm_err:
+                        logger.error(f"DM exception for rule '{auto.name}': {dm_err}")
 
                 # 3. Update stats
                 auto.trigger_count += 1
@@ -1550,3 +1604,39 @@ def crm_comment_automation_get(request, pk):
         'dm_message': auto.dm_message,
         'is_active': auto.is_active,
     })
+
+
+@login_required
+@require_POST
+def crm_fire_automation_on_comment(request, comment_id):
+    comment = get_object_or_404(CRMSocialComment, pk=comment_id)
+    try:
+        _check_comment_automations(comment.post.integration, comment)
+        return JsonResponse({'status': 'ok', 'message': f'Automations fired for comment.'})
+    except Exception as e:
+        logger.error(f'crm_fire_automation_on_comment failed: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+def _backfill_facebook_user_names(integration):
+    if not integration or not integration.access_token:
+        return
+    comments = CRMSocialComment.objects.filter(
+        post__integration=integration,
+        sender_name='Facebook User'
+    ).exclude(sender_id__isnull=True).exclude(sender_id='')[:20]
+    
+    if not comments:
+        return
+        
+    from trendycrm.meta_sync import GRAPH_API_VERSION
+    for comment in comments:
+        try:
+            url = f'https://graph.facebook.com/{GRAPH_API_VERSION}/{comment.sender_id}?fields=name&access_token={integration.access_token}'
+            resp = requests.get(url, timeout=5)
+            if resp.status_code == 200:
+                name = resp.json().get('name')
+                if name:
+                    comment.sender_name = name
+                    comment.save(update_fields=['sender_name'])
+        except Exception as e:
+            logger.error(f'Failed backfill name for {comment.sender_id}: {e}')
