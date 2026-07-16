@@ -1133,6 +1133,10 @@ def crm_social_posts(request):
     post_filter = request.GET.get('post_filter', 'all')
     if post_filter == 'follow_up':
         posts = CRMSocialPost.objects.filter(is_starred=True)
+    elif post_filter == 'unread':
+        posts = CRMSocialPost.objects.filter(is_read=False)
+    elif post_filter == 'read':
+        posts = CRMSocialPost.objects.filter(is_read=True)
     else:
         posts = CRMSocialPost.objects.all()
     
@@ -1169,6 +1173,10 @@ def crm_social_posts(request):
     
     if selected_post_id:
         active_post = get_object_or_404(CRMSocialPost, pk=selected_post_id)
+        if not active_post.is_read:
+            active_post.is_read = True
+            active_post.save(update_fields=['is_read'])
+            
         sync_meta_comments(active_post)
         
         # Simple sorting and filtering

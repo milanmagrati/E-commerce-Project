@@ -657,6 +657,10 @@
         <div class="fb-left-tabs">
             <a href="?post_filter=all{% if active_post %}&post_id={{ active_post.pk }}{% endif %}{% for p in page_filters %}{% if p != 'all' %}&page_filter={{ p }}{% endif %}{% endfor %}" 
                class="fb-tab {% if current_post_filter == 'all' %}on{% endif %}">All comments</a>
+            <a href="?post_filter=unread{% if active_post %}&post_id={{ active_post.pk }}{% endif %}{% for p in page_filters %}{% if p != 'all' %}&page_filter={{ p }}{% endif %}{% endfor %}" 
+               class="fb-tab {% if current_post_filter == 'unread' %}on{% endif %}">Unread</a>
+            <a href="?post_filter=read{% if active_post %}&post_id={{ active_post.pk }}{% endif %}{% for p in page_filters %}{% if p != 'all' %}&page_filter={{ p }}{% endif %}{% endfor %}" 
+               class="fb-tab {% if current_post_filter == 'read' %}on{% endif %}">Read</a>
             <a href="?post_filter=follow_up{% if active_post %}&post_id={{ active_post.pk }}{% endif %}{% for p in page_filters %}{% if p != 'all' %}&page_filter={{ p }}{% endif %}{% endfor %}" 
                class="fb-tab {% if current_post_filter == 'follow_up' %}on{% endif %}">Follow up</a>
         </div>
@@ -720,7 +724,7 @@
                         </button>
                     </div>
                     
-                    {% if post.comments_count > 0 %}
+                    {% if not post.is_read %}
                     <div class="fb-unread-dot"></div>
                     {% endif %}
                 </div>

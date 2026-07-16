@@ -355,6 +355,11 @@ def _process_comment(post, comment_data, parent_id):
             obj.sender_name = sender_name
         obj.save()
     else:
+        # Mark post as unread if this is a new comment from someone else
+        if not sender_id or str(sender_id) != str(post.integration.parsed_id):
+            post.is_read = False
+            post.save(update_fields=['is_read'])
+
         # NEW top-level comment → trigger the Comment-to-DM sales funnel
         # (Only for root comments, not replies to our own page comments)
         if not parent_id:
