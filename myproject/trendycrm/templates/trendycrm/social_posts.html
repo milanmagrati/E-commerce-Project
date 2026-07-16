@@ -705,7 +705,7 @@
                 </div>
 
                 <div class="fb-post-item-meta" style="display:flex; flex-direction:column; align-items:flex-end;">
-                    <div style="white-space:nowrap;">{{ post.created_time|date:"M j, H:i" }}</div>
+                    <div style="white-space:nowrap;">{{ post.latest_comment_time|date:"M j, h:i A" }}</div>
                     
                     <div style="display:flex; align-items:center; margin-top:.2rem;">
                         <button class="fb-heart-btn {% if post.is_reviewed %}on{% endif %}" 

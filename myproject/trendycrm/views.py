@@ -138,6 +138,20 @@ def crm_conversations(request):
     if page_filter:
         conversations = conversations.filter(integration_id=page_filter)
         
+    read_status = request.GET.get('read_status')
+    if read_status == 'unread':
+        conversations = conversations.filter(is_read=False)
+    elif read_status == 'read':
+        conversations = conversations.filter(is_read=True)
+        
+    search_query = request.GET.get('q', '').strip()
+    if search_query:
+        from django.db.models import Q
+        conversations = conversations.filter(
+            Q(contact__name__icontains=search_query) | 
+            Q(messages__body__icontains=search_query)
+        ).distinct()
+        
     connected_integrations = CRMIntegration.objects.filter(status='connected')
 
     active_conv = None
@@ -146,6 +160,9 @@ def crm_conversations(request):
     if conv_id:
         active_conv = CRMConversation.objects.filter(pk=conv_id).first()
         if active_conv:
+            if not active_conv.is_read:
+                active_conv.is_read = True
+                active_conv.save(update_fields=['is_read'])
             messages = active_conv.messages.all()
         else:
             from django.shortcuts import redirect
@@ -160,6 +177,8 @@ def crm_conversations(request):
         'contacts': contacts,
         'connected_integrations': connected_integrations,
         'page_filter': int(page_filter) if page_filter and page_filter.isdigit() else None,
+        'read_status': read_status,
+        'search_query': search_query,
         'crm_section': 'conversations',
     }
     return render(request, 'trendycrm/conversations.html', context)
@@ -188,6 +207,13 @@ def crm_conversations_ajax(request):
             except Exception as e:
                 logger.error(f"Ajax auto-sync failed: {e}")
 
+    # Re-fetch the conversation because sync_meta_conversations might have updated it
+    active_conv.refresh_from_db()
+    
+    if not active_conv.is_read:
+        active_conv.is_read = True
+        active_conv.save(update_fields=['is_read'])
+
     messages = active_conv.messages.all()
     
     context = {
@@ -210,7 +236,8 @@ def crm_send_message(request, conv_id):
         )
         conv.last_message = body
         conv.updated_at = msg.created_at
-        conv.save(update_fields=['last_message', 'updated_at'])
+        conv.is_read = True
+        conv.save(update_fields=['last_message', 'updated_at', 'is_read'])
         
         # Send to Meta if applicable
         if conv.channel in ['facebook', 'instagram'] and conv.contact and conv.contact.meta_id:
@@ -267,6 +294,7 @@ def crm_create_conversation(request):
                 conv.integration = integration
             conv.assigned_to = request.user
             conv.last_message = first_message
+            conv.is_read = True
             conv.save()
         else:
             conv = CRMConversation.objects.create(
@@ -285,7 +313,8 @@ def crm_create_conversation(request):
                 is_outbound=True
             )
             conv.updated_at = msg.created_at
-            conv.save(update_fields=['updated_at'])
+            conv.is_read = True
+            conv.save(update_fields=['updated_at', 'is_read'])
             
         return redirect(f"{reverse('trendycrm:conversations')}?id={conv.pk}")
     
@@ -1116,6 +1145,23 @@ def crm_social_posts(request):
                 
     if valid_page_ids:
         posts = posts.filter(integration_id__in=valid_page_ids)
+        
+    from django.db.models import OuterRef, Subquery
+    from django.db.models.functions import Coalesce
+    
+    latest_comment = CRMSocialComment.objects.filter(
+        post=OuterRef('pk')
+    ).exclude(
+        sender_name__isnull=True
+    ).exclude(
+        sender_name=''
+    ).order_by('-created_time')
+    
+    posts = posts.annotate(
+        annotated_latest_time=Coalesce(Subquery(latest_comment.values('created_time')[:1]), 'created_time'),
+        annotated_latest_sender=Subquery(latest_comment.values('sender_name')[:1]),
+        annotated_latest_message=Subquery(latest_comment.values('message')[:1])
+    ).order_by('-annotated_latest_time')
     
     selected_post_id = request.GET.get('post_id')
     active_post = None

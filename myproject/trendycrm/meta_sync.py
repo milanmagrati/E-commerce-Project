@@ -110,6 +110,9 @@ def _process_meta_conversation(integration, conv_data):
         if not body:
             continue
             
+        if body.startswith("You are responding to a user comment to a post on your Page."):
+            continue
+            
         sender_name = msg.get('from', {}).get('name', 'Unknown')
         is_outbound = (sender_name == our_page_name)
         
@@ -155,7 +158,9 @@ def _process_meta_conversation(integration, conv_data):
             # Only update updated_at if the new message is newer than current updated_at or if it doesn't exist
             if not conversation.updated_at or created_at > conversation.updated_at:
                 conversation.updated_at = created_at
-            conversation.save(update_fields=['last_message', 'updated_at'])
+            if not is_outbound:
+                conversation.is_read = False
+            conversation.save(update_fields=['last_message', 'updated_at', 'is_read'])
 
 def send_meta_message(integration, recipient_id, message_text):
     """
@@ -189,7 +194,7 @@ def sync_meta_posts(integration):
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{page_id}/posts" if page_id else f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/posts"
     params = {
         'access_token': integration.access_token,
-        'fields': 'id,message,created_time,full_picture,comments.summary(true),reactions.type(LIKE).limit(0).summary(total_count).as(like),reactions.type(LOVE).limit(0).summary(total_count).as(love),reactions.type(HAHA).limit(0).summary(total_count).as(haha),reactions.type(WOW).limit(0).summary(total_count).as(wow),reactions.type(SAD).limit(0).summary(total_count).as(sad),reactions.type(ANGRY).limit(0).summary(total_count).as(angry),reactions.type(CARE).limit(0).summary(total_count).as(care)',
+        'fields': 'id,message,created_time,full_picture,comments.limit(10).summary(true).order(reverse_chronological){id,from,message,created_time},reactions.type(LIKE).limit(0).summary(total_count).as(like),reactions.type(LOVE).limit(0).summary(total_count).as(love),reactions.type(HAHA).limit(0).summary(total_count).as(haha),reactions.type(WOW).limit(0).summary(total_count).as(wow),reactions.type(SAD).limit(0).summary(total_count).as(sad),reactions.type(ANGRY).limit(0).summary(total_count).as(angry),reactions.type(CARE).limit(0).summary(total_count).as(care)',
         'limit': 25
     }
     
@@ -220,7 +225,7 @@ def sync_meta_posts(integration):
                     
                 likes_count = sum(v for k, v in reactions_data.items() if k != 'my_reaction' and isinstance(v, (int, float)))
                 
-                CRMSocialPost.objects.update_or_create(
+                post_obj, _ = CRMSocialPost.objects.update_or_create(
                     meta_post_id=p.get('id'),
                     defaults={
                         'integration': integration,
@@ -232,6 +237,10 @@ def sync_meta_posts(integration):
                         'comments_count': comments_count
                     }
                 )
+                
+                recent_comments = p.get('comments', {}).get('data', [])
+                for c in recent_comments:
+                    _process_comment(post_obj, c, None)
     except Exception as e:
         logger.exception("Failed to sync meta posts")
 

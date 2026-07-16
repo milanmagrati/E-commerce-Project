@@ -64,6 +64,7 @@ class CRMConversation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(default=timezone.now)
     last_message = models.TextField(blank=True, null=True)
+    is_read = models.BooleanField(default=True)
 
     def __str__(self):
         return f"Conversation #{self.pk}"
@@ -336,11 +337,27 @@ class CRMSocialPost(models.Model):
 
     @property
     def latest_comment_snippet(self):
+        if hasattr(self, 'annotated_latest_sender') and hasattr(self, 'annotated_latest_message'):
+            if self.annotated_latest_sender:
+                msg = self.annotated_latest_message or ""
+                return f"{self.annotated_latest_sender} - {msg}"
+            return ""
+            
         latest = self.comments.exclude(sender_name__isnull=True).exclude(sender_name='').order_by('-created_time').first()
         if latest:
             msg = latest.message or ""
             return f"{latest.sender_name} - {msg}"
         return ""
+
+    @property
+    def latest_comment_time(self):
+        if hasattr(self, 'annotated_latest_time') and self.annotated_latest_time:
+            return self.annotated_latest_time
+            
+        latest = self.comments.exclude(sender_name__isnull=True).exclude(sender_name='').order_by('-created_time').first()
+        if latest and latest.created_time:
+            return latest.created_time
+        return self.created_time
 
     def __str__(self):
         return f"Post {self.meta_post_id}"
