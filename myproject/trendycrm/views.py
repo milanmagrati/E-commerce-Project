@@ -71,6 +71,8 @@ def crm_home(request):
     total_conversations = CRMConversation.objects.count()
     connected_channels = integrations.filter(status='connected').count()
 
+    any_chatbot_active = CRMChatbotConfig.objects.filter(is_active=True).exists()
+    
     setup_steps = [
         {
             'icon': 'fa-plug',
@@ -117,8 +119,8 @@ def crm_home(request):
             'title': 'Turn on Trendy AI',
             'desc': 'Master switch. AI starts handling new conversations on connected channels.',
             'action_label': 'Open AI settings',
-            'action_url': 'trendycrm:chatbot',
-            'done': chatbot.is_active,
+            'action_url': 'trendycrm:chatbot_list',
+            'done': any_chatbot_active,
         },
     ]
     done_count = sum(1 for s in setup_steps if s['done'])
@@ -127,7 +129,6 @@ def crm_home(request):
         'setup_steps': setup_steps,
         'done_count': done_count,
         'total_steps': len(setup_steps),
-        'chatbot': chatbot,
         'total_contacts': total_contacts,
         'open_tickets': open_tickets,
         'total_conversations': total_conversations,
