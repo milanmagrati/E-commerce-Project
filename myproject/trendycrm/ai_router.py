@@ -254,8 +254,7 @@ def route_message(
         gemini_key = config['gemini_api_key']
 
         if chatbot_config is None:
-            from .models import CRMChatbotConfig
-            chatbot_config, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+            return {'success': False, 'error': 'Chatbot configuration is missing or inactive'}
 
         page_profile = _get_page_profile(integration) if integration else None
         if page_profile:
@@ -471,8 +470,7 @@ def process_comment_to_dm(comment, integration, chatbot_config=None):
 
     try:
         if chatbot_config is None:
-            from .models import CRMChatbotConfig
-            chatbot_config, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+            return {'error': 'Chatbot configuration is missing or inactive'}
 
         page_profile = _get_page_profile(integration)
 

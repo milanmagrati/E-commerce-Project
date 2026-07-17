@@ -209,6 +209,7 @@ class CRMChatbotConfig(models.Model):
 
 class CRMCreditLog(models.Model):
     """Tracks AI credit usage for the credit history modal."""
+    chatbot_config = models.ForeignKey(CRMChatbotConfig, on_delete=models.CASCADE, related_name='credit_logs', null=True)
     ACTION_CHOICES = [
         ('auto_reply', 'Auto Reply'),
         ('intent_classify', 'Intent Classification'),
@@ -292,6 +293,12 @@ class CRMIntegration(models.Model):
     access_token = models.TextField(blank=True, null=True)
     connected_at = models.DateTimeField(null=True, blank=True)
     meta = models.JSONField(default=dict)
+    chatbot_config = models.ForeignKey(
+        'CRMChatbotConfig', 
+        on_delete=models.SET_NULL, 
+        null=True, blank=True, 
+        related_name='integrations'
+    )
 
     @property
     def parsed_name(self):

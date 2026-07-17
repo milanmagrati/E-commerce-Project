@@ -494,10 +494,14 @@ def process_incoming_webhook_message(integration, contact, conversation, message
 
     try:
         from .models import CRMChatbotConfig, CRMMessage
-        chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+        chatbot = integration.chatbot_config
+
+        if not chatbot:
+            logger.info(f"No chatbot assigned to channel account: {integration.account_name or integration.channel_type}")
+            return
 
         if not chatbot.is_active:
-            logger.info("Chatbot is inactive — skipping AI auto-reply")
+            logger.info(f"Chatbot '{chatbot.name}' is inactive — skipping AI auto-reply")
             return
 
         # Check that this channel account is enabled for auto-reply
@@ -574,10 +578,14 @@ def trigger_comment_to_dm(comment, integration):
     try:
         from .ai_router import process_comment_to_dm
         from .models import CRMChatbotConfig
-        chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+        chatbot = integration.chatbot_config
+        
+        if not chatbot:
+            logger.info("No chatbot assigned to channel account - skipping Comment-to-DM funnel")
+            return
 
         if not chatbot.is_active:
-            logger.info("Chatbot is inactive — skipping Comment-to-DM funnel")
+            logger.info(f"Chatbot '{chatbot.name}' is inactive — skipping Comment-to-DM funnel")
             return
 
         result = process_comment_to_dm(comment, integration, chatbot_config=chatbot)

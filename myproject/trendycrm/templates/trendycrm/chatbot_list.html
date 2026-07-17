@@ -1,0 +1,243 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Chatbots (AI) — Trendy CRM{% endblock %}
+{% block topbar_title %}Chatbots Dashboard{% endblock %}
+
+{% block extra_style %}
+    .cb-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+    }
+    .cb-card {
+        background: #fff;
+        border-radius: 12px;
+        border: 1px solid rgba(124,58,237,.1);
+        padding: 1.5rem;
+        box-shadow: 0 4px 15px rgba(0,0,0,.03);
+        transition: transform .2s, box-shadow .2s;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+    .cb-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(124,58,237,.08);
+        border-color: rgba(124,58,237,.3);
+    }
+    .cb-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+    }
+    .cb-title {
+        font-weight: 700;
+        font-size: 1.1rem;
+        color: #1e1b4b;
+    }
+    .cb-subtitle {
+        font-size: 0.85rem;
+        color: #6b7280;
+    }
+    .status-badge {
+        display: inline-flex; align-items: center; gap: .3rem;
+        font-size: .72rem; font-weight: 700; padding: 3px 10px; border-radius: 30px;
+    }
+    .status-badge.active { background:#d1fae5; color:#059669; }
+    .status-badge.paused { background:#fee2e2; color:#dc2626; }
+    .create-card {
+        background: rgba(124,58,237,.03);
+        border: 2px dashed rgba(124,58,237,.3);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        cursor: pointer;
+    }
+    .create-card:hover {
+        background: rgba(124,58,237,.06);
+        border-color: rgba(124,58,237,.5);
+    }
+    .create-icon {
+        font-size: 2rem;
+        color: #7c3aed;
+        margin-bottom: 0.5rem;
+    }
+    .create-text {
+        font-weight: 600;
+        color: #7c3aed;
+    }
+{% endblock %}
+
+{% block crm_content %}
+<div class="crm-container">
+    <div style="margin-bottom: 2rem;">
+        <h2 style="font-size: 1.4rem; font-weight: 800; color:#1e1b4b;">AI Chatbots</h2>
+        <p style="color:#6b7280; font-size:.9rem;">Manage multiple AI chatbots across different businesses and social channels.</p>
+    </div>
+
+    <div class="cb-grid">
+        {% for bot in chatbots %}
+        <a href="{% url 'trendycrm:chatbot' bot.id %}" class="cb-card">
+            <div class="cb-card-header">
+                <div>
+                    <div class="cb-title">{{ bot.business_name|default:bot.name }}</div>
+                    <div class="cb-subtitle">{{ bot.integrations.count }} connected channel(s)</div>
+                </div>
+                <div>
+                    {% if bot.is_active %}
+                        <span class="status-badge active"><i class="fas fa-circle" style="font-size:6px;"></i> Active</span>
+                    {% else %}
+                        <span class="status-badge paused"><i class="fas fa-pause-circle" style="font-size:10px;"></i> Paused</span>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div style="font-size: 0.85rem; color: #4b5563; margin-bottom: 1rem; line-height: 1.4;">
+                {{ bot.about_blurb|truncatewords:15|default:"No description set." }}
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f3f4f6; padding-top: 0.75rem;">
+                <span style="font-size: 0.75rem; color: #9ca3af;"><i class="fas fa-robot"></i> {{ bot.get_ai_model_display|default:bot.ai_model }}</span>
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <span style="color: #7c3aed; font-size: 0.85rem; font-weight: 600;">Configure →</span>
+                    <button class="btn-delete-bot" onclick="event.preventDefault(); openDeleteModal('{{ bot.id }}', '{{ bot.business_name|default:bot.name|escapejs }}');" style="background:transparent; border:none; color:#ef4444; cursor:pointer; padding:2px; font-size:1.05rem; opacity:0.7; transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'" title="Delete Chatbot"><i class="fas fa-trash-alt"></i></button>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+
+        <form action="{% url 'trendycrm:chatbot_create' %}" method="POST" style="margin:0; padding:0; display:flex;">
+            {% csrf_token %}
+            <button type="submit" class="cb-card create-card" style="width:100%; border-radius:12px; font-family:inherit; appearance:none;">
+                <div class="create-icon"><i class="fas fa-plus-circle"></i></div>
+                <div class="create-text">Add New Business</div>
+                <div class="cb-subtitle" style="margin-top: 0.25rem;">Create a new AI configuration</div>
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- ── Drag to Delete Modal ────────────────────────────────────── -->
+<div id="dragDeleteOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:9999; justify-content:center; align-items:center; backdrop-filter:blur(3px);">
+    <div style="background:#fff; width:350px; padding:2rem; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); text-align:center; position:relative;">
+        <button onclick="document.getElementById('dragDeleteOverlay').style.display='none'" style="position:absolute; top:12px; right:12px; border:none; background:transparent; font-size:1.2rem; cursor:pointer; color:#6b7280; outline:none;">&times;</button>
+        <h4 style="margin:0 0 .5rem 0; color:#1f2937; font-weight:700;">Delete Chatbot</h4>
+        <p style="font-size:.85rem; color:#ef4444; margin-bottom:1.5rem;" id="dragDeleteDesc">Are you sure you want to delete this AI? This action cannot be undone.</p>
+
+        <!-- Drag Track -->
+        <div id="dragDeleteTrack" style="width:100%; height:46px; background:#fee2e2; border-radius:30px; position:relative; overflow:hidden; border:1px solid #fecaca;">
+            <!-- Progress Fill -->
+            <div id="dragDeleteFill" style="position:absolute; left:0; top:0; height:100%; width:0; background:linear-gradient(90deg, #ef4444, #dc2626); border-radius:30px 0 0 30px; pointer-events:none;"></div>
+            <!-- Thumb -->
+            <div id="dragDeleteThumb" style="width:40px; height:40px; background:#fff; border-radius:50%; position:absolute; top:2px; left:2px; box-shadow:0 2px 5px rgba(0,0,0,0.15); cursor:grab; display:flex; justify-content:center; align-items:center; color:#dc2626; font-size:1rem; user-select:none; z-index:2;">
+                <i class="fas fa-trash"></i>
+            </div>
+            <!-- Track Text -->
+            <div style="position:absolute; width:100%; height:100%; line-height:46px; text-align:center; color:#b91c1c; font-size:.8rem; font-weight:600; z-index:1; pointer-events:none;">Slide to delete</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let dragDeleteBotId = null;
+    let isDeleting = false;
+    let startX = 0;
+    
+    const dragDeleteTrack = document.getElementById('dragDeleteTrack');
+    const dragDeleteFill = document.getElementById('dragDeleteFill');
+    const dragDeleteThumb = document.getElementById('dragDeleteThumb');
+
+    function openDeleteModal(botId, botName) {
+        dragDeleteBotId = botId;
+        document.getElementById('dragDeleteDesc').innerHTML = `Are you sure you want to delete <strong>${botName}</strong>?<br>This action cannot be undone.`;
+        resetDeleteDrag();
+        document.getElementById('dragDeleteOverlay').style.display = 'flex';
+    }
+
+    function resetDeleteDrag() {
+        dragDeleteThumb.style.left = '2px';
+        dragDeleteThumb.style.transition = 'left 0.3s ease';
+        dragDeleteFill.style.width = '0px';
+        dragDeleteFill.style.transition = 'width 0.3s ease';
+        dragDeleteThumb.innerHTML = '<i class="fas fa-trash"></i>';
+        dragDeleteThumb.style.color = '#dc2626';
+    }
+
+    function handleDeleteDragStart(e) {
+        isDeleting = true;
+        startX = e.type.includes('mouse') ? e.pageX : e.touches[0].pageX;
+        dragDeleteThumb.style.transition = 'none';
+        dragDeleteFill.style.transition = 'none';
+        dragDeleteThumb.style.cursor = 'grabbing';
+    }
+
+    function handleDeleteDragMove(e) {
+        if (!isDeleting) return;
+        let currentX = e.type.includes('mouse') ? e.pageX : e.touches[0].pageX;
+        let diff = currentX - startX;
+        let newLeft = 2 + diff;
+        let maxLeft = dragDeleteTrack.offsetWidth - dragDeleteThumb.offsetWidth - 2;
+        
+        if (newLeft < 2) newLeft = 2;
+        if (newLeft > maxLeft) newLeft = maxLeft;
+        
+        dragDeleteThumb.style.left = newLeft + 'px';
+        dragDeleteFill.style.width = (newLeft + 20) + 'px'; 
+    }
+
+    async function handleDeleteDragEnd(e) {
+        if (!isDeleting) return;
+        isDeleting = false;
+        dragDeleteThumb.style.cursor = 'grab';
+        
+        let currentLeft = parseInt(dragDeleteThumb.style.left);
+        let maxLeft = dragDeleteTrack.offsetWidth - dragDeleteThumb.offsetWidth - 2;
+        
+        if (currentLeft >= maxLeft * 0.95) {
+            // Validation Success
+            dragDeleteThumb.style.left = maxLeft + 'px';
+            dragDeleteThumb.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            dragDeleteThumb.style.color = '#fff';
+            dragDeleteFill.style.width = '100%';
+            
+            try {
+                let csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+                if (!csrf) {
+                    const match = document.cookie.match('(^|;) ?csrftoken=([^;]*)(;|$)');
+                    csrf = match ? match[2] : '';
+                }
+
+                let url = "{% url 'trendycrm:chatbot_delete' 999999 %}".replace('999999', dragDeleteBotId);
+                let response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Error deleting chatbot.');
+                    resetDeleteDrag();
+                }
+            } catch (err) {
+                alert('Network error.');
+                resetDeleteDrag();
+            }
+        } else {
+            // Snap back
+            resetDeleteDrag();
+        }
+    }
+
+    dragDeleteThumb.addEventListener('mousedown', handleDeleteDragStart);
+    dragDeleteThumb.addEventListener('touchstart', handleDeleteDragStart, {passive:true});
+    document.addEventListener('mousemove', handleDeleteDragMove);
+    document.addEventListener('touchmove', handleDeleteDragMove, {passive:true});
+    document.addEventListener('mouseup', handleDeleteDragEnd);
+    document.addEventListener('touchend', handleDeleteDragEnd);
+</script>
+{% endblock %}

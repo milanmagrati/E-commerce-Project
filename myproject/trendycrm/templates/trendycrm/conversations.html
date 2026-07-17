@@ -280,13 +280,56 @@
 <div class="conv-layout">
     <!-- Left Panel -->
     <div class="conv-panel-left">
-        <div class="conv-panel-header">
+        <div class="conv-panel-header" id="convHeaderRow" style="{% if search_query %}display:none;{% else %}display:flex;{% endif %}">
             <div>
                 <div class="conv-panel-header-title">Inbox</div>
                 <div style="font-size:0.73rem;color:var(--crm-text-muted);">{{ request.user.get_full_name|default:request.user.username }}</div>
             </div>
-            <div style="display:flex; gap: 0.75rem; align-items:center;">
+            <div style="display:flex; gap: 0.5rem; align-items:center;">
+                <!-- Search Toggle Button -->
+                <button type="button" onclick="toggleSearchUI()" class="btn btn-sm no-caret" style="background:#f1f5f9; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; color:var(--crm-text-muted); border:none; transition:all 0.2s;" title="Search">
+                    <i class="fas fa-search" style="font-size:0.75rem;"></i>
+                </button>
 
+                <!-- Label Filter Dropdown -->
+                <div class="dropdown">
+                    <button type="button" class="btn btn-sm no-caret dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" style="background: {% if label_filter %}rgba(124,58,237,0.1){% else %}#f1f5f9{% endif %}; border-radius: 50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; color: {% if label_filter %}var(--crm-primary){% else %}var(--crm-text-muted){% endif %}; border: none;" title="Filter by label">
+                        <i class="fas fa-tag" style="font-size:0.75rem;"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow" id="labelFilterDropdownMenu" style="border:none;border-radius:12px;padding:0.75rem;min-width:240px;font-size:0.85rem;margin-top:0.5rem;">
+                        <li style="font-weight:600;font-size:0.75rem;color:var(--crm-text-muted);margin-bottom:0.5rem;padding:0 0.5rem;">Filter by label</li>
+                        
+                        {% if label_filter %}
+                            <li>
+                                <a class="dropdown-item d-flex align-items-center gap-2" href="?{% if page_filter %}page_filter={{ page_filter }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.2rem;color:#dc3545;">
+                                    <i class="fas fa-times" style="width:16px;text-align:center;"></i> Clear filter
+                                </a>
+                            </li>
+                        {% endif %}
+
+                        {% if all_labels %}
+                            {% for label in all_labels %}
+                                <li>
+                                    <a class="dropdown-item d-flex align-items-center gap-2 {% if label_filter == label.pk %}active{% endif %}" href="?label_filter={{ label.pk }}{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.2rem;{% if label_filter == label.pk %}background:var(--crm-active-bg);color:var(--crm-primary);{% endif %}">
+                                        <span style="width:12px;height:12px;border-radius:50%;background:{{ label.color_hex }};display:inline-block;"></span>
+                                        <span style="font-weight:500;">{{ label.name }}</span>
+                                    </a>
+                                </li>
+                            {% endfor %}
+                        {% else %}
+                            <li id="noLabelsMsg" style="font-size:0.8rem;color:var(--crm-text-muted);padding:0.5rem;text-align:center;">No labels yet. Create one below.</li>
+                        {% endif %}
+                        
+                        <li><hr class="dropdown-divider" style="margin:0.5rem 0;"></li>
+                        <li>
+                            <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#newLabelGlobalModal" style="color:var(--crm-primary);font-weight:600;display:flex;align-items:center;gap:0.4rem;padding:0.4rem 0.5rem;border-radius:8px;">
+                                <i class="fas fa-plus"></i> New label
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Account Filter Dropdown -->
                 <div class="dropdown">
                     <button type="button" class="dropdown-toggle no-caret" data-bs-toggle="dropdown" aria-expanded="false" style="background:{% if page_filter %}rgba(37,99,235,0.1){% else %}rgba(124,58,237,0.1){% endif %};border:none;color:var(--crm-primary);cursor:pointer;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;transition:all 0.2s;" title="Filter Inbox">
                         {% if not page_filter %}
@@ -308,14 +351,14 @@
                     <ul class="dropdown-menu dropdown-menu-end shadow" style="border:none;border-radius:12px;padding:0.5rem;min-width:240px;font-size:0.85rem;margin-top:0.5rem;">
                         <li><h6 class="dropdown-header" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--crm-text-muted);margin-bottom:0.25rem;">Filter by account</h6></li>
                         <li>
-                            <a class="dropdown-item d-flex align-items-center gap-2 {% if not page_filter %}active{% endif %}" href="?{% if active_conv %}id={{ active_conv.pk }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}" style="border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.2rem;">
+                            <a class="dropdown-item d-flex align-items-center gap-2 {% if not page_filter %}active{% endif %}" href="?{% if active_conv %}id={{ active_conv.pk }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.2rem;">
                                 <div style="width:20px;display:flex;justify-content:center;"><img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:16px;height:16px;filter:grayscale(100%);opacity:0.6;"></div>
                                 <span style="font-weight:600;font-size:0.85rem;">All Accounts</span>
                             </a>
                         </li>
                         {% for integ in connected_integrations %}
                         <li>
-                            <a class="dropdown-item d-flex align-items-center gap-2 {% if page_filter == integ.pk %}active{% endif %}" href="?page_filter={{ integ.pk }}{% if active_conv %}&id={{ active_conv.pk }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}" style="border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.2rem;">
+                            <a class="dropdown-item d-flex align-items-center gap-2 {% if page_filter == integ.pk %}active{% endif %}" href="?page_filter={{ integ.pk }}{% if active_conv %}&id={{ active_conv.pk }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.2rem;">
                                 <div style="width:20px;display:flex;justify-content:center;">
                                     {% if integ.channel_type == 'facebook' %}
                                         <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:16px;height:16px;">
@@ -332,31 +375,46 @@
             </div>
         </div>
         
-        <div style="padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--crm-border);">
-            <form method="GET" style="display:flex; align-items:center; background:#f1f5f9; border-radius:8px; padding:0.2rem 0.5rem; border: 1px solid transparent; transition: all 0.2s;" onfocusin="this.style.border='1px solid var(--crm-primary)'; this.style.background='#fff';" onfocusout="this.style.border='1px solid transparent'; this.style.background='#f1f5f9';">
-                <i class="fas fa-search" style="color:var(--crm-text-muted); font-size:0.8rem; margin-left: 0.2rem;"></i>
-                <input type="text" name="q" placeholder="Search conversations..." value="{{ search_query|default:'' }}" style="border:none; background:transparent; width:100%; outline:none; font-size:0.8rem; padding:0.3rem 0.5rem;">
-                {% if search_query %}
-                <a href="?{% if page_filter %}page_filter={{ page_filter }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}" style="color:var(--crm-text-muted); text-decoration:none; padding: 0.2rem 0.4rem; font-size:0.85rem; transition: color 0.2s;" onmouseover="this.style.color='var(--crm-primary)'" onmouseout="this.style.color='var(--crm-text-muted)'" title="Clear search">
-                    <i class="fas fa-times-circle"></i>
-                </a>
-                {% endif %}
-                {% if page_filter %}<input type="hidden" name="page_filter" value="{{ page_filter }}">{% endif %}
-                {% if read_status %}<input type="hidden" name="read_status" value="{{ read_status }}">{% endif %}
-            </form>
+        <!-- Search UI Row -->
+        <div id="convSearchRow" style="padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--crm-border); background: #fff; display:none;">
+            <div style="display:flex; gap:0.5rem; align-items:flex-start;">
+                <form method="GET" style="flex:1; margin:0;" id="searchForm">
+                    <div style="display:flex; align-items:center; border: 1.5px solid var(--crm-primary); border-radius:6px; padding:0; transition: all 0.2s; box-shadow: 0 0 0 2px rgba(124,58,237,0.1);">
+                        <i class="fas fa-search" style="color:var(--crm-text-muted); font-size:0.9rem; padding-left: 0.5rem;"></i>
+                        <input type="text" name="q" placeholder="Search name, phone, order #..." value="{{ search_query|default:'' }}" style="border:none; background:transparent; width:100%; outline:none; font-size:0.85rem; padding:0.4rem 0.5rem; font-family: 'Inter', sans-serif;">
+                        {% if search_query %}
+                        <a href="?{% if page_filter %}page_filter={{ page_filter }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="color:var(--crm-text-muted); text-decoration:none; padding: 0.2rem 0.5rem; font-size:0.9rem;" title="Clear input">
+                            <i class="fas fa-times-circle"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% if page_filter %}<input type="hidden" name="page_filter" value="{{ page_filter }}">{% endif %}
+                    {% if read_status %}<input type="hidden" name="read_status" value="{{ read_status }}">{% endif %}
+                    {% if label_filter %}<input type="hidden" name="label_filter" value="{{ label_filter }}">{% endif %}
+                    
+                    <div style="margin-top: 0.4rem; display:flex; gap: 0.3rem; background: #f8fafc; padding: 0.2rem; border-radius: 6px; width: fit-content;">
+                        <button type="submit" name="search_type" value="chats" class="btn btn-sm" style="{% if search_type == 'chats' or not search_type %}background:#fff; color:var(--crm-primary); font-weight:600; box-shadow: 0 1px 2px rgba(0,0,0,0.05);{% else %}background:transparent; border:none; color:var(--crm-text-muted); font-weight:500;{% endif %} border-radius:4px; font-size:0.75rem; padding: 0.2rem 0.6rem; transition: all 0.2s; border: none;">Chats</button>
+                        <button type="submit" name="search_type" value="messages" class="btn btn-sm" style="{% if search_type == 'messages' %}background:#fff; color:var(--crm-primary); font-weight:600; box-shadow: 0 1px 2px rgba(0,0,0,0.05);{% else %}background:transparent; border:none; color:var(--crm-text-muted); font-weight:500;{% endif %} border-radius:4px; font-size:0.75rem; padding: 0.2rem 0.6rem; transition: all 0.2s; border: none;">Messages</button>
+                    </div>
+                </form>
+                
+                <button type="button" class="btn btn-sm" style="background: #f1f5f9; border-radius: 6px; width: 32px; height: 32px; display:flex; align-items:center; justify-content:center; color: var(--crm-text-muted); border: 1px solid var(--crm-border); font-size: 1rem; transition: all 0.2s; padding:0;" onclick="toggleSearchUI(true)">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
         </div>
 
 
         <div style="padding:0.4rem 0.75rem;border-bottom:1px solid var(--crm-border); display:flex; gap:0.5rem;">
-            <a href="?{% if page_filter %}page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if not read_status %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">All</a>
-            <a href="?read_status=unread{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if read_status == 'unread' %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">Unread</a>
-            <a href="?read_status=read{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if read_status == 'read' %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">Read</a>
+            <a href="?{% if page_filter %}page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if not read_status %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">All</a>
+            <a href="?read_status=unread{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if read_status == 'unread' %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">Unread</a>
+            <a href="?read_status=read{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if read_status == 'read' %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">Read</a>
         </div>
 
         <div class="conv-list">
             {% if conversations %}
                 {% for conv in conversations %}
-                <div onclick="if(!event.target.closest('.dropdown') && !event.target.closest('a')){ window.location.href='?id={{ conv.pk }}{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}'; }" class="conv-item {% if active_conv and active_conv.pk == conv.pk %}active{% endif %}">
+                <div onclick="if(!event.target.closest('.dropdown') && !event.target.closest('a')){ window.location.href='?id={{ conv.pk }}{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}'; }" class="conv-item {% if active_conv and active_conv.pk == conv.pk %}active{% endif %}">
                     <div class="conv-avatar">
                         {{ conv.contact.name|first|upper|default:"?" }}
                     </div>
@@ -368,7 +426,10 @@
                                 <span style="width:8px; height:8px; background:var(--crm-primary); border-radius:50%; display:inline-block; margin-left:4px; margin-bottom:1px;"></span>
                                 {% endif %}
                             </div>
-                            <div class="conv-time" style="font-size:0.7rem; color:var(--crm-text-muted);">{{ conv.updated_at|date:"h:i A" }}</div>
+                            <div class="conv-time" style="font-size:0.7rem; color:var(--crm-text-muted); text-align: right;">
+                                <div style="font-size:0.6rem; margin-bottom:0.1rem;">{{ conv.updated_at|date:"M d, Y" }}</div>
+                                <div>{{ conv.updated_at|date:"h:i A" }}</div>
+                            </div>
                         </div>
                         <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-top:0.25rem;">
                             <div style="display:flex; flex-direction:column; padding-right: 0.5rem; overflow: hidden;">
@@ -712,6 +773,32 @@
                 span.innerHTML = `${data.label.name} <i class="fas fa-times ms-1" style="cursor:pointer;opacity:0.6;" onclick="removeLabel(${data.label.id}, this)"></i>`;
                 container.appendChild(span);
                 
+                // Update the main filter dropdown on the left side instantly
+                const noLabelsMsg = document.getElementById('noLabelsMsg');
+                if (noLabelsMsg) noLabelsMsg.remove();
+                
+                const filterMenu = document.getElementById('labelFilterDropdownMenu');
+                if (filterMenu) {
+                    // Check if this label already exists in the dropdown (to prevent duplicates if they assign an existing label)
+                    const existing = filterMenu.querySelector(`a[href*="label_filter=${data.label.id}"]`);
+                    if (!existing) {
+                        const li = document.createElement('li');
+                        const url = `?label_filter=${data.label.id}{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}`;
+                        li.innerHTML = `
+                            <a class="dropdown-item d-flex align-items-center gap-2 " href="${url}" style="border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.2rem;">
+                                <span style="width:12px;height:12px;border-radius:50%;background:${data.label.color_hex};display:inline-block;"></span>
+                                <span style="font-weight:500;">${data.label.name}</span>
+                            </a>
+                        `;
+                        const divider = filterMenu.querySelector('hr.dropdown-divider');
+                        if (divider && divider.parentElement) {
+                            filterMenu.insertBefore(li, divider.parentElement);
+                        } else {
+                            filterMenu.appendChild(li);
+                        }
+                    }
+                }
+                
                 document.getElementById('newLabelName').value = '';
                 // Close dropdown if using bootstrap
                 document.dispatchEvent(new Event('click'));
@@ -820,6 +907,35 @@
     </div>
 </div>
 
+<!-- New Label Global Modal -->
+<div class="modal fade" id="newLabelGlobalModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content" style="border-radius:12px;border:none;">
+            <div class="modal-header" style="border-bottom:1px solid var(--crm-border);">
+                <h5 class="modal-title" style="font-weight:700;font-size:1.1rem;color:var(--crm-text);">Create New Label</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'trendycrm:create_label_global' %}">
+                {% csrf_token %}
+                <div class="modal-body" style="padding:1.5rem;">
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;">Label Name</label>
+                        <input type="text" name="name" class="form-control" style="border-radius:8px;font-size:0.9rem;" placeholder="e.g. VIP, Urgent" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;">Color</label>
+                        <input type="color" name="color_hex" class="form-control form-control-color w-100" value="#7c3aed" title="Choose your color" style="height:40px;border-radius:8px;">
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top:1px solid var(--crm-border);">
+                    <button type="button" class="btn btn-crm-outline" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-crm-primary">Create Label</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- New Conversation Modal -->
 <div class="modal fade" id="newConvModal" tabindex="-1" aria-labelledby="newConvModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -881,4 +997,35 @@
         </div>
     </div>
 </div>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const searchRow = document.getElementById('convSearchRow');
+            const headerRow = document.getElementById('convHeaderRow');
+            if (sessionStorage.getItem('searchOpen') === 'true' || '{{ search_query }}' !== '') {
+                searchRow.style.display = 'block';
+                headerRow.style.display = 'none';
+            } else {
+                searchRow.style.display = 'none';
+                headerRow.style.display = 'flex';
+            }
+        });
+
+        function toggleSearchUI(isCloseBtn = false) {
+            const headerRow = document.getElementById('convHeaderRow');
+            const searchRow = document.getElementById('convSearchRow');
+            if (searchRow.style.display === 'none') {
+                searchRow.style.display = 'block';
+                headerRow.style.display = 'none';
+                searchRow.querySelector('input[name="q"]').focus();
+                sessionStorage.setItem('searchOpen', 'true');
+            } else {
+                searchRow.style.display = 'none';
+                headerRow.style.display = 'flex';
+                sessionStorage.setItem('searchOpen', 'false');
+                if (isCloseBtn && '{{ search_query }}' !== '') {
+                    window.location.href = "?{% if page_filter %}page_filter={{ page_filter }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}";
+                }
+            }
+        }
+    </script>
 {% endblock %}

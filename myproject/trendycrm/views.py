@@ -12,8 +12,24 @@ import logging
 import base64
 import hashlib
 import os
+import threading
+from django.db import connection
 
 logger = logging.getLogger(__name__)
+
+def run_async(func, *args, **kwargs):
+    """Runs a function in a background thread to prevent blocking page loads."""
+    def wrapper():
+        try:
+            func(*args, **kwargs)
+        except Exception as e:
+            logger.exception(f"Error in async task {func.__name__}")
+        finally:
+            connection.close()
+    t = threading.Thread(target=wrapper)
+    t.daemon = True
+    t.start()
+
 
 def build_absolute_callback(request, path_name):
     site_url = getattr(settings, 'SITE_URL', None)
@@ -49,7 +65,7 @@ from .models import (
 @login_required
 def crm_home(request):
     integrations = CRMIntegration.objects.all()
-    chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+
     total_contacts = CRMContact.objects.count()
     open_tickets = CRMTicket.objects.filter(status='open').count()
     total_conversations = CRMConversation.objects.count()
@@ -68,9 +84,9 @@ def crm_home(request):
             'icon': 'fa-robot',
             'title': 'Train your AI',
             'desc': 'Add your business identity — name, support email, phone, and an about-us blurb — so the AI can introduce you.',
-            'action_label': 'Open knowledge base',
-            'action_url': 'trendycrm:chatbot',
-            'done': bool(chatbot.business_name),
+            'action_label': 'Open Chatbots',
+            'action_url': 'trendycrm:chatbot_list',
+            'done': CRMChatbotConfig.objects.filter(business_name__isnull=False).exclude(business_name='').exists(),
         },
         {
             'icon': 'fa-comments',
@@ -145,28 +161,47 @@ def crm_conversations(request):
         conversations = conversations.filter(is_read=True)
         
     search_query = request.GET.get('q', '').strip()
+    search_type = request.GET.get('search_type', 'chats')
+    
     if search_query:
         from django.db.models import Q
-        conversations = conversations.filter(
-            Q(contact__name__icontains=search_query) | 
-            Q(messages__body__icontains=search_query)
-        ).distinct()
+        if search_type == 'messages':
+            conversations = conversations.filter(
+                Q(messages__body__icontains=search_query)
+            ).distinct()
+        else:
+            conversations = conversations.filter(
+                Q(contact__name__icontains=search_query) | 
+                Q(contact__phone__icontains=search_query) |
+                Q(contact__email__icontains=search_query)
+            ).distinct()
+
+    label_filter = request.GET.get('label_filter')
+    if label_filter:
+        conversations = conversations.filter(labels__id=label_filter)
         
     connected_integrations = CRMIntegration.objects.filter(status='connected')
+    all_labels = CRMLabel.objects.all().order_by('name')
 
     active_conv = None
     conv_id = request.GET.get('id')
     messages = []
+    
     if conv_id:
         active_conv = CRMConversation.objects.filter(pk=conv_id).first()
-        if active_conv:
-            if not active_conv.is_read:
-                active_conv.is_read = True
-                active_conv.save(update_fields=['is_read'])
-            messages = active_conv.messages.all()
-        else:
+        if not active_conv:
             from django.shortcuts import redirect
             return redirect('trendycrm:conversations')
+
+    # Auto-redirect to the first relevant chat when a filter is applied
+    if not active_conv and (label_filter or page_filter or read_status or search_query) and conversations.exists():
+        active_conv = conversations.first()
+        
+    if active_conv:
+        if not active_conv.is_read:
+            active_conv.is_read = True
+            active_conv.save(update_fields=['is_read'])
+        messages = active_conv.messages.all()
 
     contacts = CRMContact.objects.all()
 
@@ -176,9 +211,12 @@ def crm_conversations(request):
         'chat_messages': messages,
         'contacts': contacts,
         'connected_integrations': connected_integrations,
+        'all_labels': all_labels,
         'page_filter': int(page_filter) if page_filter and page_filter.isdigit() else None,
         'read_status': read_status,
         'search_query': search_query,
+        'search_type': search_type,
+        'label_filter': int(label_filter) if label_filter and label_filter.isdigit() else None,
         'crm_section': 'conversations',
     }
     return render(request, 'trendycrm/conversations.html', context)
@@ -202,7 +240,7 @@ def crm_conversations_ajax(request):
         if time.time() - last_sync > 15:
             from .meta_sync import sync_meta_conversations
             try:
-                sync_meta_conversations(active_conv.integration)
+                run_async(sync_meta_conversations, active_conv.integration)
                 request.session[f'last_sync_{active_conv.integration.pk}'] = time.time()
             except Exception as e:
                 logger.error(f"Ajax auto-sync failed: {e}")
@@ -395,8 +433,32 @@ def crm_remove_label(request, conv_id):
         
     label = get_object_or_404(CRMLabel, pk=label_id)
     conv.labels.remove(label)
-    
     return JsonResponse({'status': 'ok'})
+
+@login_required
+@require_POST
+def crm_create_label_global(request):
+    label_name = request.POST.get('name', '').strip()
+    color_hex = request.POST.get('color_hex', '#7c3aed').strip()
+    
+    if not label_name:
+        messages.error(request, 'Label name required')
+        return redirect('trendycrm:conversations')
+        
+    label, created = CRMLabel.objects.get_or_create(
+        name=label_name,
+        defaults={'color_hex': color_hex}
+    )
+    
+    if created:
+        messages.success(request, f'Label "{label.name}" created.')
+    
+    # We could redirect to the conversations page, possibly maintaining filters if passed in request.META['HTTP_REFERER']
+    # For now, just redirect back to the conversations page.
+    referer = request.META.get('HTTP_REFERER')
+    if referer:
+        return redirect(referer)
+    return redirect('trendycrm:conversations')
 
 @login_required
 @require_POST
@@ -426,11 +488,26 @@ def crm_add_note(request, conv_id):
 
 # ─── Chatbot ─────────────────────────────────────────────────────────────────
 @login_required
-def crm_chatbot(request):
+def crm_chatbot_list(request):
+    chatbots = CRMChatbotConfig.objects.all()
+    context = {
+        'chatbots': chatbots,
+        'crm_section': 'chatbot',
+    }
+    return render(request, 'trendycrm/chatbot_list.html', context)
 
-    chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+@login_required
+@require_POST
+def crm_chatbot_create(request):
+    bot = CRMChatbotConfig.objects.create(name="New Business AI", business_name="New Business")
+    messages.success(request, 'New business chatbot created. Please configure it.')
+    return redirect('trendycrm:chatbot', bot_id=bot.id)
+
+@login_required
+def crm_chatbot(request, bot_id):
+    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
     integrations = CRMIntegration.objects.all()
-    recent_logs = CRMCreditLog.objects.all()[:20]
+    recent_logs = chatbot.credit_logs.all()[:20]
 
     channel_groups = []
     for ct, ct_display in CRMIntegration.CHANNEL_TYPE_CHOICES:
@@ -458,9 +535,18 @@ def crm_chatbot(request):
 
 @login_required
 @require_POST
-def crm_chatbot_toggle(request):
+def crm_chatbot_delete(request, bot_id):
+    """AJAX: Delete a chatbot configuration."""
+    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
+    chatbot.delete()
+    return JsonResponse({'status': 'ok'})
+
+
+@login_required
+@require_POST
+def crm_chatbot_toggle(request, bot_id):
     """AJAX: Toggle the global AI on/off switch."""
-    chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
     chatbot.is_active = not chatbot.is_active
     chatbot.save(update_fields=['is_active', 'updated_at'])
     return JsonResponse({'is_active': chatbot.is_active})
@@ -468,13 +554,13 @@ def crm_chatbot_toggle(request):
 
 @login_required
 @require_POST
-def crm_chatbot_save_knowledge(request):
+def crm_chatbot_save_knowledge(request, bot_id):
     """
     AJAX: Save the 5-section Business Knowledge Base.
     Saves: about_blurb (identity), tone_voice, offerings, faq_text, playbook,
            business_name, business_email, business_phone, welcome_message.
     """
-    chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
 
     chatbot.business_name = request.POST.get('business_name', '').strip() or chatbot.business_name
     chatbot.business_email = request.POST.get('business_email', '').strip() or chatbot.business_email
@@ -490,16 +576,16 @@ def crm_chatbot_save_knowledge(request):
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'status': 'ok', 'message': 'Business knowledge saved successfully!'})
     messages.success(request, 'Business knowledge saved!')
-    return redirect('trendycrm:chatbot')
+    return redirect('trendycrm:chatbot', bot_id=bot_id)
 
 
 @login_required
 @require_POST
-def crm_chatbot_save_agent(request):
+def crm_chatbot_save_agent(request, bot_id):
     """
     AJAX: Save agent configuration (AI model, tone, API keys).
     """
-    chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
 
     chatbot.ai_model = request.POST.get('ai_model', chatbot.ai_model)
     chatbot.response_tone = request.POST.get('response_tone', chatbot.response_tone)
@@ -520,26 +606,42 @@ def crm_chatbot_save_agent(request):
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'status': 'ok', 'message': 'Agent configuration saved!'})
     messages.success(request, 'Agent configuration saved!')
-    return redirect('trendycrm:chatbot')
+    return redirect('trendycrm:chatbot', bot_id=bot_id)
 
 
 @login_required
 @require_POST
-def crm_chatbot_toggle_channel(request):
+def crm_chatbot_toggle_channel(request, bot_id):
     """
     AJAX: Toggle auto-reply for a specific channel on/off.
     POST body: { channel_type: 'facebook', enabled: 'true'/'false' }
     """
-    chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
     integration_id = request.POST.get('integration_id')
     enabled = request.POST.get('enabled', 'false') == 'true'
 
     if integration_id:
+        integration = get_object_or_404(CRMIntegration, pk=integration_id)
         channels = chatbot.auto_reply_channels or {}
+        
         if enabled:
+            # If the integration was connected to another chatbot, remove it from that bot's config
+            if integration.chatbot_config and integration.chatbot_config_id != chatbot.id:
+                prev_bot = integration.chatbot_config
+                prev_channels = prev_bot.auto_reply_channels or {}
+                if str(integration_id) in prev_channels:
+                    prev_channels.pop(str(integration_id), None)
+                    prev_bot.auto_reply_channels = prev_channels
+                    prev_bot.save(update_fields=['auto_reply_channels'])
+                    
             channels[str(integration_id)] = True
+            integration.chatbot_config = chatbot
         else:
             channels.pop(str(integration_id), None)
+            if integration.chatbot_config_id == chatbot.id:
+                integration.chatbot_config = None
+        
+        integration.save(update_fields=['chatbot_config'])
         chatbot.auto_reply_channels = channels
         chatbot.save(update_fields=['auto_reply_channels', 'updated_at'])
         return JsonResponse({'status': 'ok', 'integration_id': integration_id, 'enabled': enabled})
@@ -548,9 +650,10 @@ def crm_chatbot_toggle_channel(request):
 
 
 @login_required
-def crm_credit_history(request):
+def crm_credit_history(request, bot_id):
     """AJAX: Returns JSON list of recent credit log entries."""
-    logs = CRMCreditLog.objects.all()[:50]
+    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
+    logs = chatbot.credit_logs.all()[:50]
     data = [
         {
             'id': l.pk,
@@ -563,7 +666,7 @@ def crm_credit_history(request):
         }
         for l in logs
     ]
-    chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
     return JsonResponse({'logs': data, 'balance': chatbot.ai_credits})
 
 
@@ -920,9 +1023,9 @@ def _handle_oauth_callback(request, channel_key):
                                 logger.info(f"Successfully connected {channel_key} page: {page_name}")
                                 connected_count += 1
                                 
-                                # Trigger initial sync of conversations
+                                # Trigger initial sync of conversations in background
                                 try:
-                                    sync_meta_conversations(integ)
+                                    run_async(sync_meta_conversations, integ)
                                 except Exception as e:
                                     logger.exception("Failed to run initial sync for meta messages.")
                             
@@ -1096,9 +1199,9 @@ def meta_webhook(request):
                                     ).update(status='delivered')
 
             # Trigger a sync for all connected facebook/instagram integrations
-            integrations = CRMIntegration.objects.filter(channel_type__in=['facebook', 'instagram'], status='connected')
-            for integ in integrations:
-                sync_meta_conversations(integ)
+            active_integrations = CRMIntegration.objects.filter(channel_type__in=['facebook', 'instagram'], status='connected')
+            for integ in active_integrations:
+                run_async(sync_meta_conversations, integ)
             return HttpResponse('EVENT_RECEIVED', status=200)
         except Exception as e:
             logger.exception("Error processing Meta webhook")
@@ -1437,6 +1540,7 @@ def crm_ai_test(request):
     """
     message_text = request.POST.get('message', '').strip()
     integration_id = request.POST.get('integration_id')
+    bot_id = request.POST.get('bot_id')
 
     if not message_text:
         return JsonResponse({'error': 'Message is required'}, status=400)
@@ -1445,9 +1549,16 @@ def crm_ai_test(request):
     if integration_id:
         integration = CRMIntegration.objects.filter(pk=integration_id).first()
 
+    if not bot_id and integration:
+        chatbot = integration.chatbot_config
+    elif bot_id:
+        chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
+    else:
+        return JsonResponse({'error': 'Bot ID or Integration ID is required'}, status=400)
+
     try:
         from .ai_router import route_message
-        chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
+        
         result = route_message(
             message_text=message_text,
             integration=integration,
