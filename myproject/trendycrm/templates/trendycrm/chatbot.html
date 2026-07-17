@@ -98,6 +98,23 @@
 .ch-status { font-size:.72rem; color:#6b7280; }
 
 /* ── Btn Styles ─────────────────────────────── */
+.tag-input-container {
+    display: flex; flex-wrap: wrap; gap: .4rem;
+    border: 1.5px solid #e5e7eb; border-radius: 9px; padding: .55rem .85rem;
+    background: #fff; min-height: 42px; align-items: center;
+}
+.tag-input-container:focus-within {
+    border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.1);
+}
+.tag {
+    background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: .2rem .5rem; font-size: .78rem; color: #374151; display: flex; align-items: center; gap: .3rem;
+}
+.tag .delete-tag {
+    cursor: pointer; color: #9ca3af; font-size: .7rem; transition: color .15s;
+}
+.tag .delete-tag:hover { color: #dc2626; }
+
 .btn-save { background:linear-gradient(135deg,#7c3aed,#6d28d9); color:#fff; border:none; padding:.5rem 1.25rem; border-radius:9px; font-size:.84rem; font-weight:600; cursor:pointer; transition:opacity .15s,transform .1s; display:inline-flex; align-items:center; gap:.4rem; }
 .btn-save:hover { opacity:.9; transform:translateY(-1px); }
 .btn-save:disabled { opacity:.6; cursor:not-allowed; transform:none; }
@@ -146,6 +163,32 @@
 /* ── Unsaved Indicator ──────────────────────── */
 .unsaved-dot { width:7px; height:7px; border-radius:50%; background:#f59e0b; display:none; }
 .unsaved-dot.show { display:inline-block; }
+
+/* ── Language Select Boxes ─────────────────── */
+.lang-box-container { display: flex; gap: 1rem; margin-bottom: .25rem; flex-wrap: wrap; }
+.lang-box {
+    flex: 1; min-width: 150px;
+    border: 1.5px solid #e5e7eb; border-radius: 12px; padding: 1rem;
+    cursor: pointer; transition: all 0.2s;
+    background: #fff;
+    display: flex; align-items: flex-start; gap: .75rem;
+}
+.lang-box:hover { border-color: #a78bfa; }
+.lang-box.active { border-color: #7c3aed; background: #f5f3ff; }
+
+.lang-radio {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid #d1d5db; display: flex; align-items: center; justify-content: center;
+    margin-top: .15rem; flex-shrink: 0;
+}
+.lang-box.active .lang-radio { border-color: #7c3aed; }
+.lang-box.active .lang-radio::after {
+    content: ''; width: 8px; height: 8px; background: #7c3aed; border-radius: 50%;
+}
+
+.lang-info h6 { margin: 0 0 .2rem 0; font-size: .85rem; font-weight: 700; color: #1f2937; }
+.lang-info p { margin: 0; font-size: .72rem; color: #6b7280; line-height: 1.4; }
+.lang-box.active .lang-info h6 { color: #5b21b6; }
 {% endblock %}
 
 {% block crm_content %}
@@ -176,22 +219,6 @@
 <div class="cb-grid">
     <!-- ═══ LEFT COLUMN ═══════════════════════════════════════ -->
     <div>
-        <!-- Credits -->
-        <div class="credit-bar">
-            <div>
-                <div class="credit-label">Available credit</div>
-                <div class="credit-amount" id="creditDisplay">{{ chatbot.ai_credits }} <span style="font-size:.85rem;font-weight:400;color:#6b7280;">credits</span></div>
-            </div>
-            <div style="display:flex;gap:.5rem;">
-                <button class="btn-outline" id="histBtn" onclick="openCreditHistory()">
-                    <i class="fas fa-history"></i> History
-                </button>
-                <button class="btn-save" onclick="openTopUpModal()">
-                    <i class="fas fa-plus"></i> Top up
-                </button>
-            </div>
-        </div>
-
         <!-- ── Business Knowledge Base ─────────────────────── -->
         <div class="sec-card">
             <div class="sec-card-header">
@@ -273,11 +300,62 @@
             </div>
         </div>
 
+        <!-- ── Language ────────────────────────── -->
+        <div class="sec-card" style="margin-bottom:1rem;">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-globe" style="color:#7c3aed;"></i> Language</div>
+            </div>
+            <div class="sec-card-body" style="padding:1rem 1.25rem;">
+                <div class="lang-box-container">
+                    <div class="lang-box {% if chatbot.primary_language == 'en' %}active{% endif %}" onclick="selectLanguage('en', this)">
+                        <div class="lang-radio"></div>
+                        <div class="lang-info">
+                            <h6>English</h6>
+                            <p>Always respond in English</p>
+                        </div>
+                    </div>
+                    <div class="lang-box {% if chatbot.primary_language == 'ne' %}active{% endif %}" onclick="selectLanguage('ne', this)">
+                        <div class="lang-radio"></div>
+                        <div class="lang-info">
+                            <h6>Nepali</h6>
+                            <p>Always respond in romanized Nepali</p>
+                        </div>
+                    </div>
+                    <div class="lang-box {% if chatbot.primary_language == 'auto' or not chatbot.primary_language %}active{% endif %}" onclick="selectLanguage('auto', this)">
+                        <div class="lang-radio"></div>
+                        <div class="lang-info">
+                            <h6>Auto-detect</h6>
+                            <p>Match the language the user writes in</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Human Handoff Triggers ────────────────────────── -->
+        <div class="sec-card" style="margin-bottom:1rem;">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-user-headset" style="color:#7c3aed;"></i> Human Handoff Triggers</div>
+            </div>
+            <div class="sec-card-body" style="padding:1rem 1.25rem;">
+                <p style="font-size:.82rem;color:#6b7280;margin-bottom:1rem;line-height:1.4;">
+                    When a user sends any of these phrases, the conversation is handed off to a human agent.
+                </p>
+                <div class="tag-input-container" id="handoffTagContainer">
+                    {% for tag in chatbot.handoff_triggers %}
+                    <div class="tag" data-val="{{ tag }}">
+                        {{ tag }} <i class="fas fa-times delete-tag"></i>
+                    </div>
+                    {% endfor %}
+                    <input type="text" id="handoffTagInput" placeholder="Add another..." style="border:none;outline:none;background:transparent;flex:1;min-width:120px;font-size:.85rem;padding:.2rem 0;">
+                </div>
+            </div>
+        </div>
+
         <!-- ── Custom Tools ────────────────────────────────── -->
         <div class="sec-card">
             <div class="sec-card-header">
                 <div class="sec-card-title"><i class="fas fa-tools" style="color:#7c3aed;"></i> Custom Tools</div>
-                <span style="font-size:.72rem;color:#6b7280;">Up to 5 tools • 1 credit per call</span>
             </div>
             <div class="sec-card-body" style="padding:1rem 1.25rem;">
                 <p style="font-size:.82rem;color:#6b7280;margin-bottom:1rem;">
@@ -301,27 +379,42 @@
                 <p style="font-size:.76rem;color:#6b7280;margin-bottom:.85rem;line-height:1.4;">
                     Pick the channels where Trendy AI should auto-reply. Turn a channel off to pause only that platform.
                 </p>
-                {% for integ in integrations %}
-                <div class="ch-item">
-                    <div class="ch-icon" style="background:{% if integ.channel_type == 'whatsapp' %}#d1fae5{% elif integ.channel_type == 'instagram' %}#fce7f3{% elif integ.channel_type == 'facebook' %}#dbeafe{% elif integ.channel_type == 'gmail' %}#fee2e2{% elif integ.channel_type == 'tiktok' %}#f3f4f6{% else %}#f3f4f6{% endif %};">
-                        <i class="fab fa-{{ integ.channel_type }}" style="color:{% if integ.channel_type == 'whatsapp' %}#059669{% elif integ.channel_type == 'instagram' %}#be185d{% elif integ.channel_type == 'facebook' %}#1d4ed8{% elif integ.channel_type == 'gmail' %}#dc2626{% else %}#6b7280{% endif %};"></i>
+                {% for group in channel_groups %}
+                <div class="ch-group-item" style="border-bottom:1px solid rgba(124,58,237,.05); padding:.45rem 0;">
+                    <div class="ch-item" style="border-bottom:none; padding:.2rem 0; cursor:{% if group.is_connected %}pointer{% else %}default{% endif %};" 
+                         {% if group.is_connected %}onclick="toggleDropdown('{{ group.channel_type }}')"{% endif %}>
+                        <div class="ch-icon" style="background:{% if group.channel_type == 'whatsapp' %}#d1fae5{% elif group.channel_type == 'instagram' %}#fce7f3{% elif group.channel_type == 'facebook' %}#dbeafe{% elif group.channel_type == 'gmail' %}#fee2e2{% elif group.channel_type == 'tiktok' %}#f3f4f6{% else %}#f3f4f6{% endif %};">
+                            <i class="fab fa-{{ group.channel_type }}" style="color:{% if group.channel_type == 'whatsapp' %}#059669{% elif group.channel_type == 'instagram' %}#be185d{% elif group.channel_type == 'facebook' %}#1d4ed8{% elif group.channel_type == 'gmail' %}#dc2626{% else %}#6b7280{% endif %};"></i>
+                        </div>
+                        <div class="ch-name">{{ group.display_name }}</div>
+                        <div>
+                            {% if group.is_connected %}
+                            <i class="fas fa-chevron-down" id="icon-{{ group.channel_type }}" style="color:#9ca3af; font-size:.85rem; transition:transform 0.2s;"></i>
+                            {% else %}
+                            <span class="ch-status">Not connected</span>
+                            {% endif %}
+                        </div>
                     </div>
-                    <div class="ch-name">{{ integ.get_channel_type_display }}</div>
-                    <div>
-                        {% if integ.status == 'connected' %}
-                        <label class="ai-toggle-wrap" title="Toggle auto-reply for {{ integ.get_channel_type_display }}" style="width:38px;height:20px;">
-                            <input type="checkbox" class="channel-toggle" data-channel="{{ integ.channel_type }}"
-                                {% if chatbot.auto_reply_channels|default_if_none:'{}'  %}
-                                    {% with enabled=chatbot.auto_reply_channels %}
-                                        {% if enabled and integ.channel_type in enabled %}checked{% endif %}
-                                    {% endwith %}
-                                {% endif %}>
-                            <span class="ai-toggle-slider" style="border-radius:20px;"></span>
-                        </label>
-                        {% else %}
-                        <span class="ch-status">Not connected</span>
-                        {% endif %}
+                    {% if group.is_connected %}
+                    <div id="dropdown-{{ group.channel_type }}" style="display:none; padding: .5rem 0 .5rem 2.5rem; background:#fafafa; border-radius:8px; margin-top:.3rem; border: 1px solid #f3f4f6;">
+                        {% for acc in group.accounts %}
+                            {% if acc.status == 'connected' %}
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding: .4rem .6rem;">
+                                <span style="font-size:.8rem; font-weight:500; color:#374151;">{{ acc.account_name|default:"Unnamed Account" }}</span>
+                                <label class="ai-toggle-wrap" title="Toggle auto-reply for {{ acc.account_name }}" style="width:38px;height:20px;" onclick="event.stopPropagation()">
+                                    <input type="checkbox" class="channel-toggle" data-integration-id="{{ acc.id }}"
+                                        {% if chatbot.auto_reply_channels|default_if_none:'{}'  %}
+                                            {% with enabled=chatbot.auto_reply_channels %}
+                                                {% if enabled and acc.id|stringformat:"s" in enabled %}checked{% endif %}
+                                            {% endwith %}
+                                        {% endif %}>
+                                    <span class="ai-toggle-slider" style="border-radius:20px;"></span>
+                                </label>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
                     </div>
+                    {% endif %}
                 </div>
                 {% empty %}
                 <div style="text-align:center;padding:1.5rem 0;font-size:.82rem;color:#6b7280;">
@@ -338,51 +431,60 @@
             <div class="sec-card-header">
                 <div class="sec-card-title"><i class="fas fa-robot" style="color:#7c3aed;"></i> Agent configuration</div>
             </div>
-            <div class="sec-card-body">
+            <div class="sec-card-body" style="padding:1rem;">
                 <form id="agentForm" action="{% url 'trendycrm:chatbot_save_agent' %}" method="post">
                     {% csrf_token %}
-                    <div style="margin-bottom:.85rem;">
-                        <label class="form-label">AI Model</label>
-                        <select name="ai_model" class="cb-select">
-                            {% for val, label in chatbot.AI_MODEL_CHOICES %}
-                            <option value="{{ val }}" {% if chatbot.ai_model == val %}selected{% endif %}>{{ label }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div style="margin-bottom:.85rem;">
-                        <label class="form-label">Response Tone</label>
-                        <select name="response_tone" class="cb-select">
-                            {% for val, label in chatbot.TONE_CHOICES %}
-                            <option value="{{ val }}" {% if chatbot.response_tone == val %}selected{% endif %}>{{ label }}</option>
-                            {% endfor %}
-                        </select>
+                    <input type="hidden" name="handoff_triggers" id="handoffTriggersHidden">
+                    
+                    <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden;">
+                        
+                        <!-- AI Model -->
+                        <div style="padding:.65rem .85rem; border-bottom:1px solid #e5e7eb;">
+                            <label class="form-label" style="margin:0 0 .25rem 0; font-size:.78rem; font-weight:600;">AI Model</label>
+                            <select name="ai_model" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0; border:1px solid #d1d5db;">
+                                {% for val, label in chatbot.AI_MODEL_CHOICES %}
+                                <option value="{{ val }}" {% if chatbot.ai_model == val %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Response Tone -->
+                        <div style="padding:.65rem .85rem; border-bottom:1px solid #e5e7eb;">
+                            <label class="form-label" style="margin:0 0 .25rem 0; font-size:.78rem; font-weight:600;">Response Tone</label>
+                            <select name="response_tone" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0; border:1px solid #d1d5db;">
+                                {% for val, label in chatbot.TONE_CHOICES %}
+                                <option value="{{ val }}" {% if chatbot.response_tone == val %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Creativity Level -->
+                        <div style="padding:.65rem .85rem; border-bottom:1px solid #e5e7eb;">
+                            <label class="form-label" style="margin:0 0 .25rem 0; font-size:.78rem; font-weight:600;">Creativity Level</label>
+                            <select name="creativity_level" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0; border:1px solid #d1d5db;">
+                                {% for val, label in chatbot.CREATIVITY_CHOICES %}
+                                <option value="{{ val }}" {% if chatbot.creativity_level == val %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Response Length -->
+                        <div style="padding:.65rem .85rem; border-bottom:1px solid #e5e7eb;">
+                            <label class="form-label" style="margin:0 0 .25rem 0; font-size:.78rem; font-weight:600;">Response Length</label>
+                            <select name="response_length" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0; border:1px solid #d1d5db;">
+                                {% for val, label in chatbot.LENGTH_CHOICES %}
+                                <option value="{{ val }}" {% if chatbot.response_length == val %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Primary Language Removed -->
+
+
                     </div>
 
-                    <div style="border-top:1px solid #f3f4f6;padding-top:.85rem;margin-top:.85rem;">
-                        <div style="font-size:.78rem;font-weight:700;color:#374151;margin-bottom:.65rem;">🔑 API Keys</div>
-                        <div style="margin-bottom:.6rem;">
-                            <label class="form-label">OpenAI API Key
-                                {% if chatbot.openai_api_key %}<span class="api-status set">✓ Set</span>{% else %}<span class="api-status unset">⚠ Not set</span>{% endif %}
-                            </label>
-                            <div class="api-key-wrap">
-                                <input type="password" name="openai_api_key" class="cb-input" id="openaiKeyInput" placeholder="sk-…" autocomplete="off">
-                                <button type="button" class="api-key-toggle" onclick="toggleKeyVis('openaiKeyInput', this)"><i class="fas fa-eye"></i></button>
-                            </div>
-                            <div style="font-size:.71rem;color:#9ca3af;margin-top:.2rem;">Leave blank to keep existing key.</div>
-                        </div>
-                        <div>
-                            <label class="form-label">Google Gemini API Key
-                                {% if chatbot.gemini_api_key %}<span class="api-status set">✓ Set</span>{% else %}<span class="api-status unset">⚠ Not set</span>{% endif %}
-                            </label>
-                            <div class="api-key-wrap">
-                                <input type="password" name="gemini_api_key" class="cb-input" id="geminiKeyInput" placeholder="AIzaSy…" autocomplete="off">
-                                <button type="button" class="api-key-toggle" onclick="toggleKeyVis('geminiKeyInput', this)"><i class="fas fa-eye"></i></button>
-                            </div>
-                            <div style="font-size:.71rem;color:#9ca3af;margin-top:.2rem;">Leave blank to keep existing key.</div>
-                        </div>
-                    </div>
-                    <div style="margin-top:1rem; text-align:right;">
-                        <button type="submit" class="btn-save" id="agentSaveBtn" style="width:100%;">
+                    <div style="margin-top:.85rem;">
+                        <button type="submit" class="btn-save" id="agentSaveBtn" style="width:100%; padding:.65rem; border-radius:8px;">
                             <i class="fas fa-save"></i> Save Configuration
                         </button>
                     </div>
@@ -392,57 +494,7 @@
     </div>
 </div>
 
-<!-- ═══ CREDIT HISTORY MODAL ═══════════════════════════════════ -->
-<div class="cb-modal" id="creditModal">
-    <div class="cb-modal-box">
-        <div class="cb-modal-header">
-            <h5><i class="fas fa-history" style="color:#7c3aed;margin-right:.5rem;"></i>Credit History</h5>
-            <button class="cb-modal-close" onclick="closeModal('creditModal')">✕</button>
-        </div>
-        <div class="cb-modal-body" id="creditModalBody">
-            <div style="text-align:center;padding:2rem;color:#6b7280;"><i class="fas fa-spinner fa-spin"></i> Loading…</div>
-        </div>
-        <div class="cb-modal-footer">
-            <button class="btn-save" onclick="openTopUpModal()"><i class="fas fa-plus"></i> Top up credits</button>
-        </div>
-    </div>
-</div>
 
-<!-- ═══ TOP-UP MODAL ════════════════════════════════════════════ -->
-<div class="cb-modal" id="topUpModal">
-    <div class="cb-modal-box" style="max-width:440px;">
-        <div class="cb-modal-header">
-            <h5><i class="fas fa-bolt" style="color:#7c3aed;margin-right:.5rem;"></i>Top Up Credits</h5>
-            <button class="cb-modal-close" onclick="closeModal('topUpModal')">✕</button>
-        </div>
-        <div class="cb-modal-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;">
-            <div style="border:2px solid #e5e7eb;border-radius:10px;padding:.85rem;text-align:center;cursor:pointer;transition:all .15s;" onclick="selectTopUp(this, 100)">
-                <div style="font-size:1.2rem;font-weight:800;color:#1e1b4b;">100</div>
-                <div style="font-size:.75rem;color:#6b7280;">credits</div>
-            </div>
-            <div style="border:2px solid #e5e7eb;border-radius:10px;padding:.85rem;text-align:center;cursor:pointer;transition:all .15s;" onclick="selectTopUp(this, 250)">
-                <div style="font-size:1.2rem;font-weight:800;color:#1e1b4b;">250</div>
-                <div style="font-size:.75rem;color:#6b7280;">credits</div>
-            </div>
-            <div style="border:2px solid #e5e7eb;border-radius:10px;padding:.85rem;text-align:center;cursor:pointer;transition:all .15s;" onclick="selectTopUp(this, 500)">
-                <div style="font-size:1.2rem;font-weight:800;color:#1e1b4b;">500</div>
-                <div style="font-size:.75rem;color:#6b7280;">credits</div>
-            </div>
-            <div style="border:2px solid #e5e7eb;border-radius:10px;padding:.85rem;text-align:center;cursor:pointer;transition:all .15s;" onclick="selectTopUp(this, 1000)">
-                <div style="font-size:1.2rem;font-weight:800;color:#1e1b4b;">1,000</div>
-                <div style="font-size:.75rem;color:#6b7280;">credits</div>
-            </div>
-        </div>
-
-            <p style="font-size:.8rem;color:#6b7280;text-align:center;">Top-up functionality will be configured with your payment provider.</p>
-        </div>
-        <div class="cb-modal-footer">
-            <button class="btn-outline" onclick="closeModal('topUpModal')">Cancel</button>
-            <button class="btn-save" onclick="closeModal('topUpModal')"><i class="fas fa-check"></i> Coming Soon</button>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -518,8 +570,29 @@ knowledgeForm.addEventListener('submit', async function(e) {
 });
 
 // ── Agent Config Form ────────────────────────────────────────────────────────
+function confirmDisconnect(inputId) {
+    if (confirm('Are you sure you want to disconnect this AI? Your chatbot will lose these capabilities.')) {
+        document.getElementById(inputId).value = '1';
+        document.getElementById('agentSaveBtn').click();
+    }
+}
+
 document.getElementById('agentForm').addEventListener('submit', async function(e) {
     e.preventDefault();
+    
+    // Advanced Frontend Validation
+    const oInput = document.getElementById('openaiKeyInput');
+    if (oInput && oInput.value && !oInput.value.trim().startsWith('sk-')) {
+        showToast('Invalid format: OpenAI key must start with sk-', true);
+        return;
+    }
+    
+    const gInput = document.getElementById('geminiKeyInput');
+    if (gInput && gInput.value && !gInput.value.trim().startsWith('AIzaSy')) {
+        showToast('Invalid format: Gemini key must start with AIzaSy', true);
+        return;
+    }
+
     const btn = document.getElementById('agentSaveBtn');
     btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
     try {
@@ -541,10 +614,10 @@ document.getElementById('agentForm').addEventListener('submit', async function(e
 // ── Channel Toggles ──────────────────────────────────────────────────────────
 document.querySelectorAll('.channel-toggle').forEach(toggle => {
     toggle.addEventListener('change', async function() {
-        const channel = this.dataset.channel;
+        const integrationId = this.dataset.integrationId;
         const enabled = this.checked;
         const fd = new FormData();
-        fd.append('channel_type', channel);
+        fd.append('integration_id', integrationId);
         fd.append('enabled', enabled ? 'true' : 'false');
         try {
             const resp = await fetch('{% url "trendycrm:chatbot_toggle_channel" %}', {
@@ -554,14 +627,26 @@ document.querySelectorAll('.channel-toggle').forEach(toggle => {
             });
             const data = await resp.json();
             if (data.status === 'ok') {
-                showToast((enabled ? '✓ Auto-reply enabled' : '⏸ Auto-reply paused') + ' for ' + channel);
+                showToast((enabled ? '✓ Auto-reply enabled' : '⏸ Auto-reply paused') + ' for account');
             }
         } catch(e) {
             this.checked = !this.checked; // revert
-            showToast('Failed to update channel', true);
+            showToast('Failed to update channel account', true);
         }
     });
 });
+
+function toggleDropdown(channelType) {
+    const dropdown = document.getElementById('dropdown-' + channelType);
+    const icon = document.getElementById('icon-' + channelType);
+    if (dropdown.style.display === 'none') {
+        dropdown.style.display = 'block';
+        icon.style.transform = 'rotate(180deg)';
+    } else {
+        dropdown.style.display = 'none';
+        icon.style.transform = 'rotate(0deg)';
+    }
+}
 
 // ── Knowledge Tabs ───────────────────────────────────────────────────────────
 function switchTab(id, el) {
@@ -569,6 +654,103 @@ function switchTab(id, el) {
     document.querySelectorAll('.kb-tab').forEach(t => t.classList.remove('active'));
     document.getElementById('panel-' + id)?.classList.add('active');
     el.classList.add('active');
+}
+
+// ── Human Handoff Tags ────────────────────────────────────────────────────────
+const tagContainer = document.getElementById('handoffTagContainer');
+const tagInput = document.getElementById('handoffTagInput');
+const hiddenTagInput = document.getElementById('handoffTriggersHidden');
+let tags = [];
+
+// Initialize tags from DOM
+tagContainer.querySelectorAll('.tag').forEach(tagEl => {
+    tags.push(tagEl.dataset.val);
+});
+updateHiddenTagInput();
+
+function updateHiddenTagInput() {
+    hiddenTagInput.value = JSON.stringify(tags);
+}
+
+async function autoSaveTags() {
+    const fd = new FormData();
+    fd.append('handoff_triggers', JSON.stringify(tags));
+    try {
+        const resp = await fetch('{% url "trendycrm:chatbot_save_agent" %}', {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if(resp.ok) {
+            showToast('✓ Handoff triggers auto-saved');
+        }
+    } catch(e) {
+        showToast('Failed to auto-save tags', true);
+    }
+}
+
+function createTag(val) {
+    const div = document.createElement('div');
+    div.className = 'tag';
+    div.dataset.val = val;
+    div.innerHTML = `${val} <i class="fas fa-times delete-tag"></i>`;
+    tagContainer.insertBefore(div, tagInput);
+    tags.push(val);
+    updateHiddenTagInput();
+    autoSaveTags();
+}
+
+tagInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = this.value.trim();
+        if (val && !tags.includes(val)) {
+            createTag(val);
+            this.value = '';
+        }
+    } else if (e.key === 'Backspace' && this.value === '' && tags.length > 0) {
+        // Remove last tag on backspace if input is empty
+        const lastTagEl = tagContainer.querySelectorAll('.tag');
+        const last = lastTagEl[lastTagEl.length - 1];
+        const val = last.dataset.val;
+        tags = tags.filter(t => t !== val);
+        last.remove();
+        updateHiddenTagInput();
+        autoSaveTags();
+    }
+});
+
+tagContainer.addEventListener('click', function(e) {
+    if (e.target.classList.contains('delete-tag')) {
+        const tagEl = e.target.closest('.tag');
+        const val = tagEl.dataset.val;
+        tags = tags.filter(t => t !== val);
+        tagEl.remove();
+        updateHiddenTagInput();
+        autoSaveTags();
+    }
+});
+
+async function selectLanguage(langCode, el) {
+    document.querySelectorAll('.lang-box').forEach(box => box.classList.remove('active'));
+    el.classList.add('active');
+
+    const fd = new FormData();
+    fd.append('primary_language', langCode);
+    try {
+        const resp = await fetch('{% url "trendycrm:chatbot_save_agent" %}', {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if(resp.ok) {
+            showToast('✓ Language auto-saved');
+        } else {
+            showToast('Error saving language', true);
+        }
+    } catch(e) {
+        showToast('Failed to auto-save language', true);
+    }
 }
 
 // ── API Key Visibility Toggle ─────────────────────────────────────────────────
@@ -583,50 +765,7 @@ function toggleKeyVis(inputId, btn) {
     }
 }
 
-// ── Credit History Modal ──────────────────────────────────────────────────────
-async function openCreditHistory() {
-    openModal('creditModal');
-    const body = document.getElementById('creditModalBody');
-    body.innerHTML = '<div style="text-align:center;padding:2rem;color:#6b7280;"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';
-    try {
-        const resp = await fetch('{% url "trendycrm:credit_history" %}');
-        const data = await resp.json();
-        if (!data.logs.length) {
-            body.innerHTML = '<div style="text-align:center;padding:2rem;color:#6b7280;">No credit activity yet.</div>';
-            return;
-        }
-        body.innerHTML = `
-            <div style="margin-bottom:.75rem;font-size:.82rem;color:#6b7280;">
-                Current balance: <strong style="color:#1e1b4b;">${data.balance} credits</strong>
-            </div>
-            <table class="hist-table">
-                <thead><tr><th>Date</th><th>Action</th><th>Model</th><th>Credits</th></tr></thead>
-                <tbody>
-                    ${data.logs.map(l => `
-                    <tr>
-                        <td style="white-space:nowrap;">${l.created_at}</td>
-                        <td>${l.action}${l.description ? '<br><span style="font-size:.71rem;color:#6b7280;">' + l.description + '</span>' : ''}</td>
-                        <td><span style="font-size:.72rem;background:#f3f4f6;padding:1px 6px;border-radius:4px;">${l.model_used}</span></td>
-                        <td><span class="credit-badge ${l.is_topup ? 'topup' : 'usage'}">${l.is_topup ? '+' : ''}${l.credits_used}</span></td>
-                    </tr>`).join('')}
-                </tbody>
-            </table>`;
-    } catch(e) {
-        body.innerHTML = '<div style="text-align:center;padding:2rem;color:#dc2626;">Failed to load history.</div>';
-    }
-}
 
-function openTopUpModal() {
-    closeModal('creditModal');
-    openModal('topUpModal');
-}
-
-function selectTopUp(el, amount) {
-    document.querySelectorAll('#topUpModal .cb-modal-body > div > div').forEach(d => {
-        d.style.borderColor = '#e5e7eb'; d.style.background = '#fff';
-    });
-    el.style.borderColor = '#7c3aed'; el.style.background = '#fdf4ff';
-}
 
 // ── Modal Helpers ─────────────────────────────────────────────────────────────
 function openModal(id) { document.getElementById(id).classList.add('open'); }

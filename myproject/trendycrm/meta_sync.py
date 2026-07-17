@@ -500,11 +500,11 @@ def process_incoming_webhook_message(integration, contact, conversation, message
             logger.info("Chatbot is inactive — skipping AI auto-reply")
             return
 
-        # Check that this channel is enabled for auto-reply
+        # Check that this channel account is enabled for auto-reply
         enabled_channels = chatbot.auto_reply_channels or {}
-        channel_key = integration.channel_type
-        if not enabled_channels.get(channel_key, False):
-            logger.info(f"Auto-reply disabled for channel: {channel_key}")
+        integration_id_str = str(integration.pk)
+        if not enabled_channels.get(integration_id_str, False):
+            logger.info(f"Auto-reply disabled for channel account: {integration.account_name or integration.channel_type}")
             return
 
         from .ai_router import route_message

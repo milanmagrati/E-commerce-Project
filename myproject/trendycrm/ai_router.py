@@ -27,10 +27,9 @@ logger = logging.getLogger(__name__)
 def _get_openai_client(api_key=None):
     try:
         from openai import OpenAI
-        key = api_key or os.environ.get('OPENAI_API_KEY', '')
-        if not key or key.startswith('sk-your-'):
-            raise ValueError("OpenAI API key not configured. Add OPENAI_API_KEY to .env")
-        return OpenAI(api_key=key)
+        if not api_key or api_key.startswith('sk-your-'):
+            raise ValueError("OpenAI API key not configured.")
+        return OpenAI(api_key=api_key)
     except ImportError:
         raise ImportError("openai package not installed. Run: pip install openai")
 
@@ -38,31 +37,19 @@ def _get_openai_client(api_key=None):
 def _get_gemini_model(model_name: str = 'gemini-1.5-flash', api_key: str = None):
     try:
         import google.generativeai as genai
-        key = api_key or os.environ.get('GEMINI_API_KEY', '')
-        if not key or key == 'your-gemini-api-key-here':
-            raise ValueError("Gemini API key not configured. Add GEMINI_API_KEY to .env")
-        genai.configure(api_key=key)
+        if not api_key or api_key == 'your-gemini-api-key-here':
+            raise ValueError("Gemini API key not configured.")
+        genai.configure(api_key=api_key)
         return genai.GenerativeModel(model_name)
     except ImportError:
         raise ImportError("google-generativeai package not installed. Run: pip install google-generativeai")
 
 
-# ─── Fetching config from DB ──────────────────────────────────────────────────
+# ─── Fetching config from Env ──────────────────────────────────────────────────
 def _get_ai_config():
     """
-    Fetch the CRMChatbotConfig (singleton) which may store overriding API keys.
-    Falls back to environment variables if DB keys are not set.
+    Fetch the API keys from environment variables.
     """
-    try:
-        from .models import CRMChatbotConfig
-        config = CRMChatbotConfig.objects.filter(pk=1).first()
-        if config:
-            return {
-                'openai_api_key': config.openai_api_key or os.environ.get('OPENAI_API_KEY', ''),
-                'gemini_api_key': config.gemini_api_key or os.environ.get('GEMINI_API_KEY', ''),
-            }
-    except Exception as e:
-        logger.warning(f"Could not load AI config from DB: {e}")
     return {
         'openai_api_key': os.environ.get('OPENAI_API_KEY', ''),
         'gemini_api_key': os.environ.get('GEMINI_API_KEY', ''),
@@ -100,6 +87,14 @@ def build_dynamic_prompt(chatbot_config, page_profile=None, intent: str = 'gener
         f"About the business: {about}" if about else "",
         f"Welcome message to use: {welcome}" if welcome else "",
     ]
+
+    if getattr(chatbot_config, 'primary_language', 'auto') != 'auto':
+        lang_map = {
+            'en': 'English', 'es': 'Spanish', 'fr': 'French', 
+            'ne': 'Nepali', 'hi': 'Hindi'
+        }
+        lang_name = lang_map.get(chatbot_config.primary_language, 'English')
+        system_parts.append(f"\nCRITICAL RULE: You MUST reply entirely in {lang_name}.")
 
     # Page-specific injection (The "Centralized Knowledge Core" in action)
     if page_profile:
@@ -158,15 +153,16 @@ def build_dynamic_prompt(chatbot_config, page_profile=None, intent: str = 'gener
 
 
 # ─── Step 1: Intent Classifier ────────────────────────────────────────────────
-def classify_intent(message_text: str, gemini_api_key: str = None) -> str:
+def classify_intent(message_text: str, config: dict) -> str:
     """
-    Uses Gemini Flash (cheapest model) to classify a message into one of:
-      - 'purchase_intent'  → e.g., "How much?", "I want to buy"
-      - 'general_query'    → e.g., "What are the ingredients?", "Do you deliver?"
-      - 'product_issue'    → e.g., "Broken bottle", "Wrong size", "I want a refund"
-      - 'spam_noise'       → e.g., emojis only, gibberish
+    Classifies a message into one of:
+      - 'purchase_intent'
+      - 'general_query'
+      - 'product_issue'
+      - 'spam_noise'
 
-    Returns one of the above strings. Defaults to 'general_query' on any error.
+    Uses Gemini Flash if available, otherwise falls back to OpenAI GPT-4o-mini.
+    Returns 'general_query' on any error.
     """
     if not message_text or not message_text.strip():
         return 'spam_noise'
@@ -182,21 +178,41 @@ Customer message: "{message_text}"
 
 Respond with ONLY the category name, nothing else. No explanation, no punctuation."""
 
+    gemini_key = config.get('gemini_api_key', '')
+    openai_key = config.get('openai_api_key', '')
+
     try:
-        config = _get_ai_config()
-        key = gemini_api_key or config['gemini_api_key']
-        model = _get_gemini_model('gemini-1.5-flash', api_key=key)
-        response = model.generate_content(classification_prompt)
-        intent = response.text.strip().lower().replace(' ', '_')
+        response_text = ""
+        if gemini_key:
+            model = _get_gemini_model('gemini-1.5-flash', api_key=gemini_key)
+            response = model.generate_content(classification_prompt)
+            response_text = response.text
+        elif openai_key:
+            client = _get_openai_client(api_key=openai_key)
+            response = client.chat.completions.create(
+                model='gpt-4o-mini',
+                messages=[{'role': 'user', 'content': classification_prompt}],
+                max_tokens=10,
+                temperature=0.1
+            )
+            response_text = response.choices[0].message.content
+        else:
+            logger.warning("No API keys configured for intent classification.")
+            return 'general_query'
+
+        intent = response_text.strip().lower().replace(' ', '_')
         valid_intents = {'purchase_intent', 'general_query', 'product_issue', 'spam_noise'}
+        
         if intent in valid_intents:
             return intent
         # Try partial match
         for v in valid_intents:
             if v in intent:
                 return v
+                
         logger.warning(f"Intent classifier returned unexpected value: '{intent}'. Defaulting to general_query.")
         return 'general_query'
+        
     except Exception as e:
         logger.error(f"Intent classification failed: {e}. Defaulting to general_query.")
         return 'general_query'
@@ -245,13 +261,20 @@ def route_message(
         if page_profile:
             result['checkout_link'] = page_profile.checkout_link or ''
 
-        # ── Route by Input Type ───────────────────────────────────────────────
         if input_type == 'image':
             # Images → GPT-4o Vision (OCR, object recognition)
             result['intent'] = force_intent or 'general_query'
-            result['model_used'] = 'gpt-4o-vision'
-            system_prompt = build_dynamic_prompt(chatbot_config, page_profile, result['intent'])
-            reply = _call_openai_vision(message_text, system_prompt, openai_key)
+            if openai_key:
+                result['model_used'] = 'gpt-4o-vision'
+                system_prompt = build_dynamic_prompt(chatbot_config, page_profile, result['intent'])
+                reply = _call_openai_vision(message_text, system_prompt, openai_key, config=chatbot_config)
+            elif gemini_key:
+                result['model_used'] = 'gemini-vision'
+                system_prompt = build_dynamic_prompt(chatbot_config, page_profile, result['intent'])
+                reply = _call_gemini_vision(message_text, system_prompt, gemini_key, config=chatbot_config)
+            else:
+                result['model_used'] = 'error'
+                reply = "I'm sorry, I cannot process images without an AI API key configured."
             result['reply'] = reply
             result['success'] = True
             return result
@@ -268,34 +291,56 @@ def route_message(
         if force_intent:
             intent = force_intent
         else:
-            intent = classify_intent(message_text, gemini_key)
+            intent = classify_intent(message_text, config)
 
         result['intent'] = intent
 
         # Determine which model to use based on intent
         use_premium_model = intent in ('purchase_intent', 'product_issue')
 
-        if intent == 'product_issue':
-            result['open_ticket'] = True
+        # Human Handoff / Ticketing logic
+        triggers = getattr(chatbot_config, 'handoff_triggers', [])
+        result['open_ticket'] = False
+        if triggers and isinstance(triggers, list):
+            lower_msg = message_text.lower()
+            for trigger in triggers:
+                if trigger.lower() in lower_msg:
+                    result['open_ticket'] = True
+                    break
 
         if intent == 'spam_noise':
-            # Spam → Cheapest path, just a quick emoji reply via Gemini Flash
-            result['model_used'] = 'gemini-flash'
             system_prompt = build_dynamic_prompt(chatbot_config, page_profile, intent)
-            result['reply'] = _call_gemini_flash(message_text, system_prompt, gemini_key)
+            if gemini_key:
+                result['model_used'] = 'gemini-flash'
+                result['reply'] = _call_gemini_flash(message_text, system_prompt, gemini_key, chatbot_config)
+            elif openai_key:
+                result['model_used'] = 'gpt-4o-mini'
+                result['reply'] = _call_openai_chat(message_text, system_prompt, openai_key, model='gpt-4o-mini', config=chatbot_config)
+            else:
+                result['reply'] = "Thanks for your message!"
             result['success'] = True
             return result
 
         system_prompt = build_dynamic_prompt(chatbot_config, page_profile, intent)
 
         if use_premium_model:
-            # Complex / Sales → GPT-4o Premium
-            result['model_used'] = 'gpt-4o'
-            result['reply'] = _call_openai_chat(message_text, system_prompt, openai_key)
+            if openai_key:
+                # Complex / Sales → GPT-4o Premium
+                result['model_used'] = 'gpt-4o'
+                result['reply'] = _call_openai_chat(message_text, system_prompt, openai_key, config=chatbot_config)
+            elif gemini_key:
+                # Complex / Sales (OpenAI missing) → Gemini 1.5 Pro
+                result['model_used'] = 'gemini-pro'
+                result['reply'] = _call_gemini_pro(message_text, system_prompt, gemini_key, chatbot_config)
         else:
-            # Simple FAQ → Gemini Flash (cheap + fast)
-            result['model_used'] = 'gemini-flash'
-            result['reply'] = _call_gemini_flash(message_text, system_prompt, gemini_key)
+            if gemini_key:
+                # Simple FAQ → Gemini Flash
+                result['model_used'] = 'gemini-flash'
+                result['reply'] = _call_gemini_flash(message_text, system_prompt, gemini_key, chatbot_config)
+            elif openai_key:
+                # Simple FAQ → GPT-4o-mini
+                result['model_used'] = 'gpt-4o-mini'
+                result['reply'] = _call_openai_chat(message_text, system_prompt, openai_key, model='gpt-4o-mini', config=chatbot_config)
 
         result['success'] = True
 
@@ -308,45 +353,93 @@ def route_message(
 
 
 # ─── Model Callers ────────────────────────────────────────────────────────────
-def _call_gemini_flash(user_message: str, system_prompt: str, api_key: str) -> str:
+def _call_gemini_flash(user_message: str, system_prompt: str, api_key: str, config=None) -> str:
     """Calls Gemini 1.5 Flash — low cost, high speed. For FAQs and spam."""
+    import google.generativeai as genai
     model = _get_gemini_model('gemini-1.5-flash', api_key=api_key)
     full_prompt = f"{system_prompt}\n\nCustomer message: {user_message}"
-    response = model.generate_content(full_prompt)
+    
+    gen_config = genai.types.GenerationConfig()
+    if config:
+        gen_config.temperature = float(getattr(config, 'creativity_level', '0.7'))
+        gen_config.max_output_tokens = int(getattr(config, 'response_length', '500'))
+        
+    response = model.generate_content(full_prompt, generation_config=gen_config)
     return response.text.strip()
 
 
-def _call_openai_chat(user_message: str, system_prompt: str, api_key: str) -> str:
-    """Calls GPT-4o — premium model. For sales, complex reasoning, angry customers."""
+def _call_openai_chat(user_message: str, system_prompt: str, api_key: str, model: str = 'gpt-4o', config=None) -> str:
+    """Calls OpenAI Chat API. Defaults to gpt-4o, but can accept gpt-4o-mini for cost-savings."""
     client = _get_openai_client(api_key=api_key)
+    
+    temp = float(getattr(config, 'creativity_level', '0.7')) if config else 0.7
+    max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
+    
     response = client.chat.completions.create(
-        model='gpt-4o',
+        model=model,
         messages=[
             {'role': 'system', 'content': system_prompt},
             {'role': 'user', 'content': user_message},
         ],
-        max_tokens=500,
-        temperature=0.7,
+        max_tokens=max_tokens,
+        temperature=temp,
     )
     return response.choices[0].message.content.strip()
 
 
-def _call_openai_vision(image_description: str, system_prompt: str, api_key: str) -> str:
+def _call_openai_vision(image_description: str, system_prompt: str, api_key: str, config=None) -> str:
     """
     Calls GPT-4o Vision for image analysis (OCR, product labels, barcodes).
     In a real implementation, you'd pass the base64-encoded image URL here.
     """
     client = _get_openai_client(api_key=api_key)
+    
+    temp = float(getattr(config, 'creativity_level', '0.7')) if config else 0.5
+    max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
+    
     response = client.chat.completions.create(
         model='gpt-4o',
         messages=[
             {'role': 'system', 'content': system_prompt},
             {'role': 'user', 'content': f"The customer sent an image. Description/context: {image_description}"},
         ],
-        max_tokens=500,
-        temperature=0.5,
+        max_tokens=max_tokens,
+        temperature=temp,
     )
     return response.choices[0].message.content.strip()
+
+
+def _call_gemini_pro(user_message: str, system_prompt: str, api_key: str, config=None) -> str:
+    """Calls Gemini 1.5 Pro — premium model. For complex reasoning and sales when OpenAI is missing."""
+    import google.generativeai as genai
+    model = _get_gemini_model('gemini-1.5-pro', api_key=api_key)
+    full_prompt = f"{system_prompt}\n\nCustomer message: {user_message}"
+    
+    gen_config = genai.types.GenerationConfig()
+    if config:
+        gen_config.temperature = float(getattr(config, 'creativity_level', '0.7'))
+        gen_config.max_output_tokens = int(getattr(config, 'response_length', '500'))
+        
+    response = model.generate_content(full_prompt, generation_config=gen_config)
+    return response.text.strip()
+
+
+def _call_gemini_vision(image_description: str, system_prompt: str, api_key: str, config=None) -> str:
+    """
+    Calls Gemini 1.5 Flash (multimodal) for image analysis.
+    In a real implementation, you'd pass the actual image object.
+    """
+    import google.generativeai as genai
+    model = _get_gemini_model('gemini-1.5-flash', api_key=api_key)
+    full_prompt = f"{system_prompt}\n\nThe customer sent an image. Description/context: {image_description}"
+    
+    gen_config = genai.types.GenerationConfig()
+    if config:
+        gen_config.temperature = float(getattr(config, 'creativity_level', '0.7'))
+        gen_config.max_output_tokens = int(getattr(config, 'response_length', '500'))
+        
+    response = model.generate_content(full_prompt, generation_config=gen_config)
+    return response.text.strip()
 
 
 # ─── Comment-to-DM Funnel ────────────────────────────────────────────────────
@@ -391,9 +484,9 @@ def process_comment_to_dm(comment, integration, chatbot_config=None):
         message_text = comment.message or ''
         sender_id = comment.sender_id
 
-        # ── Intent Classification (Gemini Flash — cheap) ──────────────────────
+        # ── Intent Classification ─────────────────────────────────────────────
         config = _get_ai_config()
-        intent = classify_intent(message_text, config['gemini_api_key'])
+        intent = classify_intent(message_text, config)
         result['intent'] = intent
 
         # Spam → do nothing

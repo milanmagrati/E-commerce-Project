@@ -166,6 +166,33 @@ class CRMChatbotConfig(models.Model):
     # Agent Configuration
     ai_model = models.CharField(max_length=50, choices=AI_MODEL_CHOICES, default='multi_auto')
     response_tone = models.CharField(max_length=30, choices=TONE_CHOICES, default='professional_friendly')
+    
+    # Advanced AI Logic
+    CREATIVITY_CHOICES = [
+        ('0.3', 'Strict & Factual'),
+        ('0.7', 'Balanced'),
+        ('1.2', 'Creative & Marketing'),
+    ]
+    LENGTH_CHOICES = [
+        ('100', 'Short & Punchy'),
+        ('500', 'Standard'),
+        ('1500', 'Detailed & Explanatory'),
+    ]
+    LANGUAGE_CHOICES = [
+        ('auto', 'Auto-Detect'),
+        ('en', 'English'),
+        ('es', 'Spanish'),
+        ('fr', 'French'),
+        ('ne', 'Nepali'),
+        ('hi', 'Hindi'),
+    ]
+    creativity_level = models.CharField(max_length=10, choices=CREATIVITY_CHOICES, default='0.7')
+    response_length = models.CharField(max_length=10, choices=LENGTH_CHOICES, default='500')
+    primary_language = models.CharField(max_length=10, choices=LANGUAGE_CHOICES, default='auto')
+    
+    # Handoff keywords
+    handoff_triggers = models.JSONField(default=list, blank=True)
+
     auto_reply_channels = models.JSONField(default=dict)
     ai_credits = models.IntegerField(default=100)
     # Multi-Model Routing Engine API Keys

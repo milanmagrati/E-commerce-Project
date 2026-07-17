@@ -432,9 +432,24 @@ def crm_chatbot(request):
     integrations = CRMIntegration.objects.all()
     recent_logs = CRMCreditLog.objects.all()[:20]
 
+    channel_groups = []
+    for ct, ct_display in CRMIntegration.CHANNEL_TYPE_CHOICES:
+        integs = [i for i in integrations if i.channel_type == ct]
+        if not integs:
+            continue
+            
+        is_connected = any(i.status == 'connected' for i in integs)
+        
+        channel_groups.append({
+            'channel_type': ct,
+            'display_name': ct_display,
+            'is_connected': is_connected,
+            'accounts': integs,
+        })
+
     context = {
         'chatbot': chatbot,
-        'integrations': integrations,
+        'channel_groups': channel_groups,
         'recent_logs': recent_logs,
         'crm_section': 'chatbot',
     }
@@ -488,15 +503,18 @@ def crm_chatbot_save_agent(request):
 
     chatbot.ai_model = request.POST.get('ai_model', chatbot.ai_model)
     chatbot.response_tone = request.POST.get('response_tone', chatbot.response_tone)
-
-    # Only update API keys if a non-empty value is provided (don't overwrite with blank)
-    openai_key = request.POST.get('openai_api_key', '').strip()
-    gemini_key = request.POST.get('gemini_api_key', '').strip()
-    if openai_key:
-        chatbot.openai_api_key = openai_key
-    if gemini_key:
-        chatbot.gemini_api_key = gemini_key
-
+    chatbot.creativity_level = request.POST.get('creativity_level', chatbot.creativity_level)
+    chatbot.response_length = request.POST.get('response_length', chatbot.response_length)
+    import json
+    
+    chatbot.primary_language = request.POST.get('primary_language', chatbot.primary_language)
+    
+    triggers_json = request.POST.get('handoff_triggers')
+    if triggers_json:
+        try:
+            chatbot.handoff_triggers = json.loads(triggers_json)
+        except json.JSONDecodeError:
+            pass
     chatbot.save()
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -513,17 +531,20 @@ def crm_chatbot_toggle_channel(request):
     POST body: { channel_type: 'facebook', enabled: 'true'/'false' }
     """
     chatbot, _ = CRMChatbotConfig.objects.get_or_create(pk=1)
-    channel_type = request.POST.get('channel_type', '')
+    integration_id = request.POST.get('integration_id')
     enabled = request.POST.get('enabled', 'false') == 'true'
 
-    if channel_type:
+    if integration_id:
         channels = chatbot.auto_reply_channels or {}
-        channels[channel_type] = enabled
+        if enabled:
+            channels[str(integration_id)] = True
+        else:
+            channels.pop(str(integration_id), None)
         chatbot.auto_reply_channels = channels
         chatbot.save(update_fields=['auto_reply_channels', 'updated_at'])
-        return JsonResponse({'status': 'ok', 'channel': channel_type, 'enabled': enabled})
+        return JsonResponse({'status': 'ok', 'integration_id': integration_id, 'enabled': enabled})
 
-    return JsonResponse({'status': 'error', 'message': 'channel_type required'}, status=400)
+    return JsonResponse({'status': 'error', 'message': 'integration_id required'}, status=400)
 
 
 @login_required
