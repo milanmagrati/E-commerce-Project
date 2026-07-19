@@ -341,7 +341,7 @@
                     </div>
                     <div class="row g-3">
                         <div class="col-6">
-                            <label class="pro-label">Clock In Time <span class="text-danger">*</span></label>
+                            <label class="pro-label">Clock In Time</label>
                             <div class="pro-input-wrap">
                                 <i class="fas fa-sign-in-alt pro-input-icon" style="color:#28a745;"></i>
                                 <input type="time" class="form-control pro-field" id="recordClockIn">
@@ -891,10 +891,12 @@
             markField('recordDate', true, 'Date is required.'); hasError = true;
         }
         var clockIn = document.getElementById('recordClockIn').value;
-        if (!clockIn) {
-            markField('recordClockIn', true, 'Clock In Time is required.'); hasError = true;
-        }
         var clockOut = document.getElementById('recordClockOut').value;
+        if (!clockIn && !clockOut) {
+            markField('recordClockIn', true, 'Either Clock In or Clock Out Time is required.');
+            markField('recordClockOut', true, 'Either Clock In or Clock Out Time is required.');
+            hasError = true;
+        }
 
         if (hasError) {
             showFormAlert('danger', 'Validation Error', 'Please fill in all required fields.');
