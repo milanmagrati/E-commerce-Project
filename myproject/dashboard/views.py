@@ -6724,7 +6724,7 @@ def api_get_product_variations(request, product_id):
         # GET ALL ACTIVE VARIATIONS (ignore status field, only check is_active and stock)
         variations = (
             product.variations
-            .filter(is_active=True)  # Only check is_active, ignore status
+            .filter(Q(is_active=True) | Q(status='active'))  # Check either is_active=True or status='active'
             .order_by("-stock", "sku")  # Show in-stock items first
         )
 
@@ -10156,7 +10156,7 @@ def api_get_product_for_stockin(request, product_id):
     }
 
     if product.product_type == 'variable':
-        variations = product.variations.filter(is_active=True).prefetch_related(
+        variations = product.variations.filter(Q(is_active=True) | Q(status='active')).prefetch_related(
             'attribute_values__attribute_value__attribute'
         ).order_by('sku')
 
@@ -16655,7 +16655,7 @@ def purchase_report(request):
 
     if selected_product and selected_product.product_type == 'variable':
         is_variable = True
-        variations = list(selected_product.variations.filter(is_active=True).order_by('variation_name'))
+        variations = list(selected_product.variations.filter(Q(is_active=True) | Q(status='active')).order_by('variation_name'))
 
         if selected_variation_id:
             try:
@@ -17164,7 +17164,7 @@ def purchase_create(request):
     for vp in variable_products:
         product_variations_map[vp.id] = [
             {'id': v.id, 'name': v.variation_name or v.sku, 'sku': v.sku, 'stock': v.stock}
-            for v in vp.variations.filter(is_active=True).order_by('variation_name')
+            for v in vp.variations.filter(Q(is_active=True) | Q(status='active')).order_by('variation_name')
         ]
 
     # Build bundle components map for JS
@@ -20959,7 +20959,7 @@ def purchase_edit(request, purchase_id):
     for vp in variable_products:
         product_variations_map[vp.id] = [
             {'id': v.id, 'name': v.variation_name or v.sku, 'sku': v.sku, 'stock': v.stock}
-            for v in vp.variations.filter(is_active=True).order_by('variation_name')
+            for v in vp.variations.filter(Q(is_active=True) | Q(status='active')).order_by('variation_name')
         ]
 
     # Build bundle components map for JS
