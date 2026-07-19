@@ -721,19 +721,7 @@ function confirmDisconnect(inputId) {
 document.getElementById('agentForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     
-    // Advanced Frontend Validation
-    const oInput = document.getElementById('openaiKeyInput');
-    if (oInput && oInput.value && !oInput.value.trim().startsWith('sk-')) {
-        showToast('Invalid format: OpenAI key must start with sk-', true);
-        return;
-    }
-    
-    const gInput = document.getElementById('geminiKeyInput');
-    if (gInput && gInput.value && !gInput.value.trim().startsWith('AIzaSy')) {
-        showToast('Invalid format: Gemini key must start with AIzaSy', true);
-        return;
-    }
-
+    // Frontend Validation (API Keys are now managed via .env, no inputs to validate here)
     const btn = document.getElementById('agentSaveBtn');
     btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
     try {

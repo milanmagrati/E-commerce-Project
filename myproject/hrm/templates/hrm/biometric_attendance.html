@@ -186,7 +186,7 @@
           <button type="submit" class="bio-search-btn"><i class="fas fa-search"></i> Search</button>
         </div>
         <button type="button" class="bio-filter-btn" onclick="toggleFilters()">
-          <i class="fas fa-filter"></i> Filters{% if (date_from or date_to) and not default_today %} <span class="badge bg-primary rounded-pill" style="font-size:.65rem;">ON</span>{% endif %}
+          <i class="fas fa-filter"></i> Filters{% if date_from or date_to %}{% if not default_today %} <span class="badge bg-primary rounded-pill" style="font-size:.65rem;">ON</span>{% endif %}{% endif %}
         </button>
         <div class="ms-auto d-flex align-items-center gap-2">
           <span class="text-muted" style="font-size:.88rem; white-space:nowrap;">Per Page:</span>

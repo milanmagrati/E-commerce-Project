@@ -1014,6 +1014,11 @@
 const PV_API_URL = "{% url 'hrm:employee_period_attendance' %}";
 let pvCurrentPeriod = 'day';
 
+function toNepaliDigits(num) {
+    const digits = ['०','१','२','३','४','५','६','७','८','९'];
+    return String(num).replace(/[0-9]/g, match => digits[match]);
+}
+
 // ── XSS-safe text escaper ─────────────────────────────────────────────────────
 function esc(s) { const t = document.createElement('span'); t.appendChild(document.createTextNode(s == null ? '' : String(s))); return t.innerHTML; }
 
@@ -1337,9 +1342,9 @@ function renderWeekView(data) {
         let nepDate = "";
         try { 
             const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
-            nepDate = new ND(d).getDate(); 
+            nepDate = toNepaliDigits(new ND(d).getDate()); 
         } catch(e) { console.error('NepaliDate conversion error:', e); }
-        const dayNumHtml = (color) => `<div style="display:flex;justify-content:center;align-items:baseline;gap:6px;margin:4px 0;"><span style="font-size:1.4rem;font-weight:bold;color:${color};">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d.getDate()}</span></div>`;
+        const dayNumHtml = (color) => `<div style="display:flex;justify-content:center;align-items:baseline;gap:6px;margin:4px 0;"><span style="font-size:1.05rem;font-weight:bold;color:${color};">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d.getDate()}</span></div>`;
 
         if (rec) {
             const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
@@ -1414,9 +1419,9 @@ function renderCustomView(data) {
         let nepDate = "";
         try { 
             const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
-            nepDate = new ND(d).getDate(); 
+            nepDate = toNepaliDigits(new ND(d).getDate()); 
         } catch(e) { console.error('NepaliDate conversion error:', e); }
-        const dayNumHtml = (color) => `<div style="display:flex;justify-content:center;align-items:baseline;gap:6px;margin:4px 0;"><span style="font-size:1.4rem;font-weight:bold;color:${color};">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d.getDate()}</span></div>`;
+        const dayNumHtml = (color) => `<div style="display:flex;justify-content:center;align-items:baseline;gap:6px;margin:4px 0;"><span style="font-size:1.05rem;font-weight:bold;color:${color};">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d.getDate()}</span></div>`;
 
         if (rec) {
             const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
@@ -1506,9 +1511,9 @@ function renderMonthView(data) {
         let nepDate = "";
         try { 
             const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
-            nepDate = new ND(new Date(year, month - 1, d)).getDate(); 
+            nepDate = toNepaliDigits(new ND(new Date(year, month - 1, d)).getDate()); 
         } catch(e) { console.error('NepaliDate conversion error:', e); }
-        const numHtml = (color) => `<div style="display:flex;justify-content:space-between;width:100%;margin-bottom:4px;"><span class="cal-num" style="font-size:1.25rem;font-weight:900;line-height:1;color:${color};margin:0;">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d}</span></div>`;
+        const numHtml = (color) => `<div style="display:flex;justify-content:space-between;width:100%;margin-bottom:4px;"><span class="cal-num" style="font-size:1.05rem;font-weight:900;line-height:1;color:${color};margin:0;">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d}</span></div>`;
 
         if (rec) {
             const ci  = rec.clock_in  || '–';
@@ -1560,7 +1565,7 @@ function renderMonthView(data) {
         const firstDayNd = new ND(new Date(year, month - 1, 1));
         const monthNames = ["Baisakh", "Jestha", "Asar", "Shrawan", "Bhadra", "Ashoj", "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"];
         nepMonthName = monthNames[firstDayNd.getMonth()];
-        nepYear = firstDayNd.getYear();
+        nepYear = toNepaliDigits(firstDayNd.getYear());
     } catch(e) { console.error('NepaliDate header error:', e); }
     const titleHtml = nepMonthName ? `${nepMonthName} ${nepYear} | ${data.month_name} ${year}` : `${data.month_name} ${year}`;
 

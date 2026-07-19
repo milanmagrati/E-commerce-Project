@@ -45,14 +45,16 @@ def _get_gemini_model(model_name: str = 'gemini-1.5-flash', api_key: str = None)
         raise ImportError("google-generativeai package not installed. Run: pip install google-generativeai")
 
 
+from decouple import config as env_config
+
 # ─── Fetching config from Env ──────────────────────────────────────────────────
 def _get_ai_config():
     """
-    Fetch the API keys from environment variables.
+    Fetch the API keys from environment variables using decouple to parse the .env file.
     """
     return {
-        'openai_api_key': os.environ.get('OPENAI_API_KEY', ''),
-        'gemini_api_key': os.environ.get('GEMINI_API_KEY', ''),
+        'openai_api_key': env_config('OPENAI_API_KEY', default=''),
+        'gemini_api_key': env_config('GEMINI_API_KEY', default=''),
     }
 
 
@@ -252,6 +254,9 @@ def route_message(
         config = _get_ai_config()
         openai_key = config['openai_api_key']
         gemini_key = config['gemini_api_key']
+
+        if not openai_key and not gemini_key:
+            return {'success': False, 'error': 'No AI API keys configured. Please add GEMINI_API_KEY to your .env file.', 'reply': ''}
 
         if chatbot_config is None:
             return {'success': False, 'error': 'Chatbot configuration is missing or inactive'}
