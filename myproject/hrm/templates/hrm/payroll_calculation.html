@@ -414,8 +414,8 @@
                 <div class="pc-sc-value">&#2352;&#2370;{{ basic_salary|floatformat:2 }}</div>
             </div>
             <div class="pc-summary-card working">
-                <div class="pc-sc-label"><i class="fas fa-clock"></i> Working Days (Duty)</div>
-                <div class="pc-sc-value">{{ duty_days }}</div>
+                <div class="pc-sc-label"><i class="fas fa-clock"></i> Working Days</div>
+                <div class="pc-sc-value">{{ working_days }}</div>
             </div>
             <div class="pc-summary-card net">
                 <div class="pc-sc-label"><i class="fas fa-chart-line"></i> Net Salary</div>
@@ -429,8 +429,8 @@
         <h3 class="pc-section-title">Attendance Summary</h3>
         <div class="pc-att-summary">
             <div class="pc-att-item">
-                <div class="pc-att-value blue">{{ total_days }}</div>
-                <div class="pc-att-label">Total Days</div>
+                <div class="pc-att-value blue">{{ calendar_days }}</div>
+                <div class="pc-att-label">Calendar Days</div>
             </div>
             <div class="pc-att-item">
                 <div class="pc-att-value teal">{{ weekend_days }}</div>
@@ -441,19 +441,13 @@
                 <div class="pc-att-label">Holidays</div>
             </div>
             <div class="pc-att-item">
-                <div class="pc-att-value blue">{{ duty_days }}</div>
+                <div class="pc-att-value blue">{{ working_days }}</div>
                 <div class="pc-att-label">Working Days</div>
             </div>
             <div class="pc-att-item">
                 <div class="pc-att-value green">{{ present_days }}</div>
                 <div class="pc-att-label">Present</div>
             </div>
-            {% if present_on_weekend %}
-            <div class="pc-att-item">
-                <div class="pc-att-value green">{{ present_on_weekend }}</div>
-                <div class="pc-att-label">Present on<br>Weekend</div>
-            </div>
-            {% endif %}
             <div class="pc-att-item">
                 <div class="pc-att-value blue">{{ paid_leave_days }}</div>
                 <div class="pc-att-label">Paid Leave</div>
@@ -466,6 +460,18 @@
                 <div class="pc-att-value orange">{{ half_days }}</div>
                 <div class="pc-att-label">Half Days</div>
             </div>
+            {% if weekend_worked_days %}
+            <div class="pc-att-item">
+                <div class="pc-att-value green">{{ weekend_worked_days }}</div>
+                <div class="pc-att-label">Wknd Worked</div>
+            </div>
+            {% endif %}
+            {% if holiday_worked_days %}
+            <div class="pc-att-item">
+                <div class="pc-att-value green">{{ holiday_worked_days }}</div>
+                <div class="pc-att-label">Hol. Worked</div>
+            </div>
+            {% endif %}
             <div class="pc-att-item">
                 <div class="pc-att-value purple">{{ ot_hours }}h</div>
                 <div class="pc-att-label">Overtime</div>
@@ -485,9 +491,27 @@
         <div class="pc-ed-card">
             <h3 class="pc-ed-title earning"><i class="fas fa-chart-line"></i> Earnings</h3>
             <div class="pc-ed-row">
-                <span class="pc-ed-name">Basic Salary ({{ payable_days }}/{{ duty_days }} days)</span>
-                <span class="pc-ed-amount green">Rs. {{ earned_basic|floatformat:2 }}</span>
+                <span class="pc-ed-name">Basic Salary (Monthly)</span>
+                <span class="pc-ed-amount green">Rs. {{ basic_salary|floatformat:2 }}</span>
             </div>
+            {% if weekend_pay > 0 %}
+            <div class="pc-ed-row">
+                <span class="pc-ed-name" style="color:#0a7;">Weekend Pay ({{ weekend_worked_days }} days &times; {{ weekend_multiplier }}&times;)</span>
+                <span class="pc-ed-amount green">Rs. {{ weekend_pay|floatformat:2 }}</span>
+            </div>
+            {% endif %}
+            {% if holiday_pay > 0 %}
+            <div class="pc-ed-row">
+                <span class="pc-ed-name" style="color:#0a7;">Holiday Pay ({{ holiday_worked_days }} days &times; {{ holiday_multiplier }}&times;)</span>
+                <span class="pc-ed-amount green">Rs. {{ holiday_pay|floatformat:2 }}</span>
+            </div>
+            {% endif %}
+            {% if ot_pay > 0 %}
+            <div class="pc-ed-row">
+                <span class="pc-ed-name" style="color:#0a7;">OT Pay ({{ ot_hours }}h &times; {{ ot_multiplier }}&times;)</span>
+                <span class="pc-ed-amount green">Rs. {{ ot_pay|floatformat:2 }}</span>
+            </div>
+            {% endif %}
             {% for e in earnings %}
             <div class="pc-ed-row">
                 <span class="pc-ed-name">{{ e.name }}</span>
@@ -503,6 +527,12 @@
         <!-- Deductions -->
         <div class="pc-ed-card">
             <h3 class="pc-ed-title deduction"><i class="fas fa-chart-line" style="transform: rotate(180deg);"></i> Deductions</h3>
+            {% if absent_days > 0 %}
+            <div class="pc-ed-row">
+                <span class="pc-ed-name" style="color:#c00;">Absent Deduction ({{ absent_days }} days &times; Rs.{{ daily_rate|floatformat:2 }})</span>
+                <span class="pc-ed-amount red">Rs. {{ absent_deduction|floatformat:2 }}</span>
+            </div>
+            {% endif %}
             {% for d in deductions %}
             <div class="pc-ed-row">
                 <span class="pc-ed-name">{{ d.name }}</span>
@@ -560,38 +590,46 @@
 
     <!-- Final Calculation -->
     <div class="pc-final-section">
-        <h3 class="pc-section-title">Final Calculation</h3>
+        <h3 class="pc-section-title">Final Calculation Breakdown</h3>
 
         <div class="pc-final-row">
             <span class="pc-final-label">Base Salary (Monthly)</span>
             <span class="pc-final-value green">Rs. {{ basic_salary|floatformat:2 }}</span>
         </div>
         <div class="pc-final-row">
-            <span class="pc-final-label">Per Day Salary (Rs. {{ basic_salary|floatformat:2 }} / {{ total_days }} days)</span>
-            <span class="pc-final-value purple">Rs. {{ per_day_salary|floatformat:2 }}</span>
+            <span class="pc-final-label">Daily Rate (Rs. {{ basic_salary|floatformat:2 }} / {{ divisor_label }})</span>
+            <span class="pc-final-value purple">Rs. {{ daily_rate|floatformat:2 }}</span>
         </div>
+        {% if absent_days > 0 %}
         <div class="pc-final-row">
-            <span class="pc-final-label">Earned Basic ({{ payable_days }}/{{ total_days }} payable days)</span>
-            <span class="pc-final-value green">Rs. {{ earned_basic|floatformat:2 }}</span>
+            <span class="pc-final-label">Absent Deduction ({{ absent_days }} absent days)</span>
+            <span class="pc-final-value red">- Rs. {{ absent_deduction|floatformat:2 }}</span>
         </div>
+        {% endif %}
         <div class="pc-final-row">
-            <span class="pc-final-label">Total Earnings (Earned Basic + Allowances)</span>
+            <span class="pc-final-label">Net Basic (After Absences)</span>
+            <span class="pc-final-value green">Rs. {{ net_basic|floatformat:2 }}</span>
+        </div>
+        
+        {% if weekend_pay > 0 or holiday_pay > 0 or ot_pay > 0 %}
+        <div class="pc-final-row" style="margin-top: 8px;">
+            <span class="pc-final-label">Additional Pay (Weekend/Holiday/OT)</span>
+            <span class="pc-final-value green">+ Rs. {{ weekend_pay|add:holiday_pay|add:ot_pay|floatformat:2 }}</span>
+        </div>
+        {% endif %}
+
+        <div class="pc-final-row" style="margin-top: 8px;">
+            <span class="pc-final-label">Total Earnings (Including Allowances & Bonus)</span>
             <span class="pc-final-value green">Rs. {{ total_earnings|floatformat:2 }}</span>
         </div>
         <div class="pc-final-row">
-            <span class="pc-final-label">Salary Component Deductions</span>
+            <span class="pc-final-label">Other Deductions (Taxes, etc.)</span>
             <span class="pc-final-value red">- Rs. {{ salary_comp_deductions|floatformat:2 }}</span>
         </div>
         {% if advance_deduction and advance_deduction > 0 %}
         <div class="pc-final-row">
             <span class="pc-final-label">Advance Payment Deduction</span>
             <span class="pc-final-value red">- Rs. {{ advance_deduction|floatformat:2 }}</span>
-        </div>
-        {% endif %}
-        {% if pay_ot and overtime_amount and overtime_amount > 0 %}
-        <div class="pc-final-row">
-            <span class="pc-final-label">Overtime Amount</span>
-            <span class="pc-final-value green">+ Rs. {{ overtime_amount|floatformat:2 }}</span>
         </div>
         {% endif %}
 

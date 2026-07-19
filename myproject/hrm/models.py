@@ -1,4 +1,6 @@
 from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
+from decimal import Decimal
 from django.conf import settings
 
 
@@ -23,6 +25,17 @@ class Branch(models.Model):
     class Meta:
         verbose_name_plural = 'Branches'
         ordering = ['-created_at']
+
+    def clean(self):
+        super().clean()
+        if self.pay_period_start and self.pay_period_end:
+            if self.pay_period_end < self.pay_period_start:
+                from django.core.exceptions import ValidationError
+                raise ValidationError({'pay_period_end': 'End date must be after or equal to start date.'})
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -488,7 +501,7 @@ class Shift(models.Model):
     break_end_time = models.TimeField(null=True, blank=True)
     grace_period = models.PositiveIntegerField(default=15, help_text='Grace period in minutes')
     is_night_shift = models.BooleanField(default=False)
-    working_hours = models.DecimalField(max_digits=4, decimal_places=1, default=8.0)
+    working_hours = models.DecimalField(max_digits=4, decimal_places=1, default=8.0, validators=[MinValueValidator(0), MaxValueValidator(24)])
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -546,8 +559,8 @@ class AttendanceRecord(models.Model):
         'Shift', on_delete=models.SET_NULL, null=True, blank=True, related_name='attendance_records'
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='present')
-    working_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    overtime_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    working_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0), MaxValueValidator(24)])
+    overtime_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0), MaxValueValidator(24)])
     is_holiday = models.BooleanField(default=False)
     notes = models.TextField(blank=True, default='')
     is_early_departure = models.BooleanField(default=False)
@@ -830,6 +843,52 @@ class PayrollRun(models.Model):
         return f"{self.title} - {self.get_status_display()}"
 
 
+class PayrollSetting(models.Model):
+    """
+    Singleton configuration table for payroll calculation behaviour.
+    Access via PayrollSetting.get_settings() — never instantiate directly.
+    """
+    DIVISOR_CHOICES = [
+        ('FIXED_30', 'Fixed 30 days (always divide by 30)'),
+        ('ACTUAL_CYCLE_DAYS', 'Actual cycle days (calendar days in pay period)'),
+    ]
+    salary_divisor_type = models.CharField(
+        max_length=20, choices=DIVISOR_CHOICES, default='FIXED_30',
+        help_text='Denominator used for DailyRate = MonthlySalary / Divisor'
+    )
+    weekend_multiplier = models.DecimalField(
+        max_digits=4, decimal_places=2, default=1.00,
+        help_text='Pay multiplier for days worked on weekends (1=regular, 1.5=time-and-half, 2=double)'
+    )
+    holiday_multiplier = models.DecimalField(
+        max_digits=4, decimal_places=2, default=1.00,
+        help_text='Pay multiplier for days worked on public holidays'
+    )
+    ot_multiplier = models.DecimalField(
+        max_digits=4, decimal_places=2, default=1.50,
+        validators=[MinValueValidator(Decimal('1.50'))],
+        help_text='OT pay multiplier per hour (Nepal Labor Act 2074 default: 1.5x)'
+    )
+    shift_hours_per_day = models.DecimalField(
+        max_digits=4, decimal_places=2, default=8.00,
+        help_text='Standard working hours per day — used to derive HourlyRate from DailyRate'
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Payroll Setting'
+        verbose_name_plural = 'Payroll Settings'
+
+    def __str__(self):
+        return f'Payroll Settings (Divisor: {self.get_salary_divisor_type_display()})'
+
+    @classmethod
+    def get_settings(cls):
+        """Return the singleton settings row, creating it with defaults if absent."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class Payslip(models.Model):
     STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -840,6 +899,8 @@ class Payslip(models.Model):
     payslip_number = models.CharField(max_length=50, unique=True, blank=True)
     payroll_run = models.ForeignKey(PayrollRun, on_delete=models.CASCADE, related_name='payslips')
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='payslips')
+    basic_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text='Snapshot of basic salary at generation')
+    salary_structure = models.JSONField(default=dict, blank=True, help_text='Snapshot of earnings/deductions used in calculation')
     gross_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_deductions = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     advance_deduction = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text='Advance payment deduction for this pay period')
@@ -1021,7 +1082,7 @@ class AdvancePayment(models.Model):
     employee = models.ForeignKey(
         Employee, on_delete=models.CASCADE, related_name='advance_payments'
     )
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     payment_date = models.DateField(null=True, blank=True)
     reason = models.TextField()
     repayment_mode = models.CharField(
@@ -1090,7 +1151,7 @@ class Bonus(models.Model):
 
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='bonuses')
     bonus_type = models.CharField(max_length=20, choices=BONUS_TYPE_CHOICES, default='other')
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     month = models.PositiveSmallIntegerField(help_text='Payroll month (1-12)')
     year = models.PositiveSmallIntegerField(help_text='Payroll year')
     remarks = models.TextField(blank=True, default='')
@@ -1139,7 +1200,7 @@ class PayslipAdjustment(models.Model):
     adjustment_type = models.CharField(max_length=15, choices=ADJUSTMENT_TYPE_CHOICES)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='adjustment')
     description = models.CharField(max_length=255)
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     reason = models.TextField(blank=True, default='')
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
@@ -1176,6 +1237,25 @@ class PayslipAuditLog(models.Model):
         return f"{self.payslip} — {self.action}"
 
 
+
+class HRMAuditLog(models.Model):
+    model_name = models.CharField(max_length=50)
+    record_id = models.PositiveIntegerField()
+    action = models.CharField(max_length=50)
+    changes = models.JSONField(default=dict, blank=True)
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    performed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-performed_at']
+        verbose_name = 'HRM Audit Log'
+        verbose_name_plural = 'HRM Audit Logs'
+
+    def __str__(self):
+        return f"{self.model_name} {self.record_id} - {self.action}"
+
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db.models import Sum
@@ -1210,3 +1290,22 @@ def update_leave_balance_used_days(sender, instance, **kwargs):
         if balance.used_days != used:
             balance.used_days = used
             balance.save()
+
+@receiver(post_save, sender=AttendanceRecord)
+@receiver(post_delete, sender=AttendanceRecord)
+@receiver(post_save, sender=EmployeeSalary)
+@receiver(post_delete, sender=EmployeeSalary)
+def log_hrm_changes(sender, instance, created=False, **kwargs):
+    action = 'deleted'
+    changes = {}
+    if kwargs.get('signal') == post_save:
+        action = 'created' if created else 'updated'
+        # Basic serialization of fields could be done here, but we just log the action for now.
+        changes = {'info': f"{sender.__name__} {action}"}
+    
+    HRMAuditLog.objects.create(
+        model_name=sender.__name__,
+        record_id=instance.pk or 0,
+        action=action,
+        changes=changes
+    )

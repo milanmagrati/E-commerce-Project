@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Branch, Department, Designation, Employee, EmployeeDocument, AssetType, Asset, LeaveType, LeaveRequest
+from .models import Branch, Department, Designation, Employee, EmployeeDocument, AssetType, Asset, LeaveType, LeaveRequest, PayrollSetting
 
 
 @admin.register(Branch)
@@ -62,3 +62,40 @@ class LeaveRequestAdmin(admin.ModelAdmin):
     list_display = ('employee', 'leave_type', 'start_date', 'end_date', 'days', 'status', 'created_at')
     list_filter = ('status', 'leave_type')
     search_fields = ('employee__full_name', 'employee__employee_id', 'reason')
+
+
+@admin.register(PayrollSetting)
+class PayrollSettingAdmin(admin.ModelAdmin):
+    """Singleton admin — prevent adding new rows; only edit the one that exists."""
+    list_display = ('salary_divisor_type', 'weekend_multiplier', 'holiday_multiplier', 'ot_multiplier', 'shift_hours_per_day', 'updated_at')
+    fieldsets = (
+        ('Salary Divisor', {
+            'description': 'FIXED_30 → daily rate = salary/30 always. ACTUAL_CYCLE_DAYS → daily rate = salary / number of calendar days in pay cycle.',
+            'fields': ('salary_divisor_type',),
+        }),
+        ('Pay Multipliers', {
+            'description': 'Multipliers applied when employees work on weekends, holidays, or overtime.',
+            'fields': ('weekend_multiplier', 'holiday_multiplier', 'ot_multiplier'),
+        }),
+        ('Shift Configuration', {
+            'fields': ('shift_hours_per_day',),
+        }),
+    )
+
+    def has_add_permission(self, request):
+        # Only one settings row allowed
+        return not PayrollSetting.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+from .models import Payslip
+
+@admin.register(Payslip)
+class PayslipAdmin(admin.ModelAdmin):
+    list_display = ('payslip_number', 'employee', 'payroll_run', 'net_salary', 'status', 'created_at')
+    list_filter = ('status', 'payroll_run')
+    search_fields = ('payslip_number', 'employee__full_name', 'employee__employee_id')
+    readonly_fields = ('basic_salary', 'gross_salary', 'total_deductions', 'advance_deduction', 'absent_deduction', 'net_salary', 'salary_structure')
+
