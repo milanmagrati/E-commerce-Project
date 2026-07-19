@@ -313,6 +313,56 @@ def cancel_order_item(item):
         )
 
 
+def restore_order_stock(order):
+    """
+    Restores stock for a dispatched order that is being cancelled, deleted, or moved to trash.
+    Correctly handles simple, variable, and bundle products.
+    """
+    from dashboard.models import Product, ProductVariation
+    
+    with transaction.atomic():
+        for item in order.items.all():
+            if item.product_variation:
+                variation = ProductVariation.objects.select_for_update().get(pk=item.product_variation.pk)
+                variation.stock += item.quantity
+                if variation.stock > 0:
+                    variation.status = 'active'
+                variation.save(update_fields=['stock', 'status'])
+            elif item.product:
+                product = Product.objects.select_for_update().get(pk=item.product.pk)
+                
+                if product.is_bundle:
+                    # Restore stock for bundle components
+                    components = product.bundle_components.select_related('component_product').all()
+                    for comp in components:
+                        comp_product = Product.objects.select_for_update().get(pk=comp.component_product.pk)
+                        restored_qty = comp.quantity_required * item.quantity
+                        comp_product.stock += restored_qty
+                        
+                        threshold = comp_product.low_stock_threshold or 0
+                        if comp_product.stock <= 0:
+                            comp_product.stock_status = 'out_of_stock'
+                        elif threshold > 0 and comp_product.stock <= threshold:
+                            comp_product.stock_status = 'low_stock'
+                        else:
+                            comp_product.stock_status = 'in_stock'
+                            
+                        comp_product.save(update_fields=['stock', 'stock_status'])
+                else:
+                    # Restore stock for simple product
+                    product.stock += item.quantity
+                    threshold = product.low_stock_threshold or 0
+                    if product.stock <= 0:
+                        product.stock_status = 'out_of_stock'
+                    elif threshold > 0 and product.stock <= threshold:
+                        product.stock_status = 'low_stock'
+                    else:
+                        product.stock_status = 'in_stock'
+                    product.save(update_fields=['stock', 'stock_status'])
+
+        logger.info(f"restore_order_stock: Restored stock for dispatched order={order.order_number}")
+
+
 def clear_reservation_on_dispatch(product, quantity):
     """
     Called by the dashboard dispatch view when stock is deducted on dispatch.

@@ -3847,7 +3847,17 @@ def order_edit(request, order_id):
                             )
                         except:
                             pass
-
+                
+                # Check for manual status transition away from 'dispatched' to restore stock
+                if old_order_status == 'dispatched' and order.order_status != 'dispatched':
+                    from inventory.services import restore_order_stock
+                    restore_order_stock(order)
+                    # Invalidate dispatch items so that if it is dispatched again later, stock will be deducted
+                    from dashboard.models import DispatchItem
+                    DispatchItem.objects.filter(order=order, dispatch_status='success').update(
+                        dispatch_status='failed',
+                        failure_reason='Order status changed manually away from dispatched'
+                    )
                 # Update payment_setup and sync payment_method
                 if payment_setup_id:
                     try:
@@ -4254,18 +4264,8 @@ def order_delete(request, order_id):
         # If you want to restore stock for dispatched orders, check status:
 
         if order.order_status == 'dispatched':
-            # Restore stock for dispatched orders only
-            for item in order.items.all():
-                if item.product_variation:
-                    item.product_variation.stock += item.quantity
-                    if item.product_variation.stock > 0:
-                        item.product_variation.status = 'active'
-                    item.product_variation.save()
-                elif item.product:
-                    item.product.stock += item.quantity
-                    if item.product.stock > 0:
-                        item.product.stock_status = 'in_stock'
-                    item.product.save()
+            from inventory.services import restore_order_stock
+            restore_order_stock(order)
 
         order.delete()
         messages.success(request, f"Order {order_number} deleted successfully!")
@@ -4315,9 +4315,23 @@ def order_move_to_trash(request, order_id):
 
     if request.method == 'POST':
         order_number = order.order_number
-        order.is_deleted = True
-        order.deleted_at = timezone.now()
-        order.save()
+        
+        if order.order_status == 'dispatched':
+            from inventory.services import restore_order_stock
+            restore_order_stock(order)
+            order.order_status = 'cancelled'
+            order.is_deleted = True
+            order.deleted_at = timezone.now()
+            order.save()
+        else:
+            try:
+                from inventory.services import release_order_reservations
+                release_order_reservations(order)
+            except Exception as e:
+                pass
+            order.is_deleted = True
+            order.deleted_at = timezone.now()
+            order.save()
 
         # Log activity
         OrderActivityLog.objects.create(
@@ -7810,18 +7824,11 @@ def orders_bulk_action(request):
                 # SOFT DELETE - Move to trash instead of permanent delete
                 for order in orders:
                     if order.order_status == 'dispatched':
-                        # Restore stock for dispatched orders
-                        for item in order.items.all():
-                            if item.product_variation:
-                                item.product_variation.stock += item.quantity
-                                if item.product_variation.stock > 0:
-                                    item.product_variation.status = 'active'
-                                item.product_variation.save()
-                            elif item.product:
-                                item.product.stock += item.quantity
-                                if item.product.stock > 0:
-                                    item.product.stock_status = 'in_stock'
-                                item.product.save()
+                        # Restore stock for dispatched orders and change status to cancelled
+                        from inventory.services import restore_order_stock
+                        restore_order_stock(order)
+                        order.order_status = 'cancelled'
+                        order.save(update_fields=['order_status'])
                     else:
                         # Release stock reservations for non-dispatched orders
                         try:
@@ -7859,9 +7866,22 @@ def orders_bulk_action(request):
                         if normalized_status == 'delivered' and old_status != 'delivered':
                             order.delivered_at = timezone.now()
 
-                        # Release stock reservations when cancelling
+                        # Restore stock if moving away from 'dispatched'
+                        if old_status == 'dispatched' and normalized_status != 'dispatched':
+                            try:
+                                from inventory.services import restore_order_stock
+                                restore_order_stock(order)
+                                from dashboard.models import DispatchItem
+                                DispatchItem.objects.filter(order=order, dispatch_status='success').update(
+                                    dispatch_status='failed',
+                                    failure_reason='Order status changed manually away from dispatched'
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to restore stock for order {order.order_number}: {e}")
+
+                        # Release stock reservations when cancelling (only if not previously dispatched, as restored stock doesn't need reservation release)
                         if (normalized_status in ('cancelled', 'canceled') and
-                                old_status not in ('cancelled', 'canceled')):
+                                old_status not in ('cancelled', 'canceled', 'dispatched')):
                             try:
                                 from inventory.services import release_order_reservations
                                 release_order_reservations(order)
@@ -8452,13 +8472,18 @@ def dispatch_management(request):
                             scanned_order_id=order_id
                         ).update(order=order)
 
-                        # Check if already dispatched
-                        if order.order_status == 'dispatched':
+                        # Check if historically dispatched (even if status was changed manually later)
+                        has_been_dispatched_ever = DispatchItem.objects.filter(
+                            order=order,
+                            dispatch__is_deleted=False
+                        ).exclude(dispatch=dispatch).exists()
+
+                        if order.order_status == 'dispatched' or has_been_dispatched_ever:
                             DispatchItem.objects.filter(
                                 dispatch=dispatch,
                                 scanned_order_id=order_id
-                            ).update(dispatch_status='failed', failure_reason='Already dispatched')
-                            messages.warning(request, f'⚠️ Order {order_id} already dispatched')
+                            ).update(dispatch_status='failed', failure_reason='Already dispatched previously')
+                            messages.warning(request, f'⚠️ Order {order_id} has already been dispatched previously and cannot be dispatched again.')
                             continue
 
                         # ✅ STOCK DEDUCTION: Reduce stock when status is "dispatched"
