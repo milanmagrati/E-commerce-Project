@@ -281,7 +281,8 @@
     .pv-day-metric:last-child { border-right:none; }
 
     /* Week view */
-    .pv-week-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+    .pv-week-wrap { overflow-x: auto; padding-bottom: 8px; }
+    .pv-week-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; min-width: 700px; }
     .pv-week-day {
         border-radius:10px; border:1.5px solid #e2e8f0;
         padding:0.7rem 0.4rem; text-align:center; transition:transform 0.12s;
@@ -299,11 +300,12 @@
         border:2px solid #c7d2fe;
         box-shadow:0 6px 28px rgba(79,70,229,0.14);
         padding:1.3rem 1.4rem 1.2rem;
-        overflow:hidden;
+        overflow-x: auto;
     }
     .pv-cal-nav {
         display:flex; align-items:center; justify-content:space-between;
         margin-bottom:18px; padding:0 4px;
+        min-width: 700px;
     }
     .pv-cal-nav-btn {
         width:40px; height:40px; border-radius:50%; border:none;
@@ -326,6 +328,7 @@
         gap:1px; background:#c7d2fe;
         border:2px solid #a5b4fc; border-radius:10px; overflow:hidden;
         margin-bottom:2px;
+        min-width: 700px;
     }
     .pv-cal-head {
         text-align:center; font-size:0.78rem; font-weight:800; color:#fff;
@@ -1384,7 +1387,7 @@ function renderWeekView(data) {
             </div>`;
         }
     }
-    return `<div class="p-4"><div class="pv-week-grid">${cards}</div></div>`;
+    return `<div class="p-4"><div class="pv-week-wrap"><div class="pv-week-grid">${cards}</div></div></div>`;
 }
 
 // ── Custom view ───────────────────────────────────────────────────────────────
@@ -1462,7 +1465,7 @@ function renderCustomView(data) {
         }
     }
     
-    let html = `<div class="p-4"><div class="pv-week-grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr));">${cards}</div>`;
+    let html = `<div class="p-4"><div class="pv-week-wrap"><div class="pv-week-grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); min-width:0;">${cards}</div></div>`;
     if (totalDays > maxDays) {
         html += `<div class="text-center mt-3 text-muted" style="font-size:0.8rem;">Showing first ${maxDays} days. Please use a smaller date range or view summary report for the rest.</div>`;
     }
