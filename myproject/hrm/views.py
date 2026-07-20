@@ -2880,18 +2880,33 @@ def attendance_list(request):
     _sync_biometric_to_attendance()
 
     search = request.GET.get('search', '')
+    filter_date = request.GET.get('filter_date', '')
+    sort_by = request.GET.get('sort_by', '-date')
     per_page = request.GET.get('per_page', 9)
     try:
         per_page = int(per_page)
     except (ValueError, TypeError):
         per_page = 9
 
-    qs = AttendanceRecord.objects.select_related('employee', 'shift').order_by('-date', 'employee__full_name')
+    qs = AttendanceRecord.objects.select_related('employee', 'shift')
+    
+    if filter_date:
+        qs = qs.filter(date=filter_date)
+
     if search:
         qs = qs.filter(
             Q(employee__full_name__icontains=search) |
             Q(notes__icontains=search)
         )
+        
+    if sort_by == 'date':
+        qs = qs.order_by('date', 'employee__full_name')
+    elif sort_by == 'employee__full_name':
+        qs = qs.order_by('employee__full_name', '-date')
+    elif sort_by == '-employee__full_name':
+        qs = qs.order_by('-employee__full_name', '-date')
+    else:
+        qs = qs.order_by('-date', 'employee__full_name')
 
     today = dt_date.today()
     all_records = AttendanceRecord.objects.all()
@@ -2912,6 +2927,8 @@ def attendance_list(request):
         'page_title': 'Attendance Records',
         'records': records,
         'search': search,
+        'filter_date': filter_date,
+        'sort_by': sort_by,
         'per_page': per_page,
         'total_records': total_records,
         'present_today': present_today,
@@ -3162,9 +3179,14 @@ def attendance_update(request, pk):
 
 @login_required
 def attendance_delete(request, pk):
-    from .models import AttendanceRecord
+    from .models import AttendanceRecord, BiometricAttendance
     record = get_object_or_404(AttendanceRecord, pk=pk)
     if request.method == 'POST':
+        if record.employee and record.employee.device_pin:
+            BiometricAttendance.objects.filter(
+                pin=record.employee.device_pin,
+                timestamp__date=record.date
+            ).delete()
         record.delete()
         return JsonResponse({'success': True})
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
