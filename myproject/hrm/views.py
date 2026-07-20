@@ -3183,9 +3183,15 @@ def attendance_delete(request, pk):
     record = get_object_or_404(AttendanceRecord, pk=pk)
     if request.method == 'POST':
         if record.employee and record.employee.device_pin:
+            import pytz
+            from django.utils import timezone
+            from datetime import datetime
+            local_tz = pytz.timezone('Asia/Kathmandu')
+            start_of_day = local_tz.localize(datetime.combine(record.date, datetime.min.time()))
+            end_of_day = local_tz.localize(datetime.combine(record.date, datetime.max.time()))
             BiometricAttendance.objects.filter(
                 pin=record.employee.device_pin,
-                timestamp__date=record.date
+                timestamp__range=(start_of_day, end_of_day)
             ).delete()
         record.delete()
         return JsonResponse({'success': True})
