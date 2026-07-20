@@ -27,7 +27,10 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*').split(',')
+# ALLOWED_HOSTS must be explicitly set in production .env, e.g.:
+#   ALLOWED_HOSTS=office.orajil.com.np,www.office.orajil.com.np
+# Defaulting to '*' in development only; production MUST override this.
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
@@ -123,8 +126,18 @@ DATABASES = {
         'PASSWORD': config('DB_PASSWORD'),
         'HOST': config('DB_HOST', default='localhost'),
         'PORT': config('DB_PORT', default='3306'),
+        # ── Production robustness settings ──────────────────────────────
+        # Reuse DB connections for 60 seconds instead of open/closing per request.
+        # Prevents 'MySQL server has gone away' under high load.
+        'CONN_MAX_AGE': config('DB_CONN_MAX_AGE', default=60, cast=int),
+        # CONN_HEALTH_CHECKS: ping the connection before reuse (Django 4.1+)
+        'CONN_HEALTH_CHECKS': True,
         'OPTIONS': {
             'charset': 'utf8mb4',
+            # Abort if DB doesn't respond in 10 seconds (prevents worker hang → 500)
+            'connect_timeout': 10,
+            # Re-raise exceptions instead of swallowing them silently
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
         },
     }
 }
@@ -181,12 +194,35 @@ LOGOUT_REDIRECT_URL = 'login'
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Store sessions in database
 SESSION_COOKIE_AGE = 43200  # 12 hours in seconds
 SESSION_COOKIE_HTTPONLY = True  # Prevent JS access for security
-SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
+SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=False, cast=bool)  # Set True in .env for production HTTPS
+CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=False, cast=bool)  # Set True in .env for production HTTPS
+
+# For cPanel/Apache deployments where HTTPS is terminated by the proxy
+# (Apache sits in front of Django). This lets Django detect HTTPS correctly.
+# Only enable this if your cPanel uses Apache as a reverse proxy with SSL:
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# WhiteNoise: set browser cache max-age for static files (1 week)
+# This prevents browsers from repeatedly downloading the same CSS/JS files
+WHITENOISE_MAX_AGE = 604800  # 1 week in seconds
 SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Keep session even after browser closes
 SESSION_SAVE_EVERY_REQUEST = True  # Reset expiry on every request (sliding window)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ======================== Cache Configuration ========================
+# Using LocMemCache (per-process in-memory) which works without Redis.
+# Each worker has its own cache — but 60-second TTL is short enough that
+# stale data is acceptable. Swap BACKEND to Redis if you add Redis later:
+#   BACKEND: 'django.core.cache.backends.redis.RedisCache'
+#   LOCATION: 'redis://127.0.0.1:6379/1'
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'dashboard-ctx-cache',
+    }
+}
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
@@ -248,6 +284,10 @@ ORDER_AUTO_SYNC_INTERVAL = config('ORDER_AUTO_SYNC_INTERVAL', default=14400, cas
 WEBHOOK_PENDING_CHECK_INTERVAL = config('WEBHOOK_PENDING_CHECK_INTERVAL', default=30, cast=int)
 
 # ======================== Logging Configuration ========================
+# Ensure logs directory exists before configuring handlers
+_LOG_DIR = os.path.join(BASE_DIR, 'logs')
+os.makedirs(_LOG_DIR, exist_ok=True)
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -269,10 +309,20 @@ LOGGING = {
             'level': 'INFO',
             'formatter': 'simple',
         },
+        # ── NEW: Captures ALL Django 500 errors to a dedicated log ───────
+        'error_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'ERROR',
+            'filename': os.path.join(_LOG_DIR, 'django_errors.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
         'ncm_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
-            'filename': os.path.join(BASE_DIR, 'logs', 'ncm_integration.log'),
+            'filename': os.path.join(_LOG_DIR, 'ncm_integration.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10 MB
             'backupCount': 5,
             'formatter': 'verbose',
@@ -280,7 +330,7 @@ LOGGING = {
         'ncm_webhook_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
-            'filename': os.path.join(BASE_DIR, 'logs', 'ncm_webhooks.log'),
+            'filename': os.path.join(_LOG_DIR, 'ncm_webhooks.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10 MB
             'backupCount': 5,
             'formatter': 'verbose',
@@ -288,7 +338,7 @@ LOGGING = {
         'ncm_sms_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
-            'filename': os.path.join(BASE_DIR, 'logs', 'ncm_sms.log'),
+            'filename': os.path.join(_LOG_DIR, 'ncm_sms.log'),
             'maxBytes': 1024 * 1024 * 5,  # 5 MB
             'backupCount': 3,
             'formatter': 'verbose',
@@ -296,7 +346,7 @@ LOGGING = {
         'adms_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
-            'filename': os.path.join(BASE_DIR, 'logs', 'adms.log'),
+            'filename': os.path.join(_LOG_DIR, 'adms.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10 MB
             'backupCount': 5,
             'formatter': 'verbose',
@@ -304,13 +354,31 @@ LOGGING = {
         'integrations_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
-            'filename': os.path.join(BASE_DIR, 'logs', 'integrations.log'),
+            'filename': os.path.join(_LOG_DIR, 'integrations.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10 MB
             'backupCount': 5,
             'formatter': 'verbose',
         },
     },
     'loggers': {
+        # ── NEW: Catch ALL unhandled 500 errors from Django core ─────────
+        'django': {
+            'handlers': ['console', 'error_file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # ── NEW: Log every 500 request with full traceback ───────────────
+        'django.request': {
+            'handlers': ['error_file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # ── NEW: Log DB errors (connection drops, timeouts) ──────────────
+        'django.db.backends': {
+            'handlers': ['error_file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
         'ncm': {
             'handlers': ['console', 'ncm_file'],
             'level': 'DEBUG',
@@ -339,10 +407,7 @@ LOGGING = {
     },
 }
 
-# Ensure logs directory exists
-LOG_DIR = os.path.join(BASE_DIR, 'logs')
-if not os.path.exists(LOG_DIR):
-    os.makedirs(LOG_DIR)
+# logs directory is already guaranteed to exist above (os.makedirs(_LOG_DIR, exist_ok=True))
 
 # ===================== Bill OCR & Rewards Configuration =====================
 # OCR Provider: 'auto', 'aws_textract', 'google_docai', or 'manual'

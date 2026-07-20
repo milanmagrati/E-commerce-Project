@@ -43,6 +43,24 @@ from accounts.decorators import permission_required, admin_only
 User = get_user_model()
 
 
+def server_error_500(request, *args, **kwargs):
+    """
+    Custom 500 handler — logs the full traceback and renders a friendly error page.
+    Registered as handler500 in myproject/urls.py.
+
+    Without this, production 500s show a blank page and are invisible in logs.
+    """
+    import traceback as tb
+    exc_info = tb.format_exc()
+    logger.error(
+        "Internal Server Error (500) on %s\n%s",
+        getattr(request, 'path', '(unknown path)'),
+        exc_info,
+        exc_info=False,  # already formatted above
+    )
+    return render(request, '500.html', status=500)
+
+
 def fix_order_decimals(order):
     """Fix any NULL decimal values in order and recalculate totals"""
     if order.discount_amount is None:
@@ -67,8 +85,7 @@ def fix_order_decimals(order):
             order.save()  # Save the corrected total
     except Exception as e:
         # If calculation fails, at least set to zero instead of capped value
-        import logging
-        logging.error(f"Error recalculating order {order.id} totals: {e}")
+        logger.error("Error recalculating order %s totals: %s", order.id, e)
         if order.total_amount > Decimal('99999999.99'):
             order.total_amount = Decimal('0')
 
@@ -253,7 +270,6 @@ def dashboard_view(request):
 
     # Recent orders
     from decimal import Decimal, InvalidOperation
-    import logging
     try:
         recent_orders = list(orders.order_by('-created_at')[:5])
         # Defensive: sanitize decimals to avoid InvalidOperation in template
@@ -270,7 +286,7 @@ def dashboard_view(request):
                 except (InvalidOperation, ValueError, TypeError):
                     setattr(order, field, Decimal('0'))
     except Exception as e:
-        logging.error(f"Error fetching recent orders: {e}")
+        logger.error("Error fetching recent orders: %s", e)
         recent_orders = []
 
     # ── Low Stock Alert: supports simple, variable, and bundle products ──
@@ -412,55 +428,45 @@ def dashboard_view(request):
         })
 
     # Order source data by dates (last 7 days - default)
-    from django.db.models.functions import TruncDate
-
-    # Get all sources first
-    all_sources = set()
-    source_dates_data = orders.annotate(
-        order_date=TruncDate('created_at')
-    ).values('order_date', 'order_from').annotate(
-        count=Count('id')
-    ).order_by('order_date', 'order_from')
-
-    for entry in source_dates_data:
-        source_name = entry['order_from'] if entry['order_from'] else 'Direct'
-        all_sources.add(source_name)
+    # ── FIXED: Single aggregated query instead of N+1 per-source loop ──
+    # Old code fired one DB query per source name × date range.
+    # New code fires ONE query that groups by (order_from, order_date).
 
     # Generate last 7 days of dates (default view)
-    dates_list = []
-    for i in range(6, -1, -1):
-        date = (timezone.now() - timedelta(days=i)).date()
-        dates_list.append(date)
+    dates_list = [
+        (timezone.now() - timedelta(days=i)).date()
+        for i in range(6, -1, -1)
+    ]
 
-    # Build data structure: {date: {source: count}}
-    order_sources_by_date = {date: {} for date in dates_list}
+    # Single aggregated query: all sources × all dates in one hit
+    source_date_rows = (
+        orders
+        .annotate(order_date=TruncDate('created_at'))
+        .filter(order_date__in=dates_list)
+        .values('order_date', 'order_from')
+        .annotate(count=Count('id'))
+        .order_by('order_date', 'order_from')
+    )
 
-    for source_name in all_sources:
-        source_data = orders.filter(
-            order_from=source_name if source_name != 'Direct' else ''
-        ).annotate(
-            order_date=TruncDate('created_at')
-        ).values('order_date').annotate(
-            count=Count('id')
-        ).order_by('order_date')
+    # Build lookup: {source_name: {date: count}}
+    all_sources = set()
+    source_date_map = {}  # {source_name: {date: count}}
+    for row in source_date_rows:
+        src = row['order_from'] or 'Direct'
+        all_sources.add(src)
+        source_date_map.setdefault(src, {})[row['order_date']] = row['count']
 
-        for entry in source_data:
-            if entry['order_date'] in order_sources_by_date:
-                order_sources_by_date[entry['order_date']][source_name] = entry['count']
-
-    # Format for JSON: prepare chart data
+    # Format for JSON chart
     order_sources = {
-        'dates': [date.strftime('%b %d') for date in dates_list],
-        'sources': sorted(list(all_sources)),
-        'data': {}
+        'dates': [d.strftime('%b %d') for d in dates_list],
+        'sources': sorted(all_sources),
+        'data': {},
     }
-
     for source in order_sources['sources']:
-        counts = []
-        for date in dates_list:
-            count = order_sources_by_date.get(date, {}).get(source, 0)
-            counts.append(count)
-        order_sources['data'][source] = counts
+        order_sources['data'][source] = [
+            source_date_map.get(source, {}).get(d, 0)
+            for d in dates_list
+        ]
 
     context = {
         'total_products': total_products,
@@ -2905,8 +2911,7 @@ def orders_list(request):
             else:
                 order_products[order.id] = "No products"
         except Exception as e:
-            import logging
-            logging.error(f"Error fixing decimals for order {order.id}: {e}")
+            logger.error("Error fixing decimals for order %s: %s", order.id, e)
             order_products[order.id] = "No products"
 
     context = {
@@ -3282,8 +3287,7 @@ def order_create(request):
                 return redirect("orders_list")
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logger.error("Error creating order: %s", e, exc_info=True)
             if _is_ajax:
                 return _ajax_error(f'Error creating order: {str(e)}')
             messages.error(request, f"Error creating order: {str(e)}")
@@ -13212,7 +13216,8 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         if response.status_code == 200:
             try:
                 data = response.json()
-            except:
+            except ValueError:
+                logger.warning("Invalid JSON response from NCM API (status 200)")
                 return {
                     'status': 'error',
                     'message': 'Invalid JSON response from NCM'

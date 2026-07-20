@@ -1,21 +1,8 @@
 """
 URL configuration for myproject project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/6.0/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
 from hrm.views import iclock_cdata, iclock_getrequest, iclock_devicecmd
@@ -39,17 +26,29 @@ urlpatterns = [
     path('iclock/cdata', iclock_cdata, name='iclock_cdata_root'),
     path('iclock/getrequest', iclock_getrequest, name='iclock_getrequest_root'),
     path('iclock/devicecmd', iclock_devicecmd, name='iclock_devicecmd_root'),
+]
 
-] 
-from django.urls import re_path
-from django.views.static import serve
-
-# Serve media files in development
+# ── Static / Media File Serving ───────────────────────────────────────────────
 if settings.DEBUG:
+    # Development: Django serves both static and media directly
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 else:
-    urlpatterns += [
-        re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
-        re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
-    ]
+    # Production:
+    # - STATIC files are served by WhiteNoise middleware (already in MIDDLEWARE).
+    #   Do NOT add serve() for static — it blocks Django workers for every CSS/JS/image.
+    # - MEDIA files should be served directly by Apache/Nginx in cPanel.
+    #   If your cPanel host does NOT serve /media/ natively, uncomment only the
+    #   media line below as a last resort (avoid serving static this way):
+    #
+    # from django.views.static import serve
+    # urlpatterns += [
+    #     re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+    # ]
+    pass
+
+# ── Custom Error Handlers ─────────────────────────────────────────────────────
+# These are module-level assignments, not urlpatterns entries.
+from dashboard.views import server_error_500  # noqa: E402
+handler500 = server_error_500
+

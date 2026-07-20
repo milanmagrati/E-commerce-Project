@@ -1,4 +1,5 @@
 from django.db.models import F
+from django.core.cache import cache
 import re
 
 _HEX_RE = re.compile(r'^#[0-9a-fA-F]{6}$')
@@ -9,8 +10,17 @@ def _safe_color(val, fallback):
 
 
 def company_setup(request):
-    """Inject CompanySetup settings into every template context."""
+    """Inject CompanySetup settings into every template context.
+
+    Cached globally for 30 seconds to avoid a DB read on every page load.
+    """
     from dashboard.models import CompanySetup
+
+    CACHE_KEY = 'ctx_company_setup'
+    cached = cache.get(CACHE_KEY)
+    if cached is not None:
+        return cached
+
     try:
         cs = CompanySetup.get_settings()
     except Exception:
@@ -34,7 +44,7 @@ def company_setup(request):
             except Exception:
                 pass
 
-        return {
+        result = {
             'company_settings': cs,
             'COMPANY_NAME': cs.company_name,
             'COMPANY_LOGO': logo,
@@ -44,22 +54,32 @@ def company_setup(request):
             'COMPANY_PRIMARY': _safe_color(cs.primary_color, '#5e72e4'),
             'COMPANY_SECONDARY': _safe_color(cs.secondary_color, '#825ee4'),
         }
-    return {
-        'COMPANY_NAME': 'Trendy Shopping',
-        'COMPANY_LOGO': None,
-        'COMPANY_FAVICON': None,
-        'COMPANY_TAGLINE': '',
-        'COMPANY_PRIMARY': '#5e72e4',
-        'COMPANY_SECONDARY': '#825ee4',
-        'COMPANY_THEME': 'default',
-    }
+    else:
+        result = {
+            'COMPANY_NAME': 'Trendy Shopping',
+            'COMPANY_LOGO': None,
+            'COMPANY_FAVICON': None,
+            'COMPANY_TAGLINE': '',
+            'COMPANY_PRIMARY': '#5e72e4',
+            'COMPANY_SECONDARY': '#825ee4',
+            'COMPANY_THEME': 'default',
+        }
+
+    # Cache for 30 seconds — company settings rarely change
+    try:
+        cache.set(CACHE_KEY, result, 30)
+    except Exception:
+        pass  # If cache backend fails, return uncached result
+    return result
 
 
 def low_stock_notifications(request):
     """
     Provide low stock notification data for the global notification bar.
-    Uses the SAME query logic as the low_stock_alerts view (no user filter)
-    so the notification accurately reflects what the alerts page shows.
+
+    Cached per-user for 60 seconds.  Without caching, this fires 4–6 DB
+    queries on EVERY page load for every logged-in user with stock permissions,
+    which under even modest load exhausts the MySQL connection pool → 500s.
     """
     if not request.user.is_authenticated:
         return {}
@@ -68,6 +88,12 @@ def low_stock_notifications(request):
     user = request.user
     if not (getattr(user, 'is_administrator', False) or getattr(user, 'can_view_low_stock_alerts', False)):
         return {}
+
+    # Per-user cache key so each user sees their own data
+    CACHE_KEY = f'ctx_low_stock_{user.pk}'
+    cached = cache.get(CACHE_KEY)
+    if cached is not None:
+        return cached
 
     from dashboard.models import Product, ProductVariation
 
@@ -146,65 +172,98 @@ def low_stock_notifications(request):
     items.sort(key=lambda x: (0 if x['status'] == 'out' else 1, x['stock']))
     items = items[:10]
 
-    return {
+    result = {
         'low_stock_notification_products': items,
         'low_stock_notification_count': len(items),
     }
 
+    # Cache per-user for 60 seconds
+    try:
+        cache.set(CACHE_KEY, result, 60)
+    except Exception:
+        pass
+    return result
+
 
 def maintenance_mode(request):
-    """Inject maintenance mode state into every template context."""
+    """Inject maintenance mode state into every template context.
+
+    Cached globally for 30 seconds.
+    """
     if not request.user.is_authenticated:
         return {}
 
-    try:
-        from dashboard.models import MaintenanceMode
-        mm = MaintenanceMode.get_settings()
+    CACHE_KEY = 'ctx_maintenance_mode'
+    cached = cache.get(CACHE_KEY)
+    if cached is not None:
+        # Still need to compute IS_ADMIN_USER per-request (not cached)
         is_admin = (
             getattr(request.user, 'is_superuser', False) or
             getattr(request.user, 'role', '') == 'administrator'
         )
-        return {
+        return {**cached, 'IS_ADMIN_USER': is_admin}
+
+    try:
+        from dashboard.models import MaintenanceMode
+        mm = MaintenanceMode.get_settings()
+        base = {
             'MAINTENANCE_MODE': mm.is_enabled,
             'MAINTENANCE_MESSAGE': mm.message,
-            'IS_ADMIN_USER': is_admin,
         }
     except Exception:
-        return {
+        base = {
             'MAINTENANCE_MODE': False,
             'MAINTENANCE_MESSAGE': '',
-            'IS_ADMIN_USER': False,
         }
+
+    try:
+        cache.set(CACHE_KEY, base, 30)
+    except Exception:
+        pass
+
+    is_admin = (
+        getattr(request.user, 'is_superuser', False) or
+        getattr(request.user, 'role', '') == 'administrator'
+    )
+    return {**base, 'IS_ADMIN_USER': is_admin}
+
 
 def expiry_notifications(request):
     """
     Provide global expiry notifications for products expiring within 30 days.
+
+    Cached per-user for 60 seconds to avoid repeated DB queries on every page load.
     """
     if not request.user.is_authenticated:
         return {}
 
     # Only show to users with permission to view products/inventory
     user = request.user
-    if not (getattr(user, 'is_superuser', False) or 
+    if not (getattr(user, 'is_superuser', False) or
             getattr(user, 'role', '') in ['administrator', 'warehouse']):
         return {}
+
+    CACHE_KEY = f'ctx_expiry_{user.pk}'
+    cached = cache.get(CACHE_KEY)
+    if cached is not None:
+        return cached
 
     from dashboard.models import Product
     from django.utils import timezone
     from datetime import timedelta
-    
+
     today = timezone.now().date()
     warning_date = today + timedelta(days=30)
-    
+
     items = []
-    
+
     # 1. Check direct product expiry dates
     expiring_products = Product.objects.filter(
         is_deleted=False,
         expiry_date__isnull=False,
         expiry_date__lte=warning_date
     ).order_by('expiry_date')[:15]
-    
+
     for p in expiring_products:
         days = (p.expiry_date - today).days
         status = 'expired' if days < 0 else ('critical' if days <= 7 else 'warning')
@@ -216,18 +275,22 @@ def expiry_notifications(request):
             'status': status,
             'type': 'product'
         })
-        
-    # In the future, we could also check ProductBatch here,
-    # but to avoid too many DB queries on every page load,
-    # we'll stick to the main product expiry for the global notification
-    
+
     # Sort: expired first, then ascending by days left
     items.sort(key=lambda x: x['days'])
     items = items[:10]  # Limit to top 10 most urgent
-    
-    return {
+
+    result = {
         'expiry_notification_items': items,
         'expiry_notification_count': len(items),
         'has_expired_items': any(item['status'] == 'expired' for item in items),
         'has_critical_items': any(item['status'] in ['expired', 'critical'] for item in items)
     }
+
+    # Cache per-user for 60 seconds
+    try:
+        cache.set(CACHE_KEY, result, 60)
+    except Exception:
+        pass
+    return result
+
