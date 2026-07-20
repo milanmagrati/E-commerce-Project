@@ -5282,9 +5282,9 @@ def generate_payslips(request, pk):
     from .models import Holiday
     _paid_holiday_dates = set()
     for h in Holiday.objects.filter(is_paid=True, is_active=True):
-        if h.end_date >= _first_day and h.start_date <= _last_day:
-            d = max(h.start_date, _first_day)
-            end = min(h.end_date, _last_day)
+        if h.end_date >= _cycle_start and h.start_date <= _cycle_end:
+            d = max(h.start_date, _cycle_start)
+            end = min(h.end_date, _cycle_end)
             while d <= end:
                 _paid_holiday_dates.add(d)
                 d += timedelta(days=1)
@@ -5359,6 +5359,9 @@ def generate_payslips(request, pk):
             Decimal('0')
         )
 
+        def _serialize_list(lst):
+            return [{'name': item['name'], 'amount': float(item['amount'])} for item in lst]
+
         Payslip.objects.create(
             payroll_run=run,
             employee=employee,
@@ -5368,7 +5371,10 @@ def generate_payslips(request, pk):
             absent_deduction=_bd['absent_deduction'],
             net_salary=net_salary,
             basic_salary=_bd.get('basic_salary', Decimal('0')),
-            salary_structure={'earnings_list': _bd.get('earnings_list', []), 'deductions_list': _bd.get('deductions_list', [])},
+            salary_structure={
+                'earnings_list': _serialize_list(_bd.get('earnings_list', [])),
+                'deductions_list': _serialize_list(_bd.get('deductions_list', []))
+            },
             status='generated',
             generated_on=today,
         )

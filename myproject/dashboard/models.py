@@ -1595,6 +1595,8 @@ class CompanySetup(models.Model):
     def save(self, *args, **kwargs):
         self.pk = 1  # enforce singleton
         super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('ctx_company_setup')
 
 
 # ==================== API Sync Settings ====================
@@ -1778,6 +1780,8 @@ class MaintenanceMode(models.Model):
     def save(self, *args, **kwargs):
         self.pk = 1  # enforce singleton
         super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('ctx_maintenance_mode')
 
 
 class MaintenanceLog(models.Model):

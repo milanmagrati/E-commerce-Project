@@ -97,3 +97,482 @@ Traceback (most recent call last):
   File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
     raise DisallowedHost(msg)
 django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: '127.0.0.1:8000'. You may need to add '127.0.0.1' to ALLOWED_HOSTS.
+[ERROR] 2026-07-20 21:50:15 log.log_response:248 Internal Server Error: /hrm/payroll/runs/19/generate-payslips/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 85, in inner
+    return func(*args, **kwds)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\views.py", line 5285, in generate_payslips
+    if h.end_date >= _first_day and h.start_date <= _last_day:
+                     ^^^^^^^^^^
+NameError: name '_first_day' is not defined
+[ERROR] 2026-07-20 21:50:15 basehttp.log_message:213 "POST /hrm/payroll/runs/19/generate-payslips/ HTTP/1.1" 500 3150
+[ERROR] 2026-07-20 21:50:28 log.log_response:248 Internal Server Error: /hrm/payroll/runs/19/generate-payslips/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 85, in inner
+    return func(*args, **kwds)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\views.py", line 5285, in generate_payslips
+    if h.end_date >= _first_day and h.start_date <= _last_day:
+                     ^^^^^^^^^^
+NameError: name '_first_day' is not defined
+[ERROR] 2026-07-20 21:50:28 basehttp.log_message:213 "POST /hrm/payroll/runs/19/generate-payslips/ HTTP/1.1" 500 3150
+[ERROR] 2026-07-20 21:52:17 log.log_response:248 Internal Server Error: /hrm/payroll/runs/19/generate-payslips/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 85, in inner
+    return func(*args, **kwds)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\views.py", line 5285, in generate_payslips
+    if h.end_date >= _first_day and h.start_date <= _last_day:
+                     ^^^^^^^^^^
+NameError: name '_first_day' is not defined
+[ERROR] 2026-07-20 21:52:17 basehttp.log_message:213 "POST /hrm/payroll/runs/19/generate-payslips/ HTTP/1.1" 500 3150
+[ERROR] 2026-07-20 21:57:52 log.log_response:248 Internal Server Error: /hrm/payroll/runs/19/generate-payslips/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 85, in inner
+    return func(*args, **kwds)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\views.py", line 5362, in generate_payslips
+    Payslip.objects.create(
+    ~~~~~~~~~~~~~~~~~~~~~~^
+        payroll_run=run,
+        ^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+        generated_on=today,
+        ^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\query.py", line 663, in create
+    obj.save(force_insert=True, using=self.db)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\models.py", line 943, in save
+    super().save(*args, **kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 902, in save
+    self.save_base(
+    ~~~~~~~~~~~~~~^
+        using=using,
+        ^^^^^^^^^^^^
+    ...<2 lines>...
+        update_fields=update_fields,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1008, in save_base
+    updated = self._save_table(
+        raw,
+    ...<4 lines>...
+        update_fields,
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1169, in _save_table
+    results = self._do_insert(
+        cls._base_manager, using, fields, returning_fields, raw
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1210, in _do_insert
+    return manager._insert(
+           ~~~~~~~~~~~~~~~^
+        [self],
+        ^^^^^^^
+    ...<3 lines>...
+        raw=raw,
+        ^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\query.py", line 1854, in _insert
+    return query.get_compiler(using=using).execute_sql(returning_fields)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1880, in execute_sql
+    for sql, params in self.as_sql():
+                       ~~~~~~~~~~~^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1805, in as_sql
+    self.prepare_value(field, self.pre_save_val(field, obj))
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1740, in prepare_value
+    return field.get_db_prep_save(value, connection=self.connection)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\json.py", line 118, in get_db_prep_save
+    return super().get_db_prep_save(value, connection)
+           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\__init__.py", line 1012, in get_db_prep_save
+    return self.get_db_prep_value(value, connection=connection, prepared=False)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\json.py", line 102, in get_db_prep_value
+    return connection.ops.adapt_json_value(value, self.encoder)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\backends\base\operations.py", line 598, in adapt_json_value
+    return json.dumps(value, cls=encoder)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\__init__.py", line 235, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 202, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 263, in iterencode
+    return _iterencode(o, 0)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 182, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type Decimal is not JSON serializable
+when serializing dict item 'amount'
+when serializing list item 0
+when serializing dict item 'deductions_list'
+[ERROR] 2026-07-20 21:57:52 basehttp.log_message:213 "POST /hrm/payroll/runs/19/generate-payslips/ HTTP/1.1" 500 3150
+[ERROR] 2026-07-20 21:58:06 log.log_response:248 Internal Server Error: /hrm/payroll/runs/19/generate-payslips/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 85, in inner
+    return func(*args, **kwds)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\views.py", line 5362, in generate_payslips
+    Payslip.objects.create(
+    ~~~~~~~~~~~~~~~~~~~~~~^
+        payroll_run=run,
+        ^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+        generated_on=today,
+        ^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\query.py", line 663, in create
+    obj.save(force_insert=True, using=self.db)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\models.py", line 943, in save
+    super().save(*args, **kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 902, in save
+    self.save_base(
+    ~~~~~~~~~~~~~~^
+        using=using,
+        ^^^^^^^^^^^^
+    ...<2 lines>...
+        update_fields=update_fields,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1008, in save_base
+    updated = self._save_table(
+        raw,
+    ...<4 lines>...
+        update_fields,
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1169, in _save_table
+    results = self._do_insert(
+        cls._base_manager, using, fields, returning_fields, raw
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1210, in _do_insert
+    return manager._insert(
+           ~~~~~~~~~~~~~~~^
+        [self],
+        ^^^^^^^
+    ...<3 lines>...
+        raw=raw,
+        ^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\query.py", line 1854, in _insert
+    return query.get_compiler(using=using).execute_sql(returning_fields)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1880, in execute_sql
+    for sql, params in self.as_sql():
+                       ~~~~~~~~~~~^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1805, in as_sql
+    self.prepare_value(field, self.pre_save_val(field, obj))
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1740, in prepare_value
+    return field.get_db_prep_save(value, connection=self.connection)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\json.py", line 118, in get_db_prep_save
+    return super().get_db_prep_save(value, connection)
+           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\__init__.py", line 1012, in get_db_prep_save
+    return self.get_db_prep_value(value, connection=connection, prepared=False)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\json.py", line 102, in get_db_prep_value
+    return connection.ops.adapt_json_value(value, self.encoder)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\backends\base\operations.py", line 598, in adapt_json_value
+    return json.dumps(value, cls=encoder)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\__init__.py", line 235, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 202, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 263, in iterencode
+    return _iterencode(o, 0)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 182, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type Decimal is not JSON serializable
+when serializing dict item 'amount'
+when serializing list item 0
+when serializing dict item 'deductions_list'
+[ERROR] 2026-07-20 21:58:06 basehttp.log_message:213 "POST /hrm/payroll/runs/19/generate-payslips/ HTTP/1.1" 500 3150
+[ERROR] 2026-07-20 21:59:17 log.log_response:248 Internal Server Error: /hrm/payroll/runs/19/generate-payslips/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 85, in inner
+    return func(*args, **kwds)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\views.py", line 5285, in generate_payslips
+    if h.end_date >= _first_day and h.start_date <= _last_day:
+                     ^^^^^^^^^^
+NameError: name '_first_day' is not defined
+[ERROR] 2026-07-20 21:59:17 basehttp.log_message:213 "POST /hrm/payroll/runs/19/generate-payslips/ HTTP/1.1" 500 3150
+[ERROR] 2026-07-20 21:59:34 log.log_response:248 Internal Server Error: /hrm/payroll/runs/19/generate-payslips/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 85, in inner
+    return func(*args, **kwds)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\views.py", line 5285, in generate_payslips
+    if h.end_date >= _first_day and h.start_date <= _last_day:
+                     ^^^^^^^^^^
+NameError: name '_first_day' is not defined
+[ERROR] 2026-07-20 21:59:34 basehttp.log_message:213 "POST /hrm/payroll/runs/19/generate-payslips/ HTTP/1.1" 500 3150
+[ERROR] 2026-07-20 22:00:30 log.log_response:248 Internal Server Error: /hrm/payroll/runs/19/generate-payslips/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 85, in inner
+    return func(*args, **kwds)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\views.py", line 5362, in generate_payslips
+    Payslip.objects.create(
+    ~~~~~~~~~~~~~~~~~~~~~~^
+        payroll_run=run,
+        ^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+        generated_on=today,
+        ^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\query.py", line 663, in create
+    obj.save(force_insert=True, using=self.db)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\models.py", line 943, in save
+    super().save(*args, **kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 902, in save
+    self.save_base(
+    ~~~~~~~~~~~~~~^
+        using=using,
+        ^^^^^^^^^^^^
+    ...<2 lines>...
+        update_fields=update_fields,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1008, in save_base
+    updated = self._save_table(
+        raw,
+    ...<4 lines>...
+        update_fields,
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1169, in _save_table
+    results = self._do_insert(
+        cls._base_manager, using, fields, returning_fields, raw
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1210, in _do_insert
+    return manager._insert(
+           ~~~~~~~~~~~~~~~^
+        [self],
+        ^^^^^^^
+    ...<3 lines>...
+        raw=raw,
+        ^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\query.py", line 1854, in _insert
+    return query.get_compiler(using=using).execute_sql(returning_fields)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1880, in execute_sql
+    for sql, params in self.as_sql():
+                       ~~~~~~~~~~~^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1805, in as_sql
+    self.prepare_value(field, self.pre_save_val(field, obj))
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1740, in prepare_value
+    return field.get_db_prep_save(value, connection=self.connection)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\json.py", line 118, in get_db_prep_save
+    return super().get_db_prep_save(value, connection)
+           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\__init__.py", line 1012, in get_db_prep_save
+    return self.get_db_prep_value(value, connection=connection, prepared=False)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\json.py", line 102, in get_db_prep_value
+    return connection.ops.adapt_json_value(value, self.encoder)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\backends\base\operations.py", line 598, in adapt_json_value
+    return json.dumps(value, cls=encoder)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\__init__.py", line 235, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 202, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 263, in iterencode
+    return _iterencode(o, 0)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 182, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type Decimal is not JSON serializable
+when serializing dict item 'amount'
+when serializing list item 0
+when serializing dict item 'deductions_list'
+[ERROR] 2026-07-20 22:00:30 basehttp.log_message:213 "POST /hrm/payroll/runs/19/generate-payslips/ HTTP/1.1" 500 3150
+[ERROR] 2026-07-20 22:00:46 log.log_response:248 Internal Server Error: /hrm/payroll/runs/19/generate-payslips/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 85, in inner
+    return func(*args, **kwds)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\views.py", line 5362, in generate_payslips
+    Payslip.objects.create(
+    ~~~~~~~~~~~~~~~~~~~~~~^
+        payroll_run=run,
+        ^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+        generated_on=today,
+        ^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\query.py", line 663, in create
+    obj.save(force_insert=True, using=self.db)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\hrm\models.py", line 943, in save
+    super().save(*args, **kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 902, in save
+    self.save_base(
+    ~~~~~~~~~~~~~~^
+        using=using,
+        ^^^^^^^^^^^^
+    ...<2 lines>...
+        update_fields=update_fields,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1008, in save_base
+    updated = self._save_table(
+        raw,
+    ...<4 lines>...
+        update_fields,
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1169, in _save_table
+    results = self._do_insert(
+        cls._base_manager, using, fields, returning_fields, raw
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\base.py", line 1210, in _do_insert
+    return manager._insert(
+           ~~~~~~~~~~~~~~~^
+        [self],
+        ^^^^^^^
+    ...<3 lines>...
+        raw=raw,
+        ^^^^^^^^
+    )
+    ^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\query.py", line 1854, in _insert
+    return query.get_compiler(using=using).execute_sql(returning_fields)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1880, in execute_sql
+    for sql, params in self.as_sql():
+                       ~~~~~~~~~~~^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1805, in as_sql
+    self.prepare_value(field, self.pre_save_val(field, obj))
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1740, in prepare_value
+    return field.get_db_prep_save(value, connection=self.connection)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\json.py", line 118, in get_db_prep_save
+    return super().get_db_prep_save(value, connection)
+           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\__init__.py", line 1012, in get_db_prep_save
+    return self.get_db_prep_value(value, connection=connection, prepared=False)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\models\fields\json.py", line 102, in get_db_prep_value
+    return connection.ops.adapt_json_value(value, self.encoder)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\db\backends\base\operations.py", line 598, in adapt_json_value
+    return json.dumps(value, cls=encoder)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\__init__.py", line 235, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 202, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 263, in iterencode
+    return _iterencode(o, 0)
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\json\encoder.py", line 182, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type Decimal is not JSON serializable
+when serializing dict item 'amount'
+when serializing list item 0
+when serializing dict item 'deductions_list'
+[ERROR] 2026-07-20 22:00:46 basehttp.log_message:213 "POST /hrm/payroll/runs/19/generate-payslips/ HTTP/1.1" 500 3150
