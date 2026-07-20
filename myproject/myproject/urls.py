@@ -41,11 +41,11 @@ else:
     #   If your cPanel host does NOT serve /media/ natively, uncomment only the
     #   media line below as a last resort (avoid serving static this way):
     #
-    # from django.views.static import serve
-    # urlpatterns += [
-    #     re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
-    # ]
-    pass
+    from django.views.static import serve
+    urlpatterns += [
+        re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+    ]
+
 
 # ── Custom Error Handlers ─────────────────────────────────────────────────────
 # These are module-level assignments, not urlpatterns entries.

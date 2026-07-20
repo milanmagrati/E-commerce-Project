@@ -30,7 +30,7 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 # ALLOWED_HOSTS must be explicitly set in production .env, e.g.:
 #   ALLOWED_HOSTS=office.orajil.com.np,www.office.orajil.com.np
 # Defaulting to '*' in development only; production MUST override this.
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="office.orajil.com.np,www.office.orajil.com.np,orajil.com.np,www.orajil.com.np", cast=Csv())
 
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
@@ -78,7 +78,6 @@ REST_FRAMEWORK = {
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
     'myproject.middleware.GracefulSessionInterruptionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -202,9 +201,6 @@ CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=False, cast=bool)  # S
 # Only enable this if your cPanel uses Apache as a reverse proxy with SSL:
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# WhiteNoise: set browser cache max-age for static files (1 week)
-# This prevents browsers from repeatedly downloading the same CSS/JS files
-WHITENOISE_MAX_AGE = 604800  # 1 week in seconds
 SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Keep session even after browser closes
 SESSION_SAVE_EVERY_REQUEST = True  # Reset expiry on every request (sliding window)
