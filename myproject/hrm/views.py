@@ -4016,8 +4016,16 @@ def biometric_attendance(request):
             'device_sn': info['device_sn'] or '—',
         })
 
-    # Sort: newest date first, then by pin
-    records.sort(key=lambda r: (-r['date'].toordinal(), r['pin']))
+    # Sorting
+    sort_by = request.GET.get('sort_by', '-date')
+    if sort_by == 'date':
+        records.sort(key=lambda r: (r['date'].toordinal(), r['employee_name'].lower()))
+    elif sort_by == 'employee_name':
+        records.sort(key=lambda r: (r['employee_name'].lower(), -r['date'].toordinal()))
+    elif sort_by == '-employee_name':
+        records.sort(key=lambda r: (r['employee_name'].lower(), r['date'].toordinal()), reverse=True)
+    else:
+        records.sort(key=lambda r: (-r['date'].toordinal(), r['employee_name'].lower()))
 
     total_records = len(records)
 
@@ -4041,6 +4049,7 @@ def biometric_attendance(request):
         'search_q': search_q,
         'date_from': date_from,
         'date_to': date_to,
+        'sort_by': sort_by,
         'default_today': default_today,
         'today_str': today_local.strftime('%Y-%m-%d'),
         'per_page': per_page,
@@ -4142,7 +4151,14 @@ def biometric_sync_single(request, pin, date_str):
         except ValueError:
             return JsonResponse({'success': False, 'error': 'Invalid date format.'})
 
-        count = BiometricAttendance.objects.filter(pin=pin, timestamp__date=punch_date).count()
+        # Fix timezone issue here as well
+        import pytz
+        from django.utils import timezone
+        local_tz = pytz.timezone('Asia/Kathmandu')
+        start_of_day = local_tz.localize(datetime.combine(punch_date, datetime.min.time()))
+        end_of_day = local_tz.localize(datetime.combine(punch_date, datetime.max.time()))
+
+        count = BiometricAttendance.objects.filter(pin=pin, timestamp__range=(start_of_day, end_of_day)).count()
         # Only sync recent 7 days to avoid scanning the entire table on every single-record sync
         _sync_biometric_to_attendance(recent_days=7)
         return JsonResponse({
@@ -4167,7 +4183,13 @@ def biometric_attendance_delete(request, pin, date_str):
         except ValueError:
             return JsonResponse({'success': False, 'error': 'Invalid date format.'})
 
-        deleted, _ = BiometricAttendance.objects.filter(pin=pin, timestamp__date=punch_date).delete()
+        import pytz
+        from django.utils import timezone
+        local_tz = pytz.timezone('Asia/Kathmandu')
+        start_of_day = local_tz.localize(datetime.combine(punch_date, datetime.min.time()))
+        end_of_day = local_tz.localize(datetime.combine(punch_date, datetime.max.time()))
+
+        deleted, _ = BiometricAttendance.objects.filter(pin=pin, timestamp__range=(start_of_day, end_of_day)).delete()
         return JsonResponse({'success': True, 'message': f'Deleted {deleted} records for PIN {pin} on {date_str}.'})
     except Exception as e:
         return JsonResponse({'success': False, 'error': f'Delete failed: {str(e)}'})

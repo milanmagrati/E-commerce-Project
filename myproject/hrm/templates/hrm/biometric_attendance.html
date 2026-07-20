@@ -189,6 +189,12 @@
           <i class="fas fa-filter"></i> Filters{% if date_from or date_to %}{% if not default_today %} <span class="badge bg-primary rounded-pill" style="font-size:.65rem;">ON</span>{% endif %}{% endif %}
         </button>
         <div class="ms-auto d-flex align-items-center gap-2">
+          <select class="bio-per-page-select" name="sort_by" onchange="this.form.submit()" style="margin-right: 0.5rem; max-width: 180px;">
+            <option value="-date" {% if sort_by == '-date' %}selected{% endif %}>Recent Date</option>
+            <option value="date" {% if sort_by == 'date' %}selected{% endif %}>Oldest Date</option>
+            <option value="employee_name" {% if sort_by == 'employee_name' %}selected{% endif %}>Employee Name (A-Z)</option>
+            <option value="-employee_name" {% if sort_by == '-employee_name' %}selected{% endif %}>Employee Name (Z-A)</option>
+          </select>
           <span class="text-muted" style="font-size:.88rem; white-space:nowrap;">Per Page:</span>
           <select name="per_page" class="bio-per-page-select" onchange="this.form.submit()">
             {% for opt in per_page_options %}
