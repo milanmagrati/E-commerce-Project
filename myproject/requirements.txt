@@ -23,3 +23,6 @@ twilio>=9.0.0
 # AI Model Routing Engine (Multi-Model: OpenAI GPT-4o + Google Gemini Flash)
 openai>=1.0.0
 google-generativeai>=0.8.0
+
+# Static file serving
+whitenoise>=6.5.0
