@@ -30,7 +30,7 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 # ALLOWED_HOSTS must be explicitly set in production .env, e.g.:
 #   ALLOWED_HOSTS=office.orajil.com.np,www.office.orajil.com.np
 # Defaulting to '*' in development only; production MUST override this.
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="office.orajil.com.np,www.office.orajil.com.np,orajil.com.np,www.orajil.com.np", cast=Csv())
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="office.orajil.com.np,www.office.orajil.com.np,orajil.com.np,www.orajil.com.np,localhost,127.0.0.1", cast=Csv())
 
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
