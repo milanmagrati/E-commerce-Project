@@ -582,6 +582,74 @@
                             </select>
                         </div>
 
+                        <!-- ── Model Routing (purpose-based provider selection) ── -->
+                        <div style="padding:.65rem .85rem; border-bottom:1px solid #e5e7eb; background:#faf5ff;">
+                            <div style="display:flex; align-items:center; gap:.4rem; margin-bottom:.5rem;">
+                                <i class="fas fa-route" style="color:#7c3aed; font-size:.8rem;"></i>
+                                <span style="font-size:.8rem; font-weight:700; color:#5b21b6;">Model Routing</span>
+                            </div>
+                            <p style="font-size:.68rem; color:#6b7280; margin:0 0 .55rem 0; line-height:1.35;">
+                                Pick which AI provider handles each purpose. Choose <strong>Auto</strong> for smart routing,
+                                or force a provider. If a chosen provider has no key, the assistant safely falls back to the other.
+                            </p>
+
+                            <!-- Provider availability badges -->
+                            <div style="display:flex; gap:.4rem; flex-wrap:wrap; margin-bottom:.6rem;">
+                                <span style="font-size:.66rem; font-weight:600; padding:.18rem .5rem; border-radius:999px; {% if openai_available %}background:#dcfce7; color:#166534;{% else %}background:#fef2f2; color:#b91c1c;{% endif %}">
+                                    <i class="fas {% if openai_available %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                    OpenAI {% if openai_available %}connected{% else %}— no key{% endif %}
+                                </span>
+                                <span style="font-size:.66rem; font-weight:600; padding:.18rem .5rem; border-radius:999px; {% if gemini_available %}background:#dcfce7; color:#166534;{% else %}background:#fef2f2; color:#b91c1c;{% endif %}">
+                                    <i class="fas {% if gemini_available %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                    Gemini {% if gemini_available %}connected{% else %}— no key{% endif %}
+                                </span>
+                            </div>
+
+                            <!-- Text Responses -->
+                            <label class="form-label" style="margin:0 0 .2rem 0; font-size:.72rem; font-weight:600;">
+                                <i class="fas fa-comment-dots" style="color:#7c3aed; font-size:.68rem;"></i> Text Responses
+                            </label>
+                            <select name="text_provider" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0 0 .5rem 0; border:1px solid #d1d5db;">
+                                {% for val, label in chatbot.PROVIDER_CHOICES %}
+                                <option value="{{ val }}" {% if chatbot.text_provider == val %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+
+                            <!-- Image Recognition -->
+                            <label class="form-label" style="margin:0 0 .2rem 0; font-size:.72rem; font-weight:600;">
+                                <i class="fas fa-image" style="color:#7c3aed; font-size:.68rem;"></i> Image Recognition
+                            </label>
+                            <select name="image_provider" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0 0 .6rem 0; border:1px solid #d1d5db;">
+                                {% for val, label in chatbot.PROVIDER_CHOICES %}
+                                <option value="{{ val }}" {% if chatbot.image_provider == val %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+
+                            <!-- Specific model names -->
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
+                                <div>
+                                    <label class="form-label" style="margin:0 0 .2rem 0; font-size:.68rem; font-weight:600; color:#6b7280;">OpenAI model</label>
+                                    <input type="text" name="openai_model" list="openaiModelList"
+                                           value="{{ chatbot.openai_model|default:'gpt-4o' }}"
+                                           placeholder="gpt-4o"
+                                           style="width:100%; padding:.35rem .5rem; font-size:.72rem; border-radius:6px; background:#fff; border:1px solid #d1d5db;">
+                                    <datalist id="openaiModelList">
+                                        {% for val, label in chatbot.OPENAI_MODEL_CHOICES %}
+                                        <option value="{{ val }}">{{ label }}</option>
+                                        {% endfor %}
+                                    </datalist>
+                                </div>
+                                <div>
+                                    <label class="form-label" style="margin:0 0 .2rem 0; font-size:.68rem; font-weight:600; color:#6b7280;">Gemini model</label>
+                                    <select name="gemini_model" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.72rem; border-radius:6px; background:#fff; margin:0; border:1px solid #d1d5db;">
+                                        {% for val, label in chatbot.GEMINI_MODEL_CHOICES %}
+                                        <option value="{{ val }}" {% if chatbot.gemini_model == val %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Primary Language Removed -->
 
 
@@ -1046,12 +1114,14 @@ async function runAiTest() {
             resultEl.className = 'ai-test-result success';
             const ticketHtml = data.open_ticket ? '<span class="result-badge badge-ticket"><i class="fas fa-ticket-alt"></i> Ticket Auto-Created</span>' : '';
             const checkoutHtml = data.checkout_link ? '<div style="margin-top:.75rem; padding-top:.6rem; border-top:1px solid #e5e7eb; font-size:.8rem;"><i class="fas fa-link" style="color:var(--crm-primary);"></i> <strong>Checkout Link:</strong> <a href="' + data.checkout_link + '" target="_blank" style="color:var(--crm-primary); text-decoration:none;">' + data.checkout_link + '</a></div>' : '';
+            const noticeHtml = data.notice ? '<div style="margin-bottom:.55rem; padding:.4rem .6rem; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; color:#92400e; font-size:.72rem;"><i class="fas fa-info-circle"></i> ' + data.notice + '</div>' : '';
 
             resultEl.innerHTML = '<div class="result-meta">' +
                 '<span class="result-badge badge-intent"><i class="fas fa-bullseye"></i> Intent: ' + data.intent + '</span>' +
                 '<span class="result-badge badge-model"><i class="fas fa-microchip"></i> Model: ' + data.model_used + '</span>' +
                 ticketHtml +
                 '</div>' +
+                noticeHtml +
                 '<div style="color:#1f2937; margin-bottom:.4rem;"><strong>AI Reply:</strong></div>' +
                 '<div style="color:#4b5563; white-space:pre-wrap;">' + (data.reply || '—') + '</div>' + checkoutHtml;
         }

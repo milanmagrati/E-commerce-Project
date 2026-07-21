@@ -525,11 +525,18 @@ def crm_chatbot(request, bot_id):
             'accounts': integs,
         })
 
+    # Which AI providers actually have a key configured in .env — drives the
+    # availability badges and safe-error messaging in the Model Routing UI.
+    from .ai_router import _get_available_providers
+    providers_available = _get_available_providers()
+
     context = {
         'chatbot': chatbot,
         'channel_groups': channel_groups,
         'recent_logs': recent_logs,
         'crm_section': 'chatbot',
+        'openai_available': providers_available['openai'],
+        'gemini_available': providers_available['gemini'],
     }
     return render(request, 'trendycrm/chatbot.html', context)
 
@@ -592,6 +599,22 @@ def crm_chatbot_save_agent(request, bot_id):
     chatbot.response_tone = request.POST.get('response_tone', chatbot.response_tone)
     chatbot.creativity_level = request.POST.get('creativity_level', chatbot.creativity_level)
     chatbot.response_length = request.POST.get('response_length', chatbot.response_length)
+
+    # Purpose-based provider routing
+    valid_providers = {'auto', 'openai', 'gemini'}
+    text_provider = request.POST.get('text_provider')
+    if text_provider in valid_providers:
+        chatbot.text_provider = text_provider
+    image_provider = request.POST.get('image_provider')
+    if image_provider in valid_providers:
+        chatbot.image_provider = image_provider
+    openai_model = request.POST.get('openai_model')
+    if openai_model is not None and openai_model.strip():
+        chatbot.openai_model = openai_model.strip()
+    gemini_model = request.POST.get('gemini_model')
+    if gemini_model is not None and gemini_model.strip():
+        chatbot.gemini_model = gemini_model.strip()
+
     import json
     
     chatbot.primary_language = request.POST.get('primary_language', chatbot.primary_language)

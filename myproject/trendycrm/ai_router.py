@@ -107,6 +107,81 @@ def _get_page_profile(integration):
         return None
 
 
+# ─── Provider Availability & Resolution ───────────────────────────────────────
+def _get_available_providers(config=None) -> dict:
+    """Returns {'openai': bool, 'gemini': bool} based on which keys are configured."""
+    if config is None:
+        config = _get_ai_config()
+    return {
+        'openai': bool((config.get('openai_api_key') or '').strip()),
+        'gemini': bool((config.get('gemini_api_key') or '').strip()),
+    }
+
+
+def _resolve_provider(preference: str, available: dict, auto_order=None):
+    """
+    Resolves a purpose's provider preference against what's actually configured.
+
+    Args:
+        preference:  'auto' | 'openai' | 'gemini'
+        available:   {'openai': bool, 'gemini': bool}
+        auto_order:  provider priority list used when preference == 'auto'.
+
+    Returns (provider, fell_back):
+        provider  — 'openai' | 'gemini' | None   (None means no key at all)
+        fell_back — True when the explicitly-requested provider had no key and we
+                    substituted the other one so the feature still works.
+    """
+    if auto_order is None:
+        auto_order = ['gemini', 'openai']  # cheapest first
+
+    if preference in ('openai', 'gemini'):
+        if available.get(preference):
+            return preference, False
+        other = 'gemini' if preference == 'openai' else 'openai'
+        if available.get(other):
+            return other, True
+        return None, False
+
+    # 'auto' (or anything unexpected) → first available in priority order
+    for p in auto_order:
+        if available.get(p):
+            return p, False
+    return None, False
+
+
+def _gen_text(provider: str, model_name: str, user_message: str, system_prompt: str,
+              config: dict, chatbot_config=None):
+    """
+    Generates a text reply from an explicitly-chosen provider using the model name
+    configured on the chatbot. Returns (reply_text, model_label).
+    """
+    if provider == 'openai':
+        model = (model_name or 'gpt-4o').strip()
+        reply = _call_openai_chat(user_message, system_prompt, config['openai_api_key'],
+                                  model=model, config=chatbot_config)
+        return reply, model
+
+    # gemini
+    model = (model_name or GEMINI_FLASH_MODEL).strip()
+    temperature = float(getattr(chatbot_config, 'creativity_level', '0.7')) if chatbot_config else 0.7
+    max_tokens = int(getattr(chatbot_config, 'response_length', '500')) if chatbot_config else 500
+    if 'pro' in model:
+        # Pro models can be quota-0 on free-tier keys — fall back to Flash on failure.
+        try:
+            reply = _call_gemini_rest(model, system_prompt, user_message, config['gemini_api_key'],
+                                      temperature=temperature, max_tokens=max_tokens)
+        except Exception as e:
+            logger.warning(f"Gemini '{model}' failed ({e}), falling back to {GEMINI_FLASH_MODEL}.")
+            reply = _call_gemini_rest(GEMINI_FLASH_MODEL, system_prompt, user_message, config['gemini_api_key'],
+                                      temperature=temperature, max_tokens=max_tokens)
+            model = GEMINI_FLASH_MODEL
+    else:
+        reply = _call_gemini_rest(model, system_prompt, user_message, config['gemini_api_key'],
+                                  temperature=temperature, max_tokens=max_tokens)
+    return reply, model
+
+
 # ─── Dynamic Prompt Assembly ──────────────────────────────────────────────────
 def build_dynamic_prompt(chatbot_config, page_profile=None, intent: str = 'general_query') -> str:
     """
@@ -287,63 +362,77 @@ def route_message(
         'open_ticket': False,
         'success': False,
         'error': None,
+        'notice': None,   # set when a requested provider was unavailable and we fell back
     }
 
     try:
         config = _get_ai_config()
         openai_key = config['openai_api_key']
         gemini_key = config['gemini_api_key']
+        available = _get_available_providers(config)
 
-        if not openai_key and not gemini_key:
-            return {'success': False, 'error': 'No AI API keys configured. Please add GEMINI_API_KEY to your .env file.', 'reply': ''}
+        if not available['openai'] and not available['gemini']:
+            result['error'] = ('No AI provider is configured. Add OPENAI_API_KEY or '
+                               'GEMINI_API_KEY to your .env file to activate the assistant.')
+            result['reply'] = ("The AI assistant isn't connected yet. Please add an OpenAI or "
+                               "Gemini API key in your .env file to enable replies.")
+            result['model_used'] = 'unavailable'
+            return result
 
         if chatbot_config is None:
-            return {'success': False, 'error': 'Chatbot configuration is missing or inactive'}
+            result['error'] = 'Chatbot configuration is missing or inactive'
+            return result
+
+        # Purpose-based provider preferences (fall back to sensible defaults)
+        text_pref = (getattr(chatbot_config, 'text_provider', 'auto') or 'auto')
+        image_pref = (getattr(chatbot_config, 'image_provider', 'auto') or 'auto')
+        openai_model = getattr(chatbot_config, 'openai_model', '') or 'gpt-4o'
+        gemini_model = getattr(chatbot_config, 'gemini_model', '') or GEMINI_FLASH_MODEL
 
         page_profile = _get_page_profile(integration) if integration else None
         if page_profile:
             result['checkout_link'] = page_profile.checkout_link or ''
 
+        # ── Image Recognition ─────────────────────────────────────────────────
         if input_type == 'image':
-            # Images → GPT-4o Vision (OCR, object recognition)
             result['intent'] = force_intent or 'general_query'
-            if openai_key:
-                result['model_used'] = 'gpt-4o-vision'
-                system_prompt = build_dynamic_prompt(chatbot_config, page_profile, result['intent'])
-                reply = _call_openai_vision(message_text, system_prompt, openai_key, config=chatbot_config)
-            elif gemini_key:
-                result['model_used'] = 'gemini-vision'
-                system_prompt = build_dynamic_prompt(chatbot_config, page_profile, result['intent'])
-                reply = _call_gemini_vision(message_text, system_prompt, gemini_key, config=chatbot_config)
+            # For 'auto', prefer OpenAI (stronger vision) then Gemini.
+            provider, fell_back = _resolve_provider(image_pref, available, auto_order=['openai', 'gemini'])
+            if provider is None:
+                result['error'] = ('Image recognition is unavailable — no AI provider key is '
+                                   'configured for it.')
+                result['reply'] = ("Sorry, I can't read images right now — image recognition "
+                                   "hasn't been set up yet.")
+                result['model_used'] = 'unavailable'
+                return result
+
+            system_prompt = build_dynamic_prompt(chatbot_config, page_profile, result['intent'])
+            if provider == 'openai':
+                result['model_used'] = f"{openai_model} (vision)"
+                result['reply'] = _call_openai_vision(message_text, system_prompt, openai_key, config=chatbot_config)
             else:
-                result['model_used'] = 'error'
-                reply = "I'm sorry, I cannot process images without an AI API key configured."
-            result['reply'] = reply
+                result['model_used'] = f"{gemini_model} (vision)"
+                result['reply'] = _call_gemini_vision(message_text, system_prompt, gemini_key, config=chatbot_config)
+            if fell_back:
+                result['notice'] = (f"'{image_pref}' isn't configured for image recognition — "
+                                    f"used {provider} instead.")
             result['success'] = True
             return result
 
+        # ── Audio (stub) ──────────────────────────────────────────────────────
         if input_type == 'audio':
-            # Audio → Gemini (native audio processing)
             result['intent'] = force_intent or 'general_query'
             result['model_used'] = 'gemini-audio'
             result['reply'] = "[Audio processing via Gemini — transcription pending integration]"
             result['success'] = True
             return result
 
-        # ── Text Messages → Classify Intent First ─────────────────────────────
-        if force_intent:
-            intent = force_intent
-        else:
-            intent = classify_intent(message_text, config)
-
+        # ── Text Messages ─────────────────────────────────────────────────────
+        intent = force_intent if force_intent else classify_intent(message_text, config)
         result['intent'] = intent
-
-        # Determine which model to use based on intent
-        use_premium_model = intent in ('purchase_intent', 'product_issue')
 
         # Human Handoff / Ticketing logic
         triggers = getattr(chatbot_config, 'handoff_triggers', [])
-        result['open_ticket'] = False
         if triggers and isinstance(triggers, list):
             lower_msg = message_text.lower()
             for trigger in triggers:
@@ -351,8 +440,32 @@ def route_message(
                     result['open_ticket'] = True
                     break
 
+        system_prompt = build_dynamic_prompt(chatbot_config, page_profile, intent)
+
+        if text_pref in ('openai', 'gemini'):
+            # ── Explicit provider chosen by the operator ──────────────────────
+            provider, fell_back = _resolve_provider(text_pref, available)
+            if provider is None:
+                result['error'] = 'No AI provider is available for text replies.'
+                result['reply'] = ("The AI assistant isn't connected yet. Please add an API key "
+                                   "in your .env file.")
+                result['model_used'] = 'unavailable'
+                return result
+            model_name = openai_model if provider == 'openai' else gemini_model
+            reply, model_label = _gen_text(provider, model_name, message_text, system_prompt,
+                                           config, chatbot_config)
+            result['reply'] = reply
+            result['model_used'] = model_label
+            if fell_back:
+                result['notice'] = (f"'{text_pref}' isn't configured — replied using {provider} "
+                                    f"instead.")
+            result['success'] = True
+            return result
+
+        # ── Auto (smart, intent-based) routing ────────────────────────────────
+        use_premium_model = intent in ('purchase_intent', 'product_issue')
+
         if intent == 'spam_noise':
-            system_prompt = build_dynamic_prompt(chatbot_config, page_profile, intent)
             if gemini_key:
                 result['model_used'] = 'gemini-flash'
                 result['reply'] = _call_gemini_flash(message_text, system_prompt, gemini_key, chatbot_config)
@@ -364,24 +477,18 @@ def route_message(
             result['success'] = True
             return result
 
-        system_prompt = build_dynamic_prompt(chatbot_config, page_profile, intent)
-
         if use_premium_model:
             if openai_key:
-                # Complex / Sales → GPT-4o Premium
                 result['model_used'] = 'gpt-4o'
                 result['reply'] = _call_openai_chat(message_text, system_prompt, openai_key, config=chatbot_config)
             elif gemini_key:
-                # Complex / Sales (OpenAI missing) → Gemini 1.5 Pro
                 result['model_used'] = 'gemini-pro'
                 result['reply'] = _call_gemini_pro(message_text, system_prompt, gemini_key, chatbot_config)
         else:
             if gemini_key:
-                # Simple FAQ → Gemini Flash
                 result['model_used'] = 'gemini-flash'
                 result['reply'] = _call_gemini_flash(message_text, system_prompt, gemini_key, chatbot_config)
             elif openai_key:
-                # Simple FAQ → GPT-4o-mini
                 result['model_used'] = 'gpt-4o-mini'
                 result['reply'] = _call_openai_chat(message_text, system_prompt, openai_key, model='gpt-4o-mini', config=chatbot_config)
 

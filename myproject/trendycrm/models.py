@@ -143,6 +143,30 @@ class CRMChatbotConfig(models.Model):
         ('gemini-flash-latest', 'Gemini Flash (Cheapest)'),
         ('gemini-pro-latest', 'Gemini Pro'),
     ]
+    # ── Purpose-based provider routing ────────────────────────────────────────
+    # Lets the operator pick which AI provider handles each purpose independently
+    # (e.g. OpenAI for text replies, Gemini for image recognition). 'auto' lets the
+    # router choose the best available provider and fall back gracefully.
+    PROVIDER_CHOICES = [
+        ('auto', 'Auto — Smart Routing (Recommended)'),
+        ('openai', 'OpenAI (GPT)'),
+        ('gemini', 'Google Gemini'),
+    ]
+    # Suggested model names surfaced in the UI. The field accepts any string so
+    # newer models (e.g. a future gpt-5) can be typed in without a code change.
+    OPENAI_MODEL_CHOICES = [
+        ('gpt-4o', 'GPT-4o'),
+        ('gpt-4o-mini', 'GPT-4o Mini (Cheaper)'),
+        ('gpt-4-turbo', 'GPT-4 Turbo'),
+        ('gpt-4.1', 'GPT-4.1'),
+        ('gpt-5', 'GPT-5'),
+        ('gpt-3.5-turbo', 'GPT-3.5 Turbo (Fastest)'),
+    ]
+    GEMINI_MODEL_CHOICES = [
+        ('gemini-flash-latest', 'Gemini Flash (Cheapest)'),
+        ('gemini-flash-lite-latest', 'Gemini Flash Lite (Fastest)'),
+        ('gemini-pro-latest', 'Gemini Pro (Premium)'),
+    ]
     TONE_CHOICES = [
         ('professional_friendly', 'Professional & Friendly'),
         ('formal', 'Formal'),
@@ -198,6 +222,25 @@ class CRMChatbotConfig(models.Model):
     # Multi-Model Routing Engine API Keys
     openai_api_key = models.CharField(max_length=500, blank=True, null=True, help_text='OpenAI API key for ChatGPT Premium (complex text, images)')
     gemini_api_key = models.CharField(max_length=500, blank=True, null=True, help_text='Google Gemini API key (audio, simple FAQ via Flash)')
+
+    # Purpose-based provider selection (see PROVIDER_CHOICES above)
+    text_provider = models.CharField(
+        max_length=20, choices=PROVIDER_CHOICES, default='auto',
+        help_text='Which provider generates text/chat replies.'
+    )
+    image_provider = models.CharField(
+        max_length=20, choices=PROVIDER_CHOICES, default='auto',
+        help_text='Which provider handles image recognition (OCR / vision).'
+    )
+    openai_model = models.CharField(
+        max_length=60, default='gpt-4o', blank=True,
+        help_text='OpenAI model name to use when OpenAI handles a request.'
+    )
+    gemini_model = models.CharField(
+        max_length=60, default='gemini-flash-latest', blank=True,
+        help_text='Gemini model name to use when Gemini handles a request.'
+    )
+
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
