@@ -720,9 +720,33 @@ def process_comment_to_dm(comment, integration, chatbot_config=None):
             or "Just sent the link to your DMs! 💌"
         )
         try:
-            if reply_to_meta_comment(integration, comment.meta_comment_id, public_reply_text):
+            # reply_to_meta_comment returns (success, new_comment_id) — must unpack,
+            # a raw non-empty tuple is always truthy and would mask API failures.
+            success, new_reply_id = reply_to_meta_comment(
+                integration, comment.meta_comment_id, public_reply_text
+            )
+            if success:
                 result['public_reply_sent'] = True
                 logger.info(f"Public reply sent to comment {comment.meta_comment_id}")
+                # Record our own reply locally so the next page sync doesn't
+                # re-import it as a brand-new top-level comment (which would loop).
+                if new_reply_id:
+                    from django.utils import timezone as _tz
+                    from .models import CRMSocialComment
+                    page_name = integration.parsed_name or integration.account_name or 'Page'
+                    CRMSocialComment.objects.get_or_create(
+                        meta_comment_id=new_reply_id,
+                        defaults={
+                            'post': comment.post,
+                            'parent_comment': comment,
+                            'sender_name': page_name,
+                            'sender_id': integration.parsed_id,
+                            'message': public_reply_text,
+                            'created_time': _tz.now(),
+                        }
+                    )
+            else:
+                logger.warning(f"Public reply failed to post for comment {comment.meta_comment_id}")
         except Exception as e:
             logger.error(f"Failed to send public reply: {e}")
 

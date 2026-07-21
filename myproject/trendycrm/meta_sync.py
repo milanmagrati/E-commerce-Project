@@ -405,22 +405,124 @@ def reply_to_meta_comment_privately(integration, comment_id, message_text):
     """
     Send a direct message (DM) to a user who commented, using the Private Replies API.
     This bypasses the usual 24-hour PSID window requirement by linking the DM to their comment.
-    Returns boolean indicating success.
+    Returns (success: bool, error: str | None). The error string carries the real
+    Facebook Graph error so callers/UI can explain *why* a DM did not go out.
     """
     if not integration.access_token:
-        return False
-        
+        return False, 'No access token on this page — reconnect the integration.'
+
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{comment_id}/private_replies"
     params = {'access_token': integration.access_token}
     payload = {'message': message_text}
-    
+
     try:
         response = requests.post(url, params=params, json=payload, timeout=10)
-        response.raise_for_status()
-        return True
+        if response.status_code == 200:
+            return True, None
+        # Surface the actual Graph error (e.g. "already sent a private reply",
+        # "outside the allowed window", missing pages_messaging permission…).
+        err = _extract_graph_error(response)
+        logger.warning(
+            f"private_replies failed for comment {comment_id}: "
+            f"HTTP {response.status_code} - {err}"
+        )
+        return False, err
     except Exception as e:
         logger.error(f"Failed to send private reply for comment {comment_id}: {e}")
-        return False
+        return False, str(e)
+
+
+def _extract_graph_error(response):
+    """Pull a human-readable message out of a Graph API error response."""
+    try:
+        data = response.json()
+        err = data.get('error', {})
+        msg = err.get('message') or ''
+        code = err.get('code')
+        sub = err.get('error_subcode')
+        detail = err.get('error_user_msg') or ''
+        parts = [p for p in (msg, detail) if p]
+        label = ' | '.join(parts) if parts else (response.text or '')[:300]
+        if code:
+            label = f"[{code}{'/' + str(sub) if sub else ''}] {label}"
+        return label
+    except Exception:
+        return (getattr(response, 'text', '') or '')[:300]
+
+
+def send_comment_dm(integration, comment_id, message_text, sender_id=None):
+    """
+    Deliver a DM to someone who commented on a post.
+
+    Strategy:
+      1. Private Replies API (best for comment→DM — no 24h window needed).
+      2. If that fails and we have the commenter's PSID, fall back to the
+         standard Messenger Send API.
+
+    Returns (success: bool, method: str, error: str | None).
+    """
+    ok, err = reply_to_meta_comment_privately(integration, comment_id, message_text)
+    if ok:
+        return True, 'private_reply', None
+
+    # Fallback — only possible when Facebook gave us a usable PSID for the sender.
+    if sender_id:
+        if send_meta_message(integration, sender_id, message_text):
+            logger.info(f"DM delivered via Send API fallback for comment {comment_id}")
+            return True, 'send_api', None
+        return False, 'send_api', err or 'Send API delivery failed.'
+
+    return False, 'private_reply', err
+
+
+def record_outbound_dm(integration, comment, dm_text):
+    """
+    Persist an outbound DM (sent to a commenter) into the CRM inbox so it shows
+    up on the Conversations page as an outgoing message in the right thread.
+    Creates/links the CRMContact and CRMConversation as needed.
+    Returns the CRMConversation.
+    """
+    page_name = integration.parsed_name or integration.account_name or 'Page'
+    sender_id = comment.sender_id or ''
+    contact_name = comment.sender_name or 'Facebook User'
+    contact_meta_id = sender_id if sender_id else f"commenter_{comment.meta_comment_id}"
+
+    contact, _ = CRMContact.objects.get_or_create(
+        meta_id=contact_meta_id,
+        defaults={'name': contact_name},
+    )
+    # Backfill a real name if the contact was first seen without one
+    if contact.name in ('', 'Facebook User', 'Unknown User') and contact_name not in ('', 'Facebook User'):
+        contact.name = contact_name
+        contact.save(update_fields=['name'])
+
+    page_id = integration.parsed_id or None
+    conversation, _ = CRMConversation.objects.get_or_create(
+        contact=contact,
+        channel=integration.channel_type,
+        account_id=page_id,
+        defaults={
+            'integration': integration,
+            'status': 'open',
+            'subject': f"{integration.get_channel_type_display()} Chat",
+        },
+    )
+    # Keep the reply routable even if the page was reconnected under a new integration
+    if conversation.integration_id != integration.pk:
+        conversation.integration = integration
+        conversation.save(update_fields=['integration'])
+
+    CRMMessage.objects.create(
+        conversation=conversation,
+        sender=page_name,
+        body=dm_text,
+        is_outbound=True,
+        created_at=timezone.now(),
+    )
+    conversation.last_message = dm_text
+    conversation.updated_at = timezone.now()
+    conversation.save(update_fields=['last_message', 'updated_at'])
+    return conversation
         
 def hide_meta_comment(integration, comment_id, is_hidden=True):
     if not integration.access_token:
@@ -563,6 +665,106 @@ def process_incoming_webhook_message(integration, contact, conversation, message
 
     except Exception as e:
         logger.exception(f"process_incoming_webhook_message failed: {e}")
+
+
+def _resolve_integration_by_page(page_id):
+    """Find the connected FB/IG integration that owns the given page id."""
+    if not page_id:
+        return None
+    page_id = str(page_id)
+    qs = CRMIntegration.objects.filter(
+        channel_type__in=['facebook', 'instagram'], status='connected'
+    )
+    # Fast path: account_name stores "Name (page_id)"
+    integ = qs.filter(account_name__contains=f"({page_id})").first()
+    if integ:
+        return integ
+    # Fallback: compare the parsed id property
+    for candidate in qs:
+        if str(candidate.parsed_id) == page_id:
+            return candidate
+    return None
+
+
+def handle_feed_comment_webhook(page_id, value):
+    """
+    Process a single Facebook Page 'feed' webhook change of item type 'comment'.
+
+    Resolves the integration by page id, ensures the parent post exists locally,
+    then runs it through _process_comment — which, for a NEW top-level comment,
+    fires both the Comment-to-DM funnel and the keyword CommentAutomation rules
+    (public reply + optional private DM).
+
+    Only 'add' verbs are processed, and comments authored by the page itself are
+    ignored so our own auto-replies don't trigger an endless loop.
+    """
+    try:
+        if not isinstance(value, dict):
+            return
+        if value.get('item') != 'comment':
+            return
+        if value.get('verb') not in ('add',):
+            return
+
+        from_data = value.get('from') or {}
+        sender_id = str(from_data.get('id') or '')
+        # Ignore the page's own comments/replies (prevents auto-reply loops)
+        if sender_id and str(page_id) and sender_id == str(page_id):
+            return
+
+        integration = _resolve_integration_by_page(page_id)
+        if not integration:
+            logger.warning(f"feed webhook: no connected integration for page {page_id}")
+            return
+
+        post_meta_id = value.get('post_id')
+        comment_id = value.get('comment_id')
+        if not post_meta_id or not comment_id:
+            logger.warning("feed webhook: missing post_id or comment_id")
+            return
+
+        post = CRMSocialPost.objects.filter(meta_post_id=post_meta_id).first()
+        if not post:
+            # Parent post not synced yet — try a sync, then fall back to a stub.
+            try:
+                sync_meta_posts(integration)
+            except Exception:
+                logger.exception("feed webhook: sync_meta_posts failed")
+            post = CRMSocialPost.objects.filter(meta_post_id=post_meta_id).first()
+        if not post:
+            post = CRMSocialPost.objects.create(
+                integration=integration,
+                meta_post_id=post_meta_id,
+                message='',
+                created_time=timezone.now(),
+            )
+
+        # parent_id == post_id means this is a top-level comment
+        parent_id = value.get('parent_id')
+        if parent_id in (None, '', post_meta_id):
+            parent_id = None
+
+        created_str = None
+        created_ts = value.get('created_time')
+        if created_ts:
+            try:
+                from datetime import datetime, timezone as _dt_tz
+                created_str = datetime.fromtimestamp(int(created_ts), tz=_dt_tz.utc).isoformat()
+            except Exception:
+                created_str = None
+
+        comment_data = {
+            'id': comment_id,
+            'from': from_data,
+            'message': value.get('message', ''),
+            'created_time': created_str,
+        }
+        _process_comment(post, comment_data, parent_id)
+        logger.info(
+            f"feed webhook processed comment {comment_id} on post {post_meta_id} (page {page_id})"
+        )
+    except Exception as e:
+        logger.exception(f"handle_feed_comment_webhook failed: {e}")
 
 
 def trigger_comment_to_dm(comment, integration):

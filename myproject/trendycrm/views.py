@@ -1191,6 +1191,19 @@ def meta_webhook(request):
             # Process webhook events for read/delivery receipts
             if 'entry' in payload:
                 for entry in payload['entry']:
+                    page_id = entry.get('id')
+
+                    # ── Page feed events (comments on posts) ──────────────────
+                    # Drives real-time keyword automations + Comment-to-DM funnel.
+                    from trendycrm.meta_sync import handle_feed_comment_webhook
+                    for change in (entry.get('changes') or []):
+                        if change.get('field') == 'feed':
+                            value = change.get('value') or {}
+                            if value.get('item') == 'comment':
+                                # Run off-request so a slow Graph call never
+                                # makes Meta retry the webhook delivery.
+                                run_async(handle_feed_comment_webhook, page_id, value)
+
                     if 'messaging' in entry:
                         for event in entry['messaging']:
                             sender_id = event.get('sender', {}).get('id')
@@ -1383,8 +1396,10 @@ def crm_social_post_action(request, post_id):
             return JsonResponse({'status': 'error', 'message': 'Message cannot be empty'}, status=400)
             
         from trendycrm.meta_sync import reply_to_meta_comment
-        # Graph API uses the same endpoint for comments on a post and replies to a comment
-        if reply_to_meta_comment(post.integration, post.meta_post_id, msg_text):
+        # Graph API uses the same endpoint for comments on a post and replies to a comment.
+        # reply_to_meta_comment returns (success, new_comment_id) — must unpack it.
+        success, _new_id = reply_to_meta_comment(post.integration, post.meta_post_id, msg_text)
+        if success:
             return JsonResponse({'status': 'ok'})
         else:
             return JsonResponse({'status': 'error', 'message': 'Failed to post comment to Facebook'}, status=500)
@@ -1429,18 +1444,33 @@ def crm_social_action(request, comment_id):
     action = request.POST.get('action')
     
     if action == 'reply':
-        msg_text = request.POST.get('message')
-        if msg_text and reply_to_meta_comment(comment.post.integration, comment.meta_comment_id, msg_text):
-            CRMSocialComment.objects.create(
-                post=comment.post,
-                parent_comment=comment,
-                sender_name='Trendy CRM',
-                message=msg_text,
-                created_time=timezone.now()
+        msg_text = (request.POST.get('message') or '').strip()
+        if not msg_text:
+            messages.error(request, "Reply cannot be empty.")
+            return redirect(f"{reverse('trendycrm:social_posts')}?post_id={comment.post.pk}")
+
+        integration = comment.post.integration
+        # reply_to_meta_comment returns (success, new_comment_id) — unpack it.
+        success, new_reply_id = reply_to_meta_comment(integration, comment.meta_comment_id, msg_text)
+        if success:
+            page_name = integration.parsed_name or integration.account_name or 'Page'
+            # meta_comment_id is unique & required; use the real FB id when returned,
+            # otherwise a stable synthetic id so repeat replies don't collide.
+            stable_id = new_reply_id or f"manual_{comment.meta_comment_id}_{int(timezone.now().timestamp())}"
+            CRMSocialComment.objects.get_or_create(
+                meta_comment_id=stable_id,
+                defaults={
+                    'post': comment.post,
+                    'parent_comment': comment,
+                    'sender_name': page_name,
+                    'sender_id': integration.parsed_id,
+                    'message': msg_text,
+                    'created_time': timezone.now(),
+                }
             )
             messages.success(request, "Reply posted successfully.")
         else:
-            messages.error(request, "Failed to post reply.")
+            messages.error(request, "Failed to post reply to Facebook.")
             
     elif action == 'hide':
         if hide_meta_comment(comment.post.integration, comment.meta_comment_id, True):
@@ -1623,7 +1653,7 @@ def _check_comment_automations(integration, comment_obj):
         integration: CRMIntegration instance
         comment_obj: CRMSocialComment instance (the new comment)
     """
-    from .meta_sync import reply_to_meta_comment, send_meta_message
+    from .meta_sync import reply_to_meta_comment, send_comment_dm, record_outbound_dm
 
     comment_text = (comment_obj.message or '').strip()
     sender_id = comment_obj.sender_id or ''
@@ -1633,6 +1663,8 @@ def _check_comment_automations(integration, comment_obj):
         integration=integration,
         is_active=True
     )
+
+    results = []  # one entry per fired rule — lets the caller report DM status to the UI
 
     for auto in automations:
         matched = False
@@ -1645,80 +1677,81 @@ def _check_comment_automations(integration, comment_obj):
         elif auto.match_type == 'contains':
             matched = bool(kw) and kw in comment_text.lower()
 
-        if matched:
-            try:
-                page_name = integration.parsed_name or integration.account_name
+        if not matched:
+            continue
 
-                # 1. Public reply on the comment
-                if auto.public_reply:
-                    success, new_fb_id = reply_to_meta_comment(integration, comment_meta_id, auto.public_reply)
-                    if success:
-                        stable_id = new_fb_id if new_fb_id else f"auto_{auto.pk}_{comment_meta_id}"
-                        CRMSocialComment.objects.get_or_create(
-                            meta_comment_id=stable_id,
-                            defaults={
-                                'post': comment_obj.post,
-                                'parent_comment': comment_obj,
-                                'sender_name': page_name,
-                                'message': auto.public_reply,
-                                'created_time': timezone.now(),
-                            }
+        rule_result = {
+            'rule': auto.name,
+            'public_reply_sent': False,
+            'dm_requested': bool(auto.send_dm and auto.dm_message),
+            'dm_sent': False,
+            'dm_method': None,
+            'dm_error': None,
+        }
+
+        try:
+            page_name = integration.parsed_name or integration.account_name
+
+            # 1. Public reply on the comment
+            if auto.public_reply:
+                success, new_fb_id = reply_to_meta_comment(integration, comment_meta_id, auto.public_reply)
+                if success:
+                    rule_result['public_reply_sent'] = True
+                    stable_id = new_fb_id if new_fb_id else f"auto_{auto.pk}_{comment_meta_id}"
+                    CRMSocialComment.objects.get_or_create(
+                        meta_comment_id=stable_id,
+                        defaults={
+                            'post': comment_obj.post,
+                            'parent_comment': comment_obj,
+                            'sender_name': page_name,
+                            'sender_id': integration.parsed_id,
+                            'message': auto.public_reply,
+                            'created_time': timezone.now(),
+                        }
+                    )
+                    logger.info(f"Auto-reply posted | rule='{auto.name}' | fb_id={stable_id} | parent={comment_meta_id}")
+                else:
+                    logger.error(f"Auto-reply FAILED to post to Facebook | rule='{auto.name}' | comment={comment_meta_id}")
+
+            # 2. Optional private DM (Private Replies API, with Send-API fallback)
+            if rule_result['dm_requested']:
+                try:
+                    dm_success, dm_method, dm_error = send_comment_dm(
+                        integration, comment_meta_id, auto.dm_message, sender_id=sender_id
+                    )
+                    rule_result['dm_sent'] = dm_success
+                    rule_result['dm_method'] = dm_method
+                    rule_result['dm_error'] = dm_error
+                    if dm_success:
+                        # Log the DM into the CRM inbox so it appears on the
+                        # Conversations page as an outbound message.
+                        record_outbound_dm(integration, comment_obj, auto.dm_message)
+                        logger.info(
+                            f"DM sent | rule='{auto.name}' | comment={comment_meta_id} | via={dm_method}"
                         )
-                        logger.info(f"Auto-reply posted | rule='{auto.name}' | fb_id={stable_id} | parent={comment_meta_id}")
                     else:
-                        logger.error(f"Auto-reply FAILED to post to Facebook | rule='{auto.name}' | comment={comment_meta_id}")
+                        logger.warning(
+                            f"DM failed | rule='{auto.name}' | comment={comment_meta_id} | error={dm_error}"
+                        )
+                except Exception as dm_err:
+                    rule_result['dm_error'] = str(dm_err)
+                    logger.error(f"DM exception for rule '{auto.name}': {dm_err}")
 
-                # 2. Optional private DM
-                if auto.send_dm and auto.dm_message:
-                    from .meta_sync import reply_to_meta_comment_privately
-                    try:
-                        dm_success = reply_to_meta_comment_privately(integration, comment_meta_id, auto.dm_message)
-                        if dm_success:
-                            logger.info(f"Private Reply DM sent | rule='{auto.name}' | comment={comment_meta_id}")
-                            contact_name = comment_obj.sender_name or 'Facebook User'
-                            contact_meta_id = sender_id if sender_id else f"commenter_{comment_meta_id}"
-                            
-                            contact, _ = CRMContact.objects.get_or_create(
-                                meta_id=contact_meta_id,
-                                defaults={'name': contact_name}
-                            )
-                            page_id = integration.account_name.split('(')[-1].strip(')') if '(' in integration.account_name else None
-                            conversation, _ = CRMConversation.objects.get_or_create(
-                                contact=contact,
-                                channel=integration.channel_type,
-                                account_id=page_id,
-                                defaults={
-                                    'integration': integration,
-                                    'status': 'open',
-                                    'subject': f"{integration.get_channel_type_display()} Chat"
-                                }
-                            )
-                            CRMMessage.objects.create(
-                                conversation=conversation,
-                                sender=page_name,
-                                body=auto.dm_message,
-                                is_outbound=True,
-                                created_at=timezone.now()
-                            )
-                            conversation.last_message = auto.dm_message
-                            conversation.updated_at = timezone.now()
-                            conversation.save(update_fields=['last_message', 'updated_at'])
-                        else:
-                            logger.warning(f"Private Reply DM failed for rule '{auto.name}' on comment {comment_meta_id}")
-                    except Exception as dm_err:
-                        logger.error(f"DM exception for rule '{auto.name}': {dm_err}")
+            # 3. Update stats
+            auto.trigger_count += 1
+            auto.last_triggered_at = timezone.now()
+            auto.save(update_fields=['trigger_count', 'last_triggered_at'])
 
-                # 3. Update stats
-                auto.trigger_count += 1
-                auto.last_triggered_at = timezone.now()
-                auto.save(update_fields=['trigger_count', 'last_triggered_at'])
+            logger.info(
+                f"CommentAutomation fired | rule={auto.name} | "
+                f"comment={comment_meta_id} | match={auto.match_type}"
+            )
+        except Exception as e:
+            logger.error(f"CommentAutomation '{auto.name}' failed to fire: {e}")
 
-                logger.info(
-                    f"CommentAutomation fired | rule={auto.name} | "
-                    f"comment={comment_meta_id} | match={auto.match_type}"
-                )
-            except Exception as e:
-                logger.error(f"CommentAutomation '{auto.name}' failed to fire: {e}")
+        results.append(rule_result)
+
+    return results
 
 
 @login_required
@@ -1838,8 +1871,31 @@ def crm_comment_automation_get(request, pk):
 def crm_fire_automation_on_comment(request, comment_id):
     comment = get_object_or_404(CRMSocialComment, pk=comment_id)
     try:
-        _check_comment_automations(comment.post.integration, comment)
-        return JsonResponse({'status': 'ok', 'message': f'Automations fired for comment.'})
+        results = _check_comment_automations(comment.post.integration, comment) or []
+
+        if not results:
+            return JsonResponse({
+                'status': 'ok',
+                'message': 'No active automation rule matches this comment.'
+            })
+
+        fired = len(results)
+        dm_failures = [r for r in results if r['dm_requested'] and not r['dm_sent']]
+        dm_sent = sum(1 for r in results if r['dm_sent'])
+
+        msg = f"Fired {fired} automation rule{'s' if fired != 1 else ''}."
+        if dm_sent:
+            msg += f" Sent {dm_sent} private DM{'s' if dm_sent != 1 else ''}."
+        if dm_failures:
+            # Show the real Facebook reason so the operator can act on it
+            reason = dm_failures[0].get('dm_error') or 'Unknown error'
+            msg += f" ⚠️ DM not delivered: {reason}"
+
+        return JsonResponse({
+            'status': 'ok',
+            'message': msg,
+            'dm_failed': bool(dm_failures),
+        })
     except Exception as e:
         logger.error(f'crm_fire_automation_on_comment failed: {e}')
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
