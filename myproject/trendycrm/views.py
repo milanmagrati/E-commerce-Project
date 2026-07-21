@@ -1565,9 +1565,24 @@ def crm_ai_test(request):
     message_text = request.POST.get('message', '').strip()
     integration_id = request.POST.get('integration_id')
     bot_id = request.POST.get('bot_id')
+    image_file = request.FILES.get('image')
 
-    if not message_text:
-        return JsonResponse({'error': 'Message is required'}, status=400)
+    # Validate & encode an uploaded image (image mode); text-only requests need a message.
+    image_data = None
+    image_mime = None
+    if image_file:
+        content_type = (image_file.content_type or '').lower()
+        if not content_type.startswith('image/'):
+            return JsonResponse({'error': 'Only image files can be uploaded.'}, status=400)
+        MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB
+        if image_file.size > MAX_IMAGE_BYTES:
+            return JsonResponse({'error': 'Image is too large (max 10 MB).'}, status=400)
+        import base64
+        image_data = base64.b64encode(image_file.read()).decode('ascii')
+        image_mime = content_type
+
+    if not message_text and not image_file:
+        return JsonResponse({'error': 'Message or image is required'}, status=400)
 
     integration = None
     if integration_id:
@@ -1582,12 +1597,14 @@ def crm_ai_test(request):
 
     try:
         from .ai_router import route_message
-        
+
         result = route_message(
             message_text=message_text,
             integration=integration,
             chatbot_config=chatbot,
-            input_type='text',
+            input_type='image' if image_file else 'text',
+            image_data=image_data,
+            image_mime=image_mime,
         )
         return JsonResponse(result)
     except Exception as e:

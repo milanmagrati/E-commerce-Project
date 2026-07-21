@@ -83,6 +83,52 @@ def _call_gemini_rest(model_name: str, system_prompt: str, user_message: str, ap
     return text
 
 
+def _call_gemini_vision_rest(model_name: str, system_prompt: str, prompt_text: str,
+                              image_b64: str, mime_type: str, api_key: str,
+                              temperature: float = 0.5, max_tokens: int = 500) -> str:
+    """
+    Multimodal Gemini REST call: sends a text prompt + an inline image so the model
+    can actually read the picture (OCR, product labels, screenshots, barcodes).
+
+    Mirrors _call_gemini_rest's request/error handling but adds an inline_data part
+    carrying the base64-encoded image bytes.
+    """
+    if not api_key or api_key == 'your-gemini-api-key-here':
+        raise ValueError("Gemini API key not configured.")
+
+    url = f"{GEMINI_API_BASE}/models/{model_name}:generateContent?key={api_key}"
+    payload = {
+        'contents': [{
+            'parts': [
+                {'text': prompt_text},
+                {'inline_data': {'mime_type': mime_type or 'image/jpeg', 'data': image_b64}},
+            ]
+        }],
+        'generationConfig': {
+            'temperature': temperature,
+            'maxOutputTokens': max_tokens,
+            'thinkingConfig': {'thinkingBudget': 0},
+        },
+    }
+    if system_prompt:
+        payload['systemInstruction'] = {'parts': [{'text': system_prompt}]}
+
+    response = requests.post(url, json=payload, timeout=45)
+    response.raise_for_status()
+    data = response.json()
+
+    candidates = data.get('candidates') or []
+    if not candidates:
+        block_reason = data.get('promptFeedback', {}).get('blockReason', 'unknown')
+        raise ValueError(f"Gemini vision returned no candidates (blockReason={block_reason})")
+
+    parts = candidates[0].get('content', {}).get('parts', [])
+    text = ''.join(p.get('text', '') for p in parts if 'text' in p).strip()
+    if not text:
+        raise ValueError(f"Gemini vision returned empty text (finishReason={candidates[0].get('finishReason')})")
+    return text
+
+
 from decouple import config as env_config
 
 # ─── Fetching config from Env ──────────────────────────────────────────────────
@@ -341,6 +387,8 @@ def route_message(
     chatbot_config=None,
     input_type: str = 'text',   # 'text' | 'image' | 'audio'
     force_intent: str = None,   # Skip classification and force a specific intent
+    image_data: str = None,     # base64-encoded image bytes (when input_type='image')
+    image_mime: str = None,     # mime type of the image, e.g. 'image/jpeg'
 ) -> dict:
     """
     Master routing function. Accepts a customer message and returns:
@@ -409,10 +457,16 @@ def route_message(
             system_prompt = build_dynamic_prompt(chatbot_config, page_profile, result['intent'])
             if provider == 'openai':
                 result['model_used'] = f"{openai_model} (vision)"
-                result['reply'] = _call_openai_vision(message_text, system_prompt, openai_key, config=chatbot_config)
+                result['reply'] = _call_openai_vision(
+                    message_text, system_prompt, openai_key, config=chatbot_config,
+                    model=openai_model, image_b64=image_data, mime_type=image_mime)
             else:
-                result['model_used'] = f"{gemini_model} (vision)"
-                result['reply'] = _call_gemini_vision(message_text, system_prompt, gemini_key, config=chatbot_config)
+                # Gemini vision uses Flash (Pro has 0 free-tier quota); label honestly.
+                vision_model = GEMINI_FLASH_MODEL if 'pro' in (gemini_model or '') else gemini_model
+                result['model_used'] = f"{vision_model} (vision)"
+                result['reply'] = _call_gemini_vision(
+                    message_text, system_prompt, gemini_key, config=chatbot_config,
+                    model=gemini_model, image_b64=image_data, mime_type=image_mime)
             if fell_back:
                 result['notice'] = (f"'{image_pref}' isn't configured for image recognition — "
                                     f"used {provider} instead.")
@@ -530,21 +584,36 @@ def _call_openai_chat(user_message: str, system_prompt: str, api_key: str, model
     return response.choices[0].message.content.strip()
 
 
-def _call_openai_vision(image_description: str, system_prompt: str, api_key: str, config=None) -> str:
+def _call_openai_vision(prompt_text: str, system_prompt: str, api_key: str, config=None,
+                        model: str = 'gpt-4o', image_b64: str = None, mime_type: str = None) -> str:
     """
-    Calls GPT-4o Vision for image analysis (OCR, product labels, barcodes).
-    In a real implementation, you'd pass the base64-encoded image URL here.
+    Calls OpenAI Vision (GPT-4o family) for image analysis — OCR, product labels,
+    screenshots, barcodes.
+
+    When image_b64 is provided, the image is sent as a real multimodal message via a
+    data-URI image_url block so the model actually sees it. If no image bytes are
+    supplied, falls back to a text-only description (legacy callers).
     """
     client = _get_openai_client(api_key=api_key)
-    
+
     temp = float(getattr(config, 'creativity_level', '0.7')) if config else 0.5
     max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
-    
+    model = (model or 'gpt-4o').strip()
+
+    if image_b64:
+        data_uri = f"data:{mime_type or 'image/jpeg'};base64,{image_b64}"
+        user_content = [
+            {'type': 'text', 'text': prompt_text or "Describe this image and read any text in it."},
+            {'type': 'image_url', 'image_url': {'url': data_uri}},
+        ]
+    else:
+        user_content = f"The customer sent an image. Description/context: {prompt_text}"
+
     response = client.chat.completions.create(
-        model='gpt-4o',
+        model=model,
         messages=[
             {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': f"The customer sent an image. Description/context: {image_description}"},
+            {'role': 'user', 'content': user_content},
         ],
         max_tokens=max_tokens,
         temperature=temp,
@@ -569,15 +638,28 @@ def _call_gemini_pro(user_message: str, system_prompt: str, api_key: str, config
                                   temperature=temperature, max_tokens=max_tokens)
 
 
-def _call_gemini_vision(image_description: str, system_prompt: str, api_key: str, config=None) -> str:
+def _call_gemini_vision(prompt_text: str, system_prompt: str, api_key: str, config=None,
+                        model: str = None, image_b64: str = None, mime_type: str = None) -> str:
     """
-    Calls Gemini Flash (multimodal) for image analysis.
-    In a real implementation, you'd pass the actual image object.
+    Calls Gemini (multimodal) for image analysis.
+
+    When image_b64 is provided, the actual image is sent inline so the model reads it.
+    If no image bytes are supplied, falls back to a text-only description (legacy callers).
     """
     temperature = float(getattr(config, 'creativity_level', '0.7')) if config else 0.5
     max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
-    user_message = f"The customer sent an image. Description/context: {image_description}"
-    return _call_gemini_rest(GEMINI_FLASH_MODEL, system_prompt, user_message, api_key,
+    model = (model or GEMINI_FLASH_MODEL).strip()
+    # Pro models have a 0-quota on free-tier keys; use Flash for vision unless told otherwise.
+    if 'pro' in model:
+        model = GEMINI_FLASH_MODEL
+
+    if image_b64:
+        prompt = prompt_text or "Describe this image and read any text in it."
+        return _call_gemini_vision_rest(model, system_prompt, prompt, image_b64, mime_type,
+                                        api_key, temperature=temperature, max_tokens=max_tokens)
+
+    user_message = f"The customer sent an image. Description/context: {prompt_text}"
+    return _call_gemini_rest(model, system_prompt, user_message, api_key,
                               temperature=temperature, max_tokens=max_tokens)
 
 
