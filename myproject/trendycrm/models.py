@@ -140,8 +140,8 @@ class CRMChatbotConfig(models.Model):
         ('multi_auto', 'Multi-Model Auto (Recommended)'),
         ('gpt-4o', 'GPT-4o (Premium)'),
         ('gpt-3.5-turbo', 'GPT-3.5 Turbo (Fast)'),
-        ('gemini-1.5-flash', 'Gemini 1.5 Flash (Cheapest)'),
-        ('gemini-1.5-pro', 'Gemini 1.5 Pro'),
+        ('gemini-flash-latest', 'Gemini Flash (Cheapest)'),
+        ('gemini-pro-latest', 'Gemini Pro'),
     ]
     TONE_CHOICES = [
         ('professional_friendly', 'Professional & Friendly'),

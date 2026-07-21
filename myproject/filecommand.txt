@@ -1,0 +1,2 @@
+ here i have provided two ss and in the first , this is chatbot page and make it fully functional and i have provided gemin api key in the @.env file 
+ and make this page functional now 

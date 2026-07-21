@@ -543,7 +543,7 @@ def process_incoming_webhook_message(integration, contact, conversation, message
 
             logger.info(
                 f"AI auto-reply sent | intent={result.get('intent')} | "
-                f"model={result.get('model_used')} | channel={channel_key}"
+                f"model={result.get('model_used')} | channel={integration.channel_type}"
             )
 
         # If the AI flagged a product issue, auto-create a support ticket

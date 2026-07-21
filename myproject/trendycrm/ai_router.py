@@ -20,8 +20,17 @@ Models used:
 import logging
 import os
 import json
+import requests
 
 logger = logging.getLogger(__name__)
+
+# Google's newer Gemini models are "thinking" models by default and will burn the
+# whole max_output_tokens budget on hidden reasoning tokens before ever emitting
+# visible text unless thinking is explicitly disabled — see _call_gemini_rest.
+GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta'
+GEMINI_FLASH_MODEL = 'gemini-flash-latest'
+GEMINI_PRO_MODEL = 'gemini-pro-latest'
+
 
 # ─── Lazy imports (only load SDKs when actually needed) ───────────────────────
 def _get_openai_client(api_key=None):
@@ -34,15 +43,44 @@ def _get_openai_client(api_key=None):
         raise ImportError("openai package not installed. Run: pip install openai")
 
 
-def _get_gemini_model(model_name: str = 'gemini-1.5-flash', api_key: str = None):
-    try:
-        import google.generativeai as genai
-        if not api_key or api_key == 'your-gemini-api-key-here':
-            raise ValueError("Gemini API key not configured.")
-        genai.configure(api_key=api_key)
-        return genai.GenerativeModel(model_name)
-    except ImportError:
-        raise ImportError("google-generativeai package not installed. Run: pip install google-generativeai")
+def _call_gemini_rest(model_name: str, system_prompt: str, user_message: str, api_key: str,
+                       temperature: float = 0.7, max_tokens: int = 500) -> str:
+    """
+    Calls the Gemini REST API directly instead of the google-generativeai SDK.
+
+    The SDK depends on grpc, whose compiled extension (cygrpc) gets blocked by
+    Windows Application Control Policy on this host — the REST API has no such
+    dependency and uses the exact same backend, so this is a drop-in replacement.
+    """
+    if not api_key or api_key == 'your-gemini-api-key-here':
+        raise ValueError("Gemini API key not configured.")
+
+    url = f"{GEMINI_API_BASE}/models/{model_name}:generateContent?key={api_key}"
+    payload = {
+        'contents': [{'parts': [{'text': user_message}]}],
+        'generationConfig': {
+            'temperature': temperature,
+            'maxOutputTokens': max_tokens,
+            'thinkingConfig': {'thinkingBudget': 0},
+        },
+    }
+    if system_prompt:
+        payload['systemInstruction'] = {'parts': [{'text': system_prompt}]}
+
+    response = requests.post(url, json=payload, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+
+    candidates = data.get('candidates') or []
+    if not candidates:
+        block_reason = data.get('promptFeedback', {}).get('blockReason', 'unknown')
+        raise ValueError(f"Gemini returned no candidates (blockReason={block_reason})")
+
+    parts = candidates[0].get('content', {}).get('parts', [])
+    text = ''.join(p.get('text', '') for p in parts if 'text' in p).strip()
+    if not text:
+        raise ValueError(f"Gemini returned empty text (finishReason={candidates[0].get('finishReason')})")
+    return text
 
 
 from decouple import config as env_config
@@ -186,9 +224,10 @@ Respond with ONLY the category name, nothing else. No explanation, no punctuatio
     try:
         response_text = ""
         if gemini_key:
-            model = _get_gemini_model('gemini-1.5-flash', api_key=gemini_key)
-            response = model.generate_content(classification_prompt)
-            response_text = response.text
+            response_text = _call_gemini_rest(
+                GEMINI_FLASH_MODEL, None, classification_prompt, gemini_key,
+                temperature=0.1, max_tokens=20,
+            )
         elif openai_key:
             client = _get_openai_client(api_key=openai_key)
             response = client.chat.completions.create(
@@ -358,18 +397,11 @@ def route_message(
 
 # ─── Model Callers ────────────────────────────────────────────────────────────
 def _call_gemini_flash(user_message: str, system_prompt: str, api_key: str, config=None) -> str:
-    """Calls Gemini 1.5 Flash — low cost, high speed. For FAQs and spam."""
-    import google.generativeai as genai
-    model = _get_gemini_model('gemini-1.5-flash', api_key=api_key)
-    full_prompt = f"{system_prompt}\n\nCustomer message: {user_message}"
-    
-    gen_config = genai.types.GenerationConfig()
-    if config:
-        gen_config.temperature = float(getattr(config, 'creativity_level', '0.7'))
-        gen_config.max_output_tokens = int(getattr(config, 'response_length', '500'))
-        
-    response = model.generate_content(full_prompt, generation_config=gen_config)
-    return response.text.strip()
+    """Calls Gemini Flash — low cost, high speed. For FAQs and spam."""
+    temperature = float(getattr(config, 'creativity_level', '0.7')) if config else 0.7
+    max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
+    return _call_gemini_rest(GEMINI_FLASH_MODEL, system_prompt, user_message, api_key,
+                              temperature=temperature, max_tokens=max_tokens)
 
 
 def _call_openai_chat(user_message: str, system_prompt: str, api_key: str, model: str = 'gpt-4o', config=None) -> str:
@@ -414,36 +446,32 @@ def _call_openai_vision(image_description: str, system_prompt: str, api_key: str
 
 
 def _call_gemini_pro(user_message: str, system_prompt: str, api_key: str, config=None) -> str:
-    """Calls Gemini 1.5 Pro — premium model. For complex reasoning and sales when OpenAI is missing."""
-    import google.generativeai as genai
-    model = _get_gemini_model('gemini-1.5-pro', api_key=api_key)
-    full_prompt = f"{system_prompt}\n\nCustomer message: {user_message}"
-    
-    gen_config = genai.types.GenerationConfig()
-    if config:
-        gen_config.temperature = float(getattr(config, 'creativity_level', '0.7'))
-        gen_config.max_output_tokens = int(getattr(config, 'response_length', '500'))
-        
-    response = model.generate_content(full_prompt, generation_config=gen_config)
-    return response.text.strip()
+    """
+    Calls Gemini Pro — premium model. For complex reasoning and sales when OpenAI is missing.
+    Free-tier Gemini keys get a 0 request/day quota for Pro models, so on any failure
+    (quota, availability) this falls back to Flash rather than dropping the reply entirely.
+    """
+    temperature = float(getattr(config, 'creativity_level', '0.7')) if config else 0.7
+    max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
+    try:
+        return _call_gemini_rest(GEMINI_PRO_MODEL, system_prompt, user_message, api_key,
+                                  temperature=temperature, max_tokens=max_tokens)
+    except Exception as e:
+        logger.warning(f"Gemini Pro call failed ({e}), falling back to Gemini Flash.")
+        return _call_gemini_rest(GEMINI_FLASH_MODEL, system_prompt, user_message, api_key,
+                                  temperature=temperature, max_tokens=max_tokens)
 
 
 def _call_gemini_vision(image_description: str, system_prompt: str, api_key: str, config=None) -> str:
     """
-    Calls Gemini 1.5 Flash (multimodal) for image analysis.
+    Calls Gemini Flash (multimodal) for image analysis.
     In a real implementation, you'd pass the actual image object.
     """
-    import google.generativeai as genai
-    model = _get_gemini_model('gemini-1.5-flash', api_key=api_key)
-    full_prompt = f"{system_prompt}\n\nThe customer sent an image. Description/context: {image_description}"
-    
-    gen_config = genai.types.GenerationConfig()
-    if config:
-        gen_config.temperature = float(getattr(config, 'creativity_level', '0.7'))
-        gen_config.max_output_tokens = int(getattr(config, 'response_length', '500'))
-        
-    response = model.generate_content(full_prompt, generation_config=gen_config)
-    return response.text.strip()
+    temperature = float(getattr(config, 'creativity_level', '0.7')) if config else 0.5
+    max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
+    user_message = f"The customer sent an image. Description/context: {image_description}"
+    return _call_gemini_rest(GEMINI_FLASH_MODEL, system_prompt, user_message, api_key,
+                              temperature=temperature, max_tokens=max_tokens)
 
 
 # ─── Comment-to-DM Funnel ────────────────────────────────────────────────────

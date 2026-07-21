@@ -90,6 +90,52 @@
 .credit-amount { font-size:1.6rem; font-weight:800; color:#1e1b4b; line-height:1.1; }
 .credit-label { font-size:.72rem; color:#6b7280; margin-bottom:.15rem; }
 
+/* ── AI Test Console ─────────────────────────── */
+.ai-test-card {
+    background: linear-gradient(to right, #ffffff, #faf5ff);
+    border: 1px solid rgba(124,58,237,0.15);
+    border-radius: 14px;
+    padding: 1.25rem 1.4rem;
+    margin-bottom: 1.25rem;
+    box-shadow: 0 4px 20px rgba(124,58,237,0.06);
+    position: relative;
+    overflow: hidden;
+}
+.ai-test-card::before {
+    content: ''; position: absolute; top:0; left:0; width:4px; height:100%;
+    background: linear-gradient(180deg, var(--crm-primary), var(--crm-accent));
+}
+.ai-test-header { display:flex; align-items:center; gap:.6rem; margin-bottom:.6rem; }
+.ai-test-header i { font-size:1.1rem; color:var(--crm-primary); }
+.ai-test-header h3 { font-size:1rem; font-weight:700; color:#1e1b4b; margin:0; }
+.ai-test-desc { font-size:.8rem; color:#6b7280; margin-bottom:1rem; }
+.ai-test-row { display:flex; gap:.85rem; flex-wrap:wrap; align-items:center; }
+.test-input-wrap { flex:1; min-width:250px; position:relative; }
+.test-input-wrap i { position:absolute; left:1rem; top:50%; transform:translateY(-50%); color:#9ca3af; }
+.test-input-wrap input {
+    width:100%; padding:.7rem 1rem .7rem 2.5rem; border:1.5px solid #e5e7eb; border-radius:9px;
+    font-size:.85rem; box-sizing:border-box; outline:none; transition:border-color .15s, box-shadow .15s;
+}
+.test-input-wrap input:focus { border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.1); }
+.btn-test {
+    background:#1e1b4b; color:#fff; border:none; padding:.7rem 1.4rem; border-radius:9px;
+    font-weight:600; font-size:.85rem; cursor:pointer; display:flex; align-items:center; gap:.5rem;
+    box-shadow:0 4px 12px rgba(0,0,0,.1); transition:all .15s;
+}
+.btn-test:hover { background:#000; transform:translateY(-1px); }
+.btn-test:disabled { opacity:.6; cursor:not-allowed; transform:none; }
+.ai-test-result {
+    margin-top:1rem; background:#fff; border:1px solid #e5e7eb; border-radius:9px;
+    padding:1rem 1.1rem; font-size:.85rem; display:none; line-height:1.5; box-shadow:0 4px 15px rgba(0,0,0,.03);
+}
+.ai-test-result.success { border-left:4px solid #10b981; }
+.ai-test-result.error { border-left:4px solid #ef4444; background:#fef2f2; }
+.result-meta { display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:.65rem; padding-bottom:.65rem; border-bottom:1px solid #f3f4f6; }
+.result-badge { font-size:.68rem; font-weight:700; padding:.2rem .55rem; border-radius:6px; text-transform:uppercase; letter-spacing:.05em; }
+.badge-intent { background:#ede9fe; color:#5b21b6; }
+.badge-model { background:#e0f2fe; color:#0369a1; }
+.badge-ticket { background:#fef2f2; color:#991b1b; }
+
 /* ── Channel Item ───────────────────────────── */
 .ch-item { display:flex; align-items:center; gap:.75rem; padding:.65rem 0; border-bottom:1px solid rgba(124,58,237,.05); }
 .ch-item:last-child { border-bottom:none; }
@@ -255,6 +301,27 @@
         <input type="checkbox" id="masterToggle" {% if chatbot.is_active %}checked{% endif %}>
         <span class="ai-toggle-slider"></span>
     </label>
+</div>
+
+<!-- ── AI Test Console ─────────────────────────────────────── -->
+<div class="ai-test-card">
+    <div class="ai-test-header">
+        <i class="fas fa-flask"></i>
+        <h3>Test Your AI</h3>
+    </div>
+    <p class="ai-test-desc">Send a mock customer message through this bot's routing engine to preview how it classifies intent and replies, using your saved Knowledge Base above.</p>
+
+    <div class="ai-test-row">
+        <div class="test-input-wrap">
+            <i class="fas fa-comment-dots"></i>
+            <input type="text" id="testMessage" placeholder='e.g. "How much is the serum and do you deliver?"'>
+        </div>
+        <button class="btn-test" onclick="runAiTest()" id="btnTestRouter">
+            <i class="fas fa-paper-plane"></i> Test Route
+        </button>
+    </div>
+
+    <div class="ai-test-result" id="aiTestResult"></div>
 </div>
 
 <div class="cb-grid">
@@ -941,5 +1008,65 @@ function saveAllSettings() {
         }, 3000);
     }, 800); // give enough time for ajax requests to fire
 }
+
+// ── AI Test Console ─────────────────────────────────────────────────────────
+async function runAiTest() {
+    const msgInput = document.getElementById('testMessage');
+    const msg = msgInput.value.trim();
+    const resultEl = document.getElementById('aiTestResult');
+    const btnTest = document.getElementById('btnTestRouter');
+
+    if (!msg) {
+        msgInput.focus();
+        return;
+    }
+
+    resultEl.style.display = 'none';
+    const originalBtnHtml = btnTest.innerHTML;
+    btnTest.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+    btnTest.disabled = true;
+
+    const formData = new FormData();
+    formData.append('message', msg);
+    formData.append('bot_id', '{{ chatbot.id }}');
+
+    try {
+        const resp = await fetch('{% url "trendycrm:ai_test" %}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await resp.json();
+
+        resultEl.style.display = 'block';
+        if (data.error) {
+            resultEl.className = 'ai-test-result error';
+            resultEl.innerHTML = '<strong><i class="fas fa-exclamation-circle"></i> Error:</strong> ' + data.error;
+        } else {
+            resultEl.className = 'ai-test-result success';
+            const ticketHtml = data.open_ticket ? '<span class="result-badge badge-ticket"><i class="fas fa-ticket-alt"></i> Ticket Auto-Created</span>' : '';
+            const checkoutHtml = data.checkout_link ? '<div style="margin-top:.75rem; padding-top:.6rem; border-top:1px solid #e5e7eb; font-size:.8rem;"><i class="fas fa-link" style="color:var(--crm-primary);"></i> <strong>Checkout Link:</strong> <a href="' + data.checkout_link + '" target="_blank" style="color:var(--crm-primary); text-decoration:none;">' + data.checkout_link + '</a></div>' : '';
+
+            resultEl.innerHTML = '<div class="result-meta">' +
+                '<span class="result-badge badge-intent"><i class="fas fa-bullseye"></i> Intent: ' + data.intent + '</span>' +
+                '<span class="result-badge badge-model"><i class="fas fa-microchip"></i> Model: ' + data.model_used + '</span>' +
+                ticketHtml +
+                '</div>' +
+                '<div style="color:#1f2937; margin-bottom:.4rem;"><strong>AI Reply:</strong></div>' +
+                '<div style="color:#4b5563; white-space:pre-wrap;">' + (data.reply || '—') + '</div>' + checkoutHtml;
+        }
+    } catch (err) {
+        resultEl.style.display = 'block';
+        resultEl.className = 'ai-test-result error';
+        resultEl.innerHTML = '<strong><i class="fas fa-wifi"></i> Network Error:</strong> ' + err.message;
+    } finally {
+        btnTest.innerHTML = originalBtnHtml;
+        btnTest.disabled = false;
+    }
+}
+
+document.getElementById('testMessage')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') runAiTest();
+});
 </script>
 {% endblock %}
