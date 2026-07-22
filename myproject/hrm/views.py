@@ -2887,7 +2887,12 @@ def attendance_list(request):
     from datetime import date as dt_date
 
     # Auto-sync on page load. We sync all days as requested.
-    _sync_biometric_to_attendance()
+    # Never let a sync failure (bad punch data, DB hiccup, etc.) take down
+    # the whole page — log it and fall back to showing existing records.
+    try:
+        _sync_biometric_to_attendance()
+    except Exception:
+        adms_logger.exception('attendance_list: biometric auto-sync failed, showing existing records')
 
     search = request.GET.get('search', '')
     filter_date = request.GET.get('filter_date', '')
@@ -6160,7 +6165,12 @@ def attendance_report(request):
 
     # Auto-sync on page load, same as attendance_list, so status (incl. half-day)
     # reflects the latest policy/threshold instead of stale computed values.
-    _sync_biometric_to_attendance()
+    # Never let a sync failure take down the whole report page — log it and
+    # fall back to showing existing records.
+    try:
+        _sync_biometric_to_attendance()
+    except Exception:
+        adms_logger.exception('attendance_report: biometric auto-sync failed, showing existing records')
 
     # ── Filters from GET ────────────────────────────────────────────────────
     search     = request.GET.get('search', '').strip()
