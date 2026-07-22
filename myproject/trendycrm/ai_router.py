@@ -680,7 +680,7 @@ def process_comment_to_dm(comment, integration, chatbot_config=None):
     Returns:
         dict with keys: public_reply_sent, dm_sent, intent, model_used, error
     """
-    from .meta_sync import reply_to_meta_comment, send_meta_message
+    from .meta_sync import reply_to_meta_comment, send_meta_message, record_outbound_dm
 
     result = {
         'public_reply_sent': False,
@@ -771,6 +771,12 @@ def process_comment_to_dm(comment, integration, chatbot_config=None):
                 if send_meta_message(integration, sender_id, dm_text):
                     result['dm_sent'] = True
                     logger.info(f"DM sent to {sender_id} (intent={intent}, model={result['model_used']})")
+                    # Persist it into the CRM inbox so it shows up on the
+                    # Conversations page, same as the keyword-automation funnel does.
+                    try:
+                        record_outbound_dm(integration, comment, dm_text)
+                    except Exception:
+                        logger.exception("record_outbound_dm failed for Comment-to-DM funnel")
                 else:
                     logger.warning(f"send_meta_message failed for sender_id={sender_id}")
 

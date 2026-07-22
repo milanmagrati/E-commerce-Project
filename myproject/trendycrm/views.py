@@ -12,10 +12,14 @@ import logging
 import base64
 import hashlib
 import os
+import secrets
 import threading
 from django.db import connection
 
 logger = logging.getLogger(__name__)
+
+# Keep in sync with trendycrm/meta_sync.py's GRAPH_API_VERSION.
+GRAPH_API_VERSION = 'v25.0'
 
 def run_async(func, *args, **kwargs):
     """Runs a function in a background thread to prevent blocking page loads."""
@@ -51,7 +55,8 @@ from urllib.parse import urlencode
 
 from .meta_sync import (
     sync_meta_conversations, _process_meta_conversation,
-    sync_meta_posts, sync_meta_comments, reply_to_meta_comment, hide_meta_comment, delete_meta_comment
+    sync_meta_posts, sync_meta_comments, reply_to_meta_comment, hide_meta_comment, delete_meta_comment,
+    _resolve_integration_by_page, process_whatsapp_message_webhook,
 )
 from .models import (
     CRMContact, CRMConversation, CRMMessage,
@@ -278,17 +283,18 @@ def crm_send_message(request, conv_id):
         conv.is_read = True
         conv.save(update_fields=['last_message', 'updated_at', 'is_read'])
         
-        # Send to Meta if applicable
-        if conv.channel in ['facebook', 'instagram'] and conv.contact and conv.contact.meta_id:
+        # Send to the channel's messaging API if applicable
+        if conv.channel in ['facebook', 'instagram', 'whatsapp'] and conv.contact and conv.contact.meta_id:
             from .models import CRMIntegration
-            from .meta_sync import send_meta_message
+            from .meta_sync import send_meta_message, send_whatsapp_message
+            send_fn = send_whatsapp_message if conv.channel == 'whatsapp' else send_meta_message
             success = False
             if conv.integration:
-                success = send_meta_message(conv.integration, conv.contact.meta_id, body)
+                success = send_fn(conv.integration, conv.contact.meta_id, body)
             else:
                 integrations = CRMIntegration.objects.filter(channel_type=conv.channel, status='connected')
                 for integration in integrations:
-                    if send_meta_message(integration, conv.contact.meta_id, body):
+                    if send_fn(integration, conv.contact.meta_id, body):
                         success = True
                         break
             
@@ -354,7 +360,24 @@ def crm_create_conversation(request):
             conv.updated_at = msg.created_at
             conv.is_read = True
             conv.save(update_fields=['updated_at', 'is_read'])
-            
+
+            # Actually deliver it through the channel's messaging API — mirrors
+            # crm_send_message. Only possible when the contact already has a
+            # stored PSID/wa_id (i.e. they've messaged in before); a brand-new
+            # manually-typed contact has no external identifier to send to yet.
+            if channel in ['facebook', 'instagram', 'whatsapp'] and contact.meta_id:
+                from .meta_sync import send_meta_message, send_whatsapp_message
+                send_fn = send_whatsapp_message if channel == 'whatsapp' else send_meta_message
+                send_integration = integration
+                if not send_integration:
+                    send_integration = CRMIntegration.objects.filter(channel_type=channel, status='connected').first()
+                if send_integration and send_fn(send_integration, contact.meta_id, first_message):
+                    pass
+                else:
+                    msg.status = 'failed'
+                    msg.save(update_fields=['status'])
+                    messages.error(request, "Message saved but failed to send — check the channel connection.")
+
         return redirect(f"{reverse('trendycrm:conversations')}?id={conv.pk}")
     
     return redirect('trendycrm:conversations')
@@ -830,10 +853,13 @@ INTEGRATION_META = {
 
 @login_required
 def crm_integrations(request):
-    # Ensure at least one integration record exists per channel for UI
+    # Ensure at least one integration record exists per channel for UI.
+    # get_or_create avoids a race where two concurrent requests both see
+    # "missing" and each insert a duplicate not_connected row for the channel.
+    existing_channels = set(CRMIntegration.objects.values_list('channel_type', flat=True))
     for key in INTEGRATION_META:
-        if not CRMIntegration.objects.filter(channel_type=key).exists():
-            CRMIntegration.objects.create(channel_type=key)
+        if key not in existing_channels:
+            CRMIntegration.objects.get_or_create(channel_type=key, defaults={'status': 'not_connected'})
 
     integrations = CRMIntegration.objects.all()
     active_key = request.GET.get('channel', 'instagram')
@@ -869,6 +895,11 @@ def crm_integrations(request):
             ('Receive messages', 'Receive incoming WhatsApp messages.'),
             ('Manage templates', 'Create and manage message templates.'),
         ]
+    elif active_key == 'tiktok':
+        active_perms = [
+            ('Public profile', 'Access your username and profile picture (user.info.basic).'),
+            ('Video list', 'Read your published videos (video.list).'),
+        ]
     elif active_key == 'facebook':
         active_perms = [
             ('Manage Messenger', 'Send and receive Facebook messages.'),
@@ -882,8 +913,19 @@ def crm_integrations(request):
         fb_oauth_url = reverse('trendycrm:instagram_connect')
     elif active_key == 'tiktok':
         fb_oauth_url = reverse('trendycrm:tiktok_connect')
+    elif active_key == 'whatsapp':
+        fb_oauth_url = reverse('trendycrm:whatsapp_connect')
     else:
         fb_oauth_url = ''
+
+    # Facebook/Instagram/WhatsApp all share the same Meta webhook receiver
+    # (trendycrm:meta_webhook) — showing a fake /api/webhooks/<channel>/ URL for
+    # channels with no receiver just leads to 404s in the provider's console.
+    webhook_url = None
+    if active_key in ('facebook', 'instagram', 'whatsapp'):
+        webhook_url = request.build_absolute_uri(reverse('trendycrm:meta_webhook'))
+
+    connected_channel_count = sum(1 for ch in channels_with_meta if ch['is_connected'])
 
     context = {
         'channels_with_meta': channels_with_meta,
@@ -893,6 +935,8 @@ def crm_integrations(request):
         'active_key': active_key,
         'active_perms': active_perms,
         'fb_oauth_url': fb_oauth_url,
+        'webhook_url': webhook_url,
+        'connected_channel_count': connected_channel_count,
         'crm_section': 'integrations',
     }
     return render(request, 'trendycrm/integrations.html', context)
@@ -945,139 +989,260 @@ def crm_integration_disconnect(request, pk):
     return redirect(reverse('trendycrm:integrations') + f"?channel={channel_key}")
 
 
+def _connect_meta_channel(request, callback_route_name, scope, state_session_key):
+    """
+    Shared Meta OAuth-dialog redirect for Facebook, Instagram and WhatsApp — all
+    three connect through the same Facebook Business app/OAuth dialog (Instagram
+    professional accounts and WhatsApp Business numbers are both linked via Meta
+    Business Manager), only the callback route and requested scope differ.
+
+    A random `state` value is minted and stashed in the session so the callback
+    can verify the response actually belongs to this login's own request (basic
+    OAuth CSRF protection) rather than blindly trusting whatever comes back.
+    """
+    redirect_uri = build_absolute_callback(request, callback_route_name)
+    state = secrets.token_urlsafe(24)
+    request.session[state_session_key] = state
+    params = {
+        "client_id": getattr(settings, 'FACEBOOK_APP_ID', '873948152450056'),
+        "redirect_uri": redirect_uri,
+        "scope": scope,
+        "response_type": "code",
+        "auth_type": "rerequest",
+        "state": state,
+    }
+    from urllib.parse import urlencode
+    auth_url = "https://www.facebook.com/v25.0/dialog/oauth?" + urlencode(params)
+    return redirect(auth_url)
+
+@login_required
 def connect_facebook(request):
-    redirect_uri = build_absolute_callback(request, 'trendycrm:facebook_callback')
-    params = {
-        "client_id": getattr(settings, 'FACEBOOK_APP_ID', '873948152450056'),
-        "redirect_uri": redirect_uri,
-        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,pages_read_engagement,pages_read_user_content,pages_manage_engagement,instagram_basic,instagram_manage_messages",
-        "response_type": "code",
-        "auth_type": "rerequest",
-    }
-    from urllib.parse import urlencode
-    auth_url = "https://www.facebook.com/v25.0/dialog/oauth?" + urlencode(params)
-    return redirect(auth_url)
+    return _connect_meta_channel(
+        request, 'trendycrm:facebook_callback',
+        scope="pages_show_list,pages_manage_metadata,pages_messaging,pages_read_engagement,pages_read_user_content,pages_manage_engagement,instagram_basic,instagram_manage_messages",
+        state_session_key='facebook_oauth_state',
+    )
 
+@login_required
 def connect_instagram(request):
-    redirect_uri = build_absolute_callback(request, 'trendycrm:instagram_callback')
-    params = {
-        "client_id": getattr(settings, 'FACEBOOK_APP_ID', '873948152450056'),
-        "redirect_uri": redirect_uri,
-        "scope": "pages_show_list,pages_manage_metadata,pages_messaging,pages_read_engagement,pages_read_user_content,pages_manage_engagement,instagram_basic,instagram_manage_messages",
-        "response_type": "code",
-        "auth_type": "rerequest",
-    }
-    from urllib.parse import urlencode
-    auth_url = "https://www.facebook.com/v25.0/dialog/oauth?" + urlencode(params)
-    return redirect(auth_url)
+    return _connect_meta_channel(
+        request, 'trendycrm:instagram_callback',
+        scope="pages_show_list,pages_manage_metadata,pages_messaging,pages_read_engagement,pages_read_user_content,pages_manage_engagement,instagram_basic,instagram_manage_messages",
+        state_session_key='instagram_oauth_state',
+    )
 
+@login_required
+def connect_whatsapp(request):
+    return _connect_meta_channel(
+        request, 'trendycrm:whatsapp_callback',
+        scope="whatsapp_business_management,whatsapp_business_messaging,business_management",
+        state_session_key='whatsapp_oauth_state',
+    )
+
+@login_required
 def connect_tiktok(request):
     redirect_uri = build_absolute_callback(request, 'trendycrm:tiktok_callback')
     tiktok_client_id = getattr(settings, 'TIKTOK_CLIENT_ID', '')
     if not tiktok_client_id:
         messages.error(request, 'TikTok Client ID is not configured in settings.')
         return redirect(reverse('trendycrm:integrations') + "?channel=tiktok")
-        
+
     # Generate PKCE code verifier and challenge
     code_verifier = base64.urlsafe_b64encode(os.urandom(32)).decode('utf-8').rstrip('=')
     code_challenge = base64.urlsafe_b64encode(
         hashlib.sha256(code_verifier.encode('utf-8')).digest()
     ).decode('utf-8').rstrip('=')
-    
-    # Store verifier in session for token exchange
+
+    # Store verifier + a random CSRF state in session for token exchange / verification
     request.session['tiktok_code_verifier'] = code_verifier
-        
+    state = secrets.token_urlsafe(24)
+    request.session['tiktok_oauth_state'] = state
+
     # Redirect to TikTok standard Login Kit authorization page
-    auth_url = f"https://www.tiktok.com/v2/auth/authorize/?client_key={tiktok_client_id}&response_type=code&scope=user.info.basic,video.list&redirect_uri={redirect_uri}&state=tiktok_auth&code_challenge={code_challenge}&code_challenge_method=S256"
+    auth_url = f"https://www.tiktok.com/v2/auth/authorize/?client_key={tiktok_client_id}&response_type=code&scope=user.info.basic,video.list&redirect_uri={redirect_uri}&state={state}&code_challenge={code_challenge}&code_challenge_method=S256"
     return redirect(auth_url)
 
-def _handle_oauth_callback(request, channel_key):
+def _exchange_fb_code_for_token(request, code, channel_key):
+    """Exchange an OAuth `code` for a Meta user access token. Returns the token string or None."""
+    fb_client_id = getattr(settings, 'FACEBOOK_APP_ID', getattr(settings, 'FACEBOOK_CLIENT_ID', '873948152450056'))
+    fb_app_secret = getattr(settings, 'FACEBOOK_APP_SECRET', '')
+    route_name = f'trendycrm:{channel_key}_callback'
+    fb_redirect_uri = build_absolute_callback(request, route_name)
+    token_exchange_url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/oauth/access_token?client_id={fb_client_id}&redirect_uri={fb_redirect_uri}&client_secret={fb_app_secret}&code={code}"
+    try:
+        resp = requests.get(token_exchange_url, timeout=10)
+    except Exception:
+        logger.exception(f"Error exchanging OAuth code for {channel_key}")
+        return None
+    if resp.status_code == 200:
+        return resp.json().get('access_token')
+    logger.error(f"Failed to exchange token for {channel_key}: {resp.text}")
+    return None
+
+def _handle_oauth_callback(request, channel_key, state_session_key):
     # If user denied access, Facebook redirects with error=access_denied
     if 'error' in request.GET:
         logger.warning(f"OAuth error for {channel_key}: {request.GET.get('error_description', request.GET.get('error'))}")
     elif 'code' in request.GET:
+        expected_state = request.session.pop(state_session_key, None)
+        if not expected_state or request.GET.get('state') != expected_state:
+            logger.warning(f"OAuth callback for {channel_key}: state mismatch or missing session state.")
+            messages.error(request, "Connection could not be verified (session expired) — please try connecting again.")
+            return redirect(reverse('trendycrm:integrations') + f"?channel={channel_key}")
+
         code = request.GET['code']
-        fb_client_id = getattr(settings, 'FACEBOOK_APP_ID', getattr(settings, 'FACEBOOK_CLIENT_ID', '873948152450056'))
-        fb_app_secret = getattr(settings, 'FACEBOOK_APP_SECRET', '')
-        route_name = f'trendycrm:{channel_key}_callback'
-        fb_redirect_uri = build_absolute_callback(request, route_name)
-        
-        graph_api_version = 'v25.0'
-        token_exchange_url = f"https://graph.facebook.com/{graph_api_version}/oauth/access_token?client_id={fb_client_id}&redirect_uri={fb_redirect_uri}&client_secret={fb_app_secret}&code={code}"
-        
+        user_access_token = _exchange_fb_code_for_token(request, code, channel_key)
+
         try:
-            # 1. Exchange code for user access token
-            token_resp = requests.get(token_exchange_url)
-            if token_resp.status_code == 200:
-                token_data = token_resp.json()
-                user_access_token = token_data.get('access_token')
-                
-                if user_access_token:
-                    # 2. Fetch pages the user has access to
-                    accounts_url = f"https://graph.facebook.com/{graph_api_version}/me/accounts?access_token={user_access_token}"
-                    accounts_resp = requests.get(accounts_url)
-                    
-                    if accounts_resp.status_code == 200:
-                        pages = accounts_resp.json().get('data', [])
-                        
-                        if pages:
-                            connected_count = 0
-                            for page in pages:
-                                page_access_token = page.get('access_token')
-                                if not page_access_token:
-                                    continue
-                                    
-                                page_name = page.get('name', 'Meta Page')
-                                page_id = page.get('id', '')
-                                account_name = f"{page_name} ({page_id})" if page_id else page_name
-                                
-                                # Check if already connected
-                                integ = CRMIntegration.objects.filter(channel_type=channel_key, account_name=account_name).first()
+            if user_access_token:
+                # 2. Fetch pages the user has access to
+                accounts_url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/accounts?access_token={user_access_token}"
+                accounts_resp = requests.get(accounts_url)
+
+                if accounts_resp.status_code == 200:
+                    pages = accounts_resp.json().get('data', [])
+
+                    if pages:
+                        connected_count = 0
+                        for page in pages:
+                            page_access_token = page.get('access_token')
+                            if not page_access_token:
+                                continue
+
+                            page_name = page.get('name', 'Meta Page')
+                            page_id = page.get('id', '')
+                            account_name = f"{page_name} ({page_id})" if page_id else page_name
+
+                            # Check if already connected
+                            integ = CRMIntegration.objects.filter(channel_type=channel_key, account_name=account_name).first()
+                            if not integ:
+                                # Use a not_connected one or create new
+                                integ = CRMIntegration.objects.filter(channel_type=channel_key, status='not_connected').first()
                                 if not integ:
-                                    # Use a not_connected one or create new
-                                    integ = CRMIntegration.objects.filter(channel_type=channel_key, status='not_connected').first()
-                                    if not integ:
-                                        integ = CRMIntegration(channel_type=channel_key)
-                                        
-                                integ.status = 'connected'
-                                integ.account_name = account_name
-                                integ.access_token = page_access_token
-                                integ.connected_at = timezone.now()
-                                integ.save()
-                                logger.info(f"Successfully connected {channel_key} page: {page_name}")
-                                connected_count += 1
-                                
-                                # Trigger initial sync of conversations in background
-                                try:
-                                    run_async(sync_meta_conversations, integ)
-                                except Exception as e:
-                                    logger.exception("Failed to run initial sync for meta messages.")
-                            
-                            if connected_count > 0:
-                                messages.success(request, f"Successfully connected {connected_count} {channel_key.title()} page(s)")
-                            else:
-                                messages.error(request, "No pages with valid permissions were found. Please ensure you grant messaging permissions.")
+                                    integ = CRMIntegration(channel_type=channel_key)
+
+                            integ.status = 'connected'
+                            integ.account_name = account_name
+                            integ.access_token = page_access_token
+                            integ.connected_at = timezone.now()
+                            integ.save()
+                            logger.info(f"Successfully connected {channel_key} page: {page_name}")
+                            connected_count += 1
+
+                            # Trigger initial sync of conversations in background
+                            try:
+                                run_async(sync_meta_conversations, integ)
+                            except Exception as e:
+                                logger.exception("Failed to run initial sync for meta messages.")
+
+                        if connected_count > 0:
+                            messages.success(request, f"Successfully connected {connected_count} {channel_key.title()} page(s)")
                         else:
-                            logger.warning("No professional pages found during Facebook OAuth.")
-                            messages.error(request, "No professional pages found.")
+                            messages.error(request, "No pages with valid permissions were found. Please ensure you grant messaging permissions.")
                     else:
-                        logger.error(f"Failed to fetch accounts: {accounts_resp.text}")
-                        messages.error(request, "Failed to fetch accounts from Meta.")
+                        logger.warning("No professional pages found during Facebook OAuth.")
+                        messages.error(request, "No professional pages found.")
+                else:
+                    logger.error(f"Failed to fetch accounts: {accounts_resp.text}")
+                    messages.error(request, "Failed to fetch accounts from Meta.")
             else:
-                logger.error(f"Failed to exchange token: {token_resp.text}")
                 messages.error(request, "Failed to exchange token with Meta.")
         except Exception as e:
             logger.exception("Error during Facebook OAuth token exchange")
             messages.error(request, "An unexpected error occurred during connection.")
-            
+
     redirect_url = reverse('trendycrm:integrations') + f"?channel={channel_key}"
     return redirect(redirect_url)
 
 def facebook_callback(request):
-    return _handle_oauth_callback(request, 'facebook')
+    return _handle_oauth_callback(request, 'facebook', 'facebook_oauth_state')
 
 def instagram_callback(request):
-    return _handle_oauth_callback(request, 'instagram')
+    return _handle_oauth_callback(request, 'instagram', 'instagram_oauth_state')
+
+def whatsapp_callback(request):
+    channel_key = 'whatsapp'
+    if 'error' in request.GET:
+        logger.warning(f"OAuth error for whatsapp: {request.GET.get('error_description', request.GET.get('error'))}")
+        messages.error(request, request.GET.get('error_description', 'WhatsApp authorization failed.'))
+        return redirect(reverse('trendycrm:integrations') + "?channel=whatsapp")
+
+    code = request.GET.get('code')
+    if not code:
+        messages.error(request, 'WhatsApp authorization failed.')
+        return redirect(reverse('trendycrm:integrations') + "?channel=whatsapp")
+
+    expected_state = request.session.pop('whatsapp_oauth_state', None)
+    if not expected_state or request.GET.get('state') != expected_state:
+        logger.warning("WhatsApp OAuth callback: state mismatch or missing session state.")
+        messages.error(request, "Connection could not be verified (session expired) — please try connecting again.")
+        return redirect(reverse('trendycrm:integrations') + "?channel=whatsapp")
+
+    user_access_token = _exchange_fb_code_for_token(request, code, channel_key)
+    if not user_access_token:
+        messages.error(request, "Failed to exchange token with Meta.")
+        return redirect(reverse('trendycrm:integrations') + "?channel=whatsapp")
+
+    def _graph_list(path, resource_label):
+        resp = requests.get(
+            f"https://graph.facebook.com/{GRAPH_API_VERSION}/{path}",
+            params={'access_token': user_access_token}, timeout=10
+        )
+        if resp.status_code != 200:
+            logger.error(f"Failed to fetch {resource_label} for WhatsApp: {resp.text}")
+            return []
+        return resp.json().get('data', [])
+
+    try:
+        businesses = _graph_list('me/businesses', 'businesses')
+
+        connected_count = 0
+        for biz in businesses:
+            biz_id = biz.get('id')
+            wabas = _graph_list(f'{biz_id}/owned_whatsapp_business_accounts', 'WhatsApp Business Accounts')
+
+            for waba in wabas:
+                waba_id = waba.get('id')
+                phones = _graph_list(f'{waba_id}/phone_numbers', 'phone numbers')
+
+                for phone in phones:
+                    phone_number_id = phone.get('id', '')
+                    display_number = phone.get('display_phone_number', 'WhatsApp Number')
+                    verified_name = phone.get('verified_name', '')
+                    account_name = f"{display_number} ({phone_number_id})" if phone_number_id else display_number
+
+                    integ = CRMIntegration.objects.filter(channel_type='whatsapp', account_name=account_name).first()
+                    if not integ:
+                        integ = CRMIntegration.objects.filter(channel_type='whatsapp', status='not_connected').first()
+                        if not integ:
+                            integ = CRMIntegration(channel_type='whatsapp')
+
+                    integ.status = 'connected'
+                    integ.account_name = account_name
+                    integ.access_token = user_access_token
+                    integ.connected_at = timezone.now()
+                    meta = integ.meta or {}
+                    meta['waba_id'] = waba_id
+                    meta['phone_number_id'] = phone_number_id
+                    meta['verified_name'] = verified_name
+                    integ.meta = meta
+                    integ.save()
+                    connected_count += 1
+                    logger.info(f"Successfully connected WhatsApp number: {display_number}")
+
+        if connected_count > 0:
+            messages.success(request, f"Successfully connected {connected_count} WhatsApp number(s).")
+        else:
+            messages.error(
+                request,
+                "No WhatsApp Business phone numbers were found. Make sure a WhatsApp "
+                "Business Account is set up under your Meta Business Manager and try again."
+            )
+    except Exception:
+        logger.exception("Error during WhatsApp OAuth setup")
+        messages.error(request, "An unexpected error occurred while connecting WhatsApp.")
+
+    return redirect(reverse('trendycrm:integrations') + "?channel=whatsapp")
 
 def tiktok_callback(request):
     code = request.GET.get('code')
@@ -1086,17 +1251,23 @@ def tiktok_callback(request):
         err = request.GET.get('error_description', 'TikTok authorization failed.')
         messages.error(request, err)
         return redirect(reverse('trendycrm:integrations') + "?channel=tiktok")
-        
+
+    expected_state = request.session.pop('tiktok_oauth_state', None)
+    if not expected_state or request.GET.get('state') != expected_state:
+        logger.warning("TikTok OAuth callback: state mismatch or missing session state.")
+        messages.error(request, "Connection could not be verified (session expired) — please try connecting again.")
+        return redirect(reverse('trendycrm:integrations') + "?channel=tiktok")
+
     tiktok_client_id = getattr(settings, 'TIKTOK_CLIENT_ID', '')
     tiktok_client_secret = getattr(settings, 'TIKTOK_CLIENT_SECRET', '')
     redirect_uri = build_absolute_callback(request, 'trendycrm:tiktok_callback')
-    
+
     # Exchange code for access token using standard TikTok Login Kit endpoint
     url = "https://open.tiktokapis.com/v2/oauth/token/"
-    
+
     # Retrieve code_verifier from session
     code_verifier = request.session.get('tiktok_code_verifier', '')
-    
+
     payload = {
         "client_key": tiktok_client_id,
         "client_secret": tiktok_client_secret,
@@ -1157,15 +1328,22 @@ def meta_webhook(request):
     """
     if request.method == 'GET':
         # Verification request from Meta
-        # Verification request from Meta
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
         challenge = request.GET.get('hub.challenge')
-        
-        # In a real app, verify_token should match a secret in settings
-        if mode == 'subscribe' and token:
-            return HttpResponse(challenge, status=200)
-        return HttpResponse('Verification failed', status=403)
+
+        expected_token = getattr(settings, 'FACEBOOK_WEBHOOK_VERIFY_TOKEN', '')
+        if mode != 'subscribe' or not token:
+            return HttpResponse('Verification failed', status=403)
+        if expected_token and token != expected_token:
+            logger.warning("Meta webhook verification failed: verify_token mismatch")
+            return HttpResponse('Verification failed', status=403)
+        if not expected_token:
+            logger.warning(
+                "FACEBOOK_WEBHOOK_VERIFY_TOKEN is not configured — accepting webhook "
+                "verification without checking the token. Set it in settings to secure this."
+            )
+        return HttpResponse(challenge, status=200)
         
     elif request.method == 'POST':
         # Verify Meta Signature for security
@@ -1187,7 +1365,8 @@ def meta_webhook(request):
             
         try:
             payload = json.loads(request.body)
-            
+            messaging_page_ids = set()
+
             # Process webhook events for read/delivery receipts
             if 'entry' in payload:
                 for entry in payload['entry']:
@@ -1203,8 +1382,15 @@ def meta_webhook(request):
                                 # Run off-request so a slow Graph call never
                                 # makes Meta retry the webhook delivery.
                                 run_async(handle_feed_comment_webhook, page_id, value)
+                        elif change.get('field') == 'messages':
+                            # WhatsApp Cloud API inbound message/status event.
+                            value = change.get('value') or {}
+                            if value.get('messaging_product') == 'whatsapp' and value.get('messages'):
+                                run_async(process_whatsapp_message_webhook, value)
 
                     if 'messaging' in entry:
+                        if page_id:
+                            messaging_page_ids.add(page_id)
                         for event in entry['messaging']:
                             sender_id = event.get('sender', {}).get('id')
                             if not sender_id:
@@ -1235,10 +1421,15 @@ def meta_webhook(request):
                                         status='sent'
                                     ).update(status='delivered')
 
-            # Trigger a sync for all connected facebook/instagram integrations
-            active_integrations = CRMIntegration.objects.filter(channel_type__in=['facebook', 'instagram'], status='connected')
-            for integ in active_integrations:
-                run_async(sync_meta_conversations, integ)
+            # Only sync the page(s) this webhook payload actually referenced,
+            # instead of every connected FB/IG integration on every event.
+            if messaging_page_ids:
+                for page_id in messaging_page_ids:
+                    integ = _resolve_integration_by_page(page_id)
+                    if integ:
+                        run_async(sync_meta_conversations, integ)
+                    else:
+                        logger.warning(f"meta_webhook: no connected integration for messaging page {page_id}")
             return HttpResponse('EVENT_RECEIVED', status=200)
         except Exception as e:
             logger.exception("Error processing Meta webhook")

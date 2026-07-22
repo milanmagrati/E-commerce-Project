@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login, logout, get_user_model
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST, require_http_methods
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -214,8 +215,26 @@ def _get_next_order_number():
     return "T001"
 
 
+def _safe_login_next(request, next_url):
+    """Only follow `next` if it points back into our own site (never an open redirect)."""
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return next_url
+    return None
+
+
 def login_view(request):
+    # Whenever @login_required bounces an authenticated-but-session-lost user here
+    # (e.g. mid-way through an external OAuth redirect for a CRM integration),
+    # we must send them back to where they were instead of always dumping them
+    # on the dashboard — otherwise the flow looks like it "logged out and started over".
+    next_url = request.POST.get('next') or request.GET.get('next', '')
+
     if request.user.is_authenticated:
+        safe_next = _safe_login_next(request, next_url)
+        if safe_next:
+            return redirect(safe_next)
         # Redirect based on dashboard access
         if request.user.is_superuser or request.user.role == 'administrator' or request.user.can_view_dashboard:
             return redirect('dashboard')
@@ -230,6 +249,9 @@ def login_view(request):
         if user is not None:
             login(request, user)
             request.session.set_expiry(43200)  # 12-hour session per user
+            safe_next = _safe_login_next(request, next_url)
+            if safe_next:
+                return redirect(safe_next)
             # Redirect based on dashboard access permission
             if user.is_superuser or user.role == 'administrator' or user.can_view_dashboard:
                 return redirect('dashboard')
@@ -238,7 +260,7 @@ def login_view(request):
         else:
             messages.error(request, 'Invalid username or password')
 
-    return render(request, 'login.html')
+    return render(request, 'login.html', {'next': next_url})
 
 
 def logout_view(request):

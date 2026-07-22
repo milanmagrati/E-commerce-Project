@@ -9,6 +9,32 @@ logger = logging.getLogger(__name__)
 
 GRAPH_API_VERSION = "v25.0"
 
+# How recent an inbound message must be (relative to now) to trigger an AI
+# auto-reply during a conversation sync. Keeps a full/backfill sync (e.g. right
+# after OAuth connect, or the "sync everything" webhook fallback) from replaying
+# AI replies onto old conversation history.
+RECENT_MESSAGE_WINDOW_MINUTES = 10
+
+REACTION_TYPES = ['LIKE', 'LOVE', 'HAHA', 'WOW', 'SAD', 'ANGRY', 'CARE']
+REACTION_FIELDS = ','.join(
+    f'reactions.type({r}).limit(0).summary(total_count).as({r.lower()})' for r in REACTION_TYPES
+)
+
+
+def _build_reactions_data(graph_node, existing_obj=None):
+    """
+    Build the {'LIKE': n, 'LOVE': n, ...} reactions dict (plus total like_count)
+    from a Graph API post/comment node that was fetched with REACTION_FIELDS.
+    Preserves 'my_reaction' from an existing local object, since Graph doesn't
+    return it back to us on these summary-only reaction edges.
+    """
+    reactions_data = {r: graph_node.get(r.lower(), {}).get('summary', {}).get('total_count', 0) for r in REACTION_TYPES}
+    my_reaction = existing_obj.reactions_data.get('my_reaction') if existing_obj and isinstance(existing_obj.reactions_data, dict) else None
+    if my_reaction:
+        reactions_data['my_reaction'] = my_reaction
+    like_count = sum(v for k, v in reactions_data.items() if k != 'my_reaction' and isinstance(v, (int, float)))
+    return reactions_data, like_count
+
 def sync_meta_conversations(integration):
     """
     Fetches the latest conversations from Meta Graph API for a given integration 
@@ -71,15 +97,24 @@ def _process_meta_conversation(integration, conv_data):
         
     contact_name = contact_data.get('name', 'Unknown User')
     contact_meta_id = contact_data.get('id')
-    
-    # Create or get Contact (using a rudimentary matching by name for now, in a real system we'd use Meta ID)
-    contact, created = CRMContact.objects.get_or_create(
-        name=contact_name,
-        defaults={'status': 'new', 'meta_id': contact_meta_id}
-    )
-    if not created and contact_meta_id and contact.meta_id != contact_meta_id:
-        contact.meta_id = contact_meta_id
-        contact.save(update_fields=['meta_id'])
+
+    # Match by Meta user ID (PSID) first — this is the stable, unique identifier.
+    # Falling back to name matching would merge different customers who share a
+    # display name into the same contact/conversation.
+    if contact_meta_id:
+        contact, created = CRMContact.objects.get_or_create(
+            meta_id=contact_meta_id,
+            defaults={'status': 'new', 'name': contact_name}
+        )
+        if not created and contact_name and contact.name != contact_name:
+            contact.name = contact_name
+            contact.save(update_fields=['name'])
+    else:
+        # No id from Graph API (shouldn't normally happen) — last-resort name match.
+        contact, created = CRMContact.objects.get_or_create(
+            name=contact_name,
+            defaults={'status': 'new'}
+        )
     
     # For Facebook Pages, the token is a Page Access Token.
     page_id = integration.account_name.split('(')[-1].strip(')') if '(' in integration.account_name else None
@@ -152,7 +187,7 @@ def _process_meta_conversation(integration, conv_data):
                 is_outbound=is_outbound,
                 created_at=created_at
             )
-            
+
             # Update last_message
             conversation.last_message = body
             # Only update updated_at if the new message is newer than current updated_at or if it doesn't exist
@@ -161,6 +196,17 @@ def _process_meta_conversation(integration, conv_data):
             if not is_outbound:
                 conversation.is_read = False
             conversation.save(update_fields=['last_message', 'updated_at', 'is_read'])
+
+            # Route genuinely new inbound messages through the AI auto-reply
+            # engine. Guarded by recency so a full/backfill sync (e.g. right
+            # after OAuth connect) doesn't replay AI replies onto old history —
+            # only messages that just arrived (i.e. from a live webhook-triggered
+            # sync) qualify.
+            if not is_outbound and (timezone.now() - created_at) <= timedelta(minutes=RECENT_MESSAGE_WINDOW_MINUTES):
+                try:
+                    process_incoming_webhook_message(integration, contact, conversation, body, is_outbound=False)
+                except Exception:
+                    logger.exception("process_incoming_webhook_message failed during conversation sync")
 
 def send_meta_message(integration, recipient_id, message_text):
     """
@@ -186,6 +232,151 @@ def send_meta_message(integration, recipient_id, message_text):
         logger.error(f"Failed to send Meta message: {e} - Response: {getattr(e.response, 'text', '')}")
         return False
 
+def send_whatsapp_message(integration, recipient_wa_id, message_text):
+    """
+    Sends a text message via the WhatsApp Cloud API from the connected phone number.
+    """
+    if not integration.access_token:
+        logger.error("Cannot send WhatsApp message: No access token.")
+        return False
+
+    phone_number_id = (integration.meta or {}).get('phone_number_id')
+    if not phone_number_id:
+        logger.error("Cannot send WhatsApp message: integration has no phone_number_id.")
+        return False
+
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{phone_number_id}/messages"
+    headers = {'Authorization': f'Bearer {integration.access_token}'}
+    payload = {
+        'messaging_product': 'whatsapp',
+        'to': recipient_wa_id,
+        'type': 'text',
+        'text': {'body': message_text},
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send WhatsApp message: {e} - Response: {getattr(e.response, 'text', '')}")
+        return False
+
+
+def _resolve_whatsapp_integration(phone_number_id):
+    """Find the connected WhatsApp integration that owns the given phone_number_id."""
+    if not phone_number_id:
+        return None
+    return CRMIntegration.objects.filter(
+        channel_type='whatsapp', status='connected', meta__phone_number_id=str(phone_number_id)
+    ).first()
+
+
+def process_whatsapp_message_webhook(value):
+    """
+    Processes a single WhatsApp Cloud API webhook 'messages' change payload
+    (entry[].changes[].value where field == 'messages'), creating/updating the
+    contact, conversation and message locally, then routing genuinely new
+    inbound messages through the same AI auto-reply engine used for FB/IG.
+    """
+    from datetime import timedelta, datetime, timezone as dt_timezone
+
+    try:
+        metadata = value.get('metadata', {}) or {}
+        phone_number_id = metadata.get('phone_number_id')
+        integration = _resolve_whatsapp_integration(phone_number_id)
+        if not integration:
+            logger.warning(f"WhatsApp webhook: no connected integration for phone_number_id {phone_number_id}")
+            return
+
+        contacts_by_wa_id = {
+            c.get('wa_id'): c.get('profile', {}).get('name', '')
+            for c in (value.get('contacts') or [])
+        }
+
+        for msg in (value.get('messages') or []):
+            wa_id = msg.get('from')
+            if not wa_id:
+                continue
+
+            msg_type = msg.get('type')
+            if msg_type == 'text':
+                body = msg.get('text', {}).get('body', '')
+            elif msg_type:
+                body = f"[{msg_type} message]"
+            else:
+                body = ''
+            if not body:
+                continue
+
+            contact_name = contacts_by_wa_id.get(wa_id) or wa_id
+            contact, created = CRMContact.objects.get_or_create(
+                meta_id=wa_id,
+                defaults={'status': 'new', 'name': contact_name, 'phone': wa_id}
+            )
+            if not created:
+                update_fields = []
+                if contact_name and contact.name != contact_name:
+                    contact.name = contact_name
+                    update_fields.append('name')
+                if not contact.phone:
+                    contact.phone = wa_id
+                    update_fields.append('phone')
+                if update_fields:
+                    contact.save(update_fields=update_fields)
+
+            conversation, conv_created = CRMConversation.objects.get_or_create(
+                contact=contact,
+                channel='whatsapp',
+                account_id=phone_number_id,
+                defaults={
+                    'integration': integration,
+                    'status': 'open',
+                    'subject': 'WhatsApp Chat',
+                }
+            )
+            if conversation.integration != integration:
+                conversation.integration = integration
+                conversation.save(update_fields=['integration'])
+
+            timestamp = msg.get('timestamp')
+            try:
+                created_at = datetime.fromtimestamp(int(timestamp), tz=dt_timezone.utc) if timestamp else timezone.now()
+            except (TypeError, ValueError):
+                created_at = timezone.now()
+
+            # Dedupe: WhatsApp can redeliver the same webhook event on retry.
+            time_threshold_start = created_at - timedelta(minutes=1)
+            time_threshold_end = created_at + timedelta(minutes=1)
+            exists = CRMMessage.objects.filter(
+                conversation=conversation, body=body, is_outbound=False,
+                created_at__range=(time_threshold_start, time_threshold_end)
+            ).exists()
+            if exists:
+                continue
+
+            CRMMessage.objects.create(
+                conversation=conversation,
+                sender=contact_name,
+                body=body,
+                is_outbound=False,
+                created_at=created_at,
+            )
+            conversation.last_message = body
+            if not conversation.updated_at or created_at > conversation.updated_at:
+                conversation.updated_at = created_at
+            conversation.is_read = False
+            conversation.save(update_fields=['last_message', 'updated_at', 'is_read'])
+
+            if (timezone.now() - created_at) <= timedelta(minutes=RECENT_MESSAGE_WINDOW_MINUTES):
+                try:
+                    process_incoming_webhook_message(integration, contact, conversation, body, is_outbound=False)
+                except Exception:
+                    logger.exception("process_incoming_webhook_message failed during WhatsApp webhook processing")
+    except Exception:
+        logger.exception("process_whatsapp_message_webhook failed")
+
+
 def sync_meta_posts(integration):
     if not integration.access_token:
         return
@@ -194,7 +385,7 @@ def sync_meta_posts(integration):
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{page_id}/posts" if page_id else f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/posts"
     params = {
         'access_token': integration.access_token,
-        'fields': 'id,message,created_time,full_picture,comments.limit(10).summary(true).order(reverse_chronological){id,from,message,created_time},reactions.type(LIKE).limit(0).summary(total_count).as(like),reactions.type(LOVE).limit(0).summary(total_count).as(love),reactions.type(HAHA).limit(0).summary(total_count).as(haha),reactions.type(WOW).limit(0).summary(total_count).as(wow),reactions.type(SAD).limit(0).summary(total_count).as(sad),reactions.type(ANGRY).limit(0).summary(total_count).as(angry),reactions.type(CARE).limit(0).summary(total_count).as(care)',
+        'fields': f'id,message,created_time,full_picture,comments.limit(10).summary(true).order(reverse_chronological){{id,from,message,created_time}},{REACTION_FIELDS}',
         'limit': 25
     }
     
@@ -209,22 +400,8 @@ def sync_meta_posts(integration):
                 comments_count = p.get('comments', {}).get('summary', {}).get('total_count', 0)
                 
                 old_post = CRMSocialPost.objects.filter(meta_post_id=p.get('id')).first()
-                my_reaction = old_post.reactions_data.get('my_reaction') if old_post and isinstance(old_post.reactions_data, dict) else None
-                
-                reactions_data = {
-                    'LIKE': p.get('like', {}).get('summary', {}).get('total_count', 0),
-                    'LOVE': p.get('love', {}).get('summary', {}).get('total_count', 0),
-                    'HAHA': p.get('haha', {}).get('summary', {}).get('total_count', 0),
-                    'WOW': p.get('wow', {}).get('summary', {}).get('total_count', 0),
-                    'SAD': p.get('sad', {}).get('summary', {}).get('total_count', 0),
-                    'ANGRY': p.get('angry', {}).get('summary', {}).get('total_count', 0),
-                    'CARE': p.get('care', {}).get('summary', {}).get('total_count', 0),
-                }
-                if my_reaction:
-                    reactions_data['my_reaction'] = my_reaction
-                    
-                likes_count = sum(v for k, v in reactions_data.items() if k != 'my_reaction' and isinstance(v, (int, float)))
-                
+                reactions_data, likes_count = _build_reactions_data(p, old_post)
+
                 post_obj, _ = CRMSocialPost.objects.update_or_create(
                     meta_post_id=p.get('id'),
                     defaults={
@@ -251,7 +428,7 @@ def sync_meta_comments(post):
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{post.meta_post_id}/comments"
     params = {
         'access_token': post.integration.access_token,
-        'fields': 'id,from,message,created_time,can_hide,reactions.type(LIKE).limit(0).summary(total_count).as(like),reactions.type(LOVE).limit(0).summary(total_count).as(love),reactions.type(HAHA).limit(0).summary(total_count).as(haha),reactions.type(WOW).limit(0).summary(total_count).as(wow),reactions.type(SAD).limit(0).summary(total_count).as(sad),reactions.type(ANGRY).limit(0).summary(total_count).as(angry),reactions.type(CARE).limit(0).summary(total_count).as(care),comments{id,from,message,created_time,reactions.type(LIKE).limit(0).summary(total_count).as(like),reactions.type(LOVE).limit(0).summary(total_count).as(love),reactions.type(HAHA).limit(0).summary(total_count).as(haha),reactions.type(WOW).limit(0).summary(total_count).as(wow),reactions.type(SAD).limit(0).summary(total_count).as(sad),reactions.type(ANGRY).limit(0).summary(total_count).as(angry),reactions.type(CARE).limit(0).summary(total_count).as(care)}',
+        'fields': f'id,from,message,created_time,can_hide,{REACTION_FIELDS},comments{{id,from,message,created_time,{REACTION_FIELDS}}}',
         'limit': 100,
         'filter': 'toplevel',
     }
@@ -309,21 +486,7 @@ def _process_comment(post, comment_data, parent_id):
         parent_comment = CRMSocialComment.objects.filter(meta_comment_id=parent_id).first()
 
     old_comment = CRMSocialComment.objects.filter(meta_comment_id=comment_data.get('id')).first()
-    my_reaction = old_comment.reactions_data.get('my_reaction') if old_comment and isinstance(old_comment.reactions_data, dict) else None
-
-    reactions_data = {
-        'LIKE': comment_data.get('like', {}).get('summary', {}).get('total_count', 0),
-        'LOVE': comment_data.get('love', {}).get('summary', {}).get('total_count', 0),
-        'HAHA': comment_data.get('haha', {}).get('summary', {}).get('total_count', 0),
-        'WOW': comment_data.get('wow', {}).get('summary', {}).get('total_count', 0),
-        'SAD': comment_data.get('sad', {}).get('summary', {}).get('total_count', 0),
-        'ANGRY': comment_data.get('angry', {}).get('summary', {}).get('total_count', 0),
-        'CARE': comment_data.get('care', {}).get('summary', {}).get('total_count', 0),
-    }
-    if my_reaction:
-        reactions_data['my_reaction'] = my_reaction
-        
-    like_count = sum(v for k, v in reactions_data.items() if k != 'my_reaction' and isinstance(v, (int, float)))
+    reactions_data, like_count = _build_reactions_data(comment_data, old_comment)
 
     defaults = {
         'post': post,
@@ -628,9 +791,12 @@ def process_incoming_webhook_message(integration, contact, conversation, message
             if checkout and result.get('intent') == 'purchase_intent' and checkout not in reply_text:
                 reply_text += f"\n\n👉 Order here: {checkout}"
 
-            # Send the AI reply via Meta API
+            # Send the AI reply via the channel's messaging API
             if contact and contact.meta_id:
-                send_meta_message(integration, contact.meta_id, reply_text)
+                if integration.channel_type == 'whatsapp':
+                    send_whatsapp_message(integration, contact.meta_id, reply_text)
+                else:
+                    send_meta_message(integration, contact.meta_id, reply_text)
 
             # Save the AI reply as an outbound message in the conversation
             CRMMessage.objects.create(

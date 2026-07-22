@@ -85,7 +85,8 @@
                                 <!-- Login Form -->
                                 <form method="POST" id="loginForm">
                                     {% csrf_token %}
-                                    
+                                    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+
                                     <!-- Username Field -->
                                     <div class="form-floating mb-3">
                                         <input type="text" 

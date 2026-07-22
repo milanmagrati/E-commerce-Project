@@ -341,6 +341,10 @@
                                         <i class="fab fa-facebook-messenger" style="color:#2563eb;font-size:1.05rem;"></i>
                                     {% elif integ.channel_type == 'instagram' %}
                                         <i class="fab fa-instagram" style="color:#db2777;font-size:1.05rem;"></i>
+                                    {% elif integ.channel_type == 'tiktok' %}
+                                        <i class="fab fa-tiktok" style="color:#010101;font-size:1.05rem;"></i>
+                                    {% elif integ.channel_type == 'whatsapp' %}
+                                        <i class="fab fa-whatsapp" style="color:#25D366;font-size:1.05rem;"></i>
                                     {% else %}
                                         <i class="fas fa-filter" style="font-size:0.75rem;"></i>
                                     {% endif %}
@@ -364,6 +368,10 @@
                                         <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:16px;height:16px;">
                                     {% elif integ.channel_type == 'instagram' %}
                                         <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:16px;height:16px;">
+                                    {% elif integ.channel_type == 'tiktok' %}
+                                        <i class="fab fa-tiktok" style="font-size:14px;"></i>
+                                    {% elif integ.channel_type == 'whatsapp' %}
+                                        <i class="fab fa-whatsapp" style="color:#25D366;font-size:14px;"></i>
                                     {% endif %}
                                 </div>
                                 <span style="font-weight:500;white-space:normal;line-height:1.2;font-size:0.85rem;">{{ integ.account_name }}</span>
@@ -439,6 +447,10 @@
                                         <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:14px;height:14px;" title="Facebook Messenger">
                                     {% elif conv.channel == 'instagram' %}
                                         <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:14px;height:14px;" title="Instagram">
+                                    {% elif conv.channel == 'tiktok' %}
+                                        <i class="fab fa-tiktok" style="font-size:14px;" title="TikTok"></i>
+                                    {% elif conv.channel == 'whatsapp' %}
+                                        <i class="fab fa-whatsapp" style="color:#25D366;font-size:14px;" title="WhatsApp"></i>
                                     {% endif %}
                                 </div>
                             </div>
@@ -490,6 +502,10 @@
                         <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" class="channel-badge" style="width:12px;height:12px;">
                     {% elif active_conv.channel == 'instagram' %}
                         <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" class="channel-badge" style="width:12px;height:12px;">
+                    {% elif active_conv.channel == 'tiktok' %}
+                        <i class="fab fa-tiktok channel-badge" style="font-size:11px;"></i>
+                    {% elif active_conv.channel == 'whatsapp' %}
+                        <i class="fab fa-whatsapp channel-badge" style="color:#25D366;font-size:11px;"></i>
                     {% endif %}
                 </div>
                 <div>
@@ -537,6 +553,14 @@
             {% elif active_conv.channel == 'instagram' %}
                 <div style="font-size:0.8rem;color:var(--crm-text-muted);display:flex;align-items:center;justify-content:center;gap:0.4rem;margin-top:0.25rem;">
                     <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:14px;height:14px;"> @{{ active_conv.contact.name|slugify|default:"Unknown" }}
+                </div>
+            {% elif active_conv.channel == 'tiktok' %}
+                <div style="font-size:0.8rem;color:var(--crm-text-muted);display:flex;align-items:center;justify-content:center;gap:0.4rem;margin-top:0.25rem;">
+                    <i class="fab fa-tiktok"></i> @{{ active_conv.contact.name|slugify|default:"Unknown" }}
+                </div>
+            {% elif active_conv.channel == 'whatsapp' %}
+                <div style="font-size:0.8rem;color:var(--crm-text-muted);display:flex;align-items:center;justify-content:center;gap:0.4rem;margin-top:0.25rem;">
+                    <i class="fab fa-whatsapp" style="color:#25D366;"></i> {{ active_conv.contact.phone|default:"Unknown number" }}
                 </div>
             {% endif %}
         </div>
@@ -686,7 +710,7 @@
         var group = document.getElementById('integrationSelectGroup');
         var select = document.getElementById('newConvIntegration');
         
-        if (['facebook', 'instagram'].includes(channel)) {
+        if (['facebook', 'instagram', 'tiktok', 'whatsapp'].includes(channel)) {
             group.style.display = 'block';
             for (var i = 0; i < select.options.length; i++) {
                 var opt = select.options[i];
@@ -969,6 +993,7 @@
                             <option value="facebook">Facebook</option>
                             <option value="instagram">Instagram</option>
                             <option value="whatsapp">WhatsApp</option>
+                            <option value="tiktok">TikTok</option>
                             <option value="email">Email</option>
                             <option value="sms">SMS</option>
                         </select>

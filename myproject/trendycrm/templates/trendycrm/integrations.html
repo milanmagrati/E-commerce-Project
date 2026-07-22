@@ -180,9 +180,7 @@
         <div class="integ-sidebar-header">
             <div>
                 <div class="integ-sidebar-title">Integrations</div>
-                <div class="integ-channel-count">{{ channels_with_meta|length }}/5 channels
-                    <span style="background:var(--crm-active-bg);color:var(--crm-primary);font-size:0.65rem;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:0.3rem;cursor:pointer;">Upgrade</span>
-                </div>
+                <div class="integ-channel-count">{{ connected_channel_count }}/{{ channels_with_meta|length }} connected</div>
             </div>
         </div>
 
@@ -226,7 +224,7 @@
                             {% if active_key == 'instagram' %}Manage Direct Messages, comments and story mentions from your omnichannel inbox.
                             {% elif active_key == 'whatsapp' %}Send & receive WhatsApp messages from your business number.
                             {% elif active_key == 'facebook' %}Manage Facebook Messenger conversations in one unified inbox.
-                            {% elif active_key == 'tiktok' %}Respond to TikTok DMs and comments from your inbox.
+                            {% elif active_key == 'tiktok' %}Connect your TikTok account for identity/profile access.
                             {% elif active_key == 'gmail' %}Manage Gmail conversations and auto-reply to emails.
                             {% elif active_key == 'outlook' %}Connect your Outlook mailbox for unified email management.
                             {% elif active_key == 'zoho_mail' %}Handle Zoho Mail conversations from your CRM inbox.
@@ -238,7 +236,7 @@
             
             {% if connected_integrations %}
             <div>
-                {% if active_key == 'facebook' or active_key == 'instagram' or active_key == 'tiktok' %}
+                {% if active_key == 'facebook' or active_key == 'instagram' or active_key == 'tiktok' or active_key == 'whatsapp' %}
                 <button type="button"
                    onclick="window.location.href='{{ fb_oauth_url }}';"
                    class="btn-crm-primary" style="display:inline-flex; align-items:center; gap:0.5rem; border:none; cursor:pointer;">
@@ -254,6 +252,18 @@
         </div>
 
         <div class="integ-detail-body">
+            {% if active_key == 'tiktok' %}
+            <div style="display:flex; gap:0.6rem; align-items:flex-start; background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:0.85rem 1rem; margin-bottom:1.25rem;">
+                <i class="fas fa-circle-info" style="color:#b45309; margin-top:2px;"></i>
+                <div style="font-size:0.78rem; color:#92400e; line-height:1.4;">
+                    <strong>TikTok DMs/comments aren't available here yet.</strong>
+                    TikTok's public Developer API (Login Kit) only grants profile and video-list
+                    access — it does not offer a general messaging API like Meta's Graph API.
+                    Live DM/comment sync requires TikTok Shop Partner (Customer Service API)
+                    approval. Connecting below authenticates your TikTok identity only.
+                </div>
+            </div>
+            {% endif %}
             {% if connected_integrations %}
                 {% for integ in connected_integrations %}
                 <!-- Connected State -->
@@ -290,7 +300,7 @@
                              </button>
                              <form method="post" action="{% url 'trendycrm:integration_disconnect' integ.pk %}" style="margin:0;">
                                 {% csrf_token %}
-                                <button type="submit" style="width:100%; text-align:left; padding:0.5rem 1rem; border:none; background:transparent; cursor:pointer; font-size:0.8rem; color:#ef4444; display:flex; align-items:center; gap:0.5rem;" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'" onclick="return confirm('Disconnect this channel?')">
+                                <button type="submit" style="width:100%; text-align:left; padding:0.5rem 1rem; border:none; background:transparent; cursor:pointer; font-size:0.8rem; color:#ef4444; display:flex; align-items:center; gap:0.5rem;" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'" onclick="return confirm('Disconnect {{ integ.parsed_name }}? If this is not the only connected account for this channel, its synced posts and comments will be permanently deleted.')">
                                     <i class="fas fa-unlink" style="color:#ef4444; width:14px;"></i> Disconnect
                                 </button>
                              </form>
@@ -308,7 +318,7 @@
                 <div style="font-size:0.8rem;color:var(--crm-text-muted);margin-bottom:1.2rem;">
                     Connect your professional {{ active_meta.label }} account to start receiving messages in Trendy CRM.
                 </div>
-                {% if active_key == 'facebook' or active_key == 'instagram' or active_key == 'tiktok' %}
+                {% if active_key == 'facebook' or active_key == 'instagram' or active_key == 'tiktok' or active_key == 'whatsapp' %}
                 <button type="button"
                    onclick="window.location.href='{{ fb_oauth_url }}';"
                    class="btn-crm-primary" style="display:inline-flex; align-items:center; gap:0.5rem; border:none; cursor:pointer;">
@@ -359,12 +369,14 @@
             <!-- Modal not typically used for FB/Insta anymore due to direct connection, but keeping inputs just in case manual fallback is needed -->
             {% endif %}
 
+            {% if webhook_url %}
             <div style="margin-bottom:1rem; padding: 0.75rem; background:#f3f4f6; border-radius:6px; font-size:0.75rem;">
                 <strong>Webhook URL:</strong><br>
-                <span style="user-select:all; color:var(--crm-primary);">https://{{ request.get_host }}/api/webhooks/{{ active_key }}/</span>
+                <span style="user-select:all; color:var(--crm-primary);">{{ webhook_url }}</span>
                 <div style="margin-top:0.3rem; color:var(--crm-text-muted);">Use this URL in your {{ active_meta.label }} developer console.</div>
             </div>
-            
+            {% endif %}
+
             <div style="margin-bottom:1rem;">
                 <label style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:0.3rem;">Account Name / Email / Page ID</label>
                 <input type="text" name="account_name" required class="form-control" style="width:100%; padding:0.5rem; border:1px solid var(--crm-border); border-radius:6px; font-family:inherit; font-size:0.85rem;" placeholder="e.g. @trendy_store">
@@ -397,11 +409,13 @@
             <i class="fab {{ active_meta.icon }}" style="color:{{ active_meta.color }};"></i> {{ active_meta.label }} Settings
         </div>
         
+        {% if webhook_url %}
         <div style="margin-bottom:1rem; padding: 0.75rem; background:#f3f4f6; border-radius:6px; font-size:0.75rem;">
             <strong>Webhook URL:</strong><br>
-            <span style="user-select:all; color:var(--crm-primary);">https://{{ request.get_host }}/api/webhooks/{{ active_key }}/</span>
+            <span style="user-select:all; color:var(--crm-primary);">{{ webhook_url }}</span>
         </div>
-        
+        {% endif %}
+
         <div style="margin-bottom:1rem;">
             <label style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:0.3rem;">Account Name</label>
             <input type="text" id="settingsAccountName" readonly class="form-control" style="width:100%; padding:0.5rem; border:1px solid var(--crm-border); border-radius:6px; font-family:inherit; font-size:0.85rem; background:#f9fafb; color:var(--crm-text-muted);">

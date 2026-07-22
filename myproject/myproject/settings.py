@@ -251,6 +251,7 @@ INSTAGRAM_APP_ID = config('INSTAGRAM_APP_ID', default='')
 INSTAGRAM_APP_SECRET = config('INSTAGRAM_APP_SECRET', default='')
 TIKTOK_CLIENT_ID = config('TIKTOK_CLIENT_ID', default='')
 TIKTOK_CLIENT_SECRET = config('TIKTOK_CLIENT_SECRET', default='')
+FACEBOOK_WEBHOOK_VERIFY_TOKEN = config('FACEBOOK_WEBHOOK_VERIFY_TOKEN', default='')
 
 # Kept for backward compatibility
 FACEBOOK_CLIENT_ID = config('FACEBOOK_CLIENT_ID', default=FACEBOOK_APP_ID)
