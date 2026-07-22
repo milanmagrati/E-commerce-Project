@@ -26,7 +26,10 @@ logger = logging.getLogger(__name__)
 
 # Google's newer Gemini models are "thinking" models by default and will burn the
 # whole max_output_tokens budget on hidden reasoning tokens before ever emitting
-# visible text unless thinking is explicitly disabled — see _call_gemini_rest.
+# visible text unless thinking is turned down — see _call_gemini_rest. A budget of
+# 0 used to mean "disable thinking" but the model behind the gemini-flash-latest
+# alias now rejects 0 with INVALID_ARGUMENT, so 1 (minimum non-zero) is used instead.
+GEMINI_THINKING_BUDGET = 1
 GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 GEMINI_FLASH_MODEL = 'gemini-flash-latest'
 GEMINI_PRO_MODEL = 'gemini-pro-latest'
@@ -61,7 +64,7 @@ def _call_gemini_rest(model_name: str, system_prompt: str, user_message: str, ap
         'generationConfig': {
             'temperature': temperature,
             'maxOutputTokens': max_tokens,
-            'thinkingConfig': {'thinkingBudget': 0},
+            'thinkingConfig': {'thinkingBudget': GEMINI_THINKING_BUDGET},
         },
     }
     if system_prompt:
@@ -117,7 +120,7 @@ def _call_gemini_vision_rest(model_name: str, system_prompt: str, prompt_text: s
         'generationConfig': {
             'temperature': temperature,
             'maxOutputTokens': max_tokens,
-            'thinkingConfig': {'thinkingBudget': 0},
+            'thinkingConfig': {'thinkingBudget': GEMINI_THINKING_BUDGET},
         },
     }
     if system_prompt:
