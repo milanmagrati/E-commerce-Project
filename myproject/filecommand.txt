@@ -1,2 +1,10 @@
  here i have provided two ss and in the first , this is chatbot page and make it fully functional and i have provided gemin api key in the @.env file 
  and make this page functional now 
+
+ ❯ Now in @.env file i have also kept place holder for open ai api and in future i will keep that api key there now what you 
+ have to do is the chatbot should function if either of them i set like if i set open ai then that should work and if 
+ i set gemini ai then that also should work and even if i set both gemini and open ai keys then the page should work 
+ . so make this logic if this logic is absent and also in the ui add selector that for what purpose you want to select 
+ model like if i want to choose open ai like gpt 5 or other for response and gemini models for image recognition and response
+ so develop this feature or section for this purpose so i can select dynamically for different purpose and if model not available
+ like i have not set api key then safe error message delivery system and so on. so make this system advance along with previous system you implemented
