@@ -68,7 +68,8 @@ def _call_gemini_rest(model_name: str, system_prompt: str, user_message: str, ap
         payload['systemInstruction'] = {'parts': [{'text': system_prompt}]}
 
     response = requests.post(url, json=payload, timeout=30)
-    response.raise_for_status()
+    if not response.ok:
+        raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
     data = response.json()
 
     candidates = data.get('candidates') or []
@@ -81,6 +82,15 @@ def _call_gemini_rest(model_name: str, system_prompt: str, user_message: str, ap
     if not text:
         raise ValueError(f"Gemini returned empty text (finishReason={candidates[0].get('finishReason')})")
     return text
+
+
+def _extract_gemini_error(response) -> str:
+    """Pulls Google's actual error message/status out of a failed response body."""
+    try:
+        err = response.json().get('error', {})
+        return f"{err.get('status', 'UNKNOWN')} - {err.get('message', response.text)}"
+    except Exception:
+        return response.text[:500]
 
 
 def _call_gemini_vision_rest(model_name: str, system_prompt: str, prompt_text: str,
@@ -114,7 +124,8 @@ def _call_gemini_vision_rest(model_name: str, system_prompt: str, prompt_text: s
         payload['systemInstruction'] = {'parts': [{'text': system_prompt}]}
 
     response = requests.post(url, json=payload, timeout=45)
-    response.raise_for_status()
+    if not response.ok:
+        raise ValueError(f"Gemini vision API error {response.status_code}: {_extract_gemini_error(response)}")
     data = response.json()
 
     candidates = data.get('candidates') or []
