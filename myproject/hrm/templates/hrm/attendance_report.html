@@ -73,6 +73,10 @@
     .badge-late     { background: #fef3c7; color: #92400e; }
     .badge-half_day { background: #dbeafe; color: #1e3a8a; }
     .badge-on_leave { background: #ede9fe; color: #4c1d95; }
+    .badge-incomplete { background: #ffedd5; color: #9a3412; }
+    .row-incomplete-punch, .row-incomplete-punch td { background: #fff7ed !important; }
+    .row-incomplete-punch:hover, .row-incomplete-punch:hover td { background: #ffedd5 !important; }
+    .row-incomplete-punch { box-shadow: inset 3px 0 0 #f97316; }
     .emp-avatar {
         width: 32px;
         height: 32px;
@@ -379,12 +383,14 @@
     .pv-status-no_record{ background:#fff; }
     .pv-status-weekend  { background:#fdf2f8; }
     .pv-status-holiday  { background:#fefce8; }
+    .pv-status-incomplete { background:#fff7ed; }
     /* Status chip colors */
     .cal-chip-present  { background:#16a34a; color:#fff; }
     .cal-chip-absent   { background:#dc2626; color:#fff; }
     .cal-chip-late     { background:#d97706; color:#fff; }
     .cal-chip-half_day { background:#2563eb; color:#fff; }
     .cal-chip-on_leave { background:#7c3aed; color:#fff; }
+    .cal-chip-incomplete { background:#ea580c; color:#fff; }
     .cal-chip-weekend  { background:#db2777; color:#fff; }
     .cal-chip-holiday  { background:#ca8a04; color:#fff; }
     /* Calendar legend */
@@ -517,6 +523,15 @@
                 <div>
                     <div class="stat-value" style="color:#7c3aed;">{{ stats.on_leave|default:"0" }}</div>
                     <div class="stat-label">On Leave</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#fff7ed;">
+                <div class="stat-icon" style="background:#ffedd5; color:#ea580c;"><i class="fas fa-exclamation-triangle"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#ea580c;">{{ stats.incomplete|default:"0" }}</div>
+                    <div class="stat-label">Incomplete Punch</div>
                 </div>
             </div>
         </div>
@@ -825,13 +840,16 @@
                 </thead>
                 <tbody>
                     {% for rec in records %}
-                    <tr class="att-row-clickable"
+                    <tr class="att-row-clickable{% if rec.is_incomplete_punch %} row-incomplete-punch{% endif %}"
+                        data-id="{{ rec.id }}"
                         data-emp-name="{{ rec.employee.full_name }}"
                         data-emp-id="{{ rec.employee.employee_id }}"
                         data-dept="{{ rec.employee.department.name|default:'—' }}"
                         data-date="{{ rec.date|date:'d M Y' }}"
                         data-checkin="{% if rec.clock_in %}{{ rec.clock_in|time:'H:i' }}{% else %}—{% endif %}"
                         data-checkout="{% if rec.clock_out %}{{ rec.clock_out|time:'H:i' }}{% else %}—{% endif %}"
+                        data-checkin-raw="{% if rec.clock_in %}{{ rec.clock_in|time:'H:i' }}{% endif %}"
+                        data-checkout-raw="{% if rec.clock_out %}{{ rec.clock_out|time:'H:i' }}{% endif %}"
                         data-working-hrs="{% if rec.working_hours %}{{ rec.working_hours }}h{% else %}—{% endif %}"
                         data-ot-hrs="{% if rec.overtime_hours and rec.overtime_hours > 0 %}{{ rec.overtime_hours }}h{% else %}—{% endif %}"
                         data-shift="{{ rec.shift.name|default:'—' }}"
@@ -839,7 +857,8 @@
                         data-status-display="{{ rec.get_status_display }}"
                         data-is-late="{% if rec.is_late_arrival %}1{% else %}0{% endif %}"
                         data-is-early="{% if rec.is_early_departure %}1{% else %}0{% endif %}"
-                        data-is-holiday="{% if rec.is_holiday %}1{% else %}0{% endif %}">
+                        data-is-holiday="{% if rec.is_holiday %}1{% else %}0{% endif %}"
+                        data-is-incomplete="{% if rec.is_incomplete_punch %}1{% else %}0{% endif %}">
                         <td class="text-muted">{{ forloop.counter|add:records.start_index|add:"-1" }}</td>
                         <td>
                             <div class="d-flex align-items-center gap-2">
@@ -852,8 +871,8 @@
                         </td>
                         <td>{{ rec.employee.department.name|default:"—" }}</td>
                         <td>{{ rec.date|date:"d M Y" }}</td>
-                        <td>{% if rec.clock_in %}{{ rec.clock_in|time:"H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-                        <td>{% if rec.clock_out %}{{ rec.clock_out|time:"H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>{% if rec.clock_in %}{{ rec.clock_in|time:"H:i" }}{% elif rec.is_incomplete_punch %}<span class="text-danger fw-semibold">Missing</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>{% if rec.clock_out %}{{ rec.clock_out|time:"H:i" }}{% elif rec.is_incomplete_punch %}<span class="text-danger fw-semibold">Missing</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                         <td>
                             {% if rec.working_hours %}
                             <span class="fw-semibold">{{ rec.working_hours }}h</span>
@@ -866,6 +885,11 @@
                         </td>
                         <td>{{ rec.shift.name|default:"—" }}</td>
                         <td>
+                            {% if rec.is_incomplete_punch %}
+                            <span class="badge-status badge-incomplete">
+                                <i class="fas fa-exclamation-triangle" style="font-size:0.5rem;"></i> Incomplete
+                            </span>
+                            {% else %}
                             <span class="badge-status badge-{{ rec.status }}">
                                 {% if rec.status == 'present' %}<i class="fas fa-circle" style="font-size:0.5rem;"></i>{% endif %}
                                 {% if rec.status == 'absent' %}<i class="fas fa-circle" style="font-size:0.5rem;"></i>{% endif %}
@@ -874,6 +898,7 @@
                                 {% if rec.status == 'on_leave' %}<i class="fas fa-circle" style="font-size:0.5rem;"></i>{% endif %}
                                 {{ rec.get_status_display }}
                             </span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if rec.is_late_arrival %}
@@ -881,6 +906,12 @@
                             {% endif %}
                             {% if rec.is_early_departure %}
                             <span class="badge bg-info text-dark" style="font-size:0.68rem;" title="Early Departure"><i class="fas fa-chevron-left fa-xs"></i></span>
+                            {% endif %}
+                            {% if rec.status == 'half_day' %}
+                            <span class="badge" style="font-size:0.68rem;background:#dbeafe;color:#1e3a8a;" title="Half Day"><i class="fas fa-hourglass-half fa-xs"></i></span>
+                            {% endif %}
+                            {% if rec.is_incomplete_punch %}
+                            <span class="badge" style="font-size:0.68rem;background:#ffedd5;color:#9a3412;cursor:pointer;" title="Incomplete Punch — click row to fix"><i class="fas fa-exclamation-triangle fa-xs"></i></span>
                             {% endif %}
                             {% if rec.is_holiday %}
                             <span class="badge bg-secondary" style="font-size:0.68rem;" title="Holiday"><i class="fas fa-star fa-xs"></i></span>
@@ -999,10 +1030,43 @@
                 <div id="attModalFlags"></div>
               </div>
             </div>
+            <div class="col-12" id="attIncompleteNotice" style="display:none;">
+              <div class="d-flex align-items-center gap-2" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:0.7rem 0.9rem;">
+                <i class="fas fa-exclamation-triangle" style="color:#ea580c;"></i>
+                <div style="font-size:0.8rem;color:#9a3412;">
+                  Clock In or Clock Out is missing for this day. Use <strong>Fix Attendance</strong> below to set it manually.
+                </div>
+              </div>
+            </div>
+            <div class="col-12" id="attEditSection" style="display:none;">
+              <div class="detail-card" style="background:#fff7ed;border:1px solid #fed7aa;">
+                <div class="detail-label mb-2"><i class="fas fa-edit me-1"></i>Set Missing Time</div>
+                <div class="row g-2">
+                  <div class="col-6">
+                    <label class="form-label small text-muted mb-1">Clock In</label>
+                    <input type="time" class="form-control form-control-sm" id="attEditClockIn">
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label small text-muted mb-1">Clock Out</label>
+                    <input type="time" class="form-control form-control-sm" id="attEditClockOut">
+                  </div>
+                </div>
+                <div id="attEditError" class="text-danger small mt-2" style="display:none;"></div>
+                <div class="d-flex gap-2 mt-3">
+                  <button type="button" class="btn btn-sm btn-primary px-3" id="attEditSaveBtn" onclick="attSaveFix()">
+                    <i class="fas fa-save me-1"></i>Save
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary px-3" onclick="attToggleEditSection(false)">Cancel</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
       <div class="modal-footer border-0 pt-0 pb-3 px-4 justify-content-end">
+        <button type="button" class="btn btn-sm px-4" id="attModalEditBtn" style="display:none;background:#ffedd5;color:#9a3412;border:none;border-radius:8px;font-weight:600;" onclick="attToggleEditSection(true)">
+          <i class="fas fa-wrench me-1"></i>Fix Attendance
+        </button>
         <button type="button" class="btn btn-sm px-4" data-bs-dismiss="modal"
                 style="background:#f1f5f9;color:#475569;border:none;border-radius:8px;font-weight:600;">Close</button>
       </div>
@@ -1015,6 +1079,8 @@
 {% block extra_js %}
 <script>
 const PV_API_URL = "{% url 'hrm:employee_period_attendance' %}";
+const ATT_CSRF = '{{ csrf_token }}';
+let currentAttRecordId = null;
 let pvCurrentPeriod = 'day';
 
 function toNepaliDigits(num) {
@@ -1137,6 +1203,7 @@ const STATUS_COLORS = {
     on_leave: { bg:'#ede9fe', color:'#4c1d95', dot:'#8b5cf6', label:'On Leave'},
     weekend:  { bg:'#fdf2f8', color:'#9d174d', dot:'#db2777', label:'Weekend' },
     holiday:  { bg:'#fefce8', color:'#854d0e', dot:'#ca8a04', label:'Holiday' },
+    incomplete: { bg:'#ffedd5', color:'#9a3412', dot:'#ea580c', label:'Incomplete Punch'},
 };
 function statusBadge(status, label) {
     const s = STATUS_COLORS[status] || { bg:'#f1f5f9', color:'#64748b', dot:'#94a3b8' };
@@ -1193,6 +1260,7 @@ function renderSummaryBar(data) {
                     <th rowspan="2">Day<br>Off</th>
                     <th rowspan="2">Night<br>Off</th>
                     <th rowspan="2">Present<br>Days</th>
+                    <th rowspan="2" style="color:#2563eb;">Half<br>Day</th>
                     <th rowspan="2">Present On<br>Holiday</th>
                     <th rowspan="2">Present On Day Off<br>/Night Off/Weekend</th>
                     <th rowspan="2">Absent<br>Days</th>
@@ -1223,6 +1291,7 @@ function renderSummaryBar(data) {
                     <td>${d.day_off}</td>
                     <td>${d.night_off}</td>
                     <td style="color:#16a34a;font-weight:700;">${d.present_days}</td>
+                    <td style="color:#2563eb;font-weight:600;">${d.half_day}</td>
                     <td>${d.present_on_holiday}</td>
                     <td>${d.present_on_off}</td>
                     <td style="color:#ef4444;font-weight:700;">${d.absent_days}</td>
@@ -1281,6 +1350,8 @@ function renderDayView(data) {
     let flags = '';
     if (rec.is_late_arrival)   flags += `<span class="badge bg-warning text-dark me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;"><i class="fas fa-chevron-right fa-xs me-1"></i>Late Arrival</span>`;
     if (rec.is_early_departure)flags += `<span class="badge bg-info text-dark me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;"><i class="fas fa-chevron-left fa-xs me-1"></i>Early Departure</span>`;
+    if (rec.status === 'half_day') flags += `<span class="badge me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;background:#dbeafe;color:#1e3a8a;"><i class="fas fa-hourglass-half fa-xs me-1"></i>Half Day</span>`;
+    if (rec.is_incomplete) flags += `<span class="badge me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;background:#ffedd5;color:#9a3412;"><i class="fas fa-exclamation-triangle fa-xs me-1"></i>Incomplete Punch</span>`;
     if (rec.is_holiday)        flags += `<span class="badge bg-secondary me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;"><i class="fas fa-star fa-xs me-1"></i>Holiday</span>`;
     return `
     <div class="p-4">
@@ -1531,6 +1602,7 @@ function renderMonthView(data) {
                           data-is-late="${rec.is_late_arrival?'1':'0'}"
                           data-is-early="${rec.is_early_departure?'1':'0'}"
                           data-is-holiday="${rec.is_holiday?'1':'0'}"
+                          data-is-incomplete="${rec.is_incomplete?'1':'0'}"
                           data-notes="${esc(rec.notes||'')}"
                           onclick="pvShowCalPopup(event,this)">
                 ${numHtml('inherit')}
@@ -1613,6 +1685,8 @@ function pvShowCalPopup(evt, el) {
     let flags = '';
     if (d.isLate    === '1') flags += `<span class="badge me-1 mb-1" style="background:#fef3c7;color:#92400e;font-size:0.7rem;"><i class="fas fa-clock fa-xs me-1"></i>Late Arrival</span>`;
     if (d.isEarly   === '1') flags += `<span class="badge me-1 mb-1" style="background:#dbeafe;color:#1e3a8a;font-size:0.7rem;"><i class="fas fa-door-open fa-xs me-1"></i>Early Departure</span>`;
+    if (d.status === 'half_day') flags += `<span class="badge me-1 mb-1" style="background:#dbeafe;color:#1e3a8a;font-size:0.7rem;"><i class="fas fa-hourglass-half fa-xs me-1"></i>Half Day</span>`;
+    if (d.isIncomplete === '1') flags += `<span class="badge me-1 mb-1" style="background:#ffedd5;color:#9a3412;font-size:0.7rem;"><i class="fas fa-exclamation-triangle fa-xs me-1"></i>Incomplete Punch</span>`;
     if (d.isHoliday === '1') flags += `<span class="badge me-1 mb-1" style="background:#e0e7ff;color:#3730a3;font-size:0.7rem;"><i class="fas fa-star fa-xs me-1"></i>Holiday</span>`;
 
     let popup = document.getElementById('pvCalDayPopup');
@@ -2023,6 +2097,7 @@ function renderEmpSummaryTable(data) {
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#1e293b;padding:6px 8px;">Day<br>Off</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#1e293b;padding:6px 8px;">Night<br>Off</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#16a34a;padding:6px 8px;">Present<br>Days</th>
+                    <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#2563eb;padding:6px 8px;">Half<br>Day</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#059669;padding:6px 8px;">Present On<br>Holiday</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#0d9488;padding:6px 8px;">Present On Day Off<br>/Night Off/Weekend</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#e11d48;padding:6px 8px;">Absent<br>Days</th>
@@ -2045,7 +2120,7 @@ function renderEmpSummaryTable(data) {
             <tbody>`;
 
     data.dept_groups.forEach(grp => {
-        html += `<tr><td colspan="23" style="background:#eef2ff;font-weight:600;font-size:0.78rem;color:#4338ca;padding:7px 12px;text-align:center;">
+        html += `<tr><td colspan="24" style="background:#eef2ff;font-weight:600;font-size:0.78rem;color:#4338ca;padding:7px 12px;text-align:center;">
             <i class="fas fa-building me-1"></i> Department: ${esc(grp.dept_label)}</td></tr>`;
         grp.employees.forEach((emp, idx) => {
             const bg = idx % 2 === 1 ? 'background:#f8fafc;' : '';
@@ -2059,6 +2134,7 @@ function renderEmpSummaryTable(data) {
                 <td class="text-center" style="padding:5px 6px;">${emp.day_off}</td>
                 <td class="text-center" style="padding:5px 6px;">${emp.night_off}</td>
                 <td class="text-center fw-bold" style="padding:5px 6px;color:#16a34a;">${emp.present_days}</td>
+                <td class="text-center fw-semibold" style="padding:5px 6px;color:#2563eb;">${emp.half_day}</td>
                 <td class="text-center" style="padding:5px 6px;color:#059669;">${emp.present_on_holiday}</td>
                 <td class="text-center" style="padding:5px 6px;color:#0d9488;">${emp.present_on_off}</td>
                 <td class="text-center fw-bold" style="padding:5px 6px;color:#e11d48;">${emp.absent}</td>
@@ -2090,17 +2166,19 @@ document.querySelectorAll('.att-row-clickable').forEach(function(row) {
         document.getElementById('attModalEmpId').textContent = d.empId;
         document.getElementById('attModalDept').textContent = '\uD83D\uDCCD ' + d.dept;
         const statusEl = document.getElementById('attModalStatusBadge');
+        const isIncomplete = d.isIncomplete === '1';
         const sm = {
-            present:  ['#d1fae5','#065f46'],
-            absent:   ['#fee2e2','#991b1b'],
-            late:     ['#fef3c7','#92400e'],
-            half_day: ['#dbeafe','#1e3a8a'],
-            on_leave: ['#ede9fe','#4c1d95']
+            present:    ['#d1fae5','#065f46'],
+            absent:     ['#fee2e2','#991b1b'],
+            late:       ['#fef3c7','#92400e'],
+            half_day:   ['#dbeafe','#1e3a8a'],
+            on_leave:   ['#ede9fe','#4c1d95'],
+            incomplete: ['#ffedd5','#9a3412']
         };
-        const sc = sm[d.status] || ['#e2e8f0','#475569'];
+        const sc = isIncomplete ? sm.incomplete : (sm[d.status] || ['#e2e8f0','#475569']);
         statusEl.style.background = sc[0];
         statusEl.style.color = sc[1];
-        statusEl.innerHTML = '<i class="fas fa-circle" style="font-size:0.45rem;vertical-align:middle;margin-right:4px;"></i>' + d.statusDisplay;
+        statusEl.innerHTML = '<i class="fas fa-circle" style="font-size:0.45rem;vertical-align:middle;margin-right:4px;"></i>' + (isIncomplete ? 'Incomplete Punch' : d.statusDisplay);
         document.getElementById('attModalCheckin').textContent = d.checkin;
         document.getElementById('attModalCheckout').textContent = d.checkout;
         document.getElementById('attModalWorkingHrs').textContent = d.workingHrs;
@@ -2110,11 +2188,83 @@ document.querySelectorAll('.att-row-clickable').forEach(function(row) {
         let flags = '';
         if (d.isLate === '1') flags += '<span class="badge bg-warning text-dark me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;"><i class="fas fa-chevron-right fa-xs me-1"></i>Late Arrival</span>';
         if (d.isEarly === '1') flags += '<span class="badge bg-info text-dark me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;"><i class="fas fa-chevron-left fa-xs me-1"></i>Early Departure</span>';
+        if (d.status === 'half_day') flags += '<span class="badge me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;background:#dbeafe;color:#1e3a8a;"><i class="fas fa-hourglass-half fa-xs me-1"></i>Half Day</span>';
+        if (isIncomplete) flags += '<span class="badge me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;background:#ffedd5;color:#9a3412;"><i class="fas fa-exclamation-triangle fa-xs me-1"></i>Incomplete Punch</span>';
         if (d.isHoliday === '1') flags += '<span class="badge bg-secondary me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;"><i class="fas fa-star fa-xs me-1"></i>Holiday</span>';
         document.getElementById('attModalFlags').innerHTML = flags || '<span class="text-muted" style="font-size:0.83rem;"><i class="fas fa-check-circle me-1 text-success"></i>No flags recorded</span>';
+
+        // Incomplete-punch fix workflow
+        currentAttRecordId = d.id;
+        document.getElementById('attIncompleteNotice').style.display = isIncomplete ? 'block' : 'none';
+        document.getElementById('attModalEditBtn').style.display = isIncomplete ? 'inline-block' : 'none';
+        document.getElementById('attEditClockIn').value = d.checkinRaw || '';
+        document.getElementById('attEditClockOut').value = d.checkoutRaw || '';
+        attToggleEditSection(false);
+
         new bootstrap.Modal(document.getElementById('attDetailModal')).show();
     });
 });
+
+// ── Incomplete-punch fix: toggle inline edit form ─────────────────────────────
+function attToggleEditSection(show) {
+    document.getElementById('attEditSection').style.display = show ? 'block' : 'none';
+    document.getElementById('attEditError').style.display = 'none';
+    const btn = document.getElementById('attEditSaveBtn');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+}
+
+function attSaveFix() {
+    const id = currentAttRecordId;
+    if (!id) return;
+    const clockIn = document.getElementById('attEditClockIn').value;
+    const clockOut = document.getElementById('attEditClockOut').value;
+    const errEl = document.getElementById('attEditError');
+    if (!clockIn && !clockOut) {
+        errEl.textContent = 'Enter at least Clock In or Clock Out.';
+        errEl.style.display = 'block';
+        return;
+    }
+    errEl.style.display = 'none';
+    const btn = document.getElementById('attEditSaveBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    fetch('/hrm/attendance/' + id + '/update/')
+        .then(r => { if (!r.ok) throw new Error('load failed'); return r.json(); })
+        .then(existing => {
+            const bodyParams = new URLSearchParams({
+                clock_in: clockIn,
+                clock_out: clockOut,
+                shift: existing.shift_id || '',
+                is_holiday: existing.is_holiday ? 'true' : 'false',
+                notes: existing.notes || '',
+                status: existing.status || 'present'
+            });
+            return fetch('/hrm/attendance/' + id + '/update/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': ATT_CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: bodyParams
+            });
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (res.success) {
+                window.location.reload();
+            } else {
+                errEl.textContent = res.error || 'Failed to update attendance.';
+                errEl.style.display = 'block';
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+            }
+        })
+        .catch(() => {
+            errEl.textContent = 'Network or server error.';
+            errEl.style.display = 'block';
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+        });
+}
 </script>
 <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>

@@ -2813,8 +2813,9 @@ def _sync_biometric_to_attendance(recent_days=None):
         elif employee.shift_id:
             shift = employee.shift
 
-        # Get employee's attendance policy for grace periods
-        policy = employee.attendance_policy if employee.attendance_policy_id else None
+        # Get employee's attendance policy for grace periods (falls back to the
+        # active company-wide policy when the employee has none assigned)
+        policy = employee.effective_attendance_policy
 
         if shift and clock_in_time:
             from datetime import datetime, timedelta
@@ -2848,9 +2849,18 @@ def _sync_biometric_to_attendance(recent_days=None):
                     if cout_full < shift_end - timedelta(minutes=early_grace):
                         is_early = True
 
-                # Auto-set status based on calculations
-                if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
-                    status = 'half_day'
+        # Auto-set half-day status based on the policy's threshold. Runs
+        # regardless of whether a shift is assigned, and overrides 'late' /
+        # 'present' since a short day takes priority over a late mark.
+        if policy and clock_in_time and clock_out_time and working_hours > 0 and working_hours <= float(policy.half_day_hours):
+            status = 'half_day'
+
+        # Flag incomplete punches (only one of clock-in/clock-out recorded)
+        # instead of silently marking the day 'Present' — needs manual
+        # correction. Takes priority over any status computed above since a
+        # day we can't fully verify shouldn't be reported as complete.
+        if not (clock_in_time and clock_out_time):
+            status = 'incomplete'
 
         # Create or update the AttendanceRecord
         record, created = AttendanceRecord.objects.update_or_create(
@@ -2971,7 +2981,7 @@ def attendance_create(request):
 
         # Use shift from form, fallback to employee's assigned shift
         shift = Shift.objects.filter(pk=shift_id).first() if shift_id else employee.shift
-        policy = employee.attendance_policy
+        policy = employee.effective_attendance_policy
 
         working_hours = 0
         overtime_hours = 0
@@ -3037,6 +3047,11 @@ def attendance_create(request):
             if status in ['present', 'late']:
                 if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
                     status = 'half_day'
+
+        # Flag incomplete punches (only one of clock-in/clock-out given)
+        # instead of leaving the day reported as Present/Late/Half Day.
+        if not (clock_in and clock_out) and status in ('present', 'late', 'half_day'):
+            status = 'incomplete'
 
         record = AttendanceRecord.objects.create(
             employee=employee,
@@ -3074,9 +3089,14 @@ def attendance_update(request, pk):
         if not clock_in and not clock_out:
             return JsonResponse({'success': False, 'error': 'Either Clock In or Clock Out time is required.'})
 
+        # Both times are now supplied — clear a previous 'incomplete' marker
+        # so the late/half-day auto-logic below can recompute it properly.
+        if status == 'incomplete' and clock_in and clock_out:
+            status = 'present'
+
         # Use shift from form, fallback to existing record shift, then employee's assigned shift
         shift = Shift.objects.filter(pk=shift_id).first() if shift_id else (record.shift or record.employee.shift)
-        policy = record.employee.attendance_policy
+        policy = record.employee.effective_attendance_policy
 
         working_hours = 0
         overtime_hours = 0
@@ -3142,6 +3162,11 @@ def attendance_update(request, pk):
             if status in ['present', 'late']:
                 if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
                     status = 'half_day'
+
+        # Flag incomplete punches (only one of clock-in/clock-out given)
+        # instead of leaving the day reported as Present/Late/Half Day.
+        if not (clock_in and clock_out) and status in ('present', 'late', 'half_day'):
+            status = 'incomplete'
 
         record.clock_in = clock_in if clock_in else None
         record.clock_out = clock_out if clock_out else None
@@ -3182,7 +3207,7 @@ def attendance_delete(request, pk):
     from .models import AttendanceRecord, BiometricAttendance
     record = get_object_or_404(AttendanceRecord, pk=pk)
     if request.method == 'POST':
-        if record.employee and record.employee.device_pin:
+        if record.employee and record.employee.employee_code:
             import pytz
             from django.utils import timezone
             from datetime import datetime
@@ -3190,12 +3215,97 @@ def attendance_delete(request, pk):
             start_of_day = local_tz.localize(datetime.combine(record.date, datetime.min.time()))
             end_of_day = local_tz.localize(datetime.combine(record.date, datetime.max.time()))
             BiometricAttendance.objects.filter(
-                pin=record.employee.device_pin,
+                pin=record.employee.employee_code,
                 timestamp__range=(start_of_day, end_of_day)
             ).delete()
         record.delete()
         return JsonResponse({'success': True})
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
+
+
+@login_required
+def incomplete_attendance_list_ajax(request):
+    """Lists AttendanceRecord rows missing a clock-in or clock-out, expressed
+    as a queryset filter equivalent to AttendanceRecord.is_incomplete_punch
+    (Absent/On Leave excluded, since blank times are normal there) so it can
+    be searched/paginated at the DB level instead of filtered in Python."""
+    from .models import AttendanceRecord
+    from datetime import datetime
+
+    base_qs = AttendanceRecord.objects.exclude(status__in=['absent', 'on_leave']).filter(
+        Q(clock_in__isnull=True) | Q(clock_out__isnull=True)
+    )
+
+    if request.GET.get('count_only') == '1':
+        return JsonResponse({'success': True, 'count': base_qs.count()})
+
+    qs = base_qs.select_related('employee', 'employee__department', 'shift')
+
+    search = request.GET.get('search', '').strip()
+    if search:
+        qs = qs.filter(
+            Q(employee__full_name__icontains=search) |
+            Q(employee__employee_id__icontains=search)
+        )
+    date_from = request.GET.get('date_from', '').strip()
+    if date_from:
+        try:
+            qs = qs.filter(date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    date_to = request.GET.get('date_to', '').strip()
+    if date_to:
+        try:
+            qs = qs.filter(date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+
+    qs = qs.order_by('-date', 'employee__full_name')
+
+    try:
+        per_page = int(request.GET.get('per_page', 15))
+    except (ValueError, TypeError):
+        per_page = 15
+    per_page = max(5, min(per_page, 100))
+
+    paginator = Paginator(qs, per_page)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
+    results = []
+    for rec in page_obj:
+        if not rec.clock_in and not rec.clock_out:
+            missing = 'both'
+        elif not rec.clock_in:
+            missing = 'clock_in'
+        else:
+            missing = 'clock_out'
+        results.append({
+            'id': rec.id,
+            'employee_name': rec.employee.full_name,
+            'employee_code': rec.employee.employee_id,
+            'department': rec.employee.department.name if rec.employee.department else '—',
+            'date': str(rec.date),
+            'date_display': rec.date.strftime('%d %b %Y'),
+            'clock_in': rec.clock_in.strftime('%H:%M') if rec.clock_in else '',
+            'clock_out': rec.clock_out.strftime('%H:%M') if rec.clock_out else '',
+            'missing': missing,
+            'status': rec.status,
+            'status_display': rec.get_status_display(),
+            'shift_id': rec.shift_id,
+            'shift_name': rec.shift.name if rec.shift else '—',
+            'is_holiday': rec.is_holiday,
+            'notes': rec.notes,
+        })
+
+    return JsonResponse({
+        'success': True,
+        'count': paginator.count,
+        'page': page_obj.number,
+        'total_pages': paginator.num_pages,
+        'has_next': page_obj.has_next(),
+        'has_previous': page_obj.has_previous(),
+        'results': results,
+    })
 
 
 # ==================== Shifts ====================
@@ -6048,6 +6158,10 @@ def attendance_report(request):
     import csv
     from datetime import datetime, date as dt_date
 
+    # Auto-sync on page load, same as attendance_list, so status (incl. half-day)
+    # reflects the latest policy/threshold instead of stale computed values.
+    _sync_biometric_to_attendance()
+
     # ── Filters from GET ────────────────────────────────────────────────────
     search     = request.GET.get('search', '').strip()
     date_from  = request.GET.get('date_from', '')
@@ -6185,6 +6299,7 @@ def attendance_report(request):
         late=Count('id', filter=Q(status='late')),
         half_day=Count('id', filter=Q(status='half_day')),
         on_leave=Count('id', filter=Q(status='on_leave')),
+        incomplete=Count('id', filter=Q(status='incomplete')),
         total_working_hours=Sum('working_hours'),
         total_overtime=Sum('overtime_hours'),
     )
@@ -6435,7 +6550,7 @@ def attendance_report(request):
         writer.writerow([
             'Code', 'Name', 'Department', 'Total Days', 'Duty Days',
             'Holiday Days', 'Weekend Days', 'Day Off', 'Night Off',
-            'Present Days', 'Present On Holiday', 'Present On Day Off/Night Off/Weekend',
+            'Present Days', 'Half Day', 'Present On Holiday', 'Present On Day Off/Night Off/Weekend',
             'Absent Days', 'Misc Days', 'Leave Days - Paid', 'Leave Days - Unpaid',
             'Worked Hours', 'OT Hours', 'Late In', 'Late Out', 'Early In', 'Early Out',
             'Office Visit', 'Remarks',
@@ -6452,6 +6567,7 @@ def attendance_report(request):
                 row['day_off'],
                 row['night_off'],
                 row['present_days'],
+                row['half_day'],
                 row['present_on_holiday'],
                 row['present_on_off'],
                 row['absent'],
@@ -6566,6 +6682,7 @@ def employee_period_attendance(request):
             'is_late_arrival': rec.is_late_arrival,
             'is_early_departure': rec.is_early_departure,
             'is_holiday': rec.is_holiday,
+            'is_incomplete': rec.is_incomplete_punch,
             'is_night_shift': rec.shift.is_night_shift if rec.shift else False,
             'notes': rec.notes,
         })
@@ -6720,6 +6837,7 @@ def employee_period_attendance(request):
             'day_off': 0,
             'night_off': 0,
             'present_days': present_cnt,
+            'half_day': sc.get('half_day', 0),
             'present_on_holiday': present_on_holiday,
             'present_on_off': present_on_off,
             'absent_days': max(elapsed_duty_days - (present_cnt - present_on_off) - sc.get('on_leave', 0), 0),
@@ -6928,6 +7046,7 @@ def employee_summary_report_ajax(request):
             'day_off': 0,
             'night_off': 0,
             'present_days': present_cnt,
+            'half_day': a.get('half_day', 0),
             'present_on_holiday': a.get('holiday_present', 0),
             'present_on_off': present_on_off,
             'absent': max(elapsed_duty_days - (present_cnt - present_on_off) - a.get('on_leave', 0), 0),

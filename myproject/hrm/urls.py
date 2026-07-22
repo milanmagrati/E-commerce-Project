@@ -112,6 +112,7 @@ urlpatterns = [
     path('attendance/create/', views.attendance_create, name='attendance_create'),
     path('attendance/<int:pk>/update/', views.attendance_update, name='attendance_update'),
     path('attendance/<int:pk>/delete/', views.attendance_delete, name='attendance_delete'),
+    path('attendance/incomplete/', views.incomplete_attendance_list_ajax, name='incomplete_attendance_list_ajax'),
 
     # Shifts
     path('shifts/', views.shift_list, name='shift_list'),

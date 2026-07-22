@@ -173,6 +173,14 @@ class Employee(models.Model):
     def __str__(self):
         return f"{self.full_name} ({self.employee_id})"
 
+    @property
+    def effective_attendance_policy(self):
+        """The employee's own attendance policy, falling back to the active
+        company-wide policy when none is explicitly assigned."""
+        if self.attendance_policy_id:
+            return self.attendance_policy
+        return AttendancePolicy.objects.filter(is_active=True).order_by('id').first()
+
     @staticmethod
     def generate_employee_id():
         last = Employee.objects.order_by('-id').first()
@@ -547,6 +555,7 @@ class AttendanceRecord(models.Model):
         ('late', 'Late'),
         ('half_day', 'Half Day'),
         ('on_leave', 'On Leave'),
+        ('incomplete', 'Incomplete Punch'),
     ]
 
     employee = models.ForeignKey(
@@ -576,6 +585,14 @@ class AttendanceRecord(models.Model):
 
     def __str__(self):
         return f"{self.employee.full_name} - {self.date}"
+
+    @property
+    def is_incomplete_punch(self):
+        """True when clock-in or clock-out is missing but was expected —
+        excludes Absent/On Leave days, where no punch is normal, not an error."""
+        if self.status in ('absent', 'on_leave'):
+            return False
+        return not (self.clock_in and self.clock_out)
 
 
 class AttendanceRegularization(models.Model):

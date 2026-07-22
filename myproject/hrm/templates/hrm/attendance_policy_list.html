@@ -22,9 +22,15 @@
             <h4 class="fw-bold mb-0" style="color:#1a1a2e;">Attendance Policies</h4>
             <small class="text-muted">Manage attendance rules and grace periods</small>
         </div>
-        <button class="btn btn-success px-3" onclick="openAddModal()">
-            <i class="fas fa-plus me-1"></i> Add Attendance Policy
-        </button>
+        <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-outline-warning px-3 position-relative" id="incAttBtn" onclick="openIncompleteModal()">
+                <i class="fas fa-triangle-exclamation me-1"></i> Incomplete Attendance
+                <span class="badge rounded-pill bg-danger" id="incAttBadge" style="display:none;position:absolute;top:-8px;right:-8px;font-size:.68rem;">0</span>
+            </button>
+            <button class="btn btn-success px-3" onclick="openAddModal()">
+                <i class="fas fa-plus me-1"></i> Add Attendance Policy
+            </button>
+        </div>
     </div>
 
     <!-- Search & Filters -->
@@ -172,6 +178,15 @@
                                 <div>
                                     <div class="fw-semibold" style="font-size:.85rem;">{{ policy.early_departure_grace }} minutes</div>
                                     <div class="text-muted" style="font-size:.72rem;">Early Departure Grace</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="policy-detail-item">
+                                <i class="fas fa-hourglass-half" style="color:#1e3a8a;font-size:.8rem;margin-top:2px;flex-shrink:0;"></i>
+                                <div>
+                                    <div class="fw-semibold" style="font-size:.85rem;">≤ {{ policy.half_day_hours }} hrs</div>
+                                    <div class="text-muted" style="font-size:.72rem;">Half Day Threshold</div>
                                 </div>
                             </div>
                         </div>
@@ -328,6 +343,16 @@
                                 <span class="pro-input-suffix">hrs</span>
                             </div>
                         </div>
+                        <div class="col-6">
+                            <label class="pro-label">Half Day Threshold <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap has-suffix">
+                                <i class="fas fa-hourglass-half pro-input-icon" style="color:#1e3a8a;"></i>
+                                <input type="number" class="form-control pro-field" id="policyHalfDayHours" value="4" step="0.5" min="0.5" max="24">
+                                <span class="pro-input-suffix">hrs</span>
+                            </div>
+                            <span class="field-error-text" id="policyHalfDayHoursErr" style="display:none;"></span>
+                            <div class="form-text" style="font-size:0.72rem;">Days worked ≤ this many hours are marked Half Day</div>
+                        </div>
                     </div>
                 </div>
 
@@ -413,6 +438,75 @@
             <div class="modal-footer border-top bg-light px-3 py-2 gap-2">
                 <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="getModal('deleteModal').hide()">Cancel</button>
                 <button type="button" class="btn btn-danger btn-sm flex-fill" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Incomplete Attendance Modal -->
+<div class="modal fade" id="incAttModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="policy-modal-header" style="background:linear-gradient(135deg,#c2410c,#f97316);">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="modal-header-icon"><i class="fas fa-triangle-exclamation"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6">Incomplete Attendance</div>
+                        <div class="text-white-50 small">Records missing a clock-in or clock-out — fix them here</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="getModal('incAttModal').hide()"></button>
+            </div>
+
+            <div class="modal-body p-3">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                    <div class="input-group" style="max-width:220px;">
+                        <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-search fa-sm"></i></span>
+                        <input type="text" class="form-control border-start-0 ps-0" id="incAttSearch" placeholder="Search employee..." style="box-shadow:none;" onkeydown="if(event.key==='Enter'){incAttApplyFilters();}">
+                    </div>
+                    <input type="date" class="form-control" id="incAttDateFrom" style="max-width:158px;" title="From date">
+                    <span class="text-muted small">to</span>
+                    <input type="date" class="form-control" id="incAttDateTo" style="max-width:158px;" title="To date">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="incAttApplyFilters()"><i class="fas fa-filter me-1"></i>Apply</button>
+                    <button class="btn btn-outline-secondary btn-sm" title="Reset filters" onclick="incAttResetFilters()"><i class="fas fa-rotate-left"></i></button>
+                    <div class="ms-auto text-muted small" id="incAttCountLabel"></div>
+                </div>
+
+                <div id="incAttLoading" class="text-center py-5">
+                    <div class="spinner-border text-warning" role="status"></div>
+                </div>
+                <div id="incAttEmpty" class="text-center py-5 text-muted" style="display:none;">
+                    <i class="fas fa-circle-check fa-3x mb-3 d-block" style="color:#a7f3d0;"></i>
+                    No incomplete attendance records found.
+                </div>
+                <div class="table-responsive" id="incAttTableWrap" style="display:none;">
+                    <table class="table table-hover align-middle mb-0" id="incAttTable">
+                        <thead>
+                            <tr class="text-muted text-uppercase" style="letter-spacing:.03em;">
+                                <th>Employee</th>
+                                <th>Department</th>
+                                <th>Date</th>
+                                <th>Clock In</th>
+                                <th>Clock Out</th>
+                                <th>Flag</th>
+                                <th style="width:100px;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="incAttTbody"></tbody>
+                    </table>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mt-3" id="incAttPagination" style="display:none;">
+                    <small class="text-muted" id="incAttPageInfo"></small>
+                    <div class="d-flex gap-1">
+                        <button class="btn btn-sm btn-outline-secondary" id="incAttPrevBtn" onclick="incAttGoPage(-1)"><i class="fas fa-chevron-left"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" id="incAttNextBtn" onclick="incAttGoPage(1)"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button class="btn btn-outline-secondary px-4" onclick="getModal('incAttModal').hide()">Close</button>
             </div>
         </div>
     </div>
@@ -558,11 +652,13 @@
     .page-toast.toast-success .page-toast-icon { background:linear-gradient(135deg,#d1fae5,#a7f3d0); color:#059669; }
     .page-toast.toast-danger  .page-toast-icon { background:linear-gradient(135deg,#fee2e2,#fecaca); color:#dc2626; }
     .page-toast.toast-info    .page-toast-icon { background:linear-gradient(135deg,#dbeafe,#bfdbfe); color:#2563eb; }
+    .page-toast.toast-warning .page-toast-icon { background:linear-gradient(135deg,#ffedd5,#fed7aa); color:#c2410c; }
     .page-toast-body { flex:1; min-width:0; }
     .page-toast-title { font-size:.82rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
     .page-toast.toast-success .page-toast-title { color:#065f46; }
     .page-toast.toast-danger  .page-toast-title { color:#991b1b; }
     .page-toast.toast-info    .page-toast-title { color:#1e40af; }
+    .page-toast.toast-warning .page-toast-title { color:#9a3412; }
     .page-toast-msg { font-size:.85rem; color:#374151; line-height:1.4; }
     .page-toast-close { background:none; border:none; font-size:1.4rem; color:#9ca3af; cursor:pointer; line-height:1; padding:0; margin-left:4px; align-self:flex-start; }
     .page-toast-close:hover { color:#374151; }
@@ -571,6 +667,16 @@
     .page-toast.toast-success .page-toast-progress-bar { background:linear-gradient(90deg,#059669,#34d399); }
     .page-toast.toast-danger  .page-toast-progress-bar { background:linear-gradient(90deg,#dc2626,#f87171); }
     .page-toast.toast-info    .page-toast-progress-bar { background:linear-gradient(90deg,#2563eb,#60a5fa); }
+    .page-toast.toast-warning .page-toast-progress-bar { background:linear-gradient(90deg,#ea580c,#fb923c); }
+    .page-toast.toast-warning { cursor:pointer; }
+    .page-toast.toast-warning .page-toast-inner { border:1.5px solid #fed7aa; }
+
+    /* ── Incomplete Attendance Modal ── */
+    .inc-att-tr { box-shadow: inset 3px 0 0 #f97316; background:#fffaf5; }
+    .inc-att-tr:hover { background:#fff3e6; }
+    .inc-att-fix-row td { border-top:none; }
+    #incAttTable th { font-size:.7rem; font-weight:700; padding-bottom:.6rem; }
+    #incAttTable td { font-size:.85rem; vertical-align:middle; }
     @keyframes toastSlideIn  { from{opacity:0;transform:translateX(60px) scale(.95)} to{opacity:1;transform:translateX(0) scale(1)} }
     @keyframes toastSlideOut { from{opacity:1;transform:translateX(0) scale(1)} to{opacity:0;transform:translateX(60px) scale(.95)} }
     @keyframes toastCountdown { from{width:100%} to{width:0%} }
@@ -592,7 +698,14 @@
     var editingId = null;
     var deletingId = null;
     var toastTimer = null;
-    var draftFields = ['policyName','policyDescription','policyLateMarkAfter','policyEarlyDeparture','policyOvertimeRate','policyWorkHours','policyStatus'];
+    var draftFields = ['policyName','policyDescription','policyLateMarkAfter','policyEarlyDeparture','policyOvertimeRate','policyWorkHours','policyHalfDayHours','policyStatus'];
+    var hadPendingPolicyToast = !!sessionStorage.getItem('policyToast');
+
+    /* ── Incomplete Attendance state ── */
+    var INC_ATT_URL = '{% url "hrm:incomplete_attendance_list_ajax" %}';
+    var incAttPage = 1;
+    var incAttTotalPages = 1;
+    var incAttRecords = {};
 
     /* ── HTML escape helper (prevent XSS) ── */
     function esc(str) {
@@ -611,9 +724,11 @@
     function showPageToast(type, title, msg) {
         var toast = document.getElementById('pageToast');
         toast.className = 'page-toast toast-' + type;
+        toast.onclick = null;
+        toast.style.cursor = 'default';
         document.getElementById('pageToastTitle').textContent = title;
         document.getElementById('pageToastMsg').textContent = msg;
-        var icons = { success:'fa-check-circle', danger:'fa-exclamation-circle', info:'fa-info-circle' };
+        var icons = { success:'fa-check-circle', danger:'fa-exclamation-circle', info:'fa-info-circle', warning:'fa-triangle-exclamation' };
         document.getElementById('pageToastIcon').innerHTML = '<i class="fas ' + (icons[type] || 'fa-check-circle') + '"></i>';
         toast.style.display = 'block';
         toast.style.animation = 'toastSlideIn .4s cubic-bezier(.21,1.02,.73,1)';
@@ -634,6 +749,52 @@
         var t = sessionStorage.getItem('policyToast');
         if (t) { try { var d = JSON.parse(t); showPageToast(d.type, d.title, d.msg); } catch(e) {} sessionStorage.removeItem('policyToast'); }
     })();
+
+    /* ── Incomplete Attendance alert (short-lived, clickable toast) ── */
+    function showIncompleteToast(count) {
+        var toast = document.getElementById('pageToast');
+        toast.className = 'page-toast toast-warning';
+        toast.style.cursor = 'pointer';
+        document.getElementById('pageToastTitle').textContent = 'Incomplete Attendance';
+        document.getElementById('pageToastMsg').textContent = count + ' attendance record' + (count === 1 ? ' has' : 's have')
+            + ' a missing clock-in or clock-out. Click to review and fix.';
+        document.getElementById('pageToastIcon').innerHTML = '<i class="fas fa-triangle-exclamation"></i>';
+        toast.style.display = 'block';
+        toast.style.animation = 'toastSlideIn .4s cubic-bezier(.21,1.02,.73,1)';
+        var bar = document.getElementById('pageToastProgress');
+        bar.style.animation = 'none'; void bar.offsetWidth;
+        bar.style.animation = 'toastCountdown 6s linear forwards';
+        toast.onclick = function(e) {
+            if (e.target.closest('.page-toast-close')) return;
+            dismissToast();
+            openIncompleteModal();
+        };
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function() { dismissToast(); }, 6200);
+    }
+    function updateIncAttBadge(count) {
+        var badge = document.getElementById('incAttBadge');
+        if (!badge) return;
+        if (count > 0) {
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+    function checkIncompleteAttendance(showToastIfFound) {
+        fetch(INC_ATT_URL + '?count_only=1')
+            .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function(data) {
+                if (!data.success) return;
+                updateIncAttBadge(data.count);
+                if (showToastIfFound && data.count > 0) showIncompleteToast(data.count);
+            })
+            .catch(function() {});
+    }
+    /* Delay the auto-alert so it never overlaps a save/delete confirmation
+       toast fired from a redirect on this same page load. */
+    setTimeout(function() { checkIncompleteAttendance(true); }, hadPendingPolicyToast ? 4600 : 900);
 
     /* ── Form Alerts ── */
     function showFormAlert(type, title, msg) {
@@ -680,8 +841,10 @@
         document.getElementById('policyEarlyDeparture').value = '15';
         document.getElementById('policyOvertimeRate').value = '150';
         document.getElementById('policyWorkHours').value = '8';
+        document.getElementById('policyHalfDayHours').value = '4';
         document.getElementById('policyStatus').value = 'true';
         markField('policyName', false);
+        document.getElementById('policyHalfDayHoursErr').style.display = 'none';
         hideFormAlert();
         setSaveLoading(false);
     }
@@ -691,7 +854,7 @@
     var DRAFT_DEFAULTS = {
         policyName: '', policyDescription: '',
         policyLateMarkAfter: '15', policyEarlyDeparture: '15',
-        policyOvertimeRate: '150', policyWorkHours: '8', policyStatus: 'true'
+        policyOvertimeRate: '150', policyWorkHours: '8', policyHalfDayHours: '4', policyStatus: 'true'
     };
     function saveDraft() {
         if (editingId) return;
@@ -778,6 +941,7 @@
                 document.getElementById('policyEarlyDeparture').value = data.early_departure_grace;
                 document.getElementById('policyOvertimeRate').value = data.overtime_rate;
                 document.getElementById('policyWorkHours').value = data.work_hours_per_day;
+                document.getElementById('policyHalfDayHours').value = data.half_day_hours;
                 document.getElementById('policyStatus').value = data.is_active ? 'true' : 'false';
                 markField('policyName', false);
                 hideFormAlert();
@@ -797,6 +961,7 @@
                     + '<dt class="col-6 text-muted small">Early Departure Grace</dt><dd class="col-6 fw-semibold">' + esc(String(data.early_departure_grace)) + ' min</dd>'
                     + '<dt class="col-6 text-muted small">Overtime Rate</dt><dd class="col-6 fw-semibold">Rs. ' + esc(String(data.overtime_rate)) + '/hr</dd>'
                     + '<dt class="col-6 text-muted small">Work Hours/Day</dt><dd class="col-6 fw-semibold">' + esc(String(data.work_hours_per_day)) + ' hrs</dd>'
+                    + '<dt class="col-6 text-muted small">Half Day Threshold</dt><dd class="col-6 fw-semibold">' + esc(String(data.half_day_hours)) + ' hrs</dd>'
                     + '<dt class="col-6 text-muted small">Status</dt><dd class="col-6"><span class="badge ' + (data.is_active ? 'bg-success' : 'bg-danger') + '">' + (data.is_active ? 'Active' : 'Inactive') + '</span></dd>'
                     + (data.description ? '<dt class="col-6 text-muted small">Description</dt><dd class="col-6 small">' + esc(data.description) + '</dd>' : '')
                     + '</dl>';
@@ -815,6 +980,15 @@
             return;
         }
         markField('policyName', false);
+        var halfDayHours = parseFloat(document.getElementById('policyHalfDayHours').value);
+        if (!halfDayHours || halfDayHours <= 0) {
+            document.getElementById('policyHalfDayHoursErr').textContent = 'Half day threshold must be greater than 0.';
+            document.getElementById('policyHalfDayHoursErr').style.display = 'block';
+            showFormAlert('danger', 'Validation Error', 'Please fill in all required fields.');
+            document.getElementById('policyHalfDayHours').focus();
+            return;
+        }
+        document.getElementById('policyHalfDayHoursErr').style.display = 'none';
         setSaveLoading(true);
         var url = editingId
             ? '/hrm/attendance-policies/' + editingId + '/update/'
@@ -829,7 +1003,7 @@
                 early_departure_grace: document.getElementById('policyEarlyDeparture').value,
                 overtime_rate: document.getElementById('policyOvertimeRate').value,
                 work_hours_per_day: document.getElementById('policyWorkHours').value,
-                half_day_hours: '4',
+                half_day_hours: document.getElementById('policyHalfDayHours').value,
                 is_active: document.getElementById('policyStatus').value,
             })
         })
@@ -902,6 +1076,166 @@
         })
         .catch(function() {
             showPageToast('danger', 'Error', 'Failed to toggle status. Please try again.');
+        });
+    }
+
+    /* ══════════════════ Incomplete Attendance Modal ══════════════════ */
+
+    function openIncompleteModal() {
+        incAttPage = 1;
+        document.getElementById('incAttSearch').value = '';
+        document.getElementById('incAttDateFrom').value = '';
+        document.getElementById('incAttDateTo').value = '';
+        getModal('incAttModal').show();
+        incAttFetch();
+    }
+
+    function incAttApplyFilters() {
+        incAttPage = 1;
+        incAttFetch();
+    }
+
+    function incAttResetFilters() {
+        document.getElementById('incAttSearch').value = '';
+        document.getElementById('incAttDateFrom').value = '';
+        document.getElementById('incAttDateTo').value = '';
+        incAttPage = 1;
+        incAttFetch();
+    }
+
+    function incAttGoPage(delta) {
+        var newPage = incAttPage + delta;
+        if (newPage < 1 || newPage > incAttTotalPages) return;
+        incAttPage = newPage;
+        incAttFetch();
+    }
+
+    function incAttFetch() {
+        var params = new URLSearchParams({
+            page: incAttPage,
+            per_page: 15,
+            search: document.getElementById('incAttSearch').value.trim(),
+            date_from: document.getElementById('incAttDateFrom').value,
+            date_to: document.getElementById('incAttDateTo').value
+        });
+        document.getElementById('incAttLoading').style.display = 'block';
+        document.getElementById('incAttTableWrap').style.display = 'none';
+        document.getElementById('incAttEmpty').style.display = 'none';
+        document.getElementById('incAttPagination').style.display = 'none';
+        fetch(INC_ATT_URL + '?' + params.toString())
+            .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function(data) {
+                document.getElementById('incAttLoading').style.display = 'none';
+                if (!data.success) { showPageToast('danger', 'Error', 'Failed to load incomplete attendance.'); return; }
+                incAttTotalPages = data.total_pages || 1;
+                updateIncAttBadge(data.count);
+                document.getElementById('incAttCountLabel').textContent =
+                    data.count + ' incomplete record' + (data.count === 1 ? '' : 's');
+                renderIncAttTable(data.results);
+                if (data.results.length === 0) {
+                    document.getElementById('incAttEmpty').style.display = 'block';
+                    return;
+                }
+                document.getElementById('incAttTableWrap').style.display = 'block';
+                if (data.total_pages > 1) {
+                    document.getElementById('incAttPagination').style.display = 'flex';
+                    document.getElementById('incAttPageInfo').textContent = 'Page ' + data.page + ' of ' + data.total_pages;
+                    document.getElementById('incAttPrevBtn').disabled = !data.has_previous;
+                    document.getElementById('incAttNextBtn').disabled = !data.has_next;
+                }
+            })
+            .catch(function() {
+                document.getElementById('incAttLoading').style.display = 'none';
+                showPageToast('danger', 'Error', 'Could not load incomplete attendance records.');
+            });
+    }
+
+    function renderIncAttTable(records) {
+        incAttRecords = {};
+        var missingLabels = { clock_in: 'Clock In Missing', clock_out: 'Clock Out Missing', both: 'Both Missing' };
+        var missingColors = { clock_in: '#c2410c', clock_out: '#c2410c', both: '#991b1b' };
+        var html = '';
+        records.forEach(function(r) {
+            incAttRecords[r.id] = r;
+            var color = missingColors[r.missing] || '#c2410c';
+            html += '<tr class="inc-att-tr" data-id="' + r.id + '">'
+                + '<td><div class="fw-semibold">' + esc(r.employee_name) + '</div><div class="text-muted" style="font-size:.72rem;">' + esc(r.employee_code) + '</div></td>'
+                + '<td>' + esc(r.department) + '</td>'
+                + '<td>' + esc(r.date_display) + '</td>'
+                + '<td>' + (r.clock_in ? esc(r.clock_in) : '<span class="text-danger fw-semibold" style="font-size:.8rem;">Missing</span>') + '</td>'
+                + '<td>' + (r.clock_out ? esc(r.clock_out) : '<span class="text-danger fw-semibold" style="font-size:.8rem;">Missing</span>') + '</td>'
+                + '<td><span class="badge" style="background:' + color + '1a;color:' + color + ';font-weight:600;font-size:.7rem;border-radius:20px;padding:3px 10px;">'
+                + '<i class="fas fa-triangle-exclamation me-1"></i>' + missingLabels[r.missing] + '</span></td>'
+                + '<td><button class="btn btn-sm btn-outline-warning" onclick="incAttToggleFix(' + r.id + ')"><i class="fas fa-pen fa-sm me-1"></i>Fix</button></td>'
+                + '</tr>'
+                + '<tr class="inc-att-fix-row" id="incAttFixRow' + r.id + '" style="display:none;">'
+                + '<td colspan="7" style="background:#fffbeb;">'
+                + '<div class="d-flex align-items-end gap-3 flex-wrap p-2">'
+                + '<div><label class="small text-muted d-block mb-1">Clock In</label>'
+                + '<input type="time" class="form-control form-control-sm" id="incAttFixIn' + r.id + '" value="' + esc(r.clock_in) + '" style="width:130px;"></div>'
+                + '<div><label class="small text-muted d-block mb-1">Clock Out</label>'
+                + '<input type="time" class="form-control form-control-sm" id="incAttFixOut' + r.id + '" value="' + esc(r.clock_out) + '" style="width:130px;"></div>'
+                + '<button class="btn btn-sm btn-success" onclick="incAttSaveFix(' + r.id + ')" id="incAttFixSaveBtn' + r.id + '"><i class="fas fa-check me-1"></i>Save</button>'
+                + '<button class="btn btn-sm btn-outline-secondary" onclick="incAttToggleFix(' + r.id + ')">Cancel</button>'
+                + '<div class="small text-danger" id="incAttFixErr' + r.id + '" style="display:none;"></div>'
+                + '</div></td></tr>';
+        });
+        document.getElementById('incAttTbody').innerHTML = html;
+    }
+
+    function incAttToggleFix(id) {
+        var row = document.getElementById('incAttFixRow' + id);
+        if (!row) return;
+        var showing = row.style.display !== 'none';
+        document.querySelectorAll('.inc-att-fix-row').forEach(function(r) { r.style.display = 'none'; });
+        row.style.display = showing ? 'none' : 'table-row';
+    }
+
+    function incAttSaveFix(id) {
+        var rec = incAttRecords[id];
+        if (!rec) return;
+        var clockIn = document.getElementById('incAttFixIn' + id).value;
+        var clockOut = document.getElementById('incAttFixOut' + id).value;
+        var errEl = document.getElementById('incAttFixErr' + id);
+        errEl.style.display = 'none';
+        if (!clockIn && !clockOut) {
+            errEl.textContent = 'Provide at least one time.';
+            errEl.style.display = 'block';
+            return;
+        }
+        var btn = document.getElementById('incAttFixSaveBtn' + id);
+        var originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        fetch('/hrm/attendance/' + id + '/update/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                clock_in: clockIn,
+                clock_out: clockOut,
+                shift: rec.shift_id || '',
+                is_holiday: rec.is_holiday ? 'true' : 'false',
+                notes: rec.notes || '',
+                status: rec.status
+            })
+        })
+        .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                showPageToast('success', 'Attendance Fixed', rec.employee_name + '\'s record for ' + rec.date_display + ' has been updated.');
+                incAttFetch();
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                errEl.textContent = data.error || 'Failed to save.';
+                errEl.style.display = 'block';
+            }
+        })
+        .catch(function() {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+            errEl.textContent = 'Network error. Please try again.';
+            errEl.style.display = 'block';
         });
     }
 
