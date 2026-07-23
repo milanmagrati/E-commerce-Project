@@ -2956,10 +2956,99 @@ def attendance_list(request):
     return render(request, 'hrm/attendance_list.html', context)
 
 
+def _compute_attendance_metrics(clock_in, clock_out, shift, policy, status):
+    """Derive status/working_hours/overtime_hours/is_late/is_early from clock
+    in/out strings ('HH:MM'-prefixed) against a shift+policy.
+
+    Shared by attendance create/update and regularization approval so a
+    requested clock time actually produces the same derived state everywhere
+    instead of drifting out of sync (see: regularization approval used to
+    only flip the request's own status and never touched the linked
+    AttendanceRecord at all)."""
+    from datetime import datetime, timedelta
+
+    working_hours = 0
+    overtime_hours = 0
+    is_late = False
+    is_early = False
+
+    if clock_in:
+        cin = datetime.strptime(clock_in[:5], '%H:%M')
+
+        if shift:
+            late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
+            shift_start = datetime.combine(datetime.today(), shift.start_time)
+            cin_full = datetime.combine(datetime.today(), cin.time())
+
+            if cin_full > shift_start + timedelta(minutes=late_grace):
+                is_late = True
+
+            # Auto-set status only if it was left as default 'present'
+            if status == 'present' and is_late:
+                status = 'late'
+
+    if clock_out:
+        cout = datetime.strptime(clock_out[:5], '%H:%M')
+        cout_full = datetime.combine(datetime.today(), cout.time())
+
+        if shift and shift.end_time:
+            shift_start = datetime.combine(datetime.today(), shift.start_time)
+            shift_end = datetime.combine(datetime.today(), shift.end_time)
+            early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
+
+            # Handle night shifts spanning midnight
+            if shift_end <= shift_start:
+                shift_end += timedelta(days=1)
+                if clock_in:
+                    cin_full_tmp = datetime.combine(datetime.today(), datetime.strptime(clock_in[:5], '%H:%M').time())
+                    if cout_full < cin_full_tmp:
+                        cout_full += timedelta(days=1)
+                else:
+                    if cout_full < shift_start:
+                        cout_full += timedelta(days=1)
+
+            if cout_full < shift_end - timedelta(minutes=early_grace):
+                is_early = True
+
+    if clock_in and clock_out:
+        cin = datetime.strptime(clock_in[:5], '%H:%M')
+        cout = datetime.strptime(clock_out[:5], '%H:%M')
+        diff = (cout - cin).total_seconds() / 3600
+        if diff < 0:
+            diff += 24
+        working_hours = round(diff, 2)
+
+        if shift:
+            # Subtract break duration to get effective working hours
+            break_hrs = (shift.break_duration or 0) / 60.0
+            if working_hours > break_hrs:
+                working_hours = round(working_hours - break_hrs, 2)
+            shift_hours = float(shift.working_hours)
+            if working_hours > shift_hours:
+                overtime_hours = round(working_hours - shift_hours, 2)
+
+        # Auto-set status only if it was left as default 'present' or 'late'
+        if status in ['present', 'late']:
+            if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
+                status = 'half_day'
+
+    # Flag incomplete punches (only one of clock-in/clock-out given)
+    # instead of leaving the day reported as Present/Late/Half Day.
+    if not (clock_in and clock_out) and status in ('present', 'late', 'half_day'):
+        status = 'incomplete'
+
+    return {
+        'status': status,
+        'working_hours': working_hours,
+        'overtime_hours': overtime_hours,
+        'is_late': is_late,
+        'is_early': is_early,
+    }
+
+
 @login_required
 def attendance_create(request):
     from .models import AttendanceRecord, Employee, Shift, AttendancePolicy
-    from datetime import datetime, timedelta
 
     if request.method == 'POST':
         employee_id = request.POST.get('employee')
@@ -2973,7 +3062,7 @@ def attendance_create(request):
 
         if not employee_id or not date_val:
             return JsonResponse({'success': False, 'error': 'Employee and date are required.'})
-            
+
         if not clock_in and not clock_out:
             return JsonResponse({'success': False, 'error': 'Either Clock In or Clock Out time is required.'})
 
@@ -2988,75 +3077,7 @@ def attendance_create(request):
         shift = Shift.objects.filter(pk=shift_id).first() if shift_id else employee.shift
         policy = employee.effective_attendance_policy
 
-        working_hours = 0
-        overtime_hours = 0
-        is_late = False
-        is_early = False
-
-        if clock_in:
-            cin = datetime.strptime(clock_in[:5], '%H:%M')
-            
-            if shift:
-                late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
-                shift_start = datetime.combine(datetime.today(), shift.start_time)
-                cin_full = datetime.combine(datetime.today(), cin.time())
-
-                if cin_full > shift_start + timedelta(minutes=late_grace):
-                    is_late = True
-                
-                # Auto-set status only if user left it as default 'present'
-                if status == 'present' and is_late:
-                    status = 'late'
-
-        if clock_out:
-            cout = datetime.strptime(clock_out[:5], '%H:%M')
-            cout_full = datetime.combine(datetime.today(), cout.time())
-
-            if shift and shift.end_time:
-                shift_start = datetime.combine(datetime.today(), shift.start_time)
-                shift_end = datetime.combine(datetime.today(), shift.end_time)
-                early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
-
-                # Handle night shifts spanning midnight
-                if shift_end <= shift_start:
-                    shift_end += timedelta(days=1)
-                    if clock_in:
-                        cin_full_tmp = datetime.combine(datetime.today(), datetime.strptime(clock_in[:5], '%H:%M').time())
-                        if cout_full < cin_full_tmp:
-                            cout_full += timedelta(days=1)
-                    else:
-                        if cout_full < shift_start:
-                            cout_full += timedelta(days=1)
-                
-                if cout_full < shift_end - timedelta(minutes=early_grace):
-                    is_early = True
-
-        if clock_in and clock_out:
-            cin = datetime.strptime(clock_in[:5], '%H:%M')
-            cout = datetime.strptime(clock_out[:5], '%H:%M')
-            diff = (cout - cin).total_seconds() / 3600
-            if diff < 0:
-                diff += 24
-            working_hours = round(diff, 2)
-
-            if shift:
-                # Subtract break duration to get effective working hours
-                break_hrs = (shift.break_duration or 0) / 60.0
-                if working_hours > break_hrs:
-                    working_hours = round(working_hours - break_hrs, 2)
-                shift_hours = float(shift.working_hours)
-                if working_hours > shift_hours:
-                    overtime_hours = round(working_hours - shift_hours, 2)
-
-            # Auto-set status only if user left it as default 'present' or it was set to 'late'
-            if status in ['present', 'late']:
-                if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
-                    status = 'half_day'
-
-        # Flag incomplete punches (only one of clock-in/clock-out given)
-        # instead of leaving the day reported as Present/Late/Half Day.
-        if not (clock_in and clock_out) and status in ('present', 'late', 'half_day'):
-            status = 'incomplete'
+        metrics = _compute_attendance_metrics(clock_in, clock_out, shift, policy, status)
 
         record = AttendanceRecord.objects.create(
             employee=employee,
@@ -3064,13 +3085,13 @@ def attendance_create(request):
             clock_in=clock_in if clock_in else None,
             clock_out=clock_out if clock_out else None,
             shift=shift,
-            status=status,
-            working_hours=working_hours,
-            overtime_hours=overtime_hours,
+            status=metrics['status'],
+            working_hours=metrics['working_hours'],
+            overtime_hours=metrics['overtime_hours'],
             is_holiday=is_holiday,
             notes=notes,
-            is_early_departure=is_early,
-            is_late_arrival=is_late,
+            is_early_departure=metrics['is_early'],
+            is_late_arrival=metrics['is_late'],
         )
         return JsonResponse({'success': True, 'id': record.id})
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
@@ -3079,7 +3100,6 @@ def attendance_create(request):
 @login_required
 def attendance_update(request, pk):
     from .models import AttendanceRecord, Shift
-    from datetime import datetime, timedelta
 
     record = get_object_or_404(AttendanceRecord.objects.select_related('employee__shift', 'employee__attendance_policy'), pk=pk)
 
@@ -3103,86 +3123,18 @@ def attendance_update(request, pk):
         shift = Shift.objects.filter(pk=shift_id).first() if shift_id else (record.shift or record.employee.shift)
         policy = record.employee.effective_attendance_policy
 
-        working_hours = 0
-        overtime_hours = 0
-        is_late = False
-        is_early = False
-
-        if clock_in:
-            cin = datetime.strptime(clock_in[:5], '%H:%M')
-            
-            if shift:
-                late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
-                shift_start = datetime.combine(datetime.today(), shift.start_time)
-                cin_full = datetime.combine(datetime.today(), cin.time())
-
-                if cin_full > shift_start + timedelta(minutes=late_grace):
-                    is_late = True
-                
-                # Auto-set status only if user left it as default 'present'
-                if status == 'present' and is_late:
-                    status = 'late'
-
-        if clock_out:
-            cout = datetime.strptime(clock_out[:5], '%H:%M')
-            cout_full = datetime.combine(datetime.today(), cout.time())
-
-            if shift and shift.end_time:
-                shift_start = datetime.combine(datetime.today(), shift.start_time)
-                shift_end = datetime.combine(datetime.today(), shift.end_time)
-                early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
-
-                # Handle night shifts spanning midnight
-                if shift_end <= shift_start:
-                    shift_end += timedelta(days=1)
-                    if clock_in:
-                        cin_full_tmp = datetime.combine(datetime.today(), datetime.strptime(clock_in[:5], '%H:%M').time())
-                        if cout_full < cin_full_tmp:
-                            cout_full += timedelta(days=1)
-                    else:
-                        if cout_full < shift_start:
-                            cout_full += timedelta(days=1)
-                
-                if cout_full < shift_end - timedelta(minutes=early_grace):
-                    is_early = True
-
-        if clock_in and clock_out:
-            cin = datetime.strptime(clock_in[:5], '%H:%M')
-            cout = datetime.strptime(clock_out[:5], '%H:%M')
-            diff = (cout - cin).total_seconds() / 3600
-            if diff < 0:
-                diff += 24
-            working_hours = round(diff, 2)
-
-            if shift:
-                # Subtract break duration to get effective working hours
-                break_hrs = (shift.break_duration or 0) / 60.0
-                if working_hours > break_hrs:
-                    working_hours = round(working_hours - break_hrs, 2)
-                shift_hours = float(shift.working_hours)
-                if working_hours > shift_hours:
-                    overtime_hours = round(working_hours - shift_hours, 2)
-
-            # Auto-set status only if user left it as default 'present' or it was set to 'late'
-            if status in ['present', 'late']:
-                if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
-                    status = 'half_day'
-
-        # Flag incomplete punches (only one of clock-in/clock-out given)
-        # instead of leaving the day reported as Present/Late/Half Day.
-        if not (clock_in and clock_out) and status in ('present', 'late', 'half_day'):
-            status = 'incomplete'
+        metrics = _compute_attendance_metrics(clock_in, clock_out, shift, policy, status)
 
         record.clock_in = clock_in if clock_in else None
         record.clock_out = clock_out if clock_out else None
         record.shift = shift
-        record.status = status
-        record.working_hours = working_hours
-        record.overtime_hours = overtime_hours
+        record.status = metrics['status']
+        record.working_hours = metrics['working_hours']
+        record.overtime_hours = metrics['overtime_hours']
         record.is_holiday = is_holiday
         record.notes = notes
-        record.is_early_departure = is_early
-        record.is_late_arrival = is_late
+        record.is_early_departure = metrics['is_early']
+        record.is_late_arrival = metrics['is_late']
         record.save()
         return JsonResponse({'success': True})
 
@@ -3819,14 +3771,68 @@ def attendance_regularization_delete(request, pk):
 
 @login_required
 def attendance_regularization_update_status(request, pk):
-    from .models import AttendanceRegularization, Employee
+    from .models import AttendanceRegularization, AttendanceRecord
+    from django.db import transaction
+
     reg = get_object_or_404(AttendanceRegularization, pk=pk)
     if request.method == 'POST':
         new_status = request.POST.get('status', '')
         if new_status not in ['pending', 'approved', 'rejected']:
             return JsonResponse({'success': False, 'error': 'Invalid status.'})
-        reg.status = new_status
-        reg.save()
+
+        approver = None
+        try:
+            approver = request.user.employee_profile
+        except Exception:
+            pass
+
+        with transaction.atomic():
+            if new_status == 'approved':
+                record = reg.attendance_record
+                if record is None:
+                    # No linked record yet (e.g. a wholly missing day) — attach
+                    # to an existing record for that employee/date if one
+                    # exists, otherwise create one, so approval always lands
+                    # somewhere the attendance report will actually read from.
+                    record, _ = AttendanceRecord.objects.select_related(
+                        'employee__shift', 'employee__attendance_policy'
+                    ).get_or_create(employee=reg.employee, date=reg.date)
+                    reg.attendance_record = record
+                else:
+                    record = AttendanceRecord.objects.select_related(
+                        'employee__shift', 'employee__attendance_policy'
+                    ).get(pk=record.pk)
+
+                # Requested clock_in/out override the existing record's value;
+                # a blank request field means "keep what's already there".
+                new_clock_in = reg.clock_in or record.clock_in
+                new_clock_out = reg.clock_out or record.clock_out
+                clock_in_str = new_clock_in.strftime('%H:%M') if new_clock_in else None
+                clock_out_str = new_clock_out.strftime('%H:%M') if new_clock_out else None
+
+                status = record.status
+                # Both times now present — clear a stale 'incomplete' marker
+                # so the late/half-day auto-logic can recompute it properly.
+                if status == 'incomplete' and clock_in_str and clock_out_str:
+                    status = 'present'
+
+                shift = record.shift or record.employee.shift
+                policy = record.employee.effective_attendance_policy
+                metrics = _compute_attendance_metrics(clock_in_str, clock_out_str, shift, policy, status)
+
+                record.clock_in = new_clock_in
+                record.clock_out = new_clock_out
+                record.status = metrics['status']
+                record.working_hours = metrics['working_hours']
+                record.overtime_hours = metrics['overtime_hours']
+                record.is_early_departure = metrics['is_early']
+                record.is_late_arrival = metrics['is_late']
+                record.save()
+
+            reg.status = new_status
+            reg.approved_by = approver
+            reg.save()
+
         return JsonResponse({'success': True, 'status': reg.status})
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
 
