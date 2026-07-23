@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
@@ -8,6 +9,8 @@ from django.http import JsonResponse, HttpResponse
 from django.db.models import Q, Sum, Count
 from django.core.paginator import Paginator
 from django.contrib import messages
+
+hrm_logger = logging.getLogger('hrm')
 
 from .models import (
     Branch, Department, Designation, DocumentType, Employee, EmployeeDocument, 
@@ -3326,110 +3329,141 @@ def shift_list(request):
 def shift_create(request):
     from .models import Shift
     if request.method == 'POST':
-        name = request.POST.get('name', '').strip()
-        start_time = request.POST.get('start_time', '').strip()
-        end_time = request.POST.get('end_time', '').strip()
-        description = request.POST.get('description', '').strip()
-        break_duration = request.POST.get('break_duration', '60').strip() or '60'
-        break_start_time = request.POST.get('break_start_time', '').strip() or None
-        break_end_time = request.POST.get('break_end_time', '').strip() or None
-        grace_period = request.POST.get('grace_period', '15').strip() or '15'
-        is_night_shift = request.POST.get('is_night_shift') == 'on'
-        is_active = request.POST.get('status', 'active') == 'active'
-        working_hours = request.POST.get('working_hours', '8.0').strip() or '8.0'
-        half_day_hours = request.POST.get('half_day_hours', '4.0').strip() or '4.0'
-        if not name or not start_time:
-            return JsonResponse({'success': False, 'error': 'Name and start time are required.'})
         try:
-            half_day_hours = float(half_day_hours)
-        except (ValueError, TypeError):
-            return JsonResponse({'success': False, 'error': 'Invalid half day threshold provided.'})
-        if half_day_hours <= 0:
-            return JsonResponse({'success': False, 'error': 'Half day threshold must be a positive number.'})
-        shift = Shift.objects.create(
-            name=name,
-            start_time=start_time,
-            end_time=end_time if end_time else None,
-            description=description,
-            break_duration=int(break_duration),
-            break_start_time=break_start_time,
-            break_end_time=break_end_time,
-            grace_period=int(grace_period),
-            is_night_shift=is_night_shift,
-            is_active=is_active,
-            working_hours=float(working_hours),
-            half_day_hours=half_day_hours,
-        )
-        return JsonResponse({'success': True, 'id': shift.id, 'name': shift.name})
+            name = request.POST.get('name', '').strip()
+            start_time = request.POST.get('start_time', '').strip()
+            end_time = request.POST.get('end_time', '').strip()
+            description = request.POST.get('description', '').strip()
+            break_duration = request.POST.get('break_duration', '60').strip() or '60'
+            break_start_time = request.POST.get('break_start_time', '').strip() or None
+            break_end_time = request.POST.get('break_end_time', '').strip() or None
+            grace_period = request.POST.get('grace_period', '15').strip() or '15'
+            is_night_shift = request.POST.get('is_night_shift') == 'on'
+            is_active = request.POST.get('status', 'active') == 'active'
+            working_hours = request.POST.get('working_hours', '8.0').strip() or '8.0'
+            half_day_hours = request.POST.get('half_day_hours', '4.0').strip() or '4.0'
+            if not name or not start_time:
+                return JsonResponse({'success': False, 'error': 'Name and start time are required.'})
+            try:
+                half_day_hours = float(half_day_hours)
+            except (ValueError, TypeError):
+                return JsonResponse({'success': False, 'error': 'Invalid half day threshold provided.'})
+            if half_day_hours <= 0:
+                return JsonResponse({'success': False, 'error': 'Half day threshold must be a positive number.'})
+            shift = Shift.objects.create(
+                name=name,
+                start_time=start_time,
+                end_time=end_time if end_time else None,
+                description=description,
+                break_duration=int(break_duration),
+                break_start_time=break_start_time,
+                break_end_time=break_end_time,
+                grace_period=int(grace_period),
+                is_night_shift=is_night_shift,
+                is_active=is_active,
+                working_hours=float(working_hours),
+                half_day_hours=half_day_hours,
+            )
+            return JsonResponse({'success': True, 'id': shift.id, 'name': shift.name})
+        except Exception as e:
+            hrm_logger.exception('shift_create failed')
+            return JsonResponse({'success': False, 'error': 'Could not save shift: ' + str(e)}, status=500)
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
 
 
 @login_required
 def shift_update(request, pk):
     from .models import Shift
-    shift = get_object_or_404(Shift, pk=pk)
+    try:
+        shift = Shift.objects.get(pk=pk)
+    except Shift.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'This shift no longer exists. It may have been deleted.'}, status=404)
+
     if request.method == 'POST':
-        name = request.POST.get('name', '').strip()
-        start_time = request.POST.get('start_time', '').strip()
-        end_time = request.POST.get('end_time', '').strip()
-        description = request.POST.get('description', '').strip()
-        if not name or not start_time:
-            return JsonResponse({'success': False, 'error': 'Name and start time are required.'})
         try:
-            half_day_hours = float(request.POST.get('half_day_hours', '4.0') or '4.0')
-        except (ValueError, TypeError):
-            return JsonResponse({'success': False, 'error': 'Invalid half day threshold provided.'})
-        if half_day_hours <= 0:
-            return JsonResponse({'success': False, 'error': 'Half day threshold must be a positive number.'})
-        shift.name = name
-        shift.start_time = start_time
-        shift.end_time = end_time if end_time else None
-        shift.description = description
-        shift.break_duration = int(request.POST.get('break_duration', '60') or '60')
-        shift.break_start_time = request.POST.get('break_start_time', '').strip() or None
-        shift.break_end_time = request.POST.get('break_end_time', '').strip() or None
-        shift.grace_period = int(request.POST.get('grace_period', '15') or '15')
-        shift.is_night_shift = request.POST.get('is_night_shift') == 'on'
-        shift.is_active = request.POST.get('status', 'active') == 'active'
-        shift.working_hours = float(request.POST.get('working_hours', '8.0') or '8.0')
-        shift.half_day_hours = half_day_hours
-        shift.save()
-        return JsonResponse({'success': True})
-    data = {
-        'id': shift.id,
-        'name': shift.name,
-        'start_time': shift.start_time.strftime('%H:%M'),
-        'end_time': shift.end_time.strftime('%H:%M') if shift.end_time else '',
-        'description': shift.description,
-        'break_duration': shift.break_duration,
-        'break_start_time': shift.break_start_time.strftime('%H:%M') if shift.break_start_time else '',
-        'break_end_time': shift.break_end_time.strftime('%H:%M') if shift.break_end_time else '',
-        'grace_period': shift.grace_period,
-        'is_night_shift': shift.is_night_shift,
-        'is_active': shift.is_active,
-        'working_hours': str(shift.working_hours),
-        'half_day_hours': str(shift.half_day_hours),
-    }
-    return JsonResponse(data)
+            name = request.POST.get('name', '').strip()
+            start_time = request.POST.get('start_time', '').strip()
+            end_time = request.POST.get('end_time', '').strip()
+            description = request.POST.get('description', '').strip()
+            if not name or not start_time:
+                return JsonResponse({'success': False, 'error': 'Name and start time are required.'})
+            try:
+                half_day_hours = float(request.POST.get('half_day_hours', '4.0') or '4.0')
+            except (ValueError, TypeError):
+                return JsonResponse({'success': False, 'error': 'Invalid half day threshold provided.'})
+            if half_day_hours <= 0:
+                return JsonResponse({'success': False, 'error': 'Half day threshold must be a positive number.'})
+            shift.name = name
+            shift.start_time = start_time
+            shift.end_time = end_time if end_time else None
+            shift.description = description
+            shift.break_duration = int(request.POST.get('break_duration', '60') or '60')
+            shift.break_start_time = request.POST.get('break_start_time', '').strip() or None
+            shift.break_end_time = request.POST.get('break_end_time', '').strip() or None
+            shift.grace_period = int(request.POST.get('grace_period', '15') or '15')
+            shift.is_night_shift = request.POST.get('is_night_shift') == 'on'
+            shift.is_active = request.POST.get('status', 'active') == 'active'
+            shift.working_hours = float(request.POST.get('working_hours', '8.0') or '8.0')
+            shift.half_day_hours = half_day_hours
+            shift.save()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            hrm_logger.exception('shift_update POST failed for shift %s', pk)
+            return JsonResponse({'success': False, 'error': 'Could not save shift: ' + str(e)}, status=500)
+
+    try:
+        data = {
+            'id': shift.id,
+            'name': shift.name,
+            'start_time': shift.start_time.strftime('%H:%M'),
+            'end_time': shift.end_time.strftime('%H:%M') if shift.end_time else '',
+            'description': shift.description,
+            'break_duration': shift.break_duration,
+            'break_start_time': shift.break_start_time.strftime('%H:%M') if shift.break_start_time else '',
+            'break_end_time': shift.break_end_time.strftime('%H:%M') if shift.break_end_time else '',
+            'grace_period': shift.grace_period,
+            'is_night_shift': shift.is_night_shift,
+            'is_active': shift.is_active,
+            'working_hours': str(shift.working_hours),
+            'half_day_hours': str(shift.half_day_hours),
+        }
+        return JsonResponse(data)
+    except Exception as e:
+        hrm_logger.exception('shift_update GET failed for shift %s', pk)
+        return JsonResponse({'success': False, 'error': 'Could not load shift: ' + str(e)}, status=500)
 
 
 @login_required
 def shift_delete(request, pk):
     from .models import Shift
-    shift = get_object_or_404(Shift, pk=pk)
+    try:
+        shift = Shift.objects.get(pk=pk)
+    except Shift.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'This shift no longer exists.'}, status=404)
     if request.method == 'POST':
-        shift.delete()
-        return JsonResponse({'success': True})
+        try:
+            shift.delete()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            hrm_logger.exception('shift_delete failed for shift %s', pk)
+            return JsonResponse({'success': False, 'error': 'Could not delete shift: ' + str(e)}, status=500)
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
 
 
 @login_required
 def shift_toggle_status(request, pk):
     from .models import Shift
-    shift = get_object_or_404(Shift, pk=pk)
-    shift.is_active = not shift.is_active
-    shift.save()
-    return JsonResponse({'success': True, 'is_active': shift.is_active})
+    try:
+        shift = Shift.objects.get(pk=pk)
+    except Shift.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'This shift no longer exists.'}, status=404)
+    try:
+        shift.is_active = not shift.is_active
+        shift.save()
+        return JsonResponse({'success': True, 'is_active': shift.is_active})
+    except Exception as e:
+        hrm_logger.exception('shift_toggle_status failed for shift %s', pk)
+        return JsonResponse({'success': False, 'error': 'Could not update shift: ' + str(e)}, status=500)
 
 
 @login_required
