@@ -577,6 +577,11 @@ class AttendanceRecord(models.Model):
     notes = models.TextField(blank=True, default='')
     is_early_departure = models.BooleanField(default=False)
     is_late_arrival = models.BooleanField(default=False)
+    is_regularized = models.BooleanField(
+        default=False,
+        help_text='Set when clock in/out was manually corrected (regularization approval or '
+                   'Fix Attendance). The biometric auto-sync will not overwrite these fields.'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -2808,6 +2808,12 @@ def _sync_biometric_to_attendance(recent_days=None):
             employee=employee, date=punch_date
         ).first()
 
+        # A manually regularized/corrected record (approved regularization or
+        # "Fix Attendance") is an explicit human decision — never let the raw
+        # biometric punches silently overwrite it back on the next page load.
+        if existing_record and existing_record.is_regularized:
+            continue
+
         if existing_record and existing_record.shift:
             shift = existing_record.shift
         elif employee.shift_id:
@@ -3142,6 +3148,9 @@ def attendance_update(request, pk):
         record.notes = notes
         record.is_early_departure = metrics['is_early']
         record.is_late_arrival = metrics['is_late']
+        # A manual "Fix Attendance" edit is an explicit human correction —
+        # the biometric auto-sync must not overwrite it on the next page load.
+        record.is_regularized = True
         record.save()
         return JsonResponse({'success': True})
 
@@ -3660,11 +3669,17 @@ def attendance_regularization_list(request):
     if status_filter:
         qs = qs.filter(status=status_filter)
 
-    all_regs = AttendanceRegularization.objects.all()
-    total_requests = all_regs.count()
-    pending_count = all_regs.filter(status='pending').count()
-    approved_count = all_regs.filter(status='approved').count()
-    rejected_count = all_regs.filter(status='rejected').count()
+    from django.db.models import Count, Q as _Q
+    counts = AttendanceRegularization.objects.aggregate(
+        total=Count('id'),
+        pending=Count('id', filter=_Q(status='pending')),
+        approved=Count('id', filter=_Q(status='approved')),
+        rejected=Count('id', filter=_Q(status='rejected')),
+    )
+    total_requests = counts['total']
+    pending_count = counts['pending']
+    approved_count = counts['approved']
+    rejected_count = counts['rejected']
     approval_rate = round((approved_count / total_requests * 100), 1) if total_requests > 0 else 0
 
     paginator = Paginator(qs, per_page)
@@ -3733,6 +3748,7 @@ def attendance_regularization_create(request):
 @login_required
 def attendance_regularization_update(request, pk):
     from .models import AttendanceRegularization, AttendanceRecord
+    from django.db import transaction
 
     reg = get_object_or_404(AttendanceRegularization, pk=pk)
 
@@ -3748,14 +3764,29 @@ def attendance_regularization_update(request, pk):
 
         record = AttendanceRecord.objects.filter(pk=record_id).first() if record_id else reg.attendance_record
 
-        reg.clock_in = clock_in if clock_in else None
-        reg.clock_out = clock_out if clock_out else None
-        reg.reason = reason
-        reg.is_draft = is_draft
-        reg.attendance_record = record
-        if record:
-            reg.date = record.date
-        reg.save()
+        with transaction.atomic():
+            reg.clock_in = clock_in if clock_in else None
+            reg.clock_out = clock_out if clock_out else None
+            reg.reason = reason
+            reg.is_draft = is_draft
+            reg.attendance_record = record
+            if record:
+                reg.date = record.date
+            reg.save()
+
+            # This request was already approved — its requested times just
+            # changed, so the linked AttendanceRecord (and whatever the
+            # attendance report shows) has to be re-synced to match, not left
+            # holding whatever was saved at the original approval time.
+            if reg.status == 'approved':
+                # clock_in/clock_out were just assigned from raw POST strings
+                # above — a TimeField only coerces those to real time objects
+                # on load from the DB, so re-fetch before treating them as
+                # such (_apply_regularization_to_record calls .strftime() on
+                # them).
+                reg.refresh_from_db()
+                _apply_regularization_to_record(reg)
+
         return JsonResponse({'success': True})
 
     # GET — return JSON for edit modal
@@ -3787,9 +3818,67 @@ def attendance_regularization_delete(request, pk):
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
 
 
+def _apply_regularization_to_record(reg):
+    """Push an (approved) regularization's requested clock_in/out onto its
+    linked AttendanceRecord, recomputing status/hours the same way manual
+    attendance edits do.
+
+    Shared by the approve action and the edit action — an edit made to an
+    already-approved request has to re-land on the record too, otherwise the
+    attendance report keeps showing whatever was saved at the original
+    approval time no matter what the request is edited to afterwards."""
+    from .models import AttendanceRecord
+
+    record = reg.attendance_record
+    if record is None:
+        # No linked record yet (e.g. a wholly missing day) — attach to an
+        # existing record for that employee/date if one exists, otherwise
+        # create one, so approval always lands somewhere the attendance
+        # report will actually read from.
+        record, _ = AttendanceRecord.objects.select_related(
+            'employee__shift', 'employee__attendance_policy'
+        ).get_or_create(employee=reg.employee, date=reg.date)
+        reg.attendance_record = record
+        reg.save(update_fields=['attendance_record'])
+    else:
+        record = AttendanceRecord.objects.select_related(
+            'employee__shift', 'employee__attendance_policy'
+        ).get(pk=record.pk)
+
+    # Requested clock_in/out override the existing record's value;
+    # a blank request field means "keep what's already there".
+    new_clock_in = reg.clock_in or record.clock_in
+    new_clock_out = reg.clock_out or record.clock_out
+    clock_in_str = new_clock_in.strftime('%H:%M') if new_clock_in else None
+    clock_out_str = new_clock_out.strftime('%H:%M') if new_clock_out else None
+
+    status = record.status
+    # Both times now present — clear a stale 'incomplete' marker
+    # so the late/half-day auto-logic can recompute it properly.
+    if status == 'incomplete' and clock_in_str and clock_out_str:
+        status = 'present'
+
+    shift = record.shift or record.employee.shift
+    policy = record.employee.effective_attendance_policy
+    metrics = _compute_attendance_metrics(clock_in_str, clock_out_str, shift, policy, status)
+
+    record.clock_in = new_clock_in
+    record.clock_out = new_clock_out
+    record.status = metrics['status']
+    record.working_hours = metrics['working_hours']
+    record.overtime_hours = metrics['overtime_hours']
+    record.is_early_departure = metrics['is_early']
+    record.is_late_arrival = metrics['is_late']
+    # Mark as manually regularized so the biometric auto-sync
+    # (attendance_list/report page load) never silently overwrites
+    # this approved correction back to raw punch data.
+    record.is_regularized = True
+    record.save()
+
+
 @login_required
 def attendance_regularization_update_status(request, pk):
-    from .models import AttendanceRegularization, AttendanceRecord
+    from .models import AttendanceRegularization
     from django.db import transaction
 
     reg = get_object_or_404(AttendanceRegularization, pk=pk)
@@ -3806,46 +3895,7 @@ def attendance_regularization_update_status(request, pk):
 
         with transaction.atomic():
             if new_status == 'approved':
-                record = reg.attendance_record
-                if record is None:
-                    # No linked record yet (e.g. a wholly missing day) — attach
-                    # to an existing record for that employee/date if one
-                    # exists, otherwise create one, so approval always lands
-                    # somewhere the attendance report will actually read from.
-                    record, _ = AttendanceRecord.objects.select_related(
-                        'employee__shift', 'employee__attendance_policy'
-                    ).get_or_create(employee=reg.employee, date=reg.date)
-                    reg.attendance_record = record
-                else:
-                    record = AttendanceRecord.objects.select_related(
-                        'employee__shift', 'employee__attendance_policy'
-                    ).get(pk=record.pk)
-
-                # Requested clock_in/out override the existing record's value;
-                # a blank request field means "keep what's already there".
-                new_clock_in = reg.clock_in or record.clock_in
-                new_clock_out = reg.clock_out or record.clock_out
-                clock_in_str = new_clock_in.strftime('%H:%M') if new_clock_in else None
-                clock_out_str = new_clock_out.strftime('%H:%M') if new_clock_out else None
-
-                status = record.status
-                # Both times now present — clear a stale 'incomplete' marker
-                # so the late/half-day auto-logic can recompute it properly.
-                if status == 'incomplete' and clock_in_str and clock_out_str:
-                    status = 'present'
-
-                shift = record.shift or record.employee.shift
-                policy = record.employee.effective_attendance_policy
-                metrics = _compute_attendance_metrics(clock_in_str, clock_out_str, shift, policy, status)
-
-                record.clock_in = new_clock_in
-                record.clock_out = new_clock_out
-                record.status = metrics['status']
-                record.working_hours = metrics['working_hours']
-                record.overtime_hours = metrics['overtime_hours']
-                record.is_early_departure = metrics['is_early']
-                record.is_late_arrival = metrics['is_late']
-                record.save()
+                _apply_regularization_to_record(reg)
 
             reg.status = new_status
             reg.approved_by = approver
