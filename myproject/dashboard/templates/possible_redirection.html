@@ -358,20 +358,19 @@
                                     {% endif %}
                                     <button type="button" class="btn-close btn-sm float-end" onclick="toggleMatches({{ entry.ncm_order_id }})" style="font-size:0.6rem;"></button>
                                 </div>
-                                {% if entry.local_order_product_names %}
+                                {% if entry.rtv_product_ref_display %}
                                 <div class="mb-2 px-1 d-flex align-items-start gap-2 flex-wrap">
-                                    <span class="text-muted small fw-semibold text-nowrap"><i class="fas fa-box me-1 text-warning"></i>RTV Order Products:</span>
+                                    <span class="text-muted small fw-semibold text-nowrap"><i class="fas fa-box me-1 text-warning"></i>RTV Product Ref:</span>
                                     <span class="small text-dark">
-                                        {% for pname in entry.local_order_product_names %}
+                                        {% for pname in entry.rtv_product_ref_display %}
                                             <span class="badge bg-warning text-dark me-1">{{ pname }}</span>
                                         {% endfor %}
                                     </span>
+                                    {% if entry.rtv_ref_source_is_local %}
                                     <small class="text-muted fst-italic">(matched from linked local order)</small>
-                                </div>
-                                {% elif entry.rtv.product_description %}
-                                <div class="mb-2 px-1">
-                                    <span class="text-muted small fw-semibold"><i class="fas fa-box me-1 text-warning"></i>RTV Product Description:</span>
-                                    <span class="small ms-1 text-dark">{{ entry.rtv.product_description }}</span>
+                                    {% else %}
+                                    <small class="text-muted fst-italic">(from NCM package description)</small>
+                                    {% endif %}
                                 </div>
                                 {% endif %}
                                 <div class="table-responsive">
@@ -383,7 +382,7 @@
                                                 <th class="hide-sm">Phone</th>
                                                 <th class="hide-md">Branch</th>
                                                 <th class="hide-sm">Order Products</th>
-                                                {% if entry.local_order_product_names or entry.rtv.product_description %}<th class="hide-md">RTV Product Ref</th>{% endif %}
+                                                {% if entry.rtv_product_ref_display %}<th class="hide-md">RTV Product Ref</th>{% endif %}
                                                 <th class="hide-sm">Status</th>
                                                 <th class="text-end">Total</th>
                                                 <th class="text-center">Use Customer</th>
@@ -403,15 +402,11 @@
                                                         <div class="text-truncate" style="max-width:220px;" title="{{ item.product_name }} ×{{ item.quantity }}">{{ item.product_name }} &times;{{ item.quantity }}</div>
                                                     {% endfor %}
                                                 </td>
-                                                {% if entry.local_order_product_names or entry.rtv.product_description %}
+                                                {% if entry.rtv_product_ref_display %}
                                                 <td class="small hide-md" style="max-width:160px;">
-                                                    {% if entry.local_order_product_names %}
-                                                        {% for pname in entry.local_order_product_names %}
-                                                            <div class="text-truncate text-dark" title="{{ pname }}">{{ pname }}</div>
-                                                        {% endfor %}
-                                                    {% else %}
-                                                        <span class="text-muted" title="{{ entry.rtv.product_description }}">{{ entry.rtv.product_description|truncatechars:60 }}</span>
-                                                    {% endif %}
+                                                    {% for pname in entry.rtv_product_ref_display %}
+                                                        <div class="text-truncate text-dark" title="{{ pname }}">{{ pname }}</div>
+                                                    {% endfor %}
                                                 </td>
                                                 {% endif %}
                                                 <td class="hide-sm"><span class="badge bg-success">{{ match.order_status }}</span></td>

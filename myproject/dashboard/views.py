@@ -12,6 +12,7 @@ from django.http import JsonResponse, HttpResponse, Http404, HttpResponseRedirec
 from django.core.paginator import Paginator
 from datetime import datetime, timedelta
 import pytz
+import re
 import requests
 from .models import (Product, Order, OrderItem, Category, Customer,
                      ProductVariation, ProductImage, ProductVariantOption,
@@ -4608,70 +4609,90 @@ def return_orders_list(request):
     return render(request, 'return_orders.html', context)
 
 
-@login_required
-@permission_required('can_view_orders')
-def possible_redirection_list(request):
-    """Display only NCM RTV orders that have at least one matching confirmed local order
-    (same NCM destination branch + product keyword match in product_description).
+# ── RTV/order product-name normalisation & matching helpers (module-level so they're
+# unit-testable without a request/DB round-trip) ──
+_RTV_RE_QTY_PREFIX = re.compile(r'^\s*(\d+)\s*[xX×*]\s*')
+_RTV_RE_QTY_SUFFIX = re.compile(r'\s*[xX×*]\s*(\d+)\s*$')
+_RTV_RE_NON_ALNUM = re.compile(r'[^a-z0-9\s]')
+_RTV_RE_MULTI_SPACE = re.compile(r'\s+')
+_RTV_RE_TRAILING_MORE = re.compile(r'\s+and\s+\d+\s+more\s*$', re.IGNORECASE)
+_RTV_RE_SPLIT_TOKENS = re.compile(r'[,;|\n\r]+')
 
-    Matching is computed before stats/pagination so the entire page — counts,
-    table, sub-rows — reflects only actionable redirection candidates.
+
+def _normalize_product_name(raw):
+    """Lowercase, strip quantity prefix/suffix, remove punctuation, collapse whitespace."""
+    if not raw:
+        return '', 0
+    s = raw.lower().strip()
+    qty = 0
+
+    m_pref = _RTV_RE_QTY_PREFIX.match(s)
+    if m_pref:
+        qty = int(m_pref.group(1))
+        s = s[m_pref.end():]
+    else:
+        m_suff = _RTV_RE_QTY_SUFFIX.search(s)
+        if m_suff:
+            qty = int(m_suff.group(1))
+            s = s[:m_suff.start()]
+
+    s = _RTV_RE_NON_ALNUM.sub(' ', s)
+    s = _RTV_RE_MULTI_SPACE.sub(' ', s).strip()
+    return s, qty
+
+
+def _parse_rtv_description_items(raw):
+    """Split a package-description string (e.g. "2x Hair Growth Serum, 1x Vitamin C
+    and 3 more") into one entry per product: {'raw': original token, 'name':
+    normalised name, 'qty': parsed quantity (0 if absent)}.
+
+    NCM package descriptions are generated comma-joined (see
+    ncm/views.py::_get_package_description), so a single RTV can reference
+    multiple products — treating the whole string as one product silently
+    dropped all but the first item from matching/quantity checks.
     """
-    # pyrefly: ignore [missing-import]
-    from django.db.models import Q, CharField
-    # pyrefly: ignore [missing-import]
-    from django.db.models.functions import Cast
-    from django.db import models as db_models
-    import re
+    if not raw:
+        return []
+    s = _RTV_RE_TRAILING_MORE.sub('', raw.strip())
+    tokens = _RTV_RE_SPLIT_TOKENS.split(s)
+    items = []
+    for tok in tokens:
+        tok = tok.strip()
+        if not tok:
+            continue
+        name, qty = _normalize_product_name(tok)
+        if name:
+            items.append({'raw': tok, 'name': name, 'qty': qty})
+    return items
 
-    # ── Product-name normalisation & matching helpers ──
-    _RE_QTY_PREFIX = re.compile(r'^\s*(\d+)\s*[xX×*]\s*')
-    _RE_QTY_SUFFIX = re.compile(r'\s*[xX×*]\s*(\d+)\s*$')
-    _RE_NON_ALNUM = re.compile(r'[^a-z0-9\s]')
-    _RE_MULTI_SPACE = re.compile(r'\s+')
 
-    def _normalize_product_name(raw):
-        """Lowercase, strip quantity prefix/suffix, remove punctuation, collapse whitespace."""
-        if not raw:
-            return '', 0
-        s = raw.lower().strip()
-        qty = 0
-        
-        m_pref = _RE_QTY_PREFIX.match(s)
-        if m_pref:
-            qty = int(m_pref.group(1))
-            s = s[m_pref.end():]
-        else:
-            m_suff = _RE_QTY_SUFFIX.search(s)
-            if m_suff:
-                qty = int(m_suff.group(1))
-                s = s[:m_suff.start()]
+def _product_matches(rtv_desc_raw, order_items):
+    """Return True if the RTV product_description matches at least one order item
+    by normalised product name AND matching quantity.
 
-        s = _RE_NON_ALNUM.sub(' ', s)
-        s = _RE_MULTI_SPACE.sub(' ', s).strip()
-        return s, qty
+    A match requires the product name to align (exact or containment) AND,
+    whenever the RTV description carries explicit quantity info, the quantity
+    to be identical. A name-only match with a differing quantity is NOT
+    reported as matched — the physically-returned package's quantity would
+    not match what the candidate order needs, so redirecting it would ship
+    the wrong quantity to the new customer.
+    """
+    rtv_products = _parse_rtv_description_items(rtv_desc_raw)
+    if not rtv_products:
+        return False  # empty/unparseable description → caller handles branch-only
 
-    def _product_matches(rtv_desc_raw, order_items):
-        """Return True if the RTV product_description matches at least one order item
-        by normalised product name AND quantity.
+    for item in order_items:
+        if not item.product_name:
+            continue
+        item_norm, _item_qty_from_name = _normalize_product_name(item.product_name)
+        if not item_norm:
+            continue
+        item_qty = item.quantity or 1  # actual order item quantity
 
-        Matching rules (in order of strictness):
-        1. Exact normalised name match + quantity match (if both have qty info)
-        2. Exact normalised name match (qty not available on RTV side)
-        3. Containment match: RTV desc contains order item name or vice-versa,
-           with quantity check when available
-        """
-        rtv_norm, rtv_qty = _normalize_product_name(rtv_desc_raw)
-        if not rtv_norm:
-            return False  # empty description → caller handles branch-only
-
-        for item in order_items:
-            if not item.product_name:
+        for rp in rtv_products:
+            rtv_norm, rtv_qty = rp['name'], rp['qty']
+            if not rtv_norm:
                 continue
-            item_norm, item_qty_from_name = _normalize_product_name(item.product_name)
-            if not item_norm:
-                continue
-            item_qty = item.quantity or 1  # actual order item quantity
 
             # Name comparison: exact normalised OR containment (min 4 chars to avoid false positives)
             exact_name = (rtv_norm == item_norm)
@@ -4686,15 +4707,28 @@ def possible_redirection_list(request):
             if rtv_qty > 0:
                 if rtv_qty == item_qty:
                     return True
-                # Qty mismatch — still allow if names are an exact match
-                # (different qty may be intentional by staff)
-                if exact_name:
-                    return True
-            else:
-                # No qty in RTV description — name match is sufficient
-                return True
+                # Name matches but quantity differs — not a real match.
+                continue
+            # No qty in RTV description — name match is sufficient
+            return True
 
-        return False
+    return False
+
+
+@login_required
+@permission_required('can_view_orders')
+def possible_redirection_list(request):
+    """Display only NCM RTV orders that have at least one matching confirmed local order
+    (same NCM destination branch + product keyword match in product_description).
+
+    Matching is computed before stats/pagination so the entire page — counts,
+    table, sub-rows — reflects only actionable redirection candidates.
+    """
+    # pyrefly: ignore [missing-import]
+    from django.db.models import Q, CharField
+    # pyrefly: ignore [missing-import]
+    from django.db.models.functions import Cast
+    from django.db import models as db_models
 
     # Base queryset: all active RTV records, ordered like ncm_rtvs page
     # Exclude RTVs whose NCM last_status shows the package has already been
@@ -4803,9 +4837,14 @@ def possible_redirection_list(request):
             _names = []
             for _it in _lo.items.all():
                 if _it.product_name:
-                    _label = _it.product_name.strip()
-                    if _it.quantity and _it.quantity > 1:
-                        _label += f' ×{_it.quantity}'
+                    # Always append the quantity suffix — even for qty=1 — so
+                    # _normalize_product_name() can parse a real quantity back out.
+                    # Omitting it for singular quantities (as before) made the RTV
+                    # side look quantity-less, which made _product_matches() treat
+                    # a 1-unit return as matching ANY quantity on the candidate
+                    # order (e.g. a returned qty-1 item wrongly "matched" a new
+                    # order needing qty-2 of the same product).
+                    _label = f'{_it.product_name.strip()} ×{_it.quantity or 1}'
                     _names.append(_label)
             if _names:
                 _rtv_local_item_names[_lo.ncm_order_id] = _names
@@ -4957,6 +4996,21 @@ def possible_redirection_list(request):
         entry['local_order_product_names'] = _local_names
 
         _match_sources = [_desc] if _desc else _local_names
+
+        # RTV Product Ref display must reflect the SAME source used for matching
+        # above (previously the template showed local_order_product_names whenever
+        # a linked order existed, even though matching had already preferred the
+        # NCM product_description — the two could silently diverge and show a
+        # different quantity than what was actually compared).
+        if _desc:
+            _parsed_desc_items = _parse_rtv_description_items(_desc)
+            entry['rtv_product_ref_display'] = (
+                [_it['raw'] for _it in _parsed_desc_items] if _parsed_desc_items else [_desc]
+            )
+            entry['rtv_ref_source_is_local'] = False
+        else:
+            entry['rtv_product_ref_display'] = _local_names
+            entry['rtv_ref_source_is_local'] = True
 
         if not _match_sources:
             # No product info anywhere — branch-only match is NOT sufficient.
@@ -19871,7 +19925,16 @@ def ncm_rtvs_sync(request):
                             delivery_charge=order.get('delivery_charge', ''),
                             tracking_id=order.get('trackid', order.get('tracking_id', '')),
                             last_status=order.get('last_delivery_status', ''),
-                            product_description=order.get('description', ''),
+                            # Match the fallback key chain used for the existing-RTV
+                            # update path below — the list endpoint's field name for
+                            # package description isn't consistent, so relying on
+                            # only 'description' here left product_description empty
+                            # for every newly-created RTV (forcing the page to always
+                            # fall back to the linked local order for matching/display).
+                            product_description=(
+                                order.get('description') or order.get('productdescription') or
+                                order.get('product_description') or order.get('item_description') or ''
+                            ),
                         ))
                         existing_ids.add(oid)
                         ncm_date = order.get('created_date', '')
