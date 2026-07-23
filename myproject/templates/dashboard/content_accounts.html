@@ -5,14 +5,23 @@
 
 {% block content %}
 <div class="container-fluid py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
         <h4 class="mb-0"><i class="fas fa-file-alt text-primary me-2"></i> Content Management</h4>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <div class="content-search-wrap">
+                <i class="fas fa-search content-search-icon"></i>
+                <input type="text" id="contentSearchInput" class="form-control content-search-input" placeholder="Search by account ID, name, email, phone, managed by, type or status...">
+                <button type="button" id="contentSearchClear" class="content-search-clear" title="Clear search" style="display:none;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
             <a href="{% url 'content_accounts_trash' %}" class="btn btn-sm btn-outline-danger">
                 <i class="fas fa-trash"></i> Trash
             </a>
         </div>
     </div>
+
+    <div id="contentSearchStatus" class="text-muted small mb-2" style="display:none;"></div>
 
     <!-- Table -->
     <div class="card border-0 shadow-lg" style="border-radius: 12px; overflow: hidden;">
@@ -68,15 +77,15 @@
                         </tr>
 
                         {% for account in accounts %}
-                        <tr id="account-row-{{ account.id }}" class="draggable-row">
+                        <tr id="account-row-{{ account.id }}" class="draggable-row" data-search="{{ account.account_id|lower }} {{ account.user_name|lower }} {{ account.gmail|lower }} {{ account.phone|lower }} {{ account.managed_by|lower }} {{ account.account_type|lower }} {{ account.status|lower }}">
                             <td class="text-center sn-column" style="cursor: grab;"><i class="fas fa-grip-vertical text-muted me-2" style="cursor: grab;"></i>{{ forloop.counter }}</td>
-                            <td>{{ account.account_id }}</td>
-                            <td>{{ account.user_name }}</td>
-                            <td>{{ account.gmail }}</td>
-                            <td>{{ account.phone }}</td>
+                            <td class="searchable-cell">{{ account.account_id }}</td>
+                            <td class="searchable-cell">{{ account.user_name }}</td>
+                            <td class="searchable-cell">{{ account.gmail }}</td>
+                            <td class="searchable-cell">{{ account.phone }}</td>
                             <td>{{ account.password }}</td>
-                            <td>{{ account.managed_by }}</td>
-                            <td>{{ account.account_type }}</td>
+                            <td class="searchable-cell">{{ account.managed_by }}</td>
+                            <td class="searchable-cell">{{ account.account_type }}</td>
                             <td>
                                 <span class="badge {% if account.status == 'Active' %}bg-success{% elif account.status == 'new' %}bg-info{% elif account.status == 'Blocked' %}bg-danger{% else %}bg-secondary{% endif %} rounded-pill px-2 py-1">
                                     {{ account.status }}
@@ -92,6 +101,11 @@
                             </td>
                         </tr>
                         {% endfor %}
+                        <tr id="noSearchResultsRow" style="display:none;">
+                            <td colspan="10" class="text-center text-muted py-4">
+                                <i class="fas fa-search me-2"></i>No accounts match your search.
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -241,6 +255,55 @@
         opacity: 0.4;
         background-color: #f8fafc;
     }
+
+    /* Search bar */
+    .content-search-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+        width: 340px;
+        max-width: 60vw;
+    }
+    .content-search-icon {
+        position: absolute;
+        left: 12px;
+        color: #94a3b8;
+        font-size: 0.85rem;
+        pointer-events: none;
+    }
+    .content-search-input {
+        padding-left: 34px;
+        padding-right: 30px;
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+        font-size: 0.875rem;
+        height: 34px;
+        transition: all 0.2s;
+    }
+    .content-search-input:focus {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+    .content-search-clear {
+        position: absolute;
+        right: 8px;
+        background: none;
+        border: none;
+        color: #94a3b8;
+        font-size: 0.8rem;
+        padding: 4px;
+        line-height: 1;
+        cursor: pointer;
+    }
+    .content-search-clear:hover {
+        color: #475569;
+    }
+    mark.content-highlight {
+        background-color: #fde68a;
+        color: inherit;
+        padding: 0 1px;
+        border-radius: 2px;
+    }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
@@ -284,16 +347,101 @@
         return `<span class="badge ${badgeClass} rounded-pill px-2 py-1">${status}</span>`;
     }
     
-    // Auto-update S.N. column
+    // Auto-update S.N. column (only counts currently visible rows, so numbering stays correct while a search filter is active)
     function updateSerialNumbers() {
-        const rows = document.querySelectorAll('#accountsTableBody tr:not(.content-entry-bg)');
-        rows.forEach((row, index) => {
+        const rows = document.querySelectorAll('#accountsTableBody tr.draggable-row');
+        let visibleIndex = 0;
+        rows.forEach((row) => {
             const snCell = row.querySelector('.sn-column');
-            if (snCell) {
-                snCell.innerHTML = `<i class="fas fa-grip-vertical text-muted me-2" style="cursor: grab;"></i>${index + 1}`;
+            if (!snCell || row.style.display === 'none') return;
+            visibleIndex++;
+            snCell.innerHTML = `<i class="fas fa-grip-vertical text-muted me-2" style="cursor: grab;"></i>${visibleIndex}`;
+        });
+    }
+
+    // ---- Smart search ----
+    function buildSearchIndex(...parts) {
+        return parts.join(' ').toLowerCase();
+    }
+
+    function captureOriginalText(row) {
+        row.querySelectorAll('.searchable-cell').forEach(cell => {
+            if (cell.dataset.original === undefined) {
+                cell.dataset.original = cell.textContent;
             }
         });
     }
+
+    function highlightMatch(text, query) {
+        if (!text) return '';
+        const escapedText = escapeHTML(text);
+        if (!query) return escapedText;
+        const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp('(' + escapedQuery + ')', 'ig');
+        return escapedText.replace(regex, '<mark class="content-highlight">$1</mark>');
+    }
+
+    let searchDebounceTimer = null;
+    function applySearchFilter() {
+        const input = document.getElementById('contentSearchInput');
+        const clearBtn = document.getElementById('contentSearchClear');
+        const statusEl = document.getElementById('contentSearchStatus');
+        const noResultsRow = document.getElementById('noSearchResultsRow');
+        const query = input.value.trim().toLowerCase();
+
+        clearBtn.style.display = query ? 'inline-flex' : 'none';
+
+        const rows = Array.from(document.querySelectorAll('#accountsTableBody tr.draggable-row'));
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            captureOriginalText(row);
+            const haystack = row.dataset.search || '';
+            const isMatch = !query || haystack.includes(query);
+            row.style.display = isMatch ? '' : 'none';
+            if (isMatch) visibleCount++;
+
+            row.querySelectorAll('.searchable-cell').forEach(cell => {
+                const original = cell.dataset.original || '';
+                cell.innerHTML = (query && isMatch) ? highlightMatch(original, query) : escapeHTML(original);
+            });
+        });
+
+        if (query) {
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = `<i class="fas fa-filter me-1"></i>${visibleCount} of ${rows.length} account${rows.length !== 1 ? 's' : ''} found`;
+            noResultsRow.style.display = visibleCount === 0 ? '' : 'none';
+        } else {
+            statusEl.style.display = 'none';
+            noResultsRow.style.display = 'none';
+        }
+
+        updateSerialNumbers();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('contentSearchInput');
+        const clearBtn = document.getElementById('contentSearchClear');
+
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(applySearchFilter, 150);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                searchInput.value = '';
+                applySearchFilter();
+                searchInput.blur();
+            }
+        });
+
+        clearBtn.addEventListener('click', function() {
+            searchInput.value = '';
+            applySearchFilter();
+            searchInput.focus();
+        });
+    });
 
     // Initialize SortableJS
     document.addEventListener('DOMContentLoaded', function() {
@@ -380,16 +528,17 @@
             
             if (result.success) {
                 // Insert directly after the entryRow
+                const searchIndex = buildSearchIndex(result.data.account_id, result.data.user_name, result.data.gmail, result.data.phone, result.data.managed_by, result.data.account_type, result.data.status);
                 const newRow = `
-                    <tr id="account-row-${result.data.id}" class="draggable-row">
+                    <tr id="account-row-${result.data.id}" class="draggable-row" data-search="${escapeHTML(searchIndex)}">
                         <td class="text-center sn-column" style="cursor: grab;"><i class="fas fa-grip-vertical text-muted me-2" style="cursor: grab;"></i>1</td>
-                        <td>${escapeHTML(result.data.account_id)}</td>
-                        <td>${escapeHTML(result.data.user_name)}</td>
-                        <td>${escapeHTML(result.data.gmail)}</td>
-                        <td>${escapeHTML(result.data.phone)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.account_id)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.user_name)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.gmail)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.phone)}</td>
                         <td>${escapeHTML(result.data.password)}</td>
-                        <td>${escapeHTML(result.data.managed_by)}</td>
-                        <td>${escapeHTML(result.data.account_type)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.managed_by)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.account_type)}</td>
                         <td>${getStatusBadge(result.data.status)}</td>
                         <td class="text-center" style="white-space: nowrap;">
                             <button class="action-btn border text-primary me-1" onclick="openEditModal(${result.data.id}, '${escapeJsString(result.data.account_id)}', '${escapeJsString(result.data.user_name)}', '${escapeJsString(result.data.gmail)}', '${escapeJsString(result.data.phone)}', '${escapeJsString(result.data.password)}', '${escapeJsString(result.data.managed_by)}', '${escapeJsString(result.data.account_type)}', '${escapeJsString(result.data.status)}')" title="Edit">
@@ -402,8 +551,8 @@
                     </tr>
                 `;
                 document.getElementById('entryRow').insertAdjacentHTML('afterend', newRow);
-                updateSerialNumbers();
-                
+                applySearchFilter();
+
                 // Clear inputs
                 document.getElementById('newAccountId').value = '';
                 document.getElementById('newUserName').value = '';
@@ -470,15 +619,17 @@
                 const row = document.getElementById(`account-row-${id}`);
                 if (row) {
                     const sn = row.querySelector('.sn-column').innerHTML; // Keep SN
+                    const searchIndex = buildSearchIndex(result.data.account_id, result.data.user_name, result.data.gmail, result.data.phone, result.data.managed_by, result.data.account_type, result.data.status);
+                    row.dataset.search = searchIndex;
                     row.innerHTML = `
                         <td class="text-center sn-column" style="cursor: grab;">${sn}</td>
-                        <td>${escapeHTML(result.data.account_id)}</td>
-                        <td>${escapeHTML(result.data.user_name)}</td>
-                        <td>${escapeHTML(result.data.gmail)}</td>
-                        <td>${escapeHTML(result.data.phone)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.account_id)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.user_name)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.gmail)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.phone)}</td>
                         <td>${escapeHTML(result.data.password)}</td>
-                        <td>${escapeHTML(result.data.managed_by)}</td>
-                        <td>${escapeHTML(result.data.account_type)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.managed_by)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.account_type)}</td>
                         <td>${getStatusBadge(result.data.status)}</td>
                         <td class="text-center" style="white-space: nowrap;">
                             <button class="action-btn border text-primary me-1" onclick="openEditModal(${result.data.id}, '${escapeJsString(result.data.account_id)}', '${escapeJsString(result.data.user_name)}', '${escapeJsString(result.data.gmail)}', '${escapeJsString(result.data.phone)}', '${escapeJsString(result.data.password)}', '${escapeJsString(result.data.managed_by)}', '${escapeJsString(result.data.account_type)}', '${escapeJsString(result.data.status)}')" title="Edit">
@@ -489,6 +640,7 @@
                             </button>
                         </td>
                     `;
+                    applySearchFilter();
                 }
                 editModalInstance.hide();
                 alertify.success('Account updated successfully');
@@ -517,7 +669,7 @@
             
             if (res.success) {
                 document.getElementById(`account-row-${id}`).remove();
-                updateSerialNumbers();
+                applySearchFilter();
                 alertify.success('Account moved to trash successfully');
             } else {
                 alertify.error(res.error || 'Failed to move account to trash');
