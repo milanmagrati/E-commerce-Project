@@ -30,36 +30,73 @@ class NCMService:
             'Content-Type': 'application/json'
         }
     
-    def _make_request(self, method: str, url: str, data: Dict = None, params: Dict = None, timeout: int = None):
-        """Helper to make API requests"""
+    def _make_request(self, method: str, url: str, data: Dict = None, params: Dict = None, timeout: int = None, _retry: bool = True):
+        """Helper to make API requests.
+
+        Transient failures (timeouts, connection resets, 5xx responses, or a
+        non-JSON 200 body from a flaky upstream/proxy) are retried exactly
+        once before giving up - but ONLY for GET requests. POST requests
+        (create_order, return_order, create_exchange_order, comments, ...)
+        are never auto-retried: if a POST times out or drops its response
+        after NCM already processed it, retrying would risk creating a
+        duplicate order/comment/return. Callers that need a POST retried
+        must do so explicitly and idempotently at the call site.
+        """
         if timeout is None:
             try:
                 from dashboard.models import APISettings
                 timeout = APISettings.get_settings().ncm_api_timeout
             except Exception:
                 timeout = 30
+
+        method = method.upper()
+        can_retry = _retry and method == 'GET'
+
         try:
-            if method.upper() == 'GET':
+            if method == 'GET':
                 response = requests.get(url, headers=self.headers, params=params, timeout=timeout)
-            elif method.upper() == 'POST':
+            elif method == 'POST':
                 response = requests.post(url, headers=self.headers, json=data, timeout=timeout)
-            
+
             response.raise_for_status()
-            return {'success': True, 'data': response.json(), 'status_code': response.status_code}
-        
+            try:
+                return {'success': True, 'data': response.json(), 'status_code': response.status_code}
+            except ValueError:
+                # 200 OK but body isn't valid JSON (e.g. a proxy/gateway hiccup)
+                if can_retry:
+                    logger.warning(f"NCM API returned non-JSON body, retrying once: {url}")
+                    return self._make_request(method, url, data, params, timeout, _retry=False)
+                logger.error(f"NCM API returned non-JSON body: {url}")
+                return {'success': False, 'error': 'Invalid response from NCM API', 'status_code': response.status_code}
+
         except requests.exceptions.Timeout:
+            if can_retry:
+                logger.warning(f"NCM API timeout, retrying once: {url}")
+                return self._make_request(method, url, data, params, timeout, _retry=False)
             logger.error(f"NCM API timeout: {url}")
             return {'success': False, 'error': 'Request timeout'}
-        
+
+        except requests.exceptions.ConnectionError:
+            if can_retry:
+                logger.warning(f"NCM API connection error, retrying once: {url}")
+                return self._make_request(method, url, data, params, timeout, _retry=False)
+            logger.error(f"NCM API connection error: {url}")
+            return {'success': False, 'error': 'Connection error'}
+
         except requests.exceptions.RequestException as e:
             status_code = getattr(getattr(e, 'response', None), 'status_code', None)
-            
+
             # Log 404s as a debug/warning instead of a full error, since they are expected for missing orders
             if status_code == 404:
                 logger.warning(f"NCM API 404 Not Found: {url}")
             else:
                 logger.error(f"NCM API error: {str(e)}")
-                
+
+            # Retry once on server-side errors (5xx) - these are typically transient
+            if can_retry and status_code and status_code >= 500:
+                logger.warning(f"NCM API {status_code} error, retrying once: {url}")
+                return self._make_request(method, url, data, params, timeout, _retry=False)
+
             error_msg = str(e)
             if hasattr(e, 'response') and e.response is not None:
                 try:
@@ -532,6 +569,14 @@ class NCMService:
             return ""
         return ''.join(filter(str.isdigit, str(phone)))
     
+    #: NCM statuses that mean an order is somewhere in the return-to-vendor
+    #: pipeline. Kept as a set (not just dict values) so the substring
+    #: fallback below can recognize branch-qualified variants NCM sends from
+    #: its tracking/history endpoints, e.g. "Arrived at RETURN (TINKUNE)" or
+    #: "Dispatched to RETURN (TINKUNE)", which don't exactly match any fixed
+    #: key.
+    RETURN_STATUS_KEYWORDS = ('return', 'rtv', 'sent to vendor')
+
     @staticmethod
     def map_ncm_status_to_system(ncm_status: str) -> str:
         """Map NCM status to system status.
@@ -554,8 +599,20 @@ class NCMService:
             'Returned': 'returned',
             'Return Initiated': 'return_initiated',
             'Return Approved': 'return_approved',
+            'Order Marked Return': 'return',
+            'Sent to Vendor': 'return',
+            'Returned to Warehouse': 'return',
         }
-        return mapping.get(ncm_status, 'processing')
+        if ncm_status in mapping:
+            return mapping[ncm_status]
+
+        # Fallback: any status mentioning a return/RTV keyword (including
+        # branch-qualified variants NCM doesn't send a fixed key for) is
+        # part of the return-to-vendor pipeline.
+        if ncm_status and any(kw in ncm_status.lower() for kw in NCMService.RETURN_STATUS_KEYWORDS):
+            return 'return'
+
+        return 'processing'
 
     @staticmethod
     def parse_vendor_return(value) -> bool:
@@ -569,23 +626,26 @@ class NCMService:
 
     @staticmethod
     def resolve_delivered_status(status_entry: dict) -> tuple:
-        """Resolve the actual order status and payment status when NCM reports 'Delivered'.
+        """Resolve the actual order status and payment status from an NCM status entry.
 
         The NCM API returns status='Delivered' for both successful deliveries and
-        vendor returns. The vendor_return flag differentiates them.
+        vendor returns (RTV) - the vendor_return flag differentiates them. That
+        flag can also accompany other statuses throughout the RTV pipeline
+        (e.g. "Sent to Vendor", "Order Marked Return"), so whenever it's true
+        the order is treated as returned regardless of the raw NCM status text.
 
         Returns:
             (system_status, payment_status) tuple
         """
         ncm_status = status_entry.get('status') or status_entry.get('Status', '')
         vendor_return_raw = status_entry.get('vendor_return', status_entry.get('vendorReturn', 'False'))
+        vendor_return = NCMService.parse_vendor_return(vendor_return_raw)
+
+        if vendor_return:
+            return ('return', None)  # Returned to vendor, no payment update
 
         if ncm_status == 'Delivered':
-            vendor_return = NCMService.parse_vendor_return(vendor_return_raw)
-            if vendor_return:
-                return ('return', None)  # Returned to vendor, no payment update
-            else:
-                return ('delivered', 'paid')  # Successful delivery, mark as paid
+            return ('delivered', 'paid')  # Successful delivery, mark as paid
 
         # For non-Delivered statuses, use standard mapping
         system_status = NCMService.map_ncm_status_to_system(ncm_status)

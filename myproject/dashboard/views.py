@@ -11033,6 +11033,33 @@ def returns_list(request):
     return render(request, 'returns/list.html', context)
 
 
+def _mark_order_as_returned(order, user, rma_number):
+    """Set an order's status to 'return' and log it on the order's own
+    activity timeline (order_detail's right-side Activity Log), so a scan
+    from the Return Management page shows up the same way an NCM RTV
+    webhook/sync does. No-op for cancelled orders or orders already marked
+    'return', to avoid clobbering a cancellation or logging a redundant entry.
+    """
+    if order.status in ('cancelled', 'return'):
+        return
+
+    from services.ncm_service import NCMService
+    old_status = order.status
+    update_fields = NCMService.sync_order_status_fields(order, 'return')
+    update_fields.append('updated_at')
+    order.save(update_fields=list(dict.fromkeys(update_fields)))
+
+    OrderActivityLog.objects.create(
+        order=order,
+        action_type='status_changed',
+        user=user,
+        field_name='status',
+        old_value=old_status,
+        new_value='return',
+        description=f'Order marked as Return via Return Management (RMA {rma_number})'
+    )
+
+
 @login_required
 @permission_required('can_create_returns')
 def return_create(request):
@@ -11146,6 +11173,11 @@ def return_create(request):
                     action_type='created',
                     description=f'Return request {return_request.rma_number} created for order {order.order_number}'
                 )
+
+                # Mark the order itself as returned so order_detail/order_list
+                # reflect the scan immediately, and record it in the order's
+                # own activity log (not just the return request's log).
+                _mark_order_as_returned(order, request.user, return_request.rma_number)
 
                 messages.success(request, f'Return request {return_request.rma_number} created successfully!')
                 return redirect('returns_list')
@@ -11302,6 +11334,11 @@ def bulk_return_create(request):
                         action_type='created',
                         description=f'Return request {return_request.rma_number} created via bulk return for order {order.order_number}'
                     )
+
+                    # Mark the order itself as returned so order_detail/order_list
+                    # reflect the scan immediately, and record it in the order's
+                    # own activity log (not just the return request's log).
+                    _mark_order_as_returned(order, request.user, return_request.rma_number)
 
                     created_returns.append(return_request.rma_number)
 

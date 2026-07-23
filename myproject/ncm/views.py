@@ -122,24 +122,6 @@ def get_or_create_system_user():
     return user
 
 
-def is_order_eligible_for_status_update(order):
-    """
-    Check if order is in a state that should receive status updates.
-    Prevents updating already delivered orders or cancelled ones.
-    """
-    ineligible_statuses = ['delivered', 'cancelled', 'return_initiated', 'return_approved']
-    
-    if order.status in ineligible_statuses:
-        logger.info(f"Order {order.order_number} not eligible for webhook update (status: {order.status})")
-        return False
-    
-    if not order.ncm_order_id:
-        logger.warning(f"Order {order.order_number} has no NCM order ID")
-        return False
-    
-    return True
-
-
 # ===================== BRANCHES JSON ENDPOINT =====================
 
 @login_required
@@ -333,11 +315,15 @@ def sync_ncm_status(request, order_id):
     """Manually sync order status from NCM"""
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
-        
+
         if not order.ncm_order_id:
             messages.error(request, 'Order not yet in NCM')
             return redirect('order_detail', order_id=order_id)
-        
+
+        if order.status == 'cancelled':
+            messages.info(request, 'Order is cancelled; status sync skipped to avoid overwriting the cancellation')
+            return redirect('order_detail', order_id=order_id)
+
         logger.info(f"Syncing NCM Order ID: {order.ncm_order_id}")
         
         # Use order-specific NCM API account

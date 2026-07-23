@@ -22,17 +22,36 @@ User = get_user_model()
 class NCMWebhookHandler:
     """Handle NCM webhook events with comprehensive logging and error handling"""
 
-    # NCM event names to human-readable status mapping (from NCM docs)
+    # NCM event names to human-readable status mapping.
+    # Used only as a fallback when the webhook payload's 'status' field is
+    # empty - NCM normally sends 'status' directly, so this rarely matters.
+    #
+    # The first 5 entries are NCM's officially documented "Order Status
+    # Events" (confirmed against their webhook integration doc - this is
+    # the complete list NCM publishes; no return/RTV events are documented
+    # at all).
+    #
+    # 'order_marked_rtv' is NOT in that doc, but is included here because
+    # it was observed firing for real in production (seen in this system's
+    # own webhook activity log). NCM's RTV pipeline otherwise appears to be
+    # undocumented and, per the evidence gathered so far, does not reliably
+    # webhook the later RTV steps ("Sent to Vendor", final RTV "Delivered")
+    # at all - see the auto-sync-on-page-load logic in order_detail.html,
+    # which exists specifically to compensate by actively pulling status
+    # instead of waiting on a push NCM may never send.
     EVENT_TO_STATUS = {
         'pickup_completed': 'Pickup Complete',
         'sent_for_delivery': 'Sent for Delivery',
         'order_dispatched': 'Dispatched',
         'order_arrived': 'Arrived',
         'delivery_completed': 'Delivered',
+        'order_marked_rtv': 'Order Marked Return',
     }
 
     # Unified status mapping: NCM status -> system status
-    # This is the single source of truth for all webhook and sync operations
+    # Kept in sync with NCMService.map_ncm_status_to_system, which is the
+    # actual mapping used by both webhook updates and manual sync operations
+    # (this dict documents the same mapping but is not directly referenced).
     STATUS_MAPPING = {
         'Pickup Order Created': 'Pickup Created',
         'Drop off Order Created': 'Pickup Created',
@@ -48,6 +67,9 @@ class NCMWebhookHandler:
         'Returned': 'returned',
         'Return Initiated': 'return_initiated',
         'Return Approved': 'return_approved',
+        'Order Marked Return': 'return',
+        'Sent to Vendor': 'return',
+        'Returned to Warehouse': 'return',
     }
 
     PAYMENT_STATUS_MAPPING = {
@@ -287,6 +309,16 @@ class NCMWebhookHandler:
         try:
             from services.ncm_service import NCMService
 
+            # Never let a webhook (which can arrive late or out of order)
+            # resurrect an order the staff already cancelled.
+            if order.status == 'cancelled':
+                logger.info(f"Skipping webhook update for cancelled order {order.order_number} (NCM status: {status})")
+                return {
+                    'success': False,
+                    'order_number': order.order_number,
+                    'error': 'Order is cancelled; webhook update skipped'
+                }
+
             old_status = order.status
             old_ncm_status = order.ncm_status
             old_payment_status = order.payment_status
@@ -357,12 +389,16 @@ class NCMWebhookHandler:
                 logger.warning(f"No phone number for order {order.order_number}")
                 return
 
-            # Map resolved system status to notification type
+            # Map resolved system status to notification type.
+            # 'return' is the status NCMService actually resolves to for the
+            # RTV pipeline (see resolve_delivered_status/map_ncm_status_to_system);
+            # 'returned'/'return_initiated'/'return_approved' are kept for
+            # any legacy/other callers that still produce those values.
             if status in ['delivered']:
                 notification_status = 'delivered'
             elif status in ['in_transit', 'shipped']:
                 notification_status = 'in_transit'
-            elif status in ['returned', 'return_initiated', 'return_approved']:
+            elif status in ['return', 'returned', 'return_initiated', 'return_approved']:
                 notification_status = 'returned'
             else:
                 return

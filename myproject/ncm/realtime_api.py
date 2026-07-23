@@ -145,13 +145,25 @@ def api_sync_order_status(request, order_id):
     """
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
-        
+
         if not order.ncm_order_id:
             return JsonResponse({
                 'success': False,
                 'message': 'Order not in NCM system yet'
             })
-        
+
+        if order.status == 'cancelled':
+            # Don't let a sync (manual click, or the automatic sync that now
+            # fires when the order page loads) silently resurrect an order
+            # the staff already cancelled locally.
+            return JsonResponse({
+                'success': True,
+                'message': 'Order is cancelled; status sync skipped',
+                'order_id': order.id,
+                'order_number': order.order_number,
+                'changed': False
+            })
+
         # Use order-specific NCM API account
         svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
 

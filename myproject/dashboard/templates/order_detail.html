@@ -3927,14 +3927,32 @@
         }
     });
 
+    // Guards against the auto-sync (on page load) and a manual button click
+    // firing two overlapping NCM API requests for the same order at once -
+    // that race was what made the first "Sync Status" click fail and the
+    // second one (after the first call finished) succeed.
+    let ncmSyncInProgress = false;
+
     // ✅ AJAX NCM STATUS SYNC FUNCTION
-    function syncNCMStatusAJAX(orderId) {
+    // `silent=true` is used for the automatic sync on page load/refresh: no
+    // button/spinner UI, and the page only reloads if the status actually
+    // changed (so an unchanged order doesn't get reloaded on every visit).
+    function syncNCMStatusAJAX(orderId, silent = false) {
+        if (ncmSyncInProgress) {
+            if (!silent) {
+                showNotification('success', 'A sync is already in progress, please wait...');
+            }
+            return;
+        }
+        ncmSyncInProgress = true;
+
         const syncBtn = document.getElementById('syncStatusBtn');
         const syncBtnText = document.getElementById('syncBtnText');
 
-        // Disable button and show loading state
-        syncBtn.disabled = true;
-        syncBtnText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+        if (!silent && syncBtn && syncBtnText) {
+            syncBtn.disabled = true;
+            syncBtnText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+        }
 
         // Send AJAX request to sync status
         fetch(`/ncm/api/order/${orderId}/sync/`, {
@@ -3951,8 +3969,18 @@
                 return response.json();
             })
             .then(data => {
+                ncmSyncInProgress = false;
                 if (data.success) {
-                    // Show success message
+                    if (silent) {
+                        // Only disturb the user with a reload if something
+                        // actually changed - avoids reloading on every visit.
+                        if (data.changed) {
+                            showNotification('success', data.message || 'Status updated successfully');
+                            setTimeout(() => location.reload(), 1000);
+                        }
+                        return;
+                    }
+
                     showNotification('success', data.message || 'Status updated successfully');
 
                     // Always reload when user explicitly clicks sync,
@@ -3961,16 +3989,25 @@
                         location.reload();
                     }, 1000);
                 } else {
-                    showNotification('error', data.message || 'Failed to update status');
-                    syncBtn.disabled = false;
-                    syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
+                    if (!silent) {
+                        showNotification('error', data.message || 'Failed to update status');
+                        if (syncBtn && syncBtnText) {
+                            syncBtn.disabled = false;
+                            syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
+                        }
+                    }
                 }
             })
             .catch(error => {
+                ncmSyncInProgress = false;
                 console.error('Error syncing status:', error);
-                showNotification('error', 'Failed to sync status. Please try again.');
-                syncBtn.disabled = false;
-                syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
+                if (!silent) {
+                    showNotification('error', 'Failed to sync status. Please try again.');
+                    if (syncBtn && syncBtnText) {
+                        syncBtn.disabled = false;
+                        syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
+                    }
+                }
             });
     }
 
@@ -4171,10 +4208,18 @@
      * Start auto-sync process
      */
     function startAutoSync() {
-        // Initial fetch
-        fetchOrderStatus();
+        // Pull the latest status from NCM immediately and persist it - this
+        // is what makes opening/refreshing the order page keep the status
+        // current without needing a manual "Sync Status" click. Runs silently
+        // (no button UI) and only reloads the page if something changed.
+        // Skipped for cancelled orders so a stale/late NCM status can't
+        // silently resurrect a cancellation (the backend also enforces this).
+        {% if order.status != 'cancelled' %}
+        syncNCMStatusAJAX('{{ order.id }}', true);
+        {% endif %}
 
-        // Set interval for periodic fetching
+        // Set interval for periodic local-status change detection
+        // (cheap - reads the DB, doesn't call the NCM API)
         autoSyncTimer = setInterval(() => {
             fetchOrderStatus();
         }, autoSyncInterval);
