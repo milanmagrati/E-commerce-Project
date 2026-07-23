@@ -2926,7 +2926,13 @@ def attendance_list(request):
     today = dt_date.today()
     all_records = AttendanceRecord.objects.all()
     total_records = all_records.count()
-    present_today = all_records.filter(date=today, status='present').count()
+    # Count anyone who has actually clocked in today as "present", even if
+    # their punch is still incomplete (no clock-out yet, e.g. mid-shift) —
+    # a missing clock-out shouldn't hide someone who showed up.
+    present_today = all_records.filter(date=today).filter(
+        Q(status__in=['present', 'late', 'half_day']) |
+        Q(status='incomplete', clock_in__isnull=False)
+    ).count()
     on_leave_today = all_records.filter(date=today, status='on_leave').count()
     late_today = all_records.filter(date=today, is_late_arrival=True).count()
     overtime_today = all_records.filter(date=today, overtime_hours__gt=0).count()
