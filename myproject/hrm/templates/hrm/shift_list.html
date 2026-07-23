@@ -488,27 +488,36 @@
                         Time Configuration
                     </div>
                     <div class="row g-3">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="pro-label">Start Time <span class="text-danger">*</span></label>
                             <div class="pro-input-wrap">
                                 <span class="pro-input-icon"><i class="far fa-clock"></i></span>
                                 <input type="time" class="form-control pro-field" id="shiftStartTime">
                             </div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="pro-label">End Time <span class="text-muted" style="font-size:.75rem;">(Optional)</span></label>
                             <div class="pro-input-wrap">
                                 <span class="pro-input-icon"><i class="far fa-clock"></i></span>
                                 <input type="time" class="form-control pro-field" id="shiftEndTime">
                             </div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="pro-label">Working Hours</label>
                             <div class="pro-input-wrap has-suffix">
                                 <span class="pro-input-icon"><i class="fas fa-hourglass-half"></i></span>
                                 <input type="number" class="form-control pro-field" id="shiftWorkingHours" value="8.0" step="0.5" min="0" placeholder="8.0">
                                 <span class="pro-input-suffix">hrs</span>
                             </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="pro-label">Half Day Threshold <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap has-suffix">
+                                <span class="pro-input-icon"><i class="fas fa-hourglass-half"></i></span>
+                                <input type="number" class="form-control pro-field" id="shiftHalfDayHours" value="4.0" step="0.5" min="0.5" max="24" placeholder="4.0">
+                                <span class="pro-input-suffix">hrs</span>
+                            </div>
+                            <small class="text-muted" style="font-size:.72rem;">Days worked ≤ this many hours are marked Half Day</small>
                         </div>
                     </div>
                 </div>
@@ -1009,7 +1018,7 @@
     }
 
     /* ── Auto-clear field error on typing ── */
-    ['shiftName','shiftStartTime'].forEach(function(fieldId) {
+    ['shiftName','shiftStartTime','shiftHalfDayHours'].forEach(function(fieldId) {
         var el = document.getElementById(fieldId);
         if (el) {
             el.addEventListener('input', function() { markField(fieldId, false); });
@@ -1104,7 +1113,7 @@
     var DRAFT_KEY = 'shiftFormDraft_v2';
     var DRAFT_FIELDS = [
         'shiftName','shiftDescription','shiftStartTime','shiftEndTime',
-        'shiftWorkingHours','shiftBreakStartTime','shiftBreakEndTime',
+        'shiftWorkingHours','shiftHalfDayHours','shiftBreakStartTime','shiftBreakEndTime',
         'shiftBreakDuration','shiftGracePeriod','shiftStatus'
     ];
 
@@ -1163,6 +1172,7 @@
         document.getElementById('shiftBreakDuration').value = '0';
         document.getElementById('shiftGracePeriod').value = '15';
         document.getElementById('shiftWorkingHours').value = '8.0';
+        document.getElementById('shiftHalfDayHours').value = '4.0';
         document.getElementById('shiftIsNightShift').checked = false;
         document.getElementById('shiftStatus').value = 'active';
         workingHoursManual = false;
@@ -1207,6 +1217,7 @@
                 document.getElementById('shiftBreakEndTime').value = data.break_end_time || '';
                 document.getElementById('shiftGracePeriod').value = data.grace_period;
                 document.getElementById('shiftWorkingHours').value = data.working_hours;
+                document.getElementById('shiftHalfDayHours').value = data.half_day_hours;
                 document.getElementById('shiftIsNightShift').checked = data.is_night_shift;
                 document.getElementById('shiftStatus').value = data.is_active ? 'active' : 'inactive';
                 /* When editing, treat loaded values as manually set so they aren't overwritten */
@@ -1238,6 +1249,7 @@
                     '<tr><td class="text-muted">Break Start</td><td class="fw-semibold">' + (data.break_start_time ? to12Hr(data.break_start_time) : '\u2014') + '</td></tr>' +
                     '<tr><td class="text-muted">Break End</td><td class="fw-semibold">' + (data.break_end_time ? to12Hr(data.break_end_time) : '\u2014') + '</td></tr>' +
                     '<tr><td class="text-muted">Working Hours</td><td class="fw-semibold">' + data.working_hours + ' hrs</td></tr>' +
+                    '<tr><td class="text-muted">Half Day Threshold</td><td class="fw-semibold">≤ ' + data.half_day_hours + ' hrs</td></tr>' +
                     '<tr><td class="text-muted">Grace Period</td><td class="fw-semibold">' + data.grace_period + ' min</td></tr>' +
                     '</table>' +
                     (data.description ? '<p class="text-muted small border-top pt-2 mb-0">' + data.description + '</p>' : '');
@@ -1256,6 +1268,11 @@
         var hasErrors = false;
         if (!name) { markField('shiftName', true, 'Shift name is required'); hasErrors = true; }
         if (!startTime) { markField('shiftStartTime', true, 'Start time is required'); hasErrors = true; }
+        var halfDayHours = parseFloat(document.getElementById('shiftHalfDayHours').value);
+        if (!halfDayHours || halfDayHours <= 0) {
+            markField('shiftHalfDayHours', true);
+            hasErrors = true;
+        }
 
         if (hasErrors) {
             showError('Please fill in all required fields highlighted below.');
@@ -1275,6 +1292,7 @@
         params.append('break_end_time', document.getElementById('shiftBreakEndTime').value);
         params.append('grace_period', document.getElementById('shiftGracePeriod').value || '15');
         params.append('working_hours', document.getElementById('shiftWorkingHours').value || '8.0');
+        params.append('half_day_hours', document.getElementById('shiftHalfDayHours').value || '4.0');
         params.append('status', document.getElementById('shiftStatus').value);
         if (document.getElementById('shiftIsNightShift').checked) {
             params.append('is_night_shift', 'on');

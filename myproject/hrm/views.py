@@ -2849,10 +2849,11 @@ def _sync_biometric_to_attendance(recent_days=None):
                     if cout_full < shift_end - timedelta(minutes=early_grace):
                         is_early = True
 
-        # Auto-set half-day status based on the policy's threshold. Runs
-        # regardless of whether a shift is assigned, and overrides 'late' /
-        # 'present' since a short day takes priority over a late mark.
-        if policy and clock_in_time and clock_out_time and working_hours > 0 and working_hours <= float(policy.half_day_hours):
+        # Auto-set half-day status based on the shift's threshold. Only
+        # applies when a shift is assigned (the threshold now lives on
+        # Shift, not AttendancePolicy), and overrides 'late' / 'present'
+        # since a short day takes priority over a late mark.
+        if shift and clock_in_time and clock_out_time and working_hours > 0 and working_hours <= float(shift.half_day_hours):
             status = 'half_day'
 
         # Flag incomplete punches (only one of clock-in/clock-out recorded)
@@ -3035,7 +3036,7 @@ def _compute_attendance_metrics(clock_in, clock_out, shift, policy, status):
 
         # Auto-set status only if it was left as default 'present' or 'late'
         if status in ['present', 'late']:
-            if policy and working_hours > 0 and working_hours <= float(policy.half_day_hours):
+            if shift and working_hours > 0 and working_hours <= float(shift.half_day_hours):
                 status = 'half_day'
 
     # Flag incomplete punches (only one of clock-in/clock-out given)
@@ -3327,8 +3328,15 @@ def shift_create(request):
         is_night_shift = request.POST.get('is_night_shift') == 'on'
         is_active = request.POST.get('status', 'active') == 'active'
         working_hours = request.POST.get('working_hours', '8.0').strip() or '8.0'
+        half_day_hours = request.POST.get('half_day_hours', '4.0').strip() or '4.0'
         if not name or not start_time:
             return JsonResponse({'success': False, 'error': 'Name and start time are required.'})
+        try:
+            half_day_hours = float(half_day_hours)
+        except (ValueError, TypeError):
+            return JsonResponse({'success': False, 'error': 'Invalid half day threshold provided.'})
+        if half_day_hours <= 0:
+            return JsonResponse({'success': False, 'error': 'Half day threshold must be a positive number.'})
         shift = Shift.objects.create(
             name=name,
             start_time=start_time,
@@ -3341,6 +3349,7 @@ def shift_create(request):
             is_night_shift=is_night_shift,
             is_active=is_active,
             working_hours=float(working_hours),
+            half_day_hours=half_day_hours,
         )
         return JsonResponse({'success': True, 'id': shift.id, 'name': shift.name})
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
@@ -3357,6 +3366,12 @@ def shift_update(request, pk):
         description = request.POST.get('description', '').strip()
         if not name or not start_time:
             return JsonResponse({'success': False, 'error': 'Name and start time are required.'})
+        try:
+            half_day_hours = float(request.POST.get('half_day_hours', '4.0') or '4.0')
+        except (ValueError, TypeError):
+            return JsonResponse({'success': False, 'error': 'Invalid half day threshold provided.'})
+        if half_day_hours <= 0:
+            return JsonResponse({'success': False, 'error': 'Half day threshold must be a positive number.'})
         shift.name = name
         shift.start_time = start_time
         shift.end_time = end_time if end_time else None
@@ -3368,6 +3383,7 @@ def shift_update(request, pk):
         shift.is_night_shift = request.POST.get('is_night_shift') == 'on'
         shift.is_active = request.POST.get('status', 'active') == 'active'
         shift.working_hours = float(request.POST.get('working_hours', '8.0') or '8.0')
+        shift.half_day_hours = half_day_hours
         shift.save()
         return JsonResponse({'success': True})
     data = {
@@ -3383,6 +3399,7 @@ def shift_update(request, pk):
         'is_night_shift': shift.is_night_shift,
         'is_active': shift.is_active,
         'working_hours': str(shift.working_hours),
+        'half_day_hours': str(shift.half_day_hours),
     }
     return JsonResponse(data)
 
@@ -3540,10 +3557,9 @@ def attendance_policy_create(request):
             late_mark = int(request.POST.get('late_mark_after', 15) or 15)
             early_dep = int(request.POST.get('early_departure_grace', 15) or 15)
             overtime = float(request.POST.get('overtime_rate', 0) or 0)
-            half_day = float(request.POST.get('half_day_hours', 4) or 4)
         except (ValueError, TypeError):
             return JsonResponse({'success': False, 'error': 'Invalid numeric values provided.'})
-        if late_mark < 0 or early_dep < 0 or overtime < 0 or work_hours <= 0 or half_day <= 0:
+        if late_mark < 0 or early_dep < 0 or overtime < 0 or work_hours <= 0:
             return JsonResponse({'success': False, 'error': 'Values must be positive numbers.'})
         policy = AttendancePolicy.objects.create(
             name=name,
@@ -3552,7 +3568,6 @@ def attendance_policy_create(request):
             late_mark_after=late_mark,
             early_departure_grace=early_dep,
             overtime_rate=overtime,
-            half_day_hours=half_day,
             is_active=(request.POST.get('is_active', 'true').lower() == 'true'),
         )
         return JsonResponse({'success': True, 'id': policy.id, 'name': policy.name})
@@ -3574,10 +3589,9 @@ def attendance_policy_update(request, pk):
             late_mark = int(request.POST.get('late_mark_after', 15) or 15)
             early_dep = int(request.POST.get('early_departure_grace', 15) or 15)
             overtime = float(request.POST.get('overtime_rate', 0) or 0)
-            half_day = float(request.POST.get('half_day_hours', 4) or 4)
         except (ValueError, TypeError):
             return JsonResponse({'success': False, 'error': 'Invalid numeric values provided.'})
-        if late_mark < 0 or early_dep < 0 or overtime < 0 or work_hours <= 0 or half_day <= 0:
+        if late_mark < 0 or early_dep < 0 or overtime < 0 or work_hours <= 0:
             return JsonResponse({'success': False, 'error': 'Values must be positive numbers.'})
         policy.name = name
         policy.description = request.POST.get('description', '').strip()
@@ -3585,7 +3599,6 @@ def attendance_policy_update(request, pk):
         policy.late_mark_after = late_mark
         policy.early_departure_grace = early_dep
         policy.overtime_rate = overtime
-        policy.half_day_hours = half_day
         policy.is_active = (request.POST.get('is_active', 'true').lower() == 'true')
         policy.save()
         return JsonResponse({'success': True})
@@ -3597,7 +3610,6 @@ def attendance_policy_update(request, pk):
         'late_mark_after': policy.late_mark_after,
         'early_departure_grace': policy.early_departure_grace,
         'overtime_rate': str(policy.overtime_rate),
-        'half_day_hours': str(policy.half_day_hours),
         'is_active': policy.is_active,
     }
     return JsonResponse(data)

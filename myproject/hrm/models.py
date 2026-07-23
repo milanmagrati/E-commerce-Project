@@ -510,6 +510,10 @@ class Shift(models.Model):
     grace_period = models.PositiveIntegerField(default=15, help_text='Grace period in minutes')
     is_night_shift = models.BooleanField(default=False)
     working_hours = models.DecimalField(max_digits=4, decimal_places=1, default=8.0, validators=[MinValueValidator(0), MaxValueValidator(24)])
+    half_day_hours = models.DecimalField(
+        max_digits=4, decimal_places=2, default=4.0,
+        help_text='Days worked at or below this many hours on this shift are marked Half Day'
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -534,7 +538,6 @@ class AttendancePolicy(models.Model):
     late_mark_after = models.PositiveIntegerField(default=15, help_text='Minutes after shift start to mark as late')
     early_departure_grace = models.PositiveIntegerField(default=15, help_text='Minutes before shift end allowed to leave early')
     overtime_rate = models.DecimalField(max_digits=8, decimal_places=2, default=0.00, help_text='Overtime rate per hour')
-    half_day_hours = models.DecimalField(max_digits=4, decimal_places=2, default=4.0)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

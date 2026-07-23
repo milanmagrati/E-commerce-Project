@@ -181,15 +181,6 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="col-6">
-                            <div class="policy-detail-item">
-                                <i class="fas fa-hourglass-half" style="color:#1e3a8a;font-size:.8rem;margin-top:2px;flex-shrink:0;"></i>
-                                <div>
-                                    <div class="fw-semibold" style="font-size:.85rem;">≤ {{ policy.half_day_hours }} hrs</div>
-                                    <div class="text-muted" style="font-size:.72rem;">Half Day Threshold</div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
                     {% if policy.description %}
@@ -342,16 +333,6 @@
                                 <input type="number" class="form-control pro-field" id="policyWorkHours" value="8" step="0.5" min="1" max="24">
                                 <span class="pro-input-suffix">hrs</span>
                             </div>
-                        </div>
-                        <div class="col-6">
-                            <label class="pro-label">Half Day Threshold <span class="text-danger">*</span></label>
-                            <div class="pro-input-wrap has-suffix">
-                                <i class="fas fa-hourglass-half pro-input-icon" style="color:#1e3a8a;"></i>
-                                <input type="number" class="form-control pro-field" id="policyHalfDayHours" value="4" step="0.5" min="0.5" max="24">
-                                <span class="pro-input-suffix">hrs</span>
-                            </div>
-                            <span class="field-error-text" id="policyHalfDayHoursErr" style="display:none;"></span>
-                            <div class="form-text" style="font-size:0.72rem;">Days worked ≤ this many hours are marked Half Day</div>
                         </div>
                     </div>
                 </div>
@@ -698,7 +679,7 @@
     var editingId = null;
     var deletingId = null;
     var toastTimer = null;
-    var draftFields = ['policyName','policyDescription','policyLateMarkAfter','policyEarlyDeparture','policyOvertimeRate','policyWorkHours','policyHalfDayHours','policyStatus'];
+    var draftFields = ['policyName','policyDescription','policyLateMarkAfter','policyEarlyDeparture','policyOvertimeRate','policyWorkHours','policyStatus'];
     var hadPendingPolicyToast = !!sessionStorage.getItem('policyToast');
 
     /* ── Incomplete Attendance state ── */
@@ -841,10 +822,8 @@
         document.getElementById('policyEarlyDeparture').value = '15';
         document.getElementById('policyOvertimeRate').value = '150';
         document.getElementById('policyWorkHours').value = '8';
-        document.getElementById('policyHalfDayHours').value = '4';
         document.getElementById('policyStatus').value = 'true';
         markField('policyName', false);
-        document.getElementById('policyHalfDayHoursErr').style.display = 'none';
         hideFormAlert();
         setSaveLoading(false);
     }
@@ -854,7 +833,7 @@
     var DRAFT_DEFAULTS = {
         policyName: '', policyDescription: '',
         policyLateMarkAfter: '15', policyEarlyDeparture: '15',
-        policyOvertimeRate: '150', policyWorkHours: '8', policyHalfDayHours: '4', policyStatus: 'true'
+        policyOvertimeRate: '150', policyWorkHours: '8', policyStatus: 'true'
     };
     function saveDraft() {
         if (editingId) return;
@@ -941,7 +920,6 @@
                 document.getElementById('policyEarlyDeparture').value = data.early_departure_grace;
                 document.getElementById('policyOvertimeRate').value = data.overtime_rate;
                 document.getElementById('policyWorkHours').value = data.work_hours_per_day;
-                document.getElementById('policyHalfDayHours').value = data.half_day_hours;
                 document.getElementById('policyStatus').value = data.is_active ? 'true' : 'false';
                 markField('policyName', false);
                 hideFormAlert();
@@ -961,7 +939,6 @@
                     + '<dt class="col-6 text-muted small">Early Departure Grace</dt><dd class="col-6 fw-semibold">' + esc(String(data.early_departure_grace)) + ' min</dd>'
                     + '<dt class="col-6 text-muted small">Overtime Rate</dt><dd class="col-6 fw-semibold">Rs. ' + esc(String(data.overtime_rate)) + '/hr</dd>'
                     + '<dt class="col-6 text-muted small">Work Hours/Day</dt><dd class="col-6 fw-semibold">' + esc(String(data.work_hours_per_day)) + ' hrs</dd>'
-                    + '<dt class="col-6 text-muted small">Half Day Threshold</dt><dd class="col-6 fw-semibold">' + esc(String(data.half_day_hours)) + ' hrs</dd>'
                     + '<dt class="col-6 text-muted small">Status</dt><dd class="col-6"><span class="badge ' + (data.is_active ? 'bg-success' : 'bg-danger') + '">' + (data.is_active ? 'Active' : 'Inactive') + '</span></dd>'
                     + (data.description ? '<dt class="col-6 text-muted small">Description</dt><dd class="col-6 small">' + esc(data.description) + '</dd>' : '')
                     + '</dl>';
@@ -980,15 +957,6 @@
             return;
         }
         markField('policyName', false);
-        var halfDayHours = parseFloat(document.getElementById('policyHalfDayHours').value);
-        if (!halfDayHours || halfDayHours <= 0) {
-            document.getElementById('policyHalfDayHoursErr').textContent = 'Half day threshold must be greater than 0.';
-            document.getElementById('policyHalfDayHoursErr').style.display = 'block';
-            showFormAlert('danger', 'Validation Error', 'Please fill in all required fields.');
-            document.getElementById('policyHalfDayHours').focus();
-            return;
-        }
-        document.getElementById('policyHalfDayHoursErr').style.display = 'none';
         setSaveLoading(true);
         var url = editingId
             ? '/hrm/attendance-policies/' + editingId + '/update/'
@@ -1003,7 +971,6 @@
                 early_departure_grace: document.getElementById('policyEarlyDeparture').value,
                 overtime_rate: document.getElementById('policyOvertimeRate').value,
                 work_hours_per_day: document.getElementById('policyWorkHours').value,
-                half_day_hours: document.getElementById('policyHalfDayHours').value,
                 is_active: document.getElementById('policyStatus').value,
             })
         })
