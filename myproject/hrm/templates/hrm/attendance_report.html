@@ -286,7 +286,14 @@
 
     /* Week view */
     .pv-week-wrap { overflow-x: auto; padding-bottom: 8px; }
+    .pv-week-scroll-inner { min-width: 700px; }
     .pv-week-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; min-width: 700px; }
+    .pv-week-hdr-row { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; margin-bottom:6px; }
+    .pv-week-hdr {
+        text-align:center; font-size:0.68rem; font-weight:800; text-transform:uppercase;
+        letter-spacing:0.05em; color:#4338ca; padding:4px 0 6px;
+    }
+    .pv-week-hdr.wknd { color:#be185d; }
     .pv-week-day {
         border-radius:10px; border:1.5px solid #e2e8f0;
         padding:0.7rem 0.4rem; text-align:center; transition:transform 0.12s;
@@ -296,6 +303,7 @@
     .pv-week-day .day-lbl { font-size:0.68rem; font-weight:700; text-transform:uppercase; color:#94a3b8; }
     .pv-week-day .day-num { font-size:1.2rem; font-weight:700; color:#1e293b; margin:4px 0; }
     .pv-week-day .day-status { font-size:0.68rem; font-weight:600; border-radius:12px; padding:2px 7px; display:inline-block; }
+    .pv-week-day-pad { visibility:hidden; border:none; background:transparent; padding:0; }
 
     /* Month calendar */
     .pv-cal-wrap {
@@ -1264,7 +1272,7 @@ function renderSummaryBar(data) {
                     <th rowspan="2">Present On<br>Holiday</th>
                     <th rowspan="2">Present On Day Off<br>/Night Off/Weekend</th>
                     <th rowspan="2">Absent<br>Days</th>
-                    <th rowspan="2">Misc<br>Days</th>
+                    <th rowspan="2" style="color:#9a3412;" title="Incomplete punch — clocked in but never out (or the reverse). Not counted as Absent.">Misc<br>Days</th>
                     <th class="pv-th-group" colspan="2">Leave Days</th>
                     <th rowspan="2">Worked<br>Hours</th>
                     <th rowspan="2">OT<br>Hours</th>
@@ -1295,7 +1303,7 @@ function renderSummaryBar(data) {
                     <td>${d.present_on_holiday}</td>
                     <td>${d.present_on_off}</td>
                     <td style="color:#ef4444;font-weight:700;">${d.absent_days}</td>
-                    <td>${d.misc_days}</td>
+                    <td style="color:#9a3412;font-weight:600;" title="Incomplete punch days">${d.misc_days}</td>
                     <td style="color:#16a34a;font-weight:600;">${d.leave_paid}</td>
                     <td style="color:#ef4444;font-weight:600;">${d.leave_unpaid}</td>
                     <td style="color:#6366f1;font-weight:600;">${d.worked_hours}</td>
@@ -1401,7 +1409,9 @@ function renderWeekView(data) {
     const weekendNums = data.weekend_nums || [5, 6];
     const holidayDates = new Set(data.holiday_dates || []);
     const jsWeekendDays = new Set(weekendNums.map(n => (n + 1) % 7));
-    const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    // Indexed by Date.getDay() so the label always matches the actual date,
+    // rather than assuming the range happens to start on a Monday.
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     let cards = '';
     for (let i = 0; i < 7; i++) {
         const d = new Date(start); d.setDate(start.getDate() + i);
@@ -1412,7 +1422,6 @@ function renderWeekView(data) {
         const jsDay = d.getDay();
         const isWknd = jsWeekendDays.has(jsDay);
         const isHol = holidayDates.has(iso);
-        const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
         let nepDate = "";
         try { 
             const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
@@ -1423,7 +1432,7 @@ function renderWeekView(data) {
         if (rec) {
             const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.bg};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
-                <div class="day-lbl">${dayNames[i]}</div>
+                <div class="day-lbl">${dayNames[jsDay]}</div>
                 ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">${esc(rec.status_display)}</span>
                 <div style="font-size:0.65rem;color:${sc.color};opacity:0.8;margin-top:4px;">${rec.clock_in || '–'} › ${rec.clock_out || '–'}</div>
@@ -1432,27 +1441,27 @@ function renderWeekView(data) {
         } else if (isWknd) {
             const sc = STATUS_COLORS.weekend;
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
-                <div class="day-lbl">${dayNames[i]}</div>
+                <div class="day-lbl">${dayNames[jsDay]}</div>
                 ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Weekend</span>
             </div>`;
         } else if (isHol) {
             const sc = STATUS_COLORS.holiday;
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
-                <div class="day-lbl">${dayNames[i]}</div>
+                <div class="day-lbl">${dayNames[jsDay]}</div>
                 ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Holiday</span>
             </div>`;
         } else if (isPast) {
             const sc = STATUS_COLORS.absent;
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
-                <div class="day-lbl">${dayNames[i]}</div>
+                <div class="day-lbl">${dayNames[jsDay]}</div>
                 ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Absent</span>
             </div>`;
         } else {
             cards += `<div class="pv-week-day no-record${isTd ? ' today' : ''}">
-                <div class="day-lbl">${dayNames[i]}</div>
+                <div class="day-lbl">${dayNames[jsDay]}</div>
                 ${dayNumHtml('#1e293b')}
                 <span class="day-status" style="background:#f1f5f9;color:#94a3b8;">—</span>
             </div>`;
@@ -1476,11 +1485,19 @@ function renderCustomView(data) {
     const holidayDates = new Set(data.holiday_dates || []);
     const jsWeekendDays = new Set(weekendNums.map(n => (n + 1) % 7));
     const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const dayHdrs = dayNames.map((d, i) =>
+        `<div class="pv-week-hdr${i===0||i===6?' wknd':''}">${d}</div>`).join('');
     let cards = '';
-    
+
     // limit custom view rendering if it's too large, e.g., > 100 days
-    const maxDays = Math.min(totalDays, 90); 
-    
+    const maxDays = Math.min(totalDays, 90);
+
+    // Pad the grid so the first column of every row is always Sunday
+    const leadingBlanks = start.getDay(); // 0=Sun..6=Sat
+    for (let i = 0; i < leadingBlanks; i++) {
+        cards += `<div class="pv-week-day pv-week-day-pad" aria-hidden="true"></div>`;
+    }
+
     for (let i = 0; i < maxDays; i++) {
         const d = new Date(start); d.setDate(start.getDate() + i);
         const iso = _localDateStr(d);
@@ -1536,7 +1553,17 @@ function renderCustomView(data) {
         }
     }
     
-    let html = `<div class="p-4"><div class="pv-week-wrap"><div class="pv-week-grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); min-width:0;">${cards}</div></div>`;
+    // Pad trailing cells so the final row also completes a full 7-column week
+    const totalCells = leadingBlanks + maxDays;
+    const trailingBlanks = (7 - (totalCells % 7)) % 7;
+    for (let i = 0; i < trailingBlanks; i++) {
+        cards += `<div class="pv-week-day pv-week-day-pad" aria-hidden="true"></div>`;
+    }
+
+    let html = `<div class="p-4"><div class="pv-week-wrap"><div class="pv-week-scroll-inner">
+        <div class="pv-week-hdr-row">${dayHdrs}</div>
+        <div class="pv-week-grid" style="grid-template-columns:repeat(7,1fr);">${cards}</div>
+    </div></div>`;
     if (totalDays > maxDays) {
         html += `<div class="text-center mt-3 text-muted" style="font-size:0.8rem;">Showing first ${maxDays} days. Please use a smaller date range or view summary report for the rest.</div>`;
     }
@@ -2101,7 +2128,7 @@ function renderEmpSummaryTable(data) {
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#059669;padding:6px 8px;">Present On<br>Holiday</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#0d9488;padding:6px 8px;">Present On Day Off<br>/Night Off/Weekend</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#e11d48;padding:6px 8px;">Absent<br>Days</th>
-                    <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#6366f1;padding:6px 8px;">Misc<br>Days</th>
+                    <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#9a3412;padding:6px 8px;" title="Incomplete punch — clocked in but never out (or the reverse). Not counted as Absent.">Misc<br>Days</th>
                     <th colspan="2" class="text-center" style="font-weight:700;font-size:0.7rem;color:#7c3aed;padding:6px 8px;border-bottom:2px solid #a78bfa;">Leave Days</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#2563eb;padding:6px 8px;">Worked<br>Hours</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#d97706;padding:6px 8px;">OT<br>Hours</th>
@@ -2138,7 +2165,7 @@ function renderEmpSummaryTable(data) {
                 <td class="text-center" style="padding:5px 6px;color:#059669;">${emp.present_on_holiday}</td>
                 <td class="text-center" style="padding:5px 6px;color:#0d9488;">${emp.present_on_off}</td>
                 <td class="text-center fw-bold" style="padding:5px 6px;color:#e11d48;">${emp.absent}</td>
-                <td class="text-center" style="padding:5px 6px;color:#6366f1;">${emp.misc_days}</td>
+                <td class="text-center fw-semibold" style="padding:5px 6px;color:#9a3412;" title="Incomplete punch days">${emp.misc_days}</td>
                 <td class="text-center" style="padding:5px 6px;color:#16a34a;">${emp.leave_paid}</td>
                 <td class="text-center" style="padding:5px 6px;color:#e11d48;">${emp.leave_unpaid}</td>
                 <td class="text-center fw-semibold" style="padding:5px 6px;color:#2563eb;">${parseFloat(emp.worked_hours).toFixed(1)}</td>
