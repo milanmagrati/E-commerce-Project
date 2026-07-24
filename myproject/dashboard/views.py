@@ -14229,7 +14229,6 @@ def low_stock_alerts(request):
 @permission_required('can_view_sales_reports')
 def sales_report(request):
     """Comprehensive sales analytics with smart forecasting"""
-    from django.db.models.functions import ExtractHour
     from collections import defaultdict
     import math
 
@@ -14470,14 +14469,17 @@ def sales_report(request):
         category_data.append(float(c['revenue'] or 0))
 
     # ── 5. Hourly Sales Pattern ──
-    hourly_raw = (
-        orders_qs
-        .annotate(hour=ExtractHour('created_at'))
-        .values('hour')
-        .annotate(count=Count('id'), revenue=Sum('total_amount'))
-        .order_by('hour')
-    )
-    hourly_map = {h['hour']: {'count': h['count'], 'revenue': float(h['revenue'] or 0)} for h in hourly_raw}
+    # Python-side grouping in Nepal local time — MySQL CONVERT_TZ (used under the
+    # hood by ExtractHour/TruncHour) returns NULL here because the server's time
+    # zone tables aren't loaded, which silently collapsed every order into a
+    # single NULL bucket and made every hour read 0.
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    hourly_map = {}
+    for _hr_created, _hr_amount in orders_qs.values_list('created_at', 'total_amount'):
+        h = timezone.localtime(_hr_created, nepal_tz).hour
+        bucket = hourly_map.setdefault(h, {'count': 0, 'revenue': 0.0})
+        bucket['count'] += 1
+        bucket['revenue'] += float(_hr_amount or 0)
     hourly_labels = []
     hourly_data = []
     for h in range(24):
