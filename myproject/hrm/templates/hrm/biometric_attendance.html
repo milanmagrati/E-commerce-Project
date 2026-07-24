@@ -186,7 +186,7 @@
           <button type="submit" class="bio-search-btn"><i class="fas fa-search"></i> Search</button>
         </div>
         <button type="button" class="bio-filter-btn" onclick="toggleFilters()">
-          <i class="fas fa-filter"></i> Filters{% if date_from or date_to %}{% if not default_today %} <span class="badge bg-primary rounded-pill" style="font-size:.65rem;">ON</span>{% endif %}{% endif %}
+          <i class="fas fa-filter"></i> Filters{% if has_filters %} <span class="badge bg-primary rounded-pill" style="font-size:.65rem;">ON</span>{% endif %}
         </button>
         <div class="ms-auto d-flex align-items-center gap-2">
           <select class="bio-per-page-select" name="sort_by" onchange="this.form.submit()" style="margin-right: 0.5rem; max-width: 180px;">
@@ -202,18 +202,16 @@
             {% endfor %}
           </select>
         </div>
-        {% if date_from %}<input type="hidden" name="date_from" value="{{ date_from }}">{% endif %}
-        {% if date_to %}<input type="hidden" name="date_to" value="{{ date_to }}">{% endif %}
       </div>
 
       <div id="filterPanel" class="bio-filter-panel mt-3" style="display:{% if date_from or date_to %}flex{% else %}none{% endif %}; flex-wrap:wrap; gap:1rem; align-items:flex-end;">
         <div>
           <label class="form-label mb-1" style="font-size:.82rem; color:#6b7280; font-weight:600;">Date From</label>
-          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="min-width:155px;">
+          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="min-width:155px;" onchange="this.form.submit()">
         </div>
         <div>
           <label class="form-label mb-1" style="font-size:.82rem; color:#6b7280; font-weight:600;">Date To</label>
-          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" style="min-width:155px;">
+          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" style="min-width:155px;" onchange="this.form.submit()">
         </div>
         <div class="d-flex gap-2">
           <button type="submit" class="btn btn-sm btn-primary" style="border-radius:8px; padding:.4rem .9rem;">Apply</button>
@@ -300,9 +298,15 @@
           <td colspan="9">
             <div class="bio-empty">
               <i class="fas fa-fingerprint d-block"></i>
-              <p class="mb-0">No biometric records found{% if search_q or date_from or date_to %} matching your filters{% endif %}.</p>
+              {% if has_filters %}
+              <p class="mb-0">No biometric records found matching your filters.</p>
+              {% elif default_today %}
+              <p class="mb-0">No attendance recorded for today yet.</p>
+              {% else %}
+              <p class="mb-0">No biometric records found.</p>
+              {% endif %}
               <p class="mb-0 mt-1" style="font-size:.82rem;">Records appear here automatically when a ZKTeco device pushes attendance data.</p>
-              {% if search_q or date_from or date_to %}
+              {% if has_filters %}
               <a href="{% url 'hrm:biometric_attendance' %}" class="btn btn-sm btn-outline-primary mt-3" style="border-radius:8px;">Clear Filters</a>
               {% endif %}
             </div>

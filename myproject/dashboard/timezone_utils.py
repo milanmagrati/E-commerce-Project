@@ -4,11 +4,35 @@ Handles timezone conversion and formatting for Nepali Time (UTC+5:45)
 """
 
 from django.utils import timezone
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 # Nepali Timezone Configuration
 NEPALI_TIMEZONE = pytz.timezone('Asia/Kathmandu')
+
+
+def nepali_day_start(date_obj):
+    """
+    UTC-aware datetime for 00:00:00 Nepal time on date_obj.
+
+    Use this (with `field__gte=...`) instead of Django's `field__date__gte=...`
+    lookup on DateTimeField columns. With USE_TZ=True and TIME_ZONE='Asia/Kathmandu',
+    that lookup compiles to `DATE(CONVERT_TZ(field, 'UTC', 'Asia/Kathmandu')) >= ...`
+    on MySQL, and CONVERT_TZ() silently returns NULL here because this server's
+    mysql.time_zone_name tables aren't loaded — so the filter matches zero rows,
+    every time, with no error. Comparing against a plain UTC datetime avoids
+    CONVERT_TZ entirely.
+    """
+    return NEPALI_TIMEZONE.localize(datetime.combine(date_obj, datetime.min.time()))
+
+
+def nepali_day_end_exclusive(date_obj):
+    """
+    UTC-aware datetime for the start of the day AFTER date_obj, Nepal time.
+    Use with `field__lt=...` for an inclusive "through end of date_obj" filter —
+    see nepali_day_start() for why `field__date__lte=...` must be avoided here.
+    """
+    return nepali_day_start(date_obj) + timedelta(days=1)
 
 
 def get_nepali_now():

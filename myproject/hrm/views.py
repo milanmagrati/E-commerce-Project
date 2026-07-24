@@ -4294,19 +4294,41 @@ def biometric_attendance(request):
         if emp.employee_code:
             emp_name_map[emp.employee_code] = emp.full_name
 
-    # Base queryset with date filters pushed into ORM
+    # If the user entered an inverted range (From later than To), swap them
+    # instead of silently returning zero results.
+    if date_from and date_to:
+        try:
+            df_check = datetime.strptime(date_from, '%Y-%m-%d').date()
+            dt_check = datetime.strptime(date_to, '%Y-%m-%d').date()
+            if df_check > dt_check:
+                date_from, date_to = date_to, date_from
+        except ValueError:
+            pass
+
+    # Base queryset with date filters pushed into ORM.
+    #
+    # NOTE: Do NOT use `timestamp__date__gte`/`__lte` here. Those lookups compile to
+    # DATE(CONVERT_TZ(timestamp, 'UTC', 'Asia/Kathmandu')) on MySQL, and CONVERT_TZ()
+    # silently returns NULL unless the server's mysql.time_zone_name tables are loaded
+    # (they are not, on this server) — which makes the WHERE clause evaluate to NULL
+    # and the filter match ZERO rows every time, regardless of what data exists.
+    # Instead, compute the Nepal-local day boundaries ourselves and filter on the
+    # plain (timezone-aware) `timestamp` field, which Django converts to UTC in
+    # Python before sending to the DB — no CONVERT_TZ involved.
     base_qs = BiometricAttendance.objects.all()
 
     if date_from:
         try:
             df = datetime.strptime(date_from, '%Y-%m-%d').date()
-            base_qs = base_qs.filter(timestamp__date__gte=df)
+            start_dt = local_tz.localize(datetime.combine(df, datetime.min.time()))
+            base_qs = base_qs.filter(timestamp__gte=start_dt)
         except ValueError:
             pass
     if date_to:
         try:
             dt_val = datetime.strptime(date_to, '%Y-%m-%d').date()
-            base_qs = base_qs.filter(timestamp__date__lte=dt_val)
+            end_dt = local_tz.localize(datetime.combine(dt_val, datetime.min.time())) + timedelta(days=1)
+            base_qs = base_qs.filter(timestamp__lt=end_dt)
         except ValueError:
             pass
 
@@ -4392,6 +4414,10 @@ def biometric_attendance(request):
     page_number = request.GET.get('page', 1)
     page_obj = paginator.get_page(page_number)
 
+    # A "real" user-applied filter — excludes the automatic today-default,
+    # so the UI can tell "no punches yet today" apart from "your filter matched nothing".
+    has_filters = bool(search_q) or (bool(date_from or date_to) and not default_today)
+
     context = {
         'page_title': 'Biometric Attendance',
         'page_obj': page_obj,
@@ -4401,6 +4427,7 @@ def biometric_attendance(request):
         'date_to': date_to,
         'sort_by': sort_by,
         'default_today': default_today,
+        'has_filters': has_filters,
         'today_str': today_local.strftime('%Y-%m-%d'),
         'per_page': per_page,
         'per_page_options': [10, 20, 50, 100],
@@ -4425,9 +4452,16 @@ def biometric_attendance_view(request, pin, date_str):
         except ValueError:
             return JsonResponse({'success': False, 'error': 'Invalid date format.'})
 
+        # NOTE: Do NOT use `timestamp__date=punch_date` — see the comment on
+        # biometric_attendance() above for why that silently matches zero rows
+        # on this server. Use an explicit Nepal-local day range instead, same
+        # as biometric_sync_single()/biometric_attendance_delete() below.
+        start_of_day = local_tz.localize(datetime.combine(punch_date, datetime.min.time()))
+        end_of_day = local_tz.localize(datetime.combine(punch_date, datetime.max.time()))
+
         punches = BiometricAttendance.objects.filter(
             pin=pin,
-            timestamp__date=punch_date,
+            timestamp__range=(start_of_day, end_of_day),
         ).select_related('device').order_by('timestamp')
 
         emp = Employee.objects.filter(employee_code=pin).first()

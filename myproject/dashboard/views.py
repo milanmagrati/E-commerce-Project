@@ -613,34 +613,40 @@ def products_view(request):
         products = products.filter(stock=0)
 
     # Date Range Filter
+    # NOTE: Do NOT use `created_at__date=`/`__year=`/`__month=` lookups here.
+    # With USE_TZ=True and TIME_ZONE='Asia/Kathmandu', those compile to MySQL
+    # CONVERT_TZ(...) calls, and CONVERT_TZ() silently returns NULL on this server
+    # (its mysql.time_zone_name tables aren't loaded) — so the filter matches
+    # zero rows every time, with no error. Use plain UTC datetime bounds instead
+    # (see dashboard/timezone_utils.py nepali_day_start/nepali_day_end_exclusive).
+    from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
     date_filter = request.GET.get("date_range", "")
     today = timezone.now().date()
 
     if date_filter == "today":
-        products = products.filter(created_at__date=today)
+        products = products.filter(created_at__gte=nepali_day_start(today), created_at__lt=nepali_day_end_exclusive(today))
     elif date_filter == "yesterday":
         yesterday = today - timedelta(days=1)
-        products = products.filter(created_at__date=yesterday)
+        products = products.filter(created_at__gte=nepali_day_start(yesterday), created_at__lt=nepali_day_end_exclusive(yesterday))
     elif date_filter == "last_7_days":
         start_date = today - timedelta(days=7)
-        products = products.filter(created_at__date__gte=start_date)
+        products = products.filter(created_at__gte=nepali_day_start(start_date))
     elif date_filter == "last_30_days":
         start_date = today - timedelta(days=30)
-        products = products.filter(created_at__date__gte=start_date)
+        products = products.filter(created_at__gte=nepali_day_start(start_date))
     elif date_filter == "this_month":
-        products = products.filter(
-            created_at__year=today.year,
-            created_at__month=today.month
-        )
+        first_day_this_month = today.replace(day=1)
+        next_month = (first_day_this_month + timedelta(days=32)).replace(day=1)
+        products = products.filter(created_at__gte=nepali_day_start(first_day_this_month), created_at__lt=nepali_day_start(next_month))
     elif date_filter == "last_month":
         first_day_this_month = today.replace(day=1)
-        last_month = first_day_this_month - timedelta(days=1)
-        products = products.filter(
-            created_at__year=last_month.year,
-            created_at__month=last_month.month
-        )
+        last_month_end_excl = first_day_this_month
+        last_month_start = (first_day_this_month - timedelta(days=1)).replace(day=1)
+        products = products.filter(created_at__gte=nepali_day_start(last_month_start), created_at__lt=nepali_day_start(last_month_end_excl))
     elif date_filter == "this_year":
-        products = products.filter(created_at__year=today.year)
+        year_start = today.replace(month=1, day=1)
+        next_year_start = today.replace(year=today.year + 1, month=1, day=1)
+        products = products.filter(created_at__gte=nepali_day_start(year_start), created_at__lt=nepali_day_start(next_year_start))
     elif date_filter == "custom":
         start_date = request.GET.get("start_date")
         end_date = request.GET.get("end_date")
@@ -648,14 +654,14 @@ def products_view(request):
         if start_date:
             try:
                 start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
-                products = products.filter(created_at__date__gte=start_date_obj)
+                products = products.filter(created_at__gte=nepali_day_start(start_date_obj))
             except ValueError:
                 pass
 
         if end_date:
             try:
                 end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
-                products = products.filter(created_at__date__lte=end_date_obj)
+                products = products.filter(created_at__lt=nepali_day_end_exclusive(end_date_obj))
             except ValueError:
                 pass
 
@@ -2079,7 +2085,8 @@ def orders_view(request):
 @login_required
 def chart_data(request):
     # Get sales data for charts
-    today = datetime.now().date()
+    from .timezone_utils import get_nepali_now, nepali_day_start, nepali_day_end_exclusive
+    today = get_nepali_now().date()
 
     # Last 7 days sales
     daily_sales = []
@@ -2088,7 +2095,8 @@ def chart_data(request):
         sales = Order.objects.filter(
             user=request.user,
             payment_status='paid',
-            created_at__date=date
+            created_at__gte=nepali_day_start(date),
+            created_at__lt=nepali_day_end_exclusive(date)
         ).aggregate(total=Sum('total_amount'))['total'] or 0
 
         daily_sales.insert(0, {
@@ -2912,9 +2920,12 @@ def orders_list(request):
     dispatched_orders = orders.filter(order_status__iexact='dispatched').count()
 
     # Delivered today: orders with delivered status and delivered_at today
+    # (must use explicit UTC bounds, not __date=, for the same CONVERT_TZ reason as above)
+    _today_start = _day_start(today_nepal)
     delivered_today = orders.filter(
         order_status__iexact='delivered',
-        delivered_at__date=today_nepal
+        delivered_at__gte=_today_start,
+        delivered_at__lt=_today_start + timedelta(days=1)
     ).count()
 
     # Product name sorting
@@ -4609,11 +4620,14 @@ def return_orders_list(request):
         orders = orders.filter(ncm_order_id__isnull=True)
 
     # Date filter
+    # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+    # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
     if start_date and end_date:
         try:
+            from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            orders = orders.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
+            orders = orders.filter(created_at__gte=nepali_day_start(start_date_obj), created_at__lt=nepali_day_end_exclusive(end_date_obj))
         except ValueError:
             pass
 
@@ -4847,30 +4861,36 @@ def possible_redirection_list(request):
     if api_config_filter:
         rtvs = rtvs.filter(api_config_id=api_config_filter)
 
+    # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+    # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring),
+    # so we filter on the Coalesce'd datetime directly against UTC day bounds.
     if start_date and end_date:
         try:
+            from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
             # Use Coalesce to prefer rtv_marked_at over created_at for date filtering
             from django.db.models.functions import Coalesce
             rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
-            rtvs = rtvs.filter(_rtv_date__date__gte=start_date_obj, _rtv_date__date__lte=end_date_obj)
+            rtvs = rtvs.filter(_rtv_date__gte=nepali_day_start(start_date_obj), _rtv_date__lt=nepali_day_end_exclusive(end_date_obj))
         except ValueError:
             pass
     elif start_date:
         try:
+            from .timezone_utils import nepali_day_start
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
             from django.db.models.functions import Coalesce
             rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
-            rtvs = rtvs.filter(_rtv_date__date__gte=start_date_obj)
+            rtvs = rtvs.filter(_rtv_date__gte=nepali_day_start(start_date_obj))
         except ValueError:
             pass
     elif end_date:
         try:
+            from .timezone_utils import nepali_day_end_exclusive
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
             from django.db.models.functions import Coalesce
             rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
-            rtvs = rtvs.filter(_rtv_date__date__lte=end_date_obj)
+            rtvs = rtvs.filter(_rtv_date__lt=nepali_day_end_exclusive(end_date_obj))
         except ValueError:
             pass
 
@@ -6282,9 +6302,10 @@ def on_hold_orders_list(request):
 
     if start_date and end_date:
         try:
+            from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            orders = orders.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
+            orders = orders.filter(created_at__gte=nepali_day_start(start_date_obj), created_at__lt=nepali_day_end_exclusive(end_date_obj))
         except ValueError:
             pass
 
@@ -6684,16 +6705,18 @@ def api_search_orders(request):
     if date_from:
         try:
             from datetime import datetime
+            from .timezone_utils import nepali_day_start
             dt_from = datetime.strptime(date_from, '%Y-%m-%d')
-            orders = orders.filter(created_at__date__gte=dt_from.date())
+            orders = orders.filter(created_at__gte=nepali_day_start(dt_from.date()))
         except ValueError:
             pass
 
     if date_to:
         try:
             from datetime import datetime
+            from .timezone_utils import nepali_day_end_exclusive
             dt_to = datetime.strptime(date_to, '%Y-%m-%d')
-            orders = orders.filter(created_at__date__lte=dt_to.date())
+            orders = orders.filter(created_at__lt=nepali_day_end_exclusive(dt_to.date()))
         except ValueError:
             pass
 
@@ -9136,11 +9159,21 @@ def dispatch_list(request):
         ).distinct()
 
     # Date filters
+    # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+    # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
     if date_from:
-        dispatches = dispatches.filter(created_at__date__gte=date_from)
+        try:
+            from .timezone_utils import nepali_day_start
+            dispatches = dispatches.filter(created_at__gte=nepali_day_start(datetime.strptime(date_from, '%Y-%m-%d').date()))
+        except ValueError:
+            pass
 
     if date_to:
-        dispatches = dispatches.filter(created_at__date__lte=date_to)
+        try:
+            from .timezone_utils import nepali_day_end_exclusive
+            dispatches = dispatches.filter(created_at__lt=nepali_day_end_exclusive(datetime.strptime(date_to, '%Y-%m-%d').date()))
+        except ValueError:
+            pass
 
     context = {
         'dispatches': dispatches,
@@ -9643,14 +9676,20 @@ def inventory_dashboard(request):
         stock_in_data   = []
         stock_out_data  = []
 
+        # NOTE: __date= lookups silently match zero rows on this server
+        # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
+        from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
+
         current_date = movement_start
         while current_date <= movement_end:
             movement_labels.append(current_date.strftime('%b %d'))
+            _cd_start = nepali_day_start(current_date)
+            _cd_end = nepali_day_end_exclusive(current_date)
 
             # Stock In for this date
             try:
                 stock_ins_day = StockIn.objects.filter(
-                    created_at__date=current_date
+                    created_at__gte=_cd_start, created_at__lt=_cd_end
                 ).aggregate(total=Sum('total_quantity'))['total'] or 0
             except Exception:
                 stock_ins_day = 0
@@ -9659,7 +9698,7 @@ def inventory_dashboard(request):
             try:
                 orders_day = Order.objects.filter(
                     order_status='dispatched',
-                    dispatch_date__date=current_date
+                    dispatch_date__gte=_cd_start, dispatch_date__lt=_cd_end
                 )
                 stock_out_day = 0
                 for order in orders_day:
@@ -10847,20 +10886,25 @@ def returns_dashboard(request):
     returns = ReturnRequest.objects.filter(is_deleted=False).select_related('order', 'customer', 'created_by').all()
 
     # Apply date filter
+    # NOTE: __date=/__year=/__month= lookups silently match zero rows on this
+    # server (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
+    from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
     today = timezone.now().date()
     if date_filter == 'today':
-        returns = returns.filter(created_at__date=today)
+        returns = returns.filter(created_at__gte=nepali_day_start(today), created_at__lt=nepali_day_end_exclusive(today))
     elif date_filter == 'yesterday':
         yesterday = today - timedelta(days=1)
-        returns = returns.filter(created_at__date=yesterday)
+        returns = returns.filter(created_at__gte=nepali_day_start(yesterday), created_at__lt=nepali_day_end_exclusive(yesterday))
     elif date_filter == 'last_7_days':
         start = today - timedelta(days=7)
-        returns = returns.filter(created_at__date__gte=start)
+        returns = returns.filter(created_at__gte=nepali_day_start(start))
     elif date_filter == 'last_30_days':
         start = today - timedelta(days=30)
-        returns = returns.filter(created_at__date__gte=start)
+        returns = returns.filter(created_at__gte=nepali_day_start(start))
     elif date_filter == 'this_month':
-        returns = returns.filter(created_at__year=today.year, created_at__month=today.month)
+        month_start = today.replace(day=1)
+        next_month_start = (month_start + timedelta(days=32)).replace(day=1)
+        returns = returns.filter(created_at__gte=nepali_day_start(month_start), created_at__lt=nepali_day_start(next_month_start))
 
     # Apply status filter
     if status_filter:
@@ -18494,25 +18538,32 @@ def logistics_orders_list(request):
             )
 
     # Date range filter
+    # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+    # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
+    from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
     if date_from:
         try:
+            _date_from_obj = datetime.strptime(date_from, '%Y-%m-%d').date()
+            _date_from_start = nepali_day_start(_date_from_obj)
             if provider == 'ncm':
-                orders = orders.filter(ncm_created_at__date__gte=date_from)
+                orders = orders.filter(ncm_created_at__gte=_date_from_start)
             elif provider == 'pnd':
-                orders = orders.filter(pnd_created_at__date__gte=date_from)
+                orders = orders.filter(pnd_created_at__gte=_date_from_start)
             else:
-                orders = orders.filter(created_at__date__gte=date_from)
+                orders = orders.filter(created_at__gte=_date_from_start)
         except:
             pass
 
     if date_to:
         try:
+            _date_to_obj = datetime.strptime(date_to, '%Y-%m-%d').date()
+            _date_to_end = nepali_day_end_exclusive(_date_to_obj)
             if provider == 'ncm':
-                orders = orders.filter(ncm_created_at__date__lte=date_to)
+                orders = orders.filter(ncm_created_at__lt=_date_to_end)
             elif provider == 'pnd':
-                orders = orders.filter(pnd_created_at__date__lte=date_to)
+                orders = orders.filter(pnd_created_at__lt=_date_to_end)
             else:
-                orders = orders.filter(created_at__date__lte=date_to)
+                orders = orders.filter(created_at__lt=_date_to_end)
         except:
             pass
 
@@ -18714,14 +18765,17 @@ def logistics_bulk_logs_list(request):
             qs = qs.filter(**{branch_field: branch_filter})
         if status_filter:
             qs = qs.filter(status=status_filter)
+        # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+        # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
+        from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
         if date_from:
             try:
-                qs = qs.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+                qs = qs.filter(created_at__gte=nepali_day_start(datetime.strptime(date_from, '%Y-%m-%d').date()))
             except ValueError:
                 pass
         if date_to:
             try:
-                qs = qs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+                qs = qs.filter(created_at__lt=nepali_day_end_exclusive(datetime.strptime(date_to, '%Y-%m-%d').date()))
             except ValueError:
                 pass
         return qs

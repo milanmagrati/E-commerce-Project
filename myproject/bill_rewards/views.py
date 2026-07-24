@@ -33,13 +33,20 @@ logger = logging.getLogger('bill_rewards')
 @login_required
 def bill_rewards_dashboard(request):
     """Main dashboard for Bill OCR & Rewards."""
+    from dashboard.timezone_utils import get_nepali_now, nepali_day_start, nepali_day_end_exclusive
     now = timezone.now()
     thirty_days_ago = now - timedelta(days=30)
 
     total_bills = BillUpload.objects.count()
     pending_review = BillUpload.objects.filter(status='review').count()
+    # NOTE: __date= silently matches zero rows on this server (CONVERT_TZ()
+    # returns NULL — see dashboard/timezone_utils.py docstring), so filter on
+    # explicit Nepal-local day bounds instead.
+    today_nepal = get_nepali_now().date()
     processed_today = BillUpload.objects.filter(
-        created_at__date=now.date(), status__in=['completed', 'approved']
+        created_at__gte=nepali_day_start(today_nepal),
+        created_at__lt=nepali_day_end_exclusive(today_nepal),
+        status__in=['completed', 'approved']
     ).count()
     failed_bills = BillUpload.objects.filter(status='failed').count()
 
