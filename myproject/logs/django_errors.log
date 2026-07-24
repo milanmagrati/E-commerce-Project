@@ -692,3 +692,95 @@ Traceback (most recent call last):
   File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
     raise DisallowedHost(msg)
 django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-07-24 11:25:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784871645849 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 11:25:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784871645852 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 11:25:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 11:25:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 11:26:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 11:26:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784871705855 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 11:26:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784871705860 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 11:26:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 11:27:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784871765844 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 11:27:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784871765849 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 11:27:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 11:27:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:01:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:01:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873805844 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:01:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873805844 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:01:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:02:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873865849 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:02:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:02:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873865850 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:02:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:02:52 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873871515 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:02:52 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:02:54 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:02:55 basehttp.log_message:213 "GET /logout/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:00 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873880258 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:00 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:05 basehttp.log_message:213 "GET /logout/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:05 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:11 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873891153 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:11 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:12 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:15 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:18 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:20 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873899840 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:22 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:25 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:28 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:30 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873909854 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:30 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:33 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:37 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:40 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873919848 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:40 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:42 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873925853 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:49 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:50 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873929850 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:52 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:55 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:03:58 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:00 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873939839 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:01 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:04 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:07 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:10 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873949854 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:10 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:12 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:16 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873985853 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:46 basehttp.log_message:213 "GET /api/active-notice/?_t=1784873985855 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:04:46 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 12:08:00 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-07-24 14:10:49 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:10:51 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:10:54 basehttp.log_message:213 "GET /api/active-notice/?_t=1784881553682 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:10:54 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:10:58 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:01 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:04 basehttp.log_message:213 "GET /api/active-notice/?_t=1784881563685 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:04 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:07 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:09 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:13 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:14 basehttp.log_message:213 "GET /api/active-notice/?_t=1784881573684 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:16 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:18 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:22 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:24 basehttp.log_message:213 "GET /api/active-notice/?_t=1784881583680 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 14:11:24 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
