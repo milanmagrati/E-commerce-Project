@@ -100,6 +100,7 @@ class CustomUser(AbstractUser):
     can_view_daily_sales_reports = models.BooleanField(default=False, verbose_name="Can View Daily Sales Reports")
     can_view_product_sales_reports = models.BooleanField(default=False, verbose_name="Can View Product Sales Reports")
     can_view_financial_reports = models.BooleanField(default=False)
+    can_view_orders_by_source_report = models.BooleanField(default=False, verbose_name="Can View Orders by Source Report")
     can_view_total_revenue = models.BooleanField(default=False, verbose_name="Can View Total Revenue")
     can_export_data = models.BooleanField(default=False)
     
@@ -238,7 +239,7 @@ class CustomUser(AbstractUser):
                 'can_view_inventory_cost', 'can_toggle_product_price',
                 'can_view_selling_unit_price', 'can_view_cost_unit_price',
                 'can_view_valuation_selling', 'can_view_valuation_cost', 'can_toggle_stock_valuation',
-                'can_view_reports', 'can_view_sales_reports', 'can_view_daily_sales_reports', 'can_view_product_sales_reports', 'can_view_financial_reports', 'can_export_data',
+                'can_view_reports', 'can_view_sales_reports', 'can_view_daily_sales_reports', 'can_view_product_sales_reports', 'can_view_financial_reports', 'can_view_orders_by_source_report', 'can_export_data',
                 'can_view_purchases', 'can_create_purchases', 'can_manage_suppliers', 'can_make_supplier_payments',
                 'can_view_staff_performance',
                 'can_view_cities', 'can_add_cities', 'can_edit_cities', 'can_delete_cities',

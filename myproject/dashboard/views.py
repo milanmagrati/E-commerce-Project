@@ -14837,6 +14837,271 @@ def sales_report(request):
     return render(request, 'sales_report.html', context)
 
 
+# ==================== ORDERS BY SOURCE REPORT ====================
+
+def _normalize_order_source(raw):
+    """Turn a free-text Order.order_from value into a display-ready source name."""
+    source_raw = (raw or '').strip()
+    if not source_raw:
+        source_raw = 'Direct'
+    return source_raw.replace('_', ' ').title()
+
+
+def _orders_by_source_date_range(request, default_days=30):
+    """Shared date-range parser for the Orders by Source report endpoints.
+
+    Mirrors order_sources_data's day-preset / custom-range convention so both
+    features stay in sync, and also returns an equal-length preceding window
+    for trend/growth comparisons.
+    """
+    from datetime import datetime, time
+
+    custom_from = request.GET.get('custom_from')
+    custom_to = request.GET.get('custom_to')
+
+    if custom_from and custom_to:
+        try:
+            start_date = datetime.strptime(custom_from, '%Y-%m-%d').date()
+            end_date = datetime.strptime(custom_to, '%Y-%m-%d').date()
+            if end_date < start_date:
+                start_date, end_date = end_date, start_date
+        except (ValueError, TypeError):
+            end_date = timezone.now().date()
+            start_date = end_date - timedelta(days=default_days - 1)
+    else:
+        days = request.GET.get('days', default_days)
+        try:
+            days = int(days)
+            if days not in [7, 14, 30, 60, 90]:
+                days = default_days
+        except (ValueError, TypeError):
+            days = default_days
+        end_date = timezone.now().date()
+        start_date = end_date - timedelta(days=days - 1)
+
+    dates_list = []
+    current = start_date
+    while current <= end_date:
+        dates_list.append(current)
+        current += timedelta(days=1)
+
+    start_dt = timezone.make_aware(datetime.combine(start_date, time.min))
+    end_dt = timezone.make_aware(datetime.combine(end_date, time.max))
+
+    period_days = len(dates_list)
+    prev_end_dt = start_dt - timedelta(microseconds=1)
+    prev_start_dt = timezone.make_aware(datetime.combine(start_date - timedelta(days=period_days), time.min))
+
+    return dates_list, start_dt, end_dt, prev_start_dt, prev_end_dt
+
+
+@login_required
+@permission_required('can_view_orders_by_source_report')
+def orders_by_source_report(request):
+    """Orders by Source Report page shell — all data is loaded client-side via
+    orders_by_source_analytics_data / orders_by_source_table_data so the
+    preset & custom date filters, search and pagination never need a full
+    page reload."""
+    # Pull the real, currently-in-use order statuses straight from Order data
+    # (not a guessed static list) so the status filter always matches what's
+    # actually stored, including any custom Setup-driven status names.
+    raw_statuses = (
+        Order.objects.filter(is_deleted=False)
+        .exclude(order_status__isnull=True).exclude(order_status='')
+        .values_list('order_status', flat=True)
+        .distinct()
+    )
+    status_choices = sorted(
+        {(s, s.replace('_', ' ').title()) for s in raw_statuses},
+        key=lambda pair: pair[1]
+    )
+    return render(request, 'orders_by_source_report.html', {'status_choices': status_choices})
+
+
+@login_required
+@permission_required('can_view_orders_by_source_report')
+def orders_by_source_analytics_data(request):
+    """API: trend chart series + ranked source breakdown (with per-source
+    creator/staff attribution) for the Orders by Source report."""
+    dates_list, start_dt, end_dt, prev_start_dt, prev_end_dt = _orders_by_source_date_range(request)
+
+    orders = Order.objects.filter(
+        is_deleted=False,
+        created_at__range=(start_dt, end_dt),
+    ).values('created_at', 'order_from', 'total_amount', 'created_by__username',
+              'created_by__first_name', 'created_by__last_name')
+
+    all_sources = set()
+    by_date = {d: {} for d in dates_list}
+    source_stats = {}  # name -> {'count', 'revenue', 'creators': {name: count}}
+
+    for o in orders:
+        local_dt = timezone.localtime(o['created_at'])
+        order_date = local_dt.date()
+        source_name = _normalize_order_source(o['order_from'])
+        all_sources.add(source_name)
+
+        if order_date in by_date:
+            by_date[order_date][source_name] = by_date[order_date].get(source_name, 0) + 1
+
+        stats = source_stats.setdefault(source_name, {'count': 0, 'revenue': 0.0, 'creators': {}})
+        stats['count'] += 1
+        stats['revenue'] += float(o['total_amount'] or 0)
+
+        first = (o['created_by__first_name'] or '').strip()
+        last = (o['created_by__last_name'] or '').strip()
+        full_name = f"{first} {last}".strip()
+        creator_name = full_name or o['created_by__username'] or 'Unknown'
+        stats['creators'][creator_name] = stats['creators'].get(creator_name, 0) + 1
+
+    # Previous equal-length period counts, per source, for trend/growth
+    prev_counts = {}
+    if prev_start_dt < prev_end_dt:
+        prev_orders = Order.objects.filter(
+            is_deleted=False,
+            created_at__range=(prev_start_dt, prev_end_dt),
+        ).values_list('order_from', flat=True)
+        for raw in prev_orders:
+            name = _normalize_order_source(raw)
+            prev_counts[name] = prev_counts.get(name, 0) + 1
+
+    total_orders = sum(s['count'] for s in source_stats.values())
+    total_revenue = sum(s['revenue'] for s in source_stats.values())
+
+    def calc_growth(current, previous):
+        if previous and previous > 0:
+            return round((current - previous) / previous * 100, 1)
+        return 100.0 if current > 0 else 0.0
+
+    ranking = []
+    for name, stats in source_stats.items():
+        count = stats['count']
+        revenue = stats['revenue']
+        creators_sorted = sorted(stats['creators'].items(), key=lambda x: x[1], reverse=True)
+        top_creator, top_creator_count = creators_sorted[0] if creators_sorted else ('Unknown', 0)
+        prev_count = prev_counts.get(name, 0)
+        ranking.append({
+            'source': name,
+            'count': count,
+            'revenue': round(revenue, 2),
+            'avg_order_value': round(revenue / count, 2) if count else 0,
+            'share_pct': round(count / total_orders * 100, 1) if total_orders else 0,
+            'growth_pct': calc_growth(count, prev_count),
+            'prev_count': prev_count,
+            'unique_creators': len(stats['creators']),
+            'top_creator': top_creator,
+            'top_creator_count': top_creator_count,
+            'creators': [{'name': n, 'count': c} for n, c in creators_sorted[:10]],
+        })
+    ranking.sort(key=lambda x: x['count'], reverse=True)
+    for i, r in enumerate(ranking, start=1):
+        r['rank'] = i
+
+    sorted_sources = sorted(all_sources)
+    chart = {
+        'dates': [d.strftime('%b %d') for d in dates_list],
+        'sources': sorted_sources,
+        'data': {s: [by_date.get(d, {}).get(s, 0) for d in dates_list] for s in sorted_sources},
+    }
+
+    return JsonResponse({
+        'chart': chart,
+        'ranking': ranking,
+        'totals': {
+            'total_orders': total_orders,
+            'total_revenue': round(total_revenue, 2),
+            'total_sources': len(source_stats),
+            'top_source': ranking[0]['source'] if ranking else None,
+            'top_source_count': ranking[0]['count'] if ranking else 0,
+            'date_from': dates_list[0].strftime('%b %d, %Y') if dates_list else '',
+            'date_to': dates_list[-1].strftime('%b %d, %Y') if dates_list else '',
+        },
+    })
+
+
+@login_required
+@permission_required('can_view_orders_by_source_report')
+def orders_by_source_table_data(request):
+    """API: paginated + searchable order-level detail table backing the
+    Orders by Source report, filterable by the same date range plus an
+    optional source/status and a free-text search box."""
+    from django.urls import reverse
+
+    dates_list, start_dt, end_dt, prev_start_dt, prev_end_dt = _orders_by_source_date_range(request)
+
+    qs = Order.objects.filter(
+        is_deleted=False,
+        created_at__range=(start_dt, end_dt),
+    ).select_related('created_by')
+
+    source_param = (request.GET.get('source') or '').strip()
+    if source_param:
+        matching_ids = [
+            oid for oid, raw in qs.values_list('id', 'order_from')
+            if _normalize_order_source(raw) == source_param
+        ]
+        qs = qs.filter(id__in=matching_ids)
+
+    status_param = (request.GET.get('status') or '').strip()
+    if status_param:
+        qs = qs.filter(order_status__iexact=status_param)
+
+    search = (request.GET.get('search') or '').strip()
+    if search:
+        qs = qs.filter(
+            Q(order_number__icontains=search) |
+            Q(customer_name__icontains=search) |
+            Q(customer_phone__icontains=search) |
+            Q(created_by__username__icontains=search) |
+            Q(created_by__first_name__icontains=search) |
+            Q(created_by__last_name__icontains=search)
+        )
+
+    sort = request.GET.get('sort', '-created_at')
+    allowed_sorts = {'created_at', '-created_at', 'total_amount', '-total_amount', 'order_number', '-order_number'}
+    if sort not in allowed_sorts:
+        sort = '-created_at'
+    qs = qs.order_by(sort)
+
+    try:
+        page = max(int(request.GET.get('page', 1)), 1)
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        page_size = min(max(int(request.GET.get('page_size', 25)), 5), 100)
+    except (ValueError, TypeError):
+        page_size = 25
+
+    paginator = Paginator(qs, page_size)
+    page_obj = paginator.get_page(page)
+
+    rows = []
+    for o in page_obj.object_list:
+        creator = o.created_by
+        creator_name = (creator.get_full_name() or creator.username) if creator else 'Unknown'
+        rows.append({
+            'id': o.id,
+            'order_number': o.order_number,
+            'customer_name': o.customer_name,
+            'customer_phone': o.customer_phone,
+            'source': _normalize_order_source(o.order_from),
+            'created_by': creator_name,
+            'status': o.order_status,
+            'payment_status': o.payment_status,
+            'total_amount': float(o.total_amount or 0),
+            'created_at': timezone.localtime(o.created_at).strftime('%b %d, %Y %I:%M %p'),
+            'detail_url': reverse('order_detail', args=[o.id]),
+        })
+
+    return JsonResponse({
+        'rows': rows,
+        'page': page_obj.number,
+        'pages': paginator.num_pages,
+        'total': paginator.count,
+        'page_size': page_size,
+    })
+
+
 # ==================== DAILY SALES REPORT ====================
 
 @login_required
