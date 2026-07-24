@@ -62,6 +62,7 @@ EXTERNAL_APPS = [
     "bill_rewards",
     "google_sheets",
     "trendycrm",
+    "resources",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
 

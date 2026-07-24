@@ -180,6 +180,10 @@ class CustomUser(AbstractUser):
     can_view_follow_up_report = models.BooleanField(default=False, verbose_name="Can View Follow Up Report")
     can_setup_follow_up_status = models.BooleanField(default=False, verbose_name="Can Setup Follow Up Status")
 
+    # RESOURCES / KNOWLEDGE BASE PERMISSIONS
+    can_view_resources = models.BooleanField(default=False, verbose_name="Can View Resources")
+    can_create_resources = models.BooleanField(default=False, verbose_name="Can Create/Edit/Delete Resources")
+
     groups = models.ManyToManyField('auth.Group', related_name='custom_user_set', blank=True)
     user_permissions = models.ManyToManyField('auth.Permission', related_name='custom_user_set', blank=True)
     
@@ -251,7 +255,7 @@ class CustomUser(AbstractUser):
                 'can_fix_hrm_incomplete_attendance',
                 'can_access_todo', 'can_access_follow_ups', 'can_view_follow_up_report', 'can_setup_follow_up_status',
                 'can_view_cost_price', 'can_edit_prices', 'can_give_discounts',
-                'can_view_content_management'
+                'can_view_content_management', 'can_view_resources', 'can_create_resources'
             ]:
                 setattr(self, perm, True)
             self.max_discount_percent = Decimal('100.00')

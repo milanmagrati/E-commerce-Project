@@ -21,6 +21,7 @@ urlpatterns = [
     path('bill-rewards/', include('bill_rewards.urls')),
     path('imports/', include('google_sheets.urls')),
     path('trendy-crm/', include('trendycrm.urls')),
+    path('resources/', include('resources.urls')),
 
     # ZKTeco ADMS endpoints at root level (device pushes to /iclock/...)
     path('iclock/cdata', iclock_cdata, name='iclock_cdata_root'),

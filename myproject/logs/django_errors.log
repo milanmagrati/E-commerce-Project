@@ -784,3 +784,150 @@ django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. Y
 [ERROR] 2026-07-24 14:11:22 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
 [ERROR] 2026-07-24 14:11:24 basehttp.log_message:213 "GET /api/active-notice/?_t=1784881583680 HTTP/1.1" 500 59
 [ERROR] 2026-07-24 14:11:24 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 15:21:43 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 15:21:43 basehttp.log_message:213 "GET /api/active-notice/?_t=1784885803244 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 15:24:43 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 15:24:43 basehttp.log_message:213 "GET /api/active-notice/?_t=1784885983237 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 15:25:43 basehttp.log_message:213 "GET /api/active-notice/?_t=1784886043249 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 15:25:43 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 15:26:43 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 15:26:43 basehttp.log_message:213 "GET /api/active-notice/?_t=1784886103241 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 15:29:37 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-07-24 15:29:37 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-07-24 16:24:43 basehttp.log_message:213 "GET /api/active-notice/?_t=1784889583250 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 16:24:43 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 16:25:43 basehttp.log_message:213 "GET /api/active-notice/?_t=1784889643240 HTTP/1.1" 500 59
+[ERROR] 2026-07-24 16:25:43 basehttp.log_message:213 "GET /chat/api/unread-count/ HTTP/1.1" 500 59
+[ERROR] 2026-07-24 16:29:26 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-07-24 16:29:26 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-07-24 16:29:26 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-07-24 16:30:49 log.log_response:248 Internal Server Error: /resources/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\resources\views.py", line 27, in wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\resources\views.py", line 82, in resource_list
+    return render(request, 'resources/list.html', context)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\shortcuts.py", line 25, in render
+    content = loader.render_to_string(template_name, context, request, using=using)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\template\loader.py", line 61, in render_to_string
+    template = get_template(template_name, using=using)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\template\loader.py", line 19, in get_template
+    raise TemplateDoesNotExist(template_name, chain=chain)
+django.template.exceptions.TemplateDoesNotExist: resources/list.html
+[ERROR] 2026-07-24 16:30:49 basehttp.log_message:213 "GET /resources/ HTTP/1.1" 500 3150
+[ERROR] 2026-07-24 16:32:01 log.log_response:248 Internal Server Error: /resources/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\resources\views.py", line 27, in wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\resources\views.py", line 82, in resource_list
+    return render(request, 'resources/list.html', context)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\shortcuts.py", line 25, in render
+    content = loader.render_to_string(template_name, context, request, using=using)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\template\loader.py", line 61, in render_to_string
+    template = get_template(template_name, using=using)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\template\loader.py", line 19, in get_template
+    raise TemplateDoesNotExist(template_name, chain=chain)
+django.template.exceptions.TemplateDoesNotExist: resources/list.html
+[ERROR] 2026-07-24 16:32:01 basehttp.log_message:213 "GET /resources/ HTTP/1.1" 500 3150
+[ERROR] 2026-07-24 16:32:02 log.log_response:248 Internal Server Error: /resources/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\resources\views.py", line 27, in wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\resources\views.py", line 82, in resource_list
+    return render(request, 'resources/list.html', context)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\shortcuts.py", line 25, in render
+    content = loader.render_to_string(template_name, context, request, using=using)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\template\loader.py", line 61, in render_to_string
+    template = get_template(template_name, using=using)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\template\loader.py", line 19, in get_template
+    raise TemplateDoesNotExist(template_name, chain=chain)
+django.template.exceptions.TemplateDoesNotExist: resources/list.html
+[ERROR] 2026-07-24 16:32:02 basehttp.log_message:213 "GET /resources/ HTTP/1.1" 500 3150
+[ERROR] 2026-07-24 16:32:18 log.log_response:248 Internal Server Error: /resources/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\resources\views.py", line 27, in wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\resources\views.py", line 82, in resource_list
+    return render(request, 'resources/list.html', context)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\shortcuts.py", line 25, in render
+    content = loader.render_to_string(template_name, context, request, using=using)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\template\loader.py", line 61, in render_to_string
+    template = get_template(template_name, using=using)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\template\loader.py", line 19, in get_template
+    raise TemplateDoesNotExist(template_name, chain=chain)
+django.template.exceptions.TemplateDoesNotExist: resources/list.html
+[ERROR] 2026-07-24 16:32:18 basehttp.log_message:213 "GET /resources/ HTTP/1.1" 500 3150

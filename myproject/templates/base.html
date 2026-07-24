@@ -1703,6 +1703,15 @@
                 </li>
                 {% endif %}
 
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_resources or user.can_create_resources %}
+                <!-- ==================== RESOURCES ==================== -->
+                <li class="{% if 'resources' in request.path %}active{% endif %}">
+                    <a href="{% url 'resources:list' %}">
+                        <i class="fas fa-book-open"></i> Resources
+                    </a>
+                </li>
+                {% endif %}
+
                 <!-- ==================== LOGOUT ==================== -->
                 <li>
                     <a href="{% url 'logout' %}" onclick="return confirm('Are you sure you want to logout?')">
