@@ -268,7 +268,20 @@ def user_create(request):
                     user.can_view_hrm_asset_management = False
                     user.can_view_hrm_attendance = False
                     user.can_view_hrm_payroll = False
-            
+                    user.can_view_hrm_incomplete_attendance = False
+                    user.can_fix_hrm_incomplete_attendance = False
+                # Fixing incomplete attendance is meaningless without the alert
+                # itself being visible — keep the two in sync either way.
+                if not user.can_view_hrm_incomplete_attendance:
+                    user.can_fix_hrm_incomplete_attendance = False
+
+                # DASHBOARD MODULE special handling
+                if hasattr(user, 'can_view_dashboard') and not user.can_view_dashboard:
+                    user.can_view_dashboard_incomplete_attendance = False
+                    user.can_view_dashboard_sales_overview = False
+                    user.can_view_dashboard_orders_overview = False
+                    user.can_view_dashboard_orders_by_source = False
+
             user.save()
             if is_ajax:
                 from django.urls import reverse
@@ -381,7 +394,20 @@ def user_edit(request, user_id):
                 edit_user.can_view_hrm_asset_management = False
                 edit_user.can_view_hrm_attendance = False
                 edit_user.can_view_hrm_payroll = False
-        
+                edit_user.can_view_hrm_incomplete_attendance = False
+                edit_user.can_fix_hrm_incomplete_attendance = False
+            # Fixing incomplete attendance is meaningless without the alert
+            # itself being visible — keep the two in sync either way.
+            if not edit_user.can_view_hrm_incomplete_attendance:
+                edit_user.can_fix_hrm_incomplete_attendance = False
+
+            # DASHBOARD MODULE special handling
+            if hasattr(edit_user, 'can_view_dashboard') and not edit_user.can_view_dashboard:
+                edit_user.can_view_dashboard_incomplete_attendance = False
+                edit_user.can_view_dashboard_sales_overview = False
+                edit_user.can_view_dashboard_orders_overview = False
+                edit_user.can_view_dashboard_orders_by_source = False
+
         try:
             edit_user.save()
             messages.success(request, f'✅ User "{edit_user.username}" updated successfully!')

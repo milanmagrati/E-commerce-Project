@@ -145,6 +145,10 @@ class CustomUser(AbstractUser):
     # DASHBOARD PERMISSIONS
     can_view_dashboard = models.BooleanField(default=False, verbose_name="Dashboard Access")
     can_view_low_stock_alerts = models.BooleanField(default=False, verbose_name="Can View Low Stock Alerts")
+    can_view_dashboard_incomplete_attendance = models.BooleanField(default=False, verbose_name="Incomplete Attendance Alert")
+    can_view_dashboard_sales_overview = models.BooleanField(default=False, verbose_name="Sales Overview")
+    can_view_dashboard_orders_overview = models.BooleanField(default=False, verbose_name="Orders Overview")
+    can_view_dashboard_orders_by_source = models.BooleanField(default=False, verbose_name="Orders by Source")
 
     # NCM LOGISTICS PERMISSIONS
     can_view_ncm_orders = models.BooleanField(default=False, verbose_name="Can View NCM Orders")
@@ -164,6 +168,8 @@ class CustomUser(AbstractUser):
     can_view_hrm_asset_management = models.BooleanField(default=False, verbose_name="Can View Asset Management")
     can_view_hrm_attendance = models.BooleanField(default=False, verbose_name="Can View Attendance")
     can_view_hrm_payroll = models.BooleanField(default=False, verbose_name="Can View Payroll Management")
+    can_view_hrm_incomplete_attendance = models.BooleanField(default=False, verbose_name="Incomplete Attendance Alert")
+    can_fix_hrm_incomplete_attendance = models.BooleanField(default=False, verbose_name="Fix Incomplete Attendance")
 
     # TODO / TICKETING PERMISSIONS
     can_access_todo = models.BooleanField(default=False, verbose_name="Access to Todo/Ticketing")
@@ -216,6 +222,8 @@ class CustomUser(AbstractUser):
         if self.role == 'administrator':
             for perm in [
                 'can_view_dashboard', 'can_view_total_revenue', 'can_view_low_stock_alerts',
+                'can_view_dashboard_incomplete_attendance', 'can_view_dashboard_sales_overview',
+                'can_view_dashboard_orders_overview', 'can_view_dashboard_orders_by_source',
                 'can_view_orders', 'can_create_orders', 'can_edit_orders', 
                 'can_delete_orders', 'can_cancel_orders', 'can_view_on_hold_orders', 
                 'can_export_orders', 'can_view_orders_list', 'can_access_offer_price',
@@ -238,7 +246,8 @@ class CustomUser(AbstractUser):
                 'can_delete_ncm_orders', 'can_view_ncm_bulk_logs', 'can_manage_ncm_bulk_logs',
                 'can_view_ncm_trash', 'can_sync_ncm_orders', 'can_view_ncm_branches', 'can_manage_ncm_branches',
                 'can_view_hrm', 'can_view_hrm_hr_management', 'can_view_hrm_asset_management',
-                'can_view_hrm_attendance', 'can_view_hrm_payroll',
+                'can_view_hrm_attendance', 'can_view_hrm_payroll', 'can_view_hrm_incomplete_attendance',
+                'can_fix_hrm_incomplete_attendance',
                 'can_access_todo', 'can_access_follow_ups', 'can_view_follow_up_report', 'can_setup_follow_up_status',
                 'can_view_cost_price', 'can_edit_prices', 'can_give_discounts',
                 'can_view_content_management'

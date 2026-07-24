@@ -582,6 +582,15 @@ class AttendanceRecord(models.Model):
         help_text='Set when clock in/out was manually corrected (regularization approval or '
                    'Fix Attendance). The biometric auto-sync will not overwrite these fields.'
     )
+    # Denormalized "latest fix" snapshot — lets list/table views show who
+    # last touched this record and why without joining fix_logs every row.
+    # Full history still lives in AttendanceFixLog.
+    last_fix_remarks = models.TextField(blank=True, default='')
+    last_fixed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='attendance_last_fixes'
+    )
+    last_fixed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -601,6 +610,33 @@ class AttendanceRecord(models.Model):
         if self.status in ('absent', 'on_leave'):
             return False
         return not (self.clock_in and self.clock_out)
+
+
+class AttendanceFixLog(models.Model):
+    """Audit trail for manual corrections made via 'Fix Attendance' — one
+    entry per save, so a record fixed multiple times keeps its full history
+    even though AttendanceRecord itself only keeps the latest snapshot."""
+    attendance_record = models.ForeignKey(
+        AttendanceRecord, on_delete=models.CASCADE, related_name='fix_logs'
+    )
+    old_clock_in = models.TimeField(null=True, blank=True)
+    old_clock_out = models.TimeField(null=True, blank=True)
+    new_clock_in = models.TimeField(null=True, blank=True)
+    new_clock_out = models.TimeField(null=True, blank=True)
+    remarks = models.TextField(blank=True, default='')
+    fixed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='attendance_fix_logs'
+    )
+    fixed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-fixed_at']
+        verbose_name = 'Attendance Fix Log'
+        verbose_name_plural = 'Attendance Fix Logs'
+
+    def __str__(self):
+        return f"Fix on {self.attendance_record} by {self.fixed_by} at {self.fixed_at}"
 
 
 class AttendanceRegularization(models.Model):

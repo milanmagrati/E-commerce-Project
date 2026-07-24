@@ -427,69 +427,122 @@ def dashboard_view(request):
     low_stock_alert_count = len(low_stock_items)
     low_stock_items = low_stock_items[:8]
 
-    # Monthly sales data for chart (last 6 months)
+    # ── Dashboard widget permissions (role-based visibility) ──
+    # Each widget has its own checkbox under "Dashboard Module" on the user
+    # create/edit pages, independent of the HRM module's own permissions.
+    is_admin_or_super = request.user.is_superuser or request.user.role == 'administrator'
+    can_view_incomplete_attendance_alert = is_admin_or_super or request.user.can_view_dashboard_incomplete_attendance
+    # "Review & Fix" only makes sense if the destination (the HRM Attendance
+    # Policies page's modal) will actually let them fix something — that page
+    # gates the whole modal on can_view_hrm_incomplete_attendance, so both
+    # flags are required here too, not just the fix checkbox alone.
+    can_fix_incomplete_attendance = is_admin_or_super or (
+        request.user.can_fix_hrm_incomplete_attendance and request.user.can_view_hrm_incomplete_attendance
+    )
+    can_view_sales_overview = is_admin_or_super or request.user.can_view_dashboard_sales_overview
+    can_view_orders_overview = is_admin_or_super or request.user.can_view_dashboard_orders_overview
+    can_view_orders_by_source = is_admin_or_super or request.user.can_view_dashboard_orders_by_source
+
+    # ── Incomplete Attendance Alert (Dashboard widget) ──
+    # Mirrors the default 7-day window used by the Attendance Policies page alert.
+    incomplete_attendance_items = []
+    incomplete_attendance_count = 0
+    if can_view_incomplete_attendance_alert:
+        from hrm.models import AttendanceRecord
+        from .timezone_utils import get_nepali_now, format_nepali_datetime
+        today_nepal = get_nepali_now().date()
+        week_ago = today_nepal - timedelta(days=6)
+        incomplete_qs = AttendanceRecord.objects.exclude(
+            status__in=['absent', 'on_leave']
+        ).filter(
+            Q(clock_in__isnull=True) | Q(clock_out__isnull=True),
+            date__gte=week_ago, date__lte=today_nepal,
+        ).select_related('employee', 'employee__department', 'last_fixed_by').annotate(
+            fix_logs_count=Count('fix_logs', distinct=True)
+        ).order_by('-date', 'employee__full_name')
+        incomplete_attendance_count = incomplete_qs.count()
+        for rec in incomplete_qs[:5]:
+            incomplete_attendance_items.append({
+                'id': rec.id,
+                'employee_name': rec.employee.full_name,
+                'employee_id': rec.employee.employee_id,
+                'department': rec.employee.department.name if rec.employee.department_id else '-',
+                'date': rec.date,
+                'clock_in': rec.clock_in,
+                'clock_out': rec.clock_out,
+                'remarks': rec.last_fix_remarks or '',
+                'fixed_by': (rec.last_fixed_by.get_full_name() or rec.last_fixed_by.username) if rec.last_fixed_by else '',
+                'fixed_at': format_nepali_datetime(rec.last_fixed_at) if rec.last_fixed_at else '',
+                'fix_logs_count': rec.fix_logs_count,
+            })
+
+    # Monthly sales data for chart (last 6 months) — skip query if the
+    # widget is hidden from this user (Dashboard Module permission).
     monthly_sales = []
-    for i in range(5, -1, -1):
-        date = timezone.now() - timedelta(days=30*i)
-        month_name = date.strftime('%b %Y')
-        month_start = date.replace(day=1)
+    if can_view_sales_overview:
+        for i in range(5, -1, -1):
+            date = timezone.now() - timedelta(days=30*i)
+            month_name = date.strftime('%b %Y')
+            month_start = date.replace(day=1)
 
-        if i > 0:
-            next_month = (date.replace(day=28) + timedelta(days=4)).replace(day=1)
-        else:
-            next_month = timezone.now() + timedelta(days=1)
+            if i > 0:
+                next_month = (date.replace(day=28) + timedelta(days=4)).replace(day=1)
+            else:
+                next_month = timezone.now() + timedelta(days=1)
 
-        sales = orders.filter(
-            created_at__gte=month_start,
-            created_at__lt=next_month,
-            payment_status='paid'
-        ).aggregate(total=Sum('total_amount'))['total'] or 0
+            sales = orders.filter(
+                created_at__gte=month_start,
+                created_at__lt=next_month,
+                payment_status='paid'
+            ).aggregate(total=Sum('total_amount'))['total'] or 0
 
-        monthly_sales.append({
-            'month': month_name,
-            'sales': float(sales)
-        })
+            monthly_sales.append({
+                'month': month_name,
+                'sales': float(sales)
+            })
 
-    # Order source data by dates (last 7 days - default)
+    # Order source data by dates (last 7 days - default) — skip query if the
+    # widget is hidden from this user (Dashboard Module permission).
     # ── FIXED: Single aggregated query instead of N+1 per-source loop ──
     # Old code fired one DB query per source name × date range.
     # New code fires ONE query that groups by (order_from, order_date).
-
-    # Generate last 7 days of dates (default view)
-    dates_list = [
-        (timezone.now() - timedelta(days=i)).date()
-        for i in range(6, -1, -1)
-    ]
-
-    # Single aggregated query: all sources × all dates in one hit
-    source_date_rows = (
-        orders
-        .annotate(order_date=TruncDate('created_at'))
-        .filter(order_date__in=dates_list)
-        .values('order_date', 'order_from')
-        .annotate(count=Count('id'))
-        .order_by('order_date', 'order_from')
-    )
-
-    # Build lookup: {source_name: {date: count}}
-    all_sources = set()
-    source_date_map = {}  # {source_name: {date: count}}
-    for row in source_date_rows:
-        src = row['order_from'] or 'Direct'
-        all_sources.add(src)
-        source_date_map.setdefault(src, {})[row['order_date']] = row['count']
-
-    # Format for JSON chart
-    order_sources = {
-        'dates': [d.strftime('%b %d') for d in dates_list],
-        'sources': sorted(all_sources),
-        'data': {},
-    }
-    for source in order_sources['sources']:
-        order_sources['data'][source] = [
-            source_date_map.get(source, {}).get(d, 0)
-            for d in dates_list
+    order_sources = {'dates': [], 'sources': [], 'data': {}}
+    if can_view_orders_by_source:
+        # Generate last 7 days of dates (default view)
+        dates_list = [
+            (timezone.now() - timedelta(days=i)).date()
+            for i in range(6, -1, -1)
         ]
+
+        # Single aggregated query: all sources × all dates in one hit
+        source_date_rows = (
+            orders
+            .annotate(order_date=TruncDate('created_at'))
+            .filter(order_date__in=dates_list)
+            .values('order_date', 'order_from')
+            .annotate(count=Count('id'))
+            .order_by('order_date', 'order_from')
+        )
+
+        # Build lookup: {source_name: {date: count}}
+        all_sources = set()
+        source_date_map = {}  # {source_name: {date: count}}
+        for row in source_date_rows:
+            src = row['order_from'] or 'Direct'
+            all_sources.add(src)
+            source_date_map.setdefault(src, {})[row['order_date']] = row['count']
+
+        # Format for JSON chart
+        order_sources = {
+            'dates': [d.strftime('%b %d') for d in dates_list],
+            'sources': sorted(all_sources),
+            'data': {},
+        }
+        for source in order_sources['sources']:
+            order_sources['data'][source] = [
+                source_date_map.get(source, {}).get(d, 0)
+                for d in dates_list
+            ]
 
     context = {
         'total_products': total_products,
@@ -502,6 +555,13 @@ def dashboard_view(request):
         'recent_orders': recent_orders,
         'low_stock_items': low_stock_items,
         'low_stock_alert_count': low_stock_alert_count,
+        'can_view_incomplete_attendance_alert': can_view_incomplete_attendance_alert,
+        'can_fix_incomplete_attendance': can_fix_incomplete_attendance,
+        'incomplete_attendance_items': incomplete_attendance_items,
+        'incomplete_attendance_count': incomplete_attendance_count,
+        'can_view_sales_overview': can_view_sales_overview,
+        'can_view_orders_overview': can_view_orders_overview,
+        'can_view_orders_by_source': can_view_orders_by_source,
         'monthly_sales': json.dumps(monthly_sales),
         'order_sources': json.dumps(order_sources),
         'can_view_total_revenue': request.user.can_view_total_revenue or request.user.role == 'administrator',

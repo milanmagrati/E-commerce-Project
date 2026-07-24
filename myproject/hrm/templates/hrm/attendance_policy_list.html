@@ -23,10 +23,12 @@
             <small class="text-muted">Manage attendance rules and grace periods</small>
         </div>
         <div class="d-flex align-items-center gap-2">
+            {% if can_view_incomplete_attendance_alert %}
             <button class="btn btn-outline-warning px-3 position-relative" id="incAttBtn" onclick="openIncompleteModal()">
                 <i class="fas fa-triangle-exclamation me-1"></i> Incomplete Attendance
                 <span class="badge rounded-pill bg-danger" id="incAttBadge" style="display:none;position:absolute;top:-8px;right:-8px;font-size:.68rem;">0</span>
             </button>
+            {% endif %}
             <button class="btn btn-success px-3" onclick="openAddModal()">
                 <i class="fas fa-plus me-1"></i> Add Attendance Policy
             </button>
@@ -424,6 +426,7 @@
     </div>
 </div>
 
+{% if can_view_incomplete_attendance_alert %}
 <!-- Incomplete Attendance Modal -->
 <div class="modal fade" id="incAttModal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -440,15 +443,24 @@
             </div>
 
             <div class="modal-body p-3">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <span class="text-muted small fw-semibold">Range:</span>
+                    <div class="btn-group btn-group-sm" role="group" id="incAttRangeGroup" aria-label="Date range">
+                        <button type="button" class="btn btn-outline-secondary" data-range="today" onclick="incAttSelectRange('today')">Today</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="7" onclick="incAttSelectRange('7')">Last 7 Days</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="15" onclick="incAttSelectRange('15')">Last 15 Days</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="all" onclick="incAttSelectRange('all')">All Time</button>
+                    </div>
+                </div>
                 <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                     <div class="input-group" style="max-width:220px;">
                         <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-search fa-sm"></i></span>
                         <input type="text" class="form-control border-start-0 ps-0" id="incAttSearch" placeholder="Search employee..." style="box-shadow:none;" onkeydown="if(event.key==='Enter'){incAttApplyFilters();}">
                     </div>
-                    <input type="date" class="form-control" id="incAttDateFrom" style="max-width:158px;" title="From date">
+                    <input type="date" class="form-control" id="incAttDateFrom" style="max-width:158px;" title="From date" onchange="incAttSetActiveRangeBtn(null)">
                     <span class="text-muted small">to</span>
-                    <input type="date" class="form-control" id="incAttDateTo" style="max-width:158px;" title="To date">
-                    <button class="btn btn-outline-secondary btn-sm" onclick="incAttApplyFilters()"><i class="fas fa-filter me-1"></i>Apply</button>
+                    <input type="date" class="form-control" id="incAttDateTo" style="max-width:158px;" title="To date" onchange="incAttSetActiveRangeBtn(null)">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="incAttSetActiveRangeBtn(null); incAttApplyFilters();"><i class="fas fa-filter me-1"></i>Apply</button>
                     <button class="btn btn-outline-secondary btn-sm" title="Reset filters" onclick="incAttResetFilters()"><i class="fas fa-rotate-left"></i></button>
                     <div class="ms-auto text-muted small" id="incAttCountLabel"></div>
                 </div>
@@ -470,7 +482,9 @@
                                 <th>Clock In</th>
                                 <th>Clock Out</th>
                                 <th>Flag</th>
-                                <th style="width:100px;">Action</th>
+                                <th style="min-width:160px;">Remarks</th>
+                                <th style="min-width:130px;">Modified By</th>
+                                <th style="width:130px;">Action</th>
                             </tr>
                         </thead>
                         <tbody id="incAttTbody"></tbody>
@@ -492,6 +506,39 @@
         </div>
     </div>
 </div>
+
+<!-- Attendance Fix Logs Modal -->
+<div class="modal fade" id="incAttLogsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="policy-modal-header" style="background:linear-gradient(135deg,#334155,#64748b);">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="modal-header-icon"><i class="fas fa-clock-rotate-left"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6" id="incAttLogsTitle">Fix History</div>
+                        <div class="text-white-50 small" id="incAttLogsSubtitle">All corrections made to this record</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="getModal('incAttLogsModal').hide()"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div id="incAttLogsLoading" class="text-center py-5">
+                    <div class="spinner-border text-secondary" role="status"></div>
+                </div>
+                <div id="incAttLogsEmpty" class="text-center py-5 text-muted" style="display:none;">
+                    <i class="fas fa-inbox fa-3x mb-3 d-block" style="color:#cbd5e1;"></i>
+                    No fixes have been logged for this record yet.
+                </div>
+                <div id="incAttLogsError" class="text-center py-5 text-danger" style="display:none;"></div>
+                <div id="incAttLogsList" style="display:none;"></div>
+            </div>
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button class="btn btn-outline-secondary px-4" onclick="getModal('incAttLogsModal').hide()">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <style>
     /* ── Stat Cards ── */
@@ -658,6 +705,36 @@
     .inc-att-fix-row td { border-top:none; }
     #incAttTable th { font-size:.7rem; font-weight:700; padding-bottom:.6rem; }
     #incAttTable td { font-size:.85rem; vertical-align:middle; }
+    .inc-att-remarks {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        max-width: 220px;
+        font-size: .8rem;
+        color: #44403c;
+        cursor: help;
+    }
+
+    /* ── Attendance Fix Logs Modal ── */
+    .inc-att-log-entry {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+        background: #f8fafc;
+    }
+    .inc-att-log-entry:last-child { margin-bottom: 0; }
+    .inc-att-log-diff { font-size: .82rem; color: #334155; line-height: 1.6; }
+    .inc-att-log-field { color: #64748b; font-weight: 600; }
+    .inc-att-log-remarks {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed #e2e8f0;
+        font-size: .82rem;
+        color: #475569;
+        font-style: italic;
+    }
     @keyframes toastSlideIn  { from{opacity:0;transform:translateX(60px) scale(.95)} to{opacity:1;transform:translateX(0) scale(1)} }
     @keyframes toastSlideOut { from{opacity:1;transform:translateX(0) scale(1)} to{opacity:0;transform:translateX(60px) scale(.95)} }
     @keyframes toastCountdown { from{width:100%} to{width:0%} }
@@ -684,15 +761,69 @@
 
     /* ── Incomplete Attendance state ── */
     var INC_ATT_URL = '{% url "hrm:incomplete_attendance_list_ajax" %}';
+    var INC_ATT_TODAY = '{{ incomplete_attendance_today }}'; // server (Nepal-local) date, avoids browser-tz drift
+    var CAN_FIX_INCOMPLETE_ATTENDANCE = {% if can_fix_incomplete_attendance %}true{% else %}false{% endif %};
+    var INC_ATT_RANGE_KEY = 'incAttRangePref';
     var incAttPage = 1;
     var incAttTotalPages = 1;
     var incAttRecords = {};
+
+    /* ── Range preset helpers (Today / Last 7 Days / Last 15 Days / All Time) ── */
+    function incAttFmtDate(d) {
+        var y = d.getFullYear(), m = ('0' + (d.getMonth() + 1)).slice(-2), day = ('0' + d.getDate()).slice(-2);
+        return y + '-' + m + '-' + day;
+    }
+    function incAttRangeDates(range) {
+        var today = new Date(INC_ATT_TODAY + 'T00:00:00');
+        if (range === 'today') return { from: INC_ATT_TODAY, to: INC_ATT_TODAY };
+        if (range === '7' || range === '15') {
+            var span = range === '7' ? 6 : 14;
+            var from = new Date(today);
+            from.setDate(from.getDate() - span);
+            return { from: incAttFmtDate(from), to: INC_ATT_TODAY };
+        }
+        return { from: '', to: '' }; // all time
+    }
+    function incAttGetSavedRange() {
+        var v = localStorage.getItem(INC_ATT_RANGE_KEY);
+        return (v === 'today' || v === '7' || v === '15' || v === 'all') ? v : '7';
+    }
+    /* The automatic background check (badge + popup toast) must never silently
+       scope to "All Time" — a one-off manual browse with "All Time" selected
+       would otherwise persist and make every future auto-alert unbounded again,
+       defeating the point of the range feature. Cap it to 15 days. */
+    function incAttGetAutoRange() {
+        var v = incAttGetSavedRange();
+        return v === 'all' ? '15' : v;
+    }
+    function incAttSetActiveRangeBtn(range) {
+        var group = document.getElementById('incAttRangeGroup');
+        if (!group) return;
+        group.querySelectorAll('[data-range]').forEach(function(btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-range') === range);
+        });
+    }
+    function incAttSelectRange(range) {
+        var d = incAttRangeDates(range);
+        document.getElementById('incAttDateFrom').value = d.from;
+        document.getElementById('incAttDateTo').value = d.to;
+        incAttSetActiveRangeBtn(range);
+        localStorage.setItem(INC_ATT_RANGE_KEY, range);
+        incAttApplyFilters();
+    }
 
     /* ── HTML escape helper (prevent XSS) ── */
     function esc(str) {
         var d = document.createElement('div');
         d.appendChild(document.createTextNode(str));
         return d.innerHTML;
+    }
+    /* esc() only escapes &, <, > (safe for text content) — it leaves quote
+       characters untouched, which breaks out of a value="..." or title="..."
+       attribute the moment free-text (like Remarks) contains one. Use this
+       wherever escaped text is placed inside a quoted HTML attribute. */
+    function escAttr(str) {
+        return esc(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     /* ── Modal singleton (prevent backdrop stacking bug) ── */
@@ -731,14 +862,31 @@
         if (t) { try { var d = JSON.parse(t); showPageToast(d.type, d.title, d.msg); } catch(e) {} sessionStorage.removeItem('policyToast'); }
     })();
 
+    /* Auto-open the Incomplete Attendance modal when arriving from the
+       Dashboard "Review & Fix" shortcut (?open_incomplete=1). The modal
+       markup only renders for permitted users, so guard on its presence
+       rather than duplicating the permission check in JS. Clean the URL
+       afterwards so a page refresh doesn't reopen it every time. */
+    (function() {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('open_incomplete') === '1' && document.getElementById('incAttModal')) {
+            openIncompleteModal();
+            params.delete('open_incomplete');
+            var qs = params.toString();
+            var newUrl = window.location.pathname + (qs ? '?' + qs : '') + window.location.hash;
+            window.history.replaceState({}, '', newUrl);
+        }
+    })();
+
     /* ── Incomplete Attendance alert (short-lived, clickable toast) ── */
-    function showIncompleteToast(count) {
+    var INC_ATT_RANGE_LABELS = { today: 'today', '7': 'in the last 7 days', '15': 'in the last 15 days', all: 'overall' };
+    function showIncompleteToast(count, range) {
         var toast = document.getElementById('pageToast');
         toast.className = 'page-toast toast-warning';
         toast.style.cursor = 'pointer';
         document.getElementById('pageToastTitle').textContent = 'Incomplete Attendance';
         document.getElementById('pageToastMsg').textContent = count + ' attendance record' + (count === 1 ? ' has' : 's have')
-            + ' a missing clock-in or clock-out. Click to review and fix.';
+            + ' a missing clock-in or clock-out ' + (INC_ATT_RANGE_LABELS[range] || 'in the last 7 days') + '. Click to review and fix.';
         document.getElementById('pageToastIcon').innerHTML = '<i class="fas fa-triangle-exclamation"></i>';
         toast.style.display = 'block';
         toast.style.animation = 'toastSlideIn .4s cubic-bezier(.21,1.02,.73,1)';
@@ -764,18 +912,25 @@
         }
     }
     function checkIncompleteAttendance(showToastIfFound) {
-        fetch(INC_ATT_URL + '?count_only=1')
+        var range = incAttGetAutoRange();
+        var d = incAttRangeDates(range);
+        var params = new URLSearchParams({ count_only: '1', date_from: d.from, date_to: d.to });
+        fetch(INC_ATT_URL + '?' + params.toString())
             .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
             .then(function(data) {
                 if (!data.success) return;
                 updateIncAttBadge(data.count);
-                if (showToastIfFound && data.count > 0) showIncompleteToast(data.count);
+                if (showToastIfFound && data.count > 0) showIncompleteToast(data.count, range);
             })
             .catch(function() {});
     }
     /* Delay the auto-alert so it never overlaps a save/delete confirmation
-       toast fired from a redirect on this same page load. */
+       toast fired from a redirect on this same page load. Gated by the
+       "Incomplete Attendance Alert" permission — users without it never
+       trigger this check, so no request is even sent to the endpoint. */
+    {% if can_view_incomplete_attendance_alert %}
     setTimeout(function() { checkIncompleteAttendance(true); }, hadPendingPolicyToast ? 4600 : 900);
+    {% endif %}
 
     /* ── Form Alerts ── */
     function showFormAlert(type, title, msg) {
@@ -1051,10 +1206,8 @@
     function openIncompleteModal() {
         incAttPage = 1;
         document.getElementById('incAttSearch').value = '';
-        document.getElementById('incAttDateFrom').value = '';
-        document.getElementById('incAttDateTo').value = '';
         getModal('incAttModal').show();
-        incAttFetch();
+        incAttSelectRange(incAttGetSavedRange());
     }
 
     function incAttApplyFilters() {
@@ -1064,11 +1217,16 @@
 
     function incAttResetFilters() {
         document.getElementById('incAttSearch').value = '';
-        document.getElementById('incAttDateFrom').value = '';
-        document.getElementById('incAttDateTo').value = '';
         incAttPage = 1;
-        incAttFetch();
+        incAttSelectRange(incAttGetSavedRange());
     }
+
+    /* Once the modal closes, re-sync the header badge to the default range
+       (the modal may have been left showing a different range, e.g. All Time). */
+    (function() {
+        var modalEl = document.getElementById('incAttModal');
+        if (modalEl) modalEl.addEventListener('hidden.bs.modal', function() { checkIncompleteAttendance(false); });
+    })();
 
     function incAttGoPage(delta) {
         var newPage = incAttPage + delta;
@@ -1078,10 +1236,11 @@
     }
 
     function incAttFetch() {
+        var searchVal = document.getElementById('incAttSearch').value.trim();
         var params = new URLSearchParams({
             page: incAttPage,
             per_page: 15,
-            search: document.getElementById('incAttSearch').value.trim(),
+            search: searchVal,
             date_from: document.getElementById('incAttDateFrom').value,
             date_to: document.getElementById('incAttDateTo').value
         });
@@ -1095,7 +1254,10 @@
                 document.getElementById('incAttLoading').style.display = 'none';
                 if (!data.success) { showPageToast('danger', 'Error', 'Failed to load incomplete attendance.'); return; }
                 incAttTotalPages = data.total_pages || 1;
-                updateIncAttBadge(data.count);
+                /* Only sync the header badge from an unfiltered-by-search fetch —
+                   otherwise a name search inside the modal would make the badge
+                   reflect a narrowed count instead of the true range total. */
+                if (!searchVal) updateIncAttBadge(data.count);
                 document.getElementById('incAttCountLabel').textContent =
                     data.count + ' incomplete record' + (data.count === 1 ? '' : 's');
                 renderIncAttTable(data.results);
@@ -1133,19 +1295,34 @@
                 + '<td>' + (r.clock_out ? esc(r.clock_out) : '<span class="text-danger fw-semibold" style="font-size:.8rem;">Missing</span>') + '</td>'
                 + '<td><span class="badge" style="background:' + color + '1a;color:' + color + ';font-weight:600;font-size:.7rem;border-radius:20px;padding:3px 10px;">'
                 + '<i class="fas fa-triangle-exclamation me-1"></i>' + missingLabels[r.missing] + '</span></td>'
-                + '<td><button class="btn btn-sm btn-outline-warning" onclick="incAttToggleFix(' + r.id + ')"><i class="fas fa-pen fa-sm me-1"></i>Fix</button></td>'
+                + '<td>' + (r.remarks ? '<span class="inc-att-remarks" title="' + escAttr(r.remarks) + '">' + esc(r.remarks) + '</span>' : '<span class="text-muted">—</span>') + '</td>'
+                + '<td>' + (r.fixed_by
+                    ? '<div class="fw-semibold" style="font-size:.8rem;">' + esc(r.fixed_by) + '</div><div class="text-muted" style="font-size:.7rem;">' + esc(r.fixed_at) + '</div>'
+                    : '<span class="text-muted">—</span>') + '</td>'
+                + '<td><div class="d-flex gap-1">'
+                + (CAN_FIX_INCOMPLETE_ATTENDANCE
+                    ? '<button class="btn btn-sm btn-outline-warning" onclick="incAttToggleFix(' + r.id + ')" title="Fix this record"><i class="fas fa-pen fa-sm"></i></button>'
+                    : '')
+                + '<button class="btn btn-sm btn-outline-secondary position-relative" onclick="incAttViewLogs(' + r.id + ')" title="View fix history"><i class="fas fa-clock-rotate-left fa-sm"></i>'
+                + (r.fix_logs_count > 0 ? '<span class="badge rounded-pill bg-secondary" style="font-size:.6rem;position:absolute;top:-6px;right:-6px;">' + r.fix_logs_count + '</span>' : '')
+                + '</button>'
+                + '</div></td>'
                 + '</tr>'
-                + '<tr class="inc-att-fix-row" id="incAttFixRow' + r.id + '" style="display:none;">'
-                + '<td colspan="7" style="background:#fffbeb;">'
-                + '<div class="d-flex align-items-end gap-3 flex-wrap p-2">'
-                + '<div><label class="small text-muted d-block mb-1">Clock In</label>'
-                + '<input type="time" class="form-control form-control-sm" id="incAttFixIn' + r.id + '" value="' + esc(r.clock_in) + '" style="width:130px;"></div>'
-                + '<div><label class="small text-muted d-block mb-1">Clock Out</label>'
-                + '<input type="time" class="form-control form-control-sm" id="incAttFixOut' + r.id + '" value="' + esc(r.clock_out) + '" style="width:130px;"></div>'
-                + '<button class="btn btn-sm btn-success" onclick="incAttSaveFix(' + r.id + ')" id="incAttFixSaveBtn' + r.id + '"><i class="fas fa-check me-1"></i>Save</button>'
-                + '<button class="btn btn-sm btn-outline-secondary" onclick="incAttToggleFix(' + r.id + ')">Cancel</button>'
-                + '<div class="small text-danger" id="incAttFixErr' + r.id + '" style="display:none;"></div>'
-                + '</div></td></tr>';
+                + (CAN_FIX_INCOMPLETE_ATTENDANCE
+                    ? '<tr class="inc-att-fix-row" id="incAttFixRow' + r.id + '" style="display:none;">'
+                        + '<td colspan="9" style="background:#fffbeb;">'
+                        + '<div class="d-flex align-items-end gap-3 flex-wrap p-2">'
+                        + '<div><label class="small text-muted d-block mb-1">Clock In</label>'
+                        + '<input type="time" class="form-control form-control-sm" id="incAttFixIn' + r.id + '" value="' + esc(r.clock_in) + '" style="width:130px;"></div>'
+                        + '<div><label class="small text-muted d-block mb-1">Clock Out</label>'
+                        + '<input type="time" class="form-control form-control-sm" id="incAttFixOut' + r.id + '" value="' + esc(r.clock_out) + '" style="width:130px;"></div>'
+                        + '<div class="flex-grow-1" style="min-width:220px;"><label class="small text-muted d-block mb-1">Remarks <span class="fw-normal">(reason for the fix)</span></label>'
+                        + '<input type="text" class="form-control form-control-sm" id="incAttFixRemarks' + r.id + '" placeholder="e.g. Forgot to punch out, confirmed with manager" maxlength="255" value="' + escAttr(r.remarks || '') + '"></div>'
+                        + '<button class="btn btn-sm btn-success" onclick="incAttSaveFix(' + r.id + ')" id="incAttFixSaveBtn' + r.id + '"><i class="fas fa-check me-1"></i>Save</button>'
+                        + '<button class="btn btn-sm btn-outline-secondary" onclick="incAttToggleFix(' + r.id + ')">Cancel</button>'
+                        + '<div class="small text-danger w-100" id="incAttFixErr' + r.id + '" style="display:none;"></div>'
+                        + '</div></td></tr>'
+                    : '');
         });
         document.getElementById('incAttTbody').innerHTML = html;
     }
@@ -1159,10 +1336,12 @@
     }
 
     function incAttSaveFix(id) {
+        if (!CAN_FIX_INCOMPLETE_ATTENDANCE) return;
         var rec = incAttRecords[id];
         if (!rec) return;
         var clockIn = document.getElementById('incAttFixIn' + id).value;
         var clockOut = document.getElementById('incAttFixOut' + id).value;
+        var remarks = document.getElementById('incAttFixRemarks' + id).value.trim();
         var errEl = document.getElementById('incAttFixErr' + id);
         errEl.style.display = 'none';
         if (!clockIn && !clockOut) {
@@ -1183,7 +1362,9 @@
                 shift: rec.shift_id || '',
                 is_holiday: rec.is_holiday ? 'true' : 'false',
                 notes: rec.notes || '',
-                status: rec.status
+                remarks: remarks,
+                status: rec.status,
+                source: 'incomplete_fix'
             })
         })
         .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
@@ -1204,6 +1385,59 @@
             errEl.textContent = 'Network error. Please try again.';
             errEl.style.display = 'block';
         });
+    }
+
+    /* ── Attendance Fix Logs (audit history) ── */
+    function incAttViewLogs(id) {
+        document.getElementById('incAttLogsLoading').style.display = 'block';
+        document.getElementById('incAttLogsEmpty').style.display = 'none';
+        document.getElementById('incAttLogsError').style.display = 'none';
+        var listEl = document.getElementById('incAttLogsList');
+        listEl.style.display = 'none';
+        listEl.innerHTML = '';
+        getModal('incAttLogsModal').show();
+
+        fetch('/hrm/attendance/' + id + '/fix-logs/')
+            .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function(data) {
+                document.getElementById('incAttLogsLoading').style.display = 'none';
+                if (!data.success) {
+                    document.getElementById('incAttLogsError').textContent = data.error || 'Failed to load history.';
+                    document.getElementById('incAttLogsError').style.display = 'block';
+                    return;
+                }
+                document.getElementById('incAttLogsTitle').textContent = data.employee_name + ' (' + data.employee_code + ')';
+                document.getElementById('incAttLogsSubtitle').textContent = data.department + ' — ' + data.date_display;
+
+                if (!data.logs.length) {
+                    document.getElementById('incAttLogsEmpty').style.display = 'block';
+                    return;
+                }
+
+                var html = '';
+                data.logs.forEach(function(log) {
+                    html += '<div class="inc-att-log-entry">'
+                        + '<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">'
+                        + '<div class="fw-semibold" style="font-size:.85rem;"><i class="fas fa-user-pen me-1 text-secondary"></i>' + esc(log.fixed_by) + '</div>'
+                        + '<div class="text-muted" style="font-size:.75rem;">' + esc(log.fixed_at) + '</div>'
+                        + '</div>'
+                        + '<div class="inc-att-log-diff">'
+                        + '<span class="inc-att-log-field">Clock In:</span> ' + (log.old_clock_in ? esc(log.old_clock_in) : '<em>Missing</em>')
+                        + ' <i class="fas fa-arrow-right-long mx-1 text-muted"></i> <strong>' + (log.new_clock_in ? esc(log.new_clock_in) : '<em>Missing</em>') + '</strong><br>'
+                        + '<span class="inc-att-log-field">Clock Out:</span> ' + (log.old_clock_out ? esc(log.old_clock_out) : '<em>Missing</em>')
+                        + ' <i class="fas fa-arrow-right-long mx-1 text-muted"></i> <strong>' + (log.new_clock_out ? esc(log.new_clock_out) : '<em>Missing</em>') + '</strong>'
+                        + '</div>'
+                        + (log.remarks ? '<div class="inc-att-log-remarks"><i class="fas fa-comment-dots me-1"></i>' + esc(log.remarks) + '</div>' : '')
+                        + '</div>';
+                });
+                listEl.innerHTML = html;
+                listEl.style.display = 'block';
+            })
+            .catch(function() {
+                document.getElementById('incAttLogsLoading').style.display = 'none';
+                document.getElementById('incAttLogsError').textContent = 'Network error. Please try again.';
+                document.getElementById('incAttLogsError').style.display = 'block';
+            });
     }
 
     /* Auto-clear field error on input */

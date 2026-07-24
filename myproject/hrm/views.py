@@ -3115,16 +3115,35 @@ def attendance_create(request):
 
 @login_required
 def attendance_update(request, pk):
-    from .models import AttendanceRecord, Shift
+    from .models import AttendanceRecord, Shift, AttendanceFixLog
+    from datetime import datetime as dt
 
     record = get_object_or_404(AttendanceRecord.objects.select_related('employee__shift', 'employee__attendance_policy'), pk=pk)
 
     if request.method == 'POST':
+        # The Incomplete Attendance modal's "Fix" action posts through this
+        # same endpoint but is tagged so it can be gated by its own
+        # permission — the general Attendance Records edit flow (which
+        # doesn't send this marker) is left untouched.
+        source = request.POST.get('source', '').strip()
+        if source == 'incomplete_fix':
+            user = request.user
+            # Require both flags — the Role Permissions page can save
+            # "Fix" without "View" checked (it has no cascade guard like
+            # the user create/edit forms do), so the fix capability itself
+            # must not trust "can_fix" alone as the single source of truth.
+            can_fix = user.is_superuser or user.role == 'administrator' or (
+                user.can_fix_hrm_incomplete_attendance and user.can_view_hrm_incomplete_attendance
+            )
+            if not can_fix:
+                return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+
         clock_in = request.POST.get('clock_in') or None
         clock_out = request.POST.get('clock_out') or None
         shift_id = request.POST.get('shift') or None
         is_holiday = request.POST.get('is_holiday') == 'true'
         notes = request.POST.get('notes', '').strip()
+        remarks = request.POST.get('remarks', '').strip()
         status = request.POST.get('status', 'present')
 
         if not clock_in and not clock_out:
@@ -3141,8 +3160,15 @@ def attendance_update(request, pk):
 
         metrics = _compute_attendance_metrics(clock_in, clock_out, shift, policy, status)
 
-        record.clock_in = clock_in if clock_in else None
-        record.clock_out = clock_out if clock_out else None
+        # Capture the pre-edit times (real time objects, as loaded from the DB)
+        # before overwriting, so the fix log can record an accurate old → new diff.
+        old_clock_in = record.clock_in
+        old_clock_out = record.clock_out
+        new_clock_in = dt.strptime(clock_in[:5], '%H:%M').time() if clock_in else None
+        new_clock_out = dt.strptime(clock_out[:5], '%H:%M').time() if clock_out else None
+
+        record.clock_in = new_clock_in
+        record.clock_out = new_clock_out
         record.shift = shift
         record.status = metrics['status']
         record.working_hours = metrics['working_hours']
@@ -3154,7 +3180,29 @@ def attendance_update(request, pk):
         # A manual "Fix Attendance" edit is an explicit human correction —
         # the biometric auto-sync must not overwrite it on the next page load.
         record.is_regularized = True
+
+        times_changed = old_clock_in != new_clock_in or old_clock_out != new_clock_out
+        if times_changed or remarks:
+            record.last_fix_remarks = remarks
+            record.last_fixed_by = request.user if request.user.is_authenticated else None
+            record.last_fixed_at = timezone.now()
+
         record.save()
+
+        # Log every meaningful edit (a time actually changed, or a remark was
+        # left) so the "Logs" view has an accurate, append-only history —
+        # not just the latest snapshot stored on the record itself.
+        if times_changed or remarks:
+            AttendanceFixLog.objects.create(
+                attendance_record=record,
+                old_clock_in=old_clock_in,
+                old_clock_out=old_clock_out,
+                new_clock_in=new_clock_in,
+                new_clock_out=new_clock_out,
+                remarks=remarks,
+                fixed_by=request.user if request.user.is_authenticated else None,
+            )
+
         return JsonResponse({'success': True})
 
     # GET — return data for edit
@@ -3176,6 +3224,55 @@ def attendance_update(request, pk):
         'is_late_arrival': record.is_late_arrival,
     }
     return JsonResponse(data)
+
+
+@login_required
+def attendance_fix_logs(request, pk):
+    """Full 'who fixed this and why' history for one attendance record —
+    powers the Logs icon in the Incomplete Attendance table. Gated by the
+    same permission as the Incomplete Attendance widgets (HRM + Dashboard),
+    since that's the only surface this is reachable from."""
+    from .models import AttendanceRecord
+    from dashboard.timezone_utils import format_nepali_datetime
+
+    user = request.user
+    if not (
+        user.is_superuser or user.role == 'administrator'
+        or user.can_view_hrm_incomplete_attendance or user.can_view_dashboard_incomplete_attendance
+    ):
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+
+    record = get_object_or_404(AttendanceRecord.objects.select_related('employee', 'employee__department'), pk=pk)
+    logs = record.fix_logs.select_related('fixed_by').all()
+
+    def fmt_time(t):
+        return t.strftime('%I:%M %p') if t else None
+
+    def fmt_user(u):
+        if not u:
+            return 'System'
+        full_name = u.get_full_name() if hasattr(u, 'get_full_name') else ''
+        return full_name or u.username
+
+    return JsonResponse({
+        'success': True,
+        'employee_name': record.employee.full_name,
+        'employee_code': record.employee.employee_id,
+        'department': record.employee.department.name if record.employee.department else '—',
+        'date_display': record.date.strftime('%d %b %Y'),
+        'logs': [
+            {
+                'old_clock_in': fmt_time(log.old_clock_in),
+                'old_clock_out': fmt_time(log.old_clock_out),
+                'new_clock_in': fmt_time(log.new_clock_in),
+                'new_clock_out': fmt_time(log.new_clock_out),
+                'remarks': log.remarks,
+                'fixed_by': fmt_user(log.fixed_by),
+                'fixed_at': format_nepali_datetime(log.fixed_at),
+            }
+            for log in logs
+        ],
+    })
 
 
 @login_required
@@ -3207,15 +3304,18 @@ def incomplete_attendance_list_ajax(request):
     be searched/paginated at the DB level instead of filtered in Python."""
     from .models import AttendanceRecord
     from datetime import datetime
+    from dashboard.timezone_utils import format_nepali_datetime
 
-    base_qs = AttendanceRecord.objects.exclude(status__in=['absent', 'on_leave']).filter(
+    user = request.user
+    if not (
+        user.is_superuser or user.role == 'administrator'
+        or user.can_view_hrm_incomplete_attendance or user.can_view_dashboard_incomplete_attendance
+    ):
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+
+    qs = AttendanceRecord.objects.exclude(status__in=['absent', 'on_leave']).filter(
         Q(clock_in__isnull=True) | Q(clock_out__isnull=True)
     )
-
-    if request.GET.get('count_only') == '1':
-        return JsonResponse({'success': True, 'count': base_qs.count()})
-
-    qs = base_qs.select_related('employee', 'employee__department', 'shift')
 
     search = request.GET.get('search', '').strip()
     if search:
@@ -3236,7 +3336,12 @@ def incomplete_attendance_list_ajax(request):
         except ValueError:
             pass
 
-    qs = qs.order_by('-date', 'employee__full_name')
+    if request.GET.get('count_only') == '1':
+        return JsonResponse({'success': True, 'count': qs.count()})
+
+    qs = qs.select_related('employee', 'employee__department', 'shift', 'last_fixed_by').annotate(
+        fix_logs_count=Count('fix_logs', distinct=True)
+    ).order_by('-date', 'employee__full_name')
 
     try:
         per_page = int(request.GET.get('per_page', 15))
@@ -3271,6 +3376,10 @@ def incomplete_attendance_list_ajax(request):
             'shift_name': rec.shift.name if rec.shift else '—',
             'is_holiday': rec.is_holiday,
             'notes': rec.notes,
+            'remarks': rec.last_fix_remarks or '',
+            'fixed_by': (rec.last_fixed_by.get_full_name() or rec.last_fixed_by.username) if rec.last_fixed_by else '',
+            'fixed_at': format_nepali_datetime(rec.last_fixed_at) if rec.last_fixed_at else '',
+            'fix_logs_count': rec.fix_logs_count,
         })
 
     return JsonResponse({
@@ -3573,6 +3682,15 @@ def attendance_policy_list(request):
     paginator = Paginator(qs, per_page)
     page_num = request.GET.get('page', 1)
     policies = paginator.get_page(page_num)
+    user = request.user
+    can_view_incomplete_attendance_alert = (
+        user.is_superuser or user.role == 'administrator' or user.can_view_hrm_incomplete_attendance
+    )
+    can_fix_incomplete_attendance = (
+        user.is_superuser or user.role == 'administrator'
+        or (user.can_fix_hrm_incomplete_attendance and user.can_view_hrm_incomplete_attendance)
+    )
+    from dashboard.timezone_utils import get_nepali_now
     context = {
         'page_title': 'Attendance Policies',
         'policies': policies,
@@ -3582,6 +3700,9 @@ def attendance_policy_list(request):
         'active_policies': active,
         'avg_late_grace': round(avg_late),
         'avg_overtime_rate': round(float(avg_overtime), 2),
+        'incomplete_attendance_today': get_nepali_now().date().isoformat(),
+        'can_view_incomplete_attendance_alert': can_view_incomplete_attendance_alert,
+        'can_fix_incomplete_attendance': can_fix_incomplete_attendance,
     }
     return render(request, 'hrm/attendance_policy_list.html', context)
 
