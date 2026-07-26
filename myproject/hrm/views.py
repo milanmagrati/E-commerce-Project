@@ -2913,46 +2913,61 @@ def attendance_list(request):
     except (ValueError, TypeError):
         per_page = 9
 
-    qs = AttendanceRecord.objects.select_related('employee', 'shift')
-    
-    if filter_date:
-        qs = qs.filter(date=filter_date)
+    # Gather everything the page needs behind a guard. If any query fails — a
+    # missing column because a migration wasn't applied on the server, a corrupt
+    # row, a DB hiccup — log the full traceback and render a degraded-but-working
+    # page (empty list + warning banner) instead of a bare 500. The exception is
+    # always written to the hrm.adms log so the real cause is captured on the
+    # first hit, not left to a second round of debugging in production.
+    load_error = False
+    try:
+        qs = AttendanceRecord.objects.select_related('employee', 'shift')
 
-    if search:
-        qs = qs.filter(
-            Q(employee__full_name__icontains=search) |
-            Q(notes__icontains=search)
-        )
-        
-    if sort_by == 'date':
-        qs = qs.order_by('date', 'employee__full_name')
-    elif sort_by == 'employee__full_name':
-        qs = qs.order_by('employee__full_name', '-date')
-    elif sort_by == '-employee__full_name':
-        qs = qs.order_by('-employee__full_name', '-date')
-    else:
-        qs = qs.order_by('-date', 'employee__full_name')
+        if filter_date:
+            qs = qs.filter(date=filter_date)
 
-    today = dt_date.today()
-    all_records = AttendanceRecord.objects.all()
-    total_records = all_records.count()
-    # Count anyone who has actually clocked in today as "present", even if
-    # their punch is still incomplete (no clock-out yet, e.g. mid-shift) —
-    # a missing clock-out shouldn't hide someone who showed up.
-    present_today = all_records.filter(date=today).filter(
-        Q(status__in=['present', 'late', 'half_day']) |
-        Q(status='incomplete', clock_in__isnull=False)
-    ).count()
-    on_leave_today = all_records.filter(date=today, status='on_leave').count()
-    late_today = all_records.filter(date=today, is_late_arrival=True).count()
-    overtime_today = all_records.filter(date=today, overtime_hours__gt=0).count()
+        if search:
+            qs = qs.filter(
+                Q(employee__full_name__icontains=search) |
+                Q(notes__icontains=search)
+            )
 
-    paginator = Paginator(qs, per_page)
-    page_num = request.GET.get('page', 1)
-    records = paginator.get_page(page_num)
+        if sort_by == 'date':
+            qs = qs.order_by('date', 'employee__full_name')
+        elif sort_by == 'employee__full_name':
+            qs = qs.order_by('employee__full_name', '-date')
+        elif sort_by == '-employee__full_name':
+            qs = qs.order_by('-employee__full_name', '-date')
+        else:
+            qs = qs.order_by('-date', 'employee__full_name')
 
-    employees = Employee.objects.filter(employee_status='active').order_by('full_name')
-    shifts = Shift.objects.filter(is_active=True).order_by('name')
+        today = dt_date.today()
+        all_records = AttendanceRecord.objects.all()
+        total_records = all_records.count()
+        # Count anyone who has actually clocked in today as "present", even if
+        # their punch is still incomplete (no clock-out yet, e.g. mid-shift) —
+        # a missing clock-out shouldn't hide someone who showed up.
+        present_today = all_records.filter(date=today).filter(
+            Q(status__in=['present', 'late', 'half_day']) |
+            Q(status='incomplete', clock_in__isnull=False)
+        ).count()
+        on_leave_today = all_records.filter(date=today, status='on_leave').count()
+        late_today = all_records.filter(date=today, is_late_arrival=True).count()
+        overtime_today = all_records.filter(date=today, overtime_hours__gt=0).count()
+
+        paginator = Paginator(qs, per_page)
+        page_num = request.GET.get('page', 1)
+        records = paginator.get_page(page_num)
+
+        employees = Employee.objects.filter(employee_status='active').order_by('full_name')
+        shifts = Shift.objects.filter(is_active=True).order_by('name')
+    except Exception:
+        adms_logger.exception('attendance_list: failed to load records')
+        load_error = True
+        records = []
+        total_records = present_today = on_leave_today = late_today = overtime_today = 0
+        employees = Employee.objects.none()
+        shifts = Shift.objects.none()
 
     context = {
         'page_title': 'Attendance Records',
@@ -2968,6 +2983,7 @@ def attendance_list(request):
         'overtime_today': overtime_today,
         'employees': employees,
         'shifts': shifts,
+        'load_error': load_error,
     }
     return render(request, 'hrm/attendance_list.html', context)
 

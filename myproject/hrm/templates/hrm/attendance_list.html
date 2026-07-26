@@ -41,6 +41,13 @@
         </div>
     </div>
 
+    {% if load_error %}
+    <div class="alert alert-warning d-flex align-items-center gap-2" role="alert" style="border-radius:8px;">
+        <i class="fas fa-exclamation-triangle"></i>
+        <span>Some attendance data couldn't be loaded right now. An administrator has been notified. If this persists, make sure the latest database migrations have been applied.</span>
+    </div>
+    {% endif %}
+
     <!-- Search & Filters -->
     <div class="card mb-3 shadow-sm border">
         <div class="card-body py-2 px-3">
