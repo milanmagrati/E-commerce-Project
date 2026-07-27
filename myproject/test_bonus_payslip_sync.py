@@ -46,7 +46,7 @@ from hrm.models import (  # noqa: E402
     AdvancePayment, Bonus, Employee, Payslip, PayrollRun, PayslipAdjustment,
 )
 from hrm.views import (  # noqa: E402
-    _sync_bonus_to_payslip, bonus_update_status, payslip_adjust, payslip_download,
+    _sync_bonus_to_payslip, bonus_create, bonus_update_status, payslip_adjust, payslip_download,
 )
 
 FAILURES = []
@@ -138,6 +138,17 @@ def update_bonus(bonus, user, **fields):
     req = RequestFactory().post(f'/hrm/bonuses/{bonus.pk}/update/', data)
     req.user = user
     resp = bonus_update(req, bonus.pk)
+    assert resp.status_code == 200, resp.status_code
+    import json
+    return json.loads(resp.content)
+
+
+def create_bonus_via_view(user, employee, **overrides):
+    data = {'employee': str(employee.id), 'amount': '100', 'month': '5', 'year': '2031', 'bonus_type': 'performance'}
+    data.update(overrides)
+    req = RequestFactory().post('/hrm/bonuses/create/', data)
+    req.user = user
+    resp = bonus_create(req)
     assert resp.status_code == 200, resp.status_code
     import json
     return json.loads(resp.content)
@@ -384,6 +395,20 @@ def main():
             check('delete response carries a finalized-payslip note', 'note' in resp, True)
             slip3.refresh_from_db()
             check('finalized slip3 gross is untouched by the delete', slip3.gross_salary, BASE_GROSS + bonus5.amount)
+
+            print("\nSCENARIO: bonus_create rejects garbage bonus_type/month/year instead of storing them")
+            baseline_count = Bonus.objects.count()
+            r = create_bonus_via_view(user, employee, bonus_type='<script>alert(1)</script>')
+            check('bogus bonus_type is rejected', r.get('success'), False)
+            r = create_bonus_via_view(user, employee, month='13')
+            check('month=13 is rejected', r.get('success'), False)
+            r = create_bonus_via_view(user, employee, month='0')
+            check('month=0 is rejected', r.get('success'), False)
+            r = create_bonus_via_view(user, employee, year='1800')
+            check('year=1800 is rejected', r.get('success'), False)
+            check('none of the rejected attempts created a row', Bonus.objects.count(), baseline_count)
+            r = create_bonus_via_view(user, employee)
+            check('a valid create still succeeds', r.get('success'), True)
 
             raise Rollback
     except Rollback:

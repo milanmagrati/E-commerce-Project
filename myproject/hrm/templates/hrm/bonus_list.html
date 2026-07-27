@@ -352,23 +352,85 @@
 
 {% block extra_js %}
 <script>
+console.log('[bonus_list.html] script build 2026-07-27b loaded');
 const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+// Reuse one Modal instance per element -- calling `new bootstrap.Modal(el)` on every
+// click (as viewBonus/confirmDelete used to) creates a fresh instance each time and
+// leaves the previous one's backdrop/listeners behind, so after a few opens stale
+// backdrops pile up and start swallowing clicks on the whole page, including these
+// buttons themselves.
 const bonusModal = new bootstrap.Modal(document.getElementById('bonusModal'));
+const viewBonusModal = new bootstrap.Modal(document.getElementById('viewBonusModal'));
+const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+
+// Belt-and-braces against a known Bootstrap 5 failure mode: if a modal's hide
+// transition gets interrupted (rapid clicking, the page's background chat/notice
+// pollers touching the DOM mid-transition, etc.), its internal _isShown /
+// _isTransitioning flags can get stuck "true" forever -- every future .show()
+// on that instance then silently no-ops with no error, which looks exactly like
+// "works a couple of times then the button just stops responding". Force-clear
+// any leftover backdrop/body-lock state and the instance's stuck flags right
+// before every show() so the modal always opens regardless of how the previous
+// one closed.
+function forceModalCleanup() {
+    if (document.querySelector('.modal.show')) return;
+    document.querySelectorAll('.modal-backdrop').forEach(function (bd) { bd.remove(); });
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+}
+
+function safeShow(instance) {
+    forceModalCleanup();
+    instance._isShown = false;
+    instance._isTransitioning = false;
+    instance.show();
+}
+
+[bonusModal, viewBonusModal, deleteModal].forEach(function (m) {
+    m._element.addEventListener('hidden.bs.modal', forceModalCleanup);
+});
+
+// Any single missing/renamed element inside these handlers used to throw and
+// abort the whole function before it ever reached safeShow(...) -- from the
+// outside that looked exactly like "the button does nothing". `byId` plus the
+// try/finally below make every field access optional so a problem with one
+// field can never again stop the modal from opening.
+function byId(id) { return document.getElementById(id); }
+
+// viewBonus() builds its modal body via innerHTML from JSON fields that
+// include free text an admin typed in (remarks) and employee names -- without
+// escaping, a remark like `<img src=x onerror=...>` would execute as script in
+// whoever's browser views that bonus next. Escape every user-controlled value
+// before interpolating it into HTML.
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+}
 
 function toggleEmployeeSelect(cb) {
-    document.getElementById('employeeSelectWrap').style.display = cb.checked ? 'none' : '';
+    const wrap = byId('employeeSelectWrap');
+    if (wrap) wrap.style.display = cb.checked ? 'none' : '';
     if (cb.checked) {
-        document.getElementById('bonusEmployee').value = document.getElementById('bonusEmployee').options[1]?.value || '';
+        const empSelect = byId('bonusEmployee');
+        if (empSelect) empSelect.value = empSelect.options[1]?.value || '';
     }
 }
 
 function openAddModal() {
-    document.getElementById('bonusModalLabel').innerHTML = '<i class="fas fa-gift me-2"></i>Add Bonus';
-    document.getElementById('bonusForm').reset();
-    document.getElementById('bonusId').value = '';
-    document.getElementById('employeeSelectWrap').style.display = '';
-    document.getElementById('bonusEditWarning').classList.add('d-none');
-    bonusModal.show();
+    try {
+        const label = byId('bonusModalLabel');
+        if (label) label.innerHTML = '<i class="fas fa-gift me-2"></i>Add Bonus';
+        byId('bonusForm')?.reset();
+        const idField = byId('bonusId');
+        if (idField) idField.value = '';
+        const wrap = byId('employeeSelectWrap');
+        if (wrap) wrap.style.display = '';
+        byId('bonusEditWarning')?.classList.add('d-none');
+    } finally {
+        safeShow(bonusModal);
+    }
 }
 
 function saveBonus() {
@@ -401,53 +463,66 @@ function viewBonus(id) {
     fetch(`{% url 'hrm:bonus_list' %}${id}/`)
         .then(r => r.json())
         .then(data => {
-            if (data.success) {
+            if (!data.success) return;
+            try {
                 const b = data.bonus;
                 const statusColors = { pending: 'warning', approved: 'success', rejected: 'danger', paid: 'info' };
-                document.getElementById('viewBonusBody').innerHTML = `
+                const body = byId('viewBonusBody');
+                if (body) body.innerHTML = `
                     <table class="table table-bordered mb-0">
-                        <tr><th style="width:35%">Employee</th><td><strong>${b.employee_name}</strong> (${b.employee_emp_id})</td></tr>
-                        <tr><th>Bonus Type</th><td>${b.bonus_type_display}</td></tr>
+                        <tr><th style="width:35%">Employee</th><td><strong>${escapeHtml(b.employee_name)}</strong> (${escapeHtml(b.employee_emp_id)})</td></tr>
+                        <tr><th>Bonus Type</th><td>${escapeHtml(b.bonus_type_display)}</td></tr>
                         <tr><th>Amount</th><td><strong class="text-success">Rs. ${parseFloat(b.amount).toLocaleString('en-IN', {minimumFractionDigits: 2})}</strong></td></tr>
-                        <tr><th>Period</th><td>${b.month_name} ${b.year}</td></tr>
-                        <tr><th>Status</th><td><span class="badge bg-${statusColors[b.status]||'secondary'} text-${b.status==='pending'?'dark':''}">${b.status_display}</span></td></tr>
+                        <tr><th>Period</th><td>${escapeHtml(b.month_name)} ${escapeHtml(b.year)}</td></tr>
+                        <tr><th>Status</th><td><span class="badge bg-${statusColors[b.status]||'secondary'} text-${b.status==='pending'?'dark':''}">${escapeHtml(b.status_display)}</span></td></tr>
                         <tr><th>Apply for All</th><td>${b.apply_for_all ? '<span class="badge bg-secondary">Yes</span>' : 'No'}</td></tr>
-                        <tr><th>Approved By</th><td>${b.approved_by || '—'}</td></tr>
-                        <tr><th>Approved At</th><td>${b.approved_at || '—'}</td></tr>
-                        <tr><th>Remarks</th><td>${b.remarks || '—'}</td></tr>
-                        <tr><th>Created</th><td>${b.created_at}</td></tr>
+                        <tr><th>Approved By</th><td>${escapeHtml(b.approved_by) || '—'}</td></tr>
+                        <tr><th>Approved At</th><td>${escapeHtml(b.approved_at) || '—'}</td></tr>
+                        <tr><th>Remarks</th><td>${escapeHtml(b.remarks) || '—'}</td></tr>
+                        <tr><th>Created</th><td>${escapeHtml(b.created_at)}</td></tr>
                     </table>`;
-                new bootstrap.Modal(document.getElementById('viewBonusModal')).show();
+            } finally {
+                safeShow(viewBonusModal);
             }
-        });
+        })
+        .catch(() => showToast('Network error.', 'error'));
 }
 
 function editBonus(id) {
     fetch(`{% url 'hrm:bonus_list' %}${id}/`)
         .then(r => r.json())
         .then(data => {
-            if (data.success) {
+            if (!data.success) return;
+            try {
                 const b = data.bonus;
-                document.getElementById('bonusModalLabel').innerHTML = '<i class="fas fa-edit me-2"></i>Edit Bonus';
-                document.getElementById('bonusId').value = b.id;
-                document.getElementById('bonusEmployee').value = b.employee_id;
-                document.getElementById('bonusType').value = b.bonus_type;
-                document.getElementById('bonusAmount').value = b.amount;
-                document.getElementById('bonusMonth').value = b.month;
-                document.getElementById('bonusYear').value = b.year;
-                document.getElementById('bonusRemarks').value = b.remarks;
-                document.getElementById('bonusApplyAll').checked = b.apply_for_all;
+                const label = byId('bonusModalLabel');
+                if (label) label.innerHTML = '<i class="fas fa-edit me-2"></i>Edit Bonus';
+                const set = (id, val) => { const el = byId(id); if (el) el.value = val; };
+                set('bonusId', b.id);
+                set('bonusEmployee', b.employee_id);
+                set('bonusType', b.bonus_type);
+                set('bonusAmount', b.amount);
+                set('bonusMonth', b.month);
+                set('bonusYear', b.year);
+                set('bonusRemarks', b.remarks);
+                const applyAll = byId('bonusApplyAll');
+                if (applyAll) applyAll.checked = b.apply_for_all;
                 toggleEmployeeSelect({ checked: b.apply_for_all });
-                const warning = document.getElementById('bonusEditWarning');
-                if (b.status === 'approved' || b.status === 'paid') {
-                    document.getElementById('bonusEditWarningStatus').textContent = b.status_display;
-                    warning.classList.remove('d-none');
-                } else {
-                    warning.classList.add('d-none');
+                const warning = byId('bonusEditWarning');
+                if (warning) {
+                    if (b.status === 'approved' || b.status === 'paid') {
+                        const warnStatus = byId('bonusEditWarningStatus');
+                        if (warnStatus) warnStatus.textContent = b.status_display;
+                        warning.classList.remove('d-none');
+                    } else {
+                        warning.classList.add('d-none');
+                    }
                 }
-                bonusModal.show();
+            } finally {
+                safeShow(bonusModal);
             }
-        });
+        })
+        .catch(() => showToast('Network error.', 'error'));
 }
 
 function updateStatus(id, status) {
@@ -469,18 +544,22 @@ function updateStatus(id, status) {
 
 let deleteId = null;
 function confirmDelete(id, name, status) {
-    deleteId = id;
-    document.getElementById('deleteBonusName').textContent = name;
-    document.getElementById('deleteBonusPayslipNote').classList.toggle('d-none', !(status === 'approved' || status === 'paid'));
-    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    try {
+        deleteId = id;
+        const nameEl = byId('deleteBonusName');
+        if (nameEl) nameEl.textContent = name;
+        byId('deleteBonusPayslipNote')?.classList.toggle('d-none', !(status === 'approved' || status === 'paid'));
+    } finally {
+        safeShow(deleteModal);
+    }
 }
-document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+byId('confirmDeleteBtn')?.addEventListener('click', function() {
     if (!deleteId) return;
     fetch(`{% url 'hrm:bonus_list' %}${deleteId}/delete/`, { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                deleteModal.hide();
                 showToast(data.message, 'success');
                 if (data.note) { setTimeout(() => showToast(data.note, 'warning'), 400); }
                 setTimeout(() => location.reload(), data.note ? 2800 : 600);

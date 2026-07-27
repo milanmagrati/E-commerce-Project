@@ -8922,6 +8922,39 @@ def holiday_apply(request, pk):
 
 # ==================== Bonus Management Views ====================
 
+def _is_bonus_admin(user):
+    """Administrators/superusers may edit or delete a bonus after it's been
+    approved or paid; everyone else is limited to pending/rejected bonuses."""
+    return user.is_superuser or user.role == 'administrator'
+
+
+def _finalized_payslip_note(action):
+    return (
+        f'A finalized payslip for this period {action} — unfinalize it first '
+        'if this should be reflected there.'
+    )
+
+
+def _validate_bonus_fields(bonus_type, month_str, year_str):
+    """Shared validation for bonus_create/bonus_update: bonus_type must be one
+    of the model's real choices, and month/year must be sane calendar values.
+    Returns (month, year, error) -- error is None on success."""
+    from .models import Bonus
+    valid_types = [c[0] for c in Bonus.BONUS_TYPE_CHOICES]
+    if bonus_type not in valid_types:
+        return None, None, 'Invalid bonus type.'
+    try:
+        month = int(month_str)
+        year = int(year_str)
+    except (TypeError, ValueError):
+        return None, None, 'Invalid month or year.'
+    if not (1 <= month <= 12):
+        return None, None, 'Month must be between 1 and 12.'
+    if not (2000 <= year <= 2100):
+        return None, None, 'Year is out of range.'
+    return month, year, None
+
+
 def _sync_bonus_to_payslip(employee, month, year):
     """Fold approved/paid bonuses for an employee/month/year into that
     employee's already-generated payslip (gross_salary/net_salary), so the
@@ -9006,7 +9039,7 @@ def bonus_list(request):
 
     now = timezone.now()
     years = list(range(now.year - 2, now.year + 2))
-    is_admin = request.user.is_superuser or request.user.role == 'administrator'
+    is_admin = _is_bonus_admin(request.user)
 
     context = {
         'page_title': 'Bonus Management',
@@ -9067,6 +9100,10 @@ def bonus_create(request):
     bonus_type = request.POST.get('bonus_type', 'other')
     remarks = request.POST.get('remarks', '').strip()
 
+    month, year, error = _validate_bonus_fields(bonus_type, month, year)
+    if error:
+        return JsonResponse({'success': False, 'error': error})
+
     if apply_for_all:
         # Create bonus for all active employees
         active_employees = Employee.objects.filter(employee_status='active')
@@ -9076,8 +9113,8 @@ def bonus_create(request):
                 employee=e,
                 bonus_type=bonus_type,
                 amount=amt,
-                month=int(month),
-                year=int(year),
+                month=month,
+                year=year,
                 remarks=remarks,
                 apply_for_all=True,
                 created_by=request.user,
@@ -9089,8 +9126,8 @@ def bonus_create(request):
             employee=emp,
             bonus_type=bonus_type,
             amount=amt,
-            month=int(month),
-            year=int(year),
+            month=month,
+            year=year,
             remarks=remarks,
             apply_for_all=False,
             created_by=request.user,
@@ -9135,13 +9172,11 @@ def bonus_update(request, pk):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
 
-    is_admin = request.user.is_superuser or request.user.role == 'administrator'
-    if bonus.status in ('approved', 'paid') and not is_admin:
+    if bonus.status in ('approved', 'paid') and not _is_bonus_admin(request.user):
         return JsonResponse({'success': False, 'error': 'Cannot edit an approved or paid bonus.'})
 
     amount = request.POST.get('amount', '').strip()
-    month = request.POST.get('month', '').strip()
-    year = request.POST.get('year', '').strip()
+    bonus_type = request.POST.get('bonus_type', bonus.bonus_type)
 
     try:
         from decimal import Decimal
@@ -9151,12 +9186,17 @@ def bonus_update(request, pk):
     except Exception:
         return JsonResponse({'success': False, 'error': 'Invalid amount.'})
 
+    month, year, error = _validate_bonus_fields(
+        bonus_type, request.POST.get('month', '').strip(), request.POST.get('year', '').strip())
+    if error:
+        return JsonResponse({'success': False, 'error': error})
+
     old_month, old_year, old_status = bonus.month, bonus.year, bonus.status
 
-    bonus.bonus_type = request.POST.get('bonus_type', bonus.bonus_type)
+    bonus.bonus_type = bonus_type
     bonus.amount = amt
-    bonus.month = int(month)
-    bonus.year = int(year)
+    bonus.month = month
+    bonus.year = year
     bonus.remarks = request.POST.get('remarks', '').strip()
     bonus.save()
 
@@ -9173,7 +9213,7 @@ def bonus_update(request, pk):
 
     resp = {'success': True, 'message': 'Bonus updated successfully!'}
     if finalized_skipped:
-        resp['note'] = 'A finalized payslip for this period was not changed — unfinalize it first if this edit should be reflected there.'
+        resp['note'] = _finalized_payslip_note('was not changed')
     return JsonResponse(resp)
 
 
@@ -9184,8 +9224,7 @@ def bonus_delete(request, pk):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
 
-    is_admin = request.user.is_superuser or request.user.role == 'administrator'
-    if bonus.status in ('approved', 'paid') and not is_admin:
+    if bonus.status in ('approved', 'paid') and not _is_bonus_admin(request.user):
         return JsonResponse({'success': False, 'error': 'Cannot delete an approved or paid bonus.'})
 
     employee, month, year, status = bonus.employee, bonus.month, bonus.year, bonus.status
@@ -9196,7 +9235,7 @@ def bonus_delete(request, pk):
     if status in ('approved', 'paid'):
         result = _sync_bonus_to_payslip(employee, month, year)
         if result['finalized_skipped']:
-            resp['note'] = 'A finalized payslip for this period still includes the deleted bonus — unfinalize it first if this should be reflected there.'
+            resp['note'] = _finalized_payslip_note('still includes the deleted bonus')
 
     return JsonResponse(resp)
 
@@ -9226,7 +9265,7 @@ def bonus_update_status(request, pk):
 
     resp = {'success': True, 'message': f'Bonus status updated to {bonus.get_status_display()}.'}
     if result['finalized_skipped']:
-        resp['note'] = 'A finalized payslip for this period was not changed — unfinalize it first if this should be reflected there.'
+        resp['note'] = _finalized_payslip_note('was not changed')
     return JsonResponse(resp)
 
 
