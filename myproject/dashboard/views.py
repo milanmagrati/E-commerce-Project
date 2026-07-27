@@ -37,9 +37,10 @@ from django.core.files.base import File
 from django.conf import settings
 from django.utils.text import slugify
 from .models import ReturnRequest, ReturnItem, ReturnActivityLog, Dispatch, DispatchItem, StaffTarget, OrderFollowUp, CompanySetup, APISettings
+from .models import MediaCategory, MediaAsset
 
 # IMPORT DECORATORS
-from accounts.decorators import permission_required, admin_only
+from accounts.decorators import permission_required, admin_only, admin_or_permission_required
 
 # GET CUSTOM USER MODEL
 User = get_user_model()
@@ -1277,6 +1278,28 @@ def _get_bundle_context():
     }
 
 
+def _attach_existing_media_to_product(request, product):
+    """Copy Media Library assets picked via the 'Choose from Existing' modal into this product's gallery.
+
+    Idempotent: an asset already linked to this product's gallery (via source_asset)
+    is skipped so re-submitting the same form (e.g. re-saving without changing the
+    picker selection) doesn't keep duplicating the same images.
+    """
+    raw_ids = request.POST.get('existing_media_ids', '')
+    ids = [i for i in raw_ids.split(',') if i.strip().isdigit()]
+    if not ids:
+        return
+
+    already_linked = set(
+        product.images.filter(source_asset_id__in=ids).values_list('source_asset_id', flat=True)
+    )
+
+    for asset in MediaAsset.objects.filter(id__in=ids).exclude(id__in=already_linked):
+        gallery_image = ProductImage(product=product, alt_text=asset.title, source_asset=asset)
+        with asset.image.open('rb') as f:
+            gallery_image.image.save(os.path.basename(asset.image.name), File(f), save=True)
+
+
 @login_required
 @permission_required('can_create_products')
 
@@ -1383,6 +1406,9 @@ def product_add(request):
             for img in gallery_images:
                 ProductImage.objects.create(product=product, image=img)
 
+            # Handle images picked from the Media Library
+            _attach_existing_media_to_product(request, product)
+
             messages.success(request, f'Product "{product.name}" created successfully!')
             # Clean up any temporary uploaded image saved in session
             temp_to_remove = request.session.pop('temp_product_image', None)
@@ -1487,6 +1513,13 @@ def product_edit(request, product_id):
 
         if form.is_valid():
             product = form.save()
+            default_image_changed = False
+
+            # Handle "Delete Main Image" checkbox — only clear if no replacement was uploaded
+            if request.POST.get('clear_main_image') and 'image' not in request.FILES and product.image:
+                product.image.delete(save=False)
+                product.image = None
+                product.save(update_fields=['image'])
 
             # Sync cost_price field with weighted average for variable cost products.
             # This handles the case where the user switches cost_price_type to 'variable'
@@ -1542,7 +1575,6 @@ def product_edit(request, product_id):
                 # FIXED: Always try to save formset if it's valid
                 if formset.is_valid():
                     formset.save()
-                    messages.success(request, f'Product "{product.name}" updated successfully!')
                 else:
                     # If formset has errors, show them and re-render the form
                     messages.error(request, 'Please correct the variation errors below.')
@@ -1553,8 +1585,6 @@ def product_edit(request, product_id):
                         'action': 'Edit',
                         'current_step': 1,
                     })
-            else:
-                messages.success(request, f'Product "{product.name}" updated successfully!')
 
             # Handle bundle components
             if product.product_type == 'bundle':
@@ -1578,6 +1608,28 @@ def product_edit(request, product_id):
             for img in gallery_images:
                 ProductImage.objects.create(product=product, image=img)
 
+            # Handle images picked from the Media Library
+            _attach_existing_media_to_product(request, product)
+
+            # Handle gallery image deletions
+            delete_gallery_ids = request.POST.getlist('delete_gallery_image')
+            if delete_gallery_ids:
+                ProductImage.objects.filter(product=product, id__in=delete_gallery_ids).delete()
+
+            # Handle "set as default" gallery image
+            make_default_id = request.POST.get('make_default_image')
+            if make_default_id and make_default_id not in delete_gallery_ids:
+                default_image = ProductImage.objects.filter(product=product, id=make_default_id).first()
+                if default_image:
+                    ProductImage.objects.filter(product=product).update(is_featured=False)
+                    default_image.is_featured = True
+                    default_image.save(update_fields=['is_featured'])
+                    product.image = default_image.image
+                    product.save(update_fields=['image'])
+                    default_image_changed = True
+                else:
+                    messages.error(request, 'Could not set the selected gallery image as default — it may have been removed. Please try again.')
+
             # Clean up any temporary uploaded image saved in session
             temp_to_remove = request.session.pop('temp_product_image', None)
             if temp_to_remove and default_storage.exists(temp_to_remove):
@@ -1585,7 +1637,14 @@ def product_edit(request, product_id):
                     default_storage.delete(temp_to_remove)
                 except Exception:
                     pass
-            return redirect('products')
+
+            # A single consolidated success message instead of one per sub-action
+            if default_image_changed:
+                messages.success(request, f'Product "{product.name}" updated successfully! Main image updated from the gallery selection.')
+            else:
+                messages.success(request, f'Product "{product.name}" updated successfully!')
+
+            return redirect('product_edit', product_id=product.pk)
         else:
             messages.error(request, 'Please correct the errors below.')
             # If user uploaded an image but form validation failed, persist it to temp storage
@@ -1992,6 +2051,124 @@ def set_featured_image(request, image_id):
 
     messages.success(request, f'Default image updated for "{image.product.name}"!')
     return redirect(request.META.get('HTTP_REFERER', 'product_detail'), product_id=image.product.id)
+
+
+@login_required
+@admin_or_permission_required('can_edit_products', 'can_create_products')
+def media_library(request):
+    """Shared Media Library — upload, organize by category, and manage reusable images."""
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        if action == 'upload':
+            category_id = request.POST.get('category') or None
+            category = MediaCategory.objects.filter(id=category_id).first() if category_id else None
+            files = request.FILES.getlist('files')
+            if not files:
+                messages.error(request, 'Please choose at least one image to upload.')
+            else:
+                for f in files:
+                    MediaAsset.objects.create(
+                        image=f,
+                        title=os.path.splitext(f.name)[0][:255],
+                        category=category,
+                        uploaded_by=request.user,
+                        file_size=f.size,
+                    )
+                messages.success(request, f'{len(files)} image(s) uploaded to Media Library!')
+            return redirect(request.META.get('HTTP_REFERER') or 'media_library')
+
+        elif action == 'create_category':
+            name = request.POST.get('name', '').strip()
+            if not name:
+                messages.error(request, 'Category name is required.')
+            elif MediaCategory.objects.filter(name__iexact=name).exists():
+                messages.error(request, f'Category "{name}" already exists.')
+            else:
+                MediaCategory.objects.create(name=name)
+                messages.success(request, f'Category "{name}" created!')
+            return redirect('media_library')
+
+        elif action == 'delete_category':
+            category = MediaCategory.objects.filter(id=request.POST.get('category_id')).first()
+            if category:
+                name = category.name
+                category.delete()
+                messages.success(request, f'Category "{name}" deleted. Its images are now Uncategorized.')
+            return redirect('media_library')
+
+        elif action == 'delete':
+            asset = MediaAsset.objects.filter(id=request.POST.get('asset_id')).first()
+            if asset:
+                asset.image.delete(save=False)
+                asset.delete()
+                messages.success(request, 'Image deleted from Media Library.')
+            return redirect(request.META.get('HTTP_REFERER') or 'media_library')
+
+        elif action == 'move_category':
+            asset_ids = request.POST.getlist('asset_ids')
+            category_id = request.POST.get('category') or None
+            category = None
+            if category_id and category_id != 'uncategorized':
+                category = MediaCategory.objects.filter(id=category_id).first()
+            updated = MediaAsset.objects.filter(id__in=asset_ids).update(category=category)
+            messages.success(request, f'Moved {updated} image(s) to "{category.name if category else "Uncategorized"}".')
+            return redirect('media_library')
+
+        elif action == 'bulk_delete':
+            asset_ids = request.POST.getlist('asset_ids')
+            assets_qs = MediaAsset.objects.filter(id__in=asset_ids)
+            count = assets_qs.count()
+            for asset in assets_qs:
+                asset.image.delete(save=False)
+            assets_qs.delete()
+            messages.success(request, f'Deleted {count} image(s) from Media Library.')
+            return redirect('media_library')
+
+    active_category = request.GET.get('category', '')
+    assets = MediaAsset.objects.select_related('category', 'uploaded_by').all()
+    if active_category == 'uncategorized':
+        assets = assets.filter(category__isnull=True)
+    elif active_category:
+        assets = assets.filter(category_id=active_category)
+
+    categories = MediaCategory.objects.annotate(asset_count=Count('assets')).all()
+    uncategorized_count = MediaAsset.objects.filter(category__isnull=True).count()
+
+    return render(request, 'media_library.html', {
+        'assets': assets,
+        'categories': categories,
+        'uncategorized_count': uncategorized_count,
+        'active_category': active_category,
+        'total_count': MediaAsset.objects.count(),
+    })
+
+
+@login_required
+@admin_or_permission_required('can_edit_products', 'can_create_products')
+def api_media_list(request):
+    """JSON feed of Media Library assets for the 'Choose from Existing' picker in the product form."""
+    active_category = request.GET.get('category', '')
+    assets = MediaAsset.objects.select_related('category').all()
+    if active_category == 'uncategorized':
+        assets = assets.filter(category__isnull=True)
+    elif active_category:
+        assets = assets.filter(category_id=active_category)
+
+    data = [{
+        'id': a.id,
+        'url': a.image.url,
+        'title': a.title or '',
+        'category_id': a.category_id or 'uncategorized',
+        'category_name': a.category.name if a.category else 'Uncategorized',
+    } for a in assets]
+
+    categories = [{'id': c.id, 'name': c.name} for c in MediaCategory.objects.all()]
+    return JsonResponse({
+        'assets': data,
+        'categories': categories,
+        'uncategorized_count': MediaAsset.objects.filter(category__isnull=True).count(),
+    })
 
 
 @login_required

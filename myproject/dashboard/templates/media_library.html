@@ -1,0 +1,423 @@
+{% extends 'base.html' %}
+{% load dashboard_extras %}
+{% block title %}Media Library - Admin Panel{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h2><i class="fas fa-photo-video"></i> Media Library</h2>
+            <p class="text-muted mb-0">Upload once, reuse everywhere — pick these images from any product's gallery.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-primary btn-lg" data-bs-toggle="modal" data-bs-target="#newCategoryModal">
+                <i class="fas fa-folder-plus"></i> New Category
+            </button>
+            <button type="button" class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#uploadMediaModal">
+                <i class="fas fa-upload"></i> Upload Media
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="stat-card bg-primary-gradient">
+            <div class="stat-icon"><i class="fas fa-images"></i></div>
+            <div class="stat-content">
+                <h3>{{ total_count }}</h3>
+                <p>Total Images</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card bg-success-gradient">
+            <div class="stat-icon"><i class="fas fa-folder"></i></div>
+            <div class="stat-content">
+                <h3>{{ categories|length }}</h3>
+                <p>Categories</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card bg-warning-gradient">
+            <div class="stat-icon"><i class="fas fa-question-circle"></i></div>
+            <div class="stat-content">
+                <h3>{{ uncategorized_count }}</h3>
+                <p>Uncategorized</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Category Filter -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body py-3">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span class="fw-bold text-muted me-2"><i class="fas fa-filter"></i> Filter:</span>
+            <a href="{% url 'media_library' %}" class="btn btn-sm {% if not active_category %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                All <span class="badge {% if not active_category %}bg-light text-primary{% else %}bg-primary{% endif %}">{{ total_count }}</span>
+            </a>
+            {% for cat in categories %}
+            <div class="btn-group btn-group-sm" role="group">
+                <a href="{% url 'media_library' %}?category={{ cat.id }}"
+                   class="btn {% if active_category == cat.id|stringformat:'s' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                    {{ cat.name }} <span class="badge {% if active_category == cat.id|stringformat:'s' %}bg-light text-primary{% else %}bg-primary{% endif %}">{{ cat.asset_count }}</span>
+                </a>
+                <button type="button" class="btn {% if active_category == cat.id|stringformat:'s' %}btn-primary{% else %}btn-outline-primary{% endif %}"
+                        title="Delete category" onclick="deleteCategory({{ cat.id }}, '{{ cat.name|escapejs }}')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            {% endfor %}
+            {% if uncategorized_count > 0 %}
+            <a href="{% url 'media_library' %}?category=uncategorized"
+               class="btn btn-sm {% if active_category == 'uncategorized' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+                Uncategorized <span class="badge {% if active_category == 'uncategorized' %}bg-light text-secondary{% else %}bg-secondary{% endif %}">{{ uncategorized_count }}</span>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Action Bar -->
+<div class="card shadow-sm mb-3 border-primary" id="bulkActionBar" style="display:none;">
+    <div class="card-body py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-bold"><span id="bulkSelectedCount">0</span> image(s) selected</span>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <select class="form-select form-select-sm" id="bulkMoveCategory" style="width:auto;">
+                <option value="" selected disabled>Move to category...</option>
+                <option value="uncategorized">Uncategorized</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}">{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="bulkMove()">
+                <i class="fas fa-folder"></i> Move
+            </button>
+            <button type="button" class="btn btn-sm btn-danger" onclick="bulkDelete()">
+                <i class="fas fa-trash"></i> Delete Selected
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
+                <i class="fas fa-times"></i> Clear
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Gallery Grid -->
+<div class="card shadow-sm">
+    <div class="card-body">
+        {% if assets %}
+        <div class="row g-3" id="mediaGrid">
+            {% for asset in assets %}
+            <div class="col-6 col-md-3 col-lg-2 media-asset-col" data-asset-id="{{ asset.id }}">
+                <div class="media-asset-card">
+                    <div class="media-asset-checkbox form-check">
+                        <input class="form-check-input asset-checkbox" type="checkbox" value="{{ asset.id }}" onchange="onAssetCheck()">
+                    </div>
+                    <img src="{{ asset.image.url }}" alt="{{ asset.title }}" loading="lazy" onclick="previewAsset('{{ asset.image.url }}', '{{ asset.title|escapejs }}')">
+                    <button type="button" class="media-asset-delete" title="Delete" onclick="deleteAsset({{ asset.id }}, '{{ asset.title|escapejs }}')">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                    <div class="media-asset-info">
+                        <div class="media-asset-title" title="{{ asset.title }}">{{ asset.title|default:"Untitled" }}</div>
+                        <div class="media-asset-category">{{ asset.category.name|default:"Uncategorized" }}</div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">
+            <i class="fas fa-images fa-3x mb-3"></i>
+            <h5>No images yet</h5>
+            <p>Upload images to start building your reusable Media Library.</p>
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadMediaModal">
+                <i class="fas fa-upload"></i> Upload Media
+            </button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Upload Media Modal -->
+<div class="modal fade" id="uploadMediaModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" enctype="multipart/form-data" action="{% url 'media_library' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="upload">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-upload"></i> Upload Media</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="upload-dropzone" id="mediaUploadDropzone">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-3"></i>
+                        <h6>Drag &amp; drop images here</h6>
+                        <p class="text-muted small mb-3">or click to browse — multiple files supported</p>
+                        <input type="file" name="files" id="mediaUploadInput" class="d-none" multiple accept="image/*" required>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('mediaUploadInput').click()">
+                            <i class="fas fa-folder-open"></i> Choose Images
+                        </button>
+                    </div>
+                    <div id="mediaUploadFileList" class="mt-3 small text-muted"></div>
+
+                    <div class="mt-3">
+                        <label class="form-label fw-bold">Assign to Category</label>
+                        <select name="category" class="form-select">
+                            <option value="">Uncategorized</option>
+                            {% for cat in categories %}
+                            <option value="{{ cat.id }}" {% if active_category == cat.id|stringformat:'s' %}selected{% endif %}>{{ cat.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-upload"></i> Upload</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- New Category Modal -->
+<div class="modal fade" id="newCategoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'media_library' %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create_category">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-folder-plus"></i> New Category</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label fw-bold">Category Name</label>
+                    <input type="text" name="name" class="form-control" placeholder="e.g. Banners, Beard Care, Packaging" required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Create Category</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Image Preview Modal -->
+<div class="modal fade" id="assetPreviewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="assetPreviewTitle">Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="assetPreviewImg" src="" alt="" style="max-width:100%; max-height:70vh; border-radius:8px;">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden utility forms for delete / bulk actions -->
+<form method="post" action="{% url 'media_library' %}" id="deleteAssetForm" style="display:none;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="delete">
+    <input type="hidden" name="asset_id" id="deleteAssetId">
+</form>
+
+<form method="post" action="{% url 'media_library' %}" id="deleteCategoryForm" style="display:none;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="delete_category">
+    <input type="hidden" name="category_id" id="deleteCategoryId">
+</form>
+
+<form method="post" action="{% url 'media_library' %}" id="bulkDeleteForm" style="display:none;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="bulk_delete">
+    <div id="bulkDeleteIds"></div>
+</form>
+
+<form method="post" action="{% url 'media_library' %}" id="bulkMoveForm" style="display:none;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="move_category">
+    <input type="hidden" name="category" id="bulkMoveCategoryValue">
+    <div id="bulkMoveIds"></div>
+</form>
+
+<style>
+    .media-asset-card {
+        position: relative;
+        border: 2px solid #dee2e6;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fff;
+        transition: all 0.2s ease;
+    }
+
+    .media-asset-card:hover {
+        border-color: #0d6efd;
+        box-shadow: 0 4px 14px rgba(13, 110, 253, 0.18);
+    }
+
+    .media-asset-card img {
+        width: 100%;
+        height: 110px;
+        object-fit: cover;
+        cursor: zoom-in;
+        display: block;
+    }
+
+    .media-asset-checkbox {
+        position: absolute;
+        top: 6px;
+        left: 6px;
+        z-index: 2;
+    }
+
+    .media-asset-checkbox .form-check-input {
+        width: 1.15em;
+        height: 1.15em;
+        cursor: pointer;
+    }
+
+    .media-asset-delete {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        z-index: 2;
+        background: rgba(220, 53, 69, 0.9);
+        border: none;
+        border-radius: 50%;
+        width: 26px;
+        height: 26px;
+        color: #fff;
+        font-size: 11px;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+
+    .media-asset-card:hover .media-asset-delete {
+        opacity: 1;
+    }
+
+    .media-asset-info {
+        padding: 6px 8px;
+        border-top: 1px solid #eee;
+    }
+
+    .media-asset-title {
+        font-size: 0.8rem;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .media-asset-category {
+        font-size: 0.7rem;
+        color: #6c757d;
+    }
+
+    .upload-dropzone {
+        background: #f8f9fa;
+        border: 3px dashed #dee2e6;
+        border-radius: 12px;
+        text-align: center;
+        padding: 2rem 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .upload-dropzone:hover, .upload-dropzone.dragover {
+        background: #e9ecef;
+        border-color: #0d6efd;
+    }
+</style>
+
+<script>
+    (function() {
+        const dropzone = document.getElementById('mediaUploadDropzone');
+        const input = document.getElementById('mediaUploadInput');
+        const fileList = document.getElementById('mediaUploadFileList');
+
+        function renderFileList(files) {
+            if (!files.length) { fileList.innerHTML = ''; return; }
+            fileList.innerHTML = '<i class="fas fa-paperclip"></i> ' + Array.from(files).map(f => f.name).join(', ');
+        }
+
+        dropzone.addEventListener('click', e => {
+            if (!e.target.closest('button')) input.click();
+        });
+
+        dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+        dropzone.addEventListener('dragleave', e => { e.preventDefault(); dropzone.classList.remove('dragover'); });
+        dropzone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            input.files = e.dataTransfer.files;
+            renderFileList(input.files);
+        });
+
+        input.addEventListener('change', () => renderFileList(input.files));
+    })();
+
+    function previewAsset(url, title) {
+        document.getElementById('assetPreviewImg').src = url;
+        document.getElementById('assetPreviewTitle').textContent = title || 'Preview';
+        new bootstrap.Modal(document.getElementById('assetPreviewModal')).show();
+    }
+
+    function deleteAsset(id, title) {
+        if (!confirm(`Delete "${title || 'this image'}" from the Media Library? This cannot be undone.`)) return;
+        document.getElementById('deleteAssetId').value = id;
+        document.getElementById('deleteAssetForm').submit();
+    }
+
+    function deleteCategory(id, name) {
+        if (!confirm(`Delete category "${name}"? Images in it will become Uncategorized (not deleted).`)) return;
+        document.getElementById('deleteCategoryId').value = id;
+        document.getElementById('deleteCategoryForm').submit();
+    }
+
+    function getSelectedIds() {
+        return Array.from(document.querySelectorAll('.asset-checkbox:checked')).map(cb => cb.value);
+    }
+
+    function onAssetCheck() {
+        const ids = getSelectedIds();
+        const bar = document.getElementById('bulkActionBar');
+        document.getElementById('bulkSelectedCount').textContent = ids.length;
+        bar.style.display = ids.length ? '' : 'none';
+    }
+
+    function clearSelection() {
+        document.querySelectorAll('.asset-checkbox:checked').forEach(cb => cb.checked = false);
+        onAssetCheck();
+    }
+
+    function bulkDelete() {
+        const ids = getSelectedIds();
+        if (!ids.length) return;
+        if (!confirm(`Delete ${ids.length} selected image(s) from the Media Library? This cannot be undone.`)) return;
+        const container = document.getElementById('bulkDeleteIds');
+        container.innerHTML = ids.map(id => `<input type="hidden" name="asset_ids" value="${id}">`).join('');
+        document.getElementById('bulkDeleteForm').submit();
+    }
+
+    function bulkMove() {
+        const ids = getSelectedIds();
+        const category = document.getElementById('bulkMoveCategory').value;
+        if (!ids.length) return;
+        if (!category) { alert('Please choose a category to move to.'); return; }
+        document.getElementById('bulkMoveCategoryValue').value = category;
+        const container = document.getElementById('bulkMoveIds');
+        container.innerHTML = ids.map(id => `<input type="hidden" name="asset_ids" value="${id}">`).join('');
+        document.getElementById('bulkMoveForm').submit();
+    }
+</script>
+{% endblock %}

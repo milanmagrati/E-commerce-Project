@@ -1712,6 +1712,15 @@
                 </li>
                 {% endif %}
 
+                <!-- ==================== MEDIA LIBRARY ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' or user.can_edit_products or user.can_create_products %}
+                <li class="{% if request.resolver_match.url_name == 'media_library' %}active{% endif %}">
+                    <a href="{% url 'media_library' %}">
+                        <i class="fas fa-photo-video"></i> Media
+                    </a>
+                </li>
+                {% endif %}
+
                 <!-- ==================== LOGOUT ==================== -->
                 <li>
                     <a href="{% url 'logout' %}" onclick="return confirm('Are you sure you want to logout?')">
@@ -1961,6 +1970,7 @@
 
             <!-- Main Content -->
             <div class="container-fluid mt-4">
+                {% block messages %}
                 {% if messages %}
                 <div class="messages-container">
                     {% for message in messages %}
@@ -1983,6 +1993,7 @@
                     {% endfor %}
                 </div>
                 {% endif %}
+                {% endblock %}
 
                 {% if low_stock_notification_count > 0 %}
                 <div class="low-stock-notification" id="lowStockNotification">

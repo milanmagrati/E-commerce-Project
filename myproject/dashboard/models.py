@@ -660,6 +660,11 @@ class ProductImage(models.Model):
     alt_text = models.CharField(max_length=255, blank=True, null=True)
     is_featured = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)
+    source_asset = models.ForeignKey(
+        'MediaAsset', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='product_uses',
+        help_text='Media Library asset this gallery image was copied from, if any.'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1985,3 +1990,47 @@ class FollowUpPresence(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.action} on {self.followup.id}"
+
+
+class MediaCategory(models.Model):
+    """User-defined category for organizing the shared Media Library."""
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(unique=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name_plural = 'Media Categories'
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            from django.utils.text import slugify
+            base_slug = slugify(self.name) or 'category'
+            slug = base_slug
+            i = 1
+            while MediaCategory.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                i += 1
+                slug = f"{base_slug}-{i}"
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+
+class MediaAsset(models.Model):
+    """A reusable image in the shared Media Library, pickable from any product's gallery."""
+    image = models.ImageField(upload_to='media_library/%Y/%m/')
+    title = models.CharField(max_length=255, blank=True)
+    category = models.ForeignKey(MediaCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='assets')
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='media_assets')
+    file_size = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Media Asset'
+        verbose_name_plural = 'Media Assets'
+
+    def __str__(self):
+        return self.title or f"Media {self.pk}"

@@ -51,6 +51,10 @@ urlpatterns = [
     path('product-images/<int:image_id>/set-featured/', views.set_featured_image, name='set_featured_image'),
     path('products/<int:product_id>/reorder-images/', views.reorder_product_images, name='reorder_product_images'),
 
+        # Media Library
+    path('media/', views.media_library, name='media_library'),
+    path('api/media/', views.api_media_list, name='api_media_list'),
+
       # Customers
     path('customers/', views.customers_list, name='customers_list'),
     path('customers/add/', views.customer_add, name='customer_add'),
