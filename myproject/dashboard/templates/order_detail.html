@@ -3974,9 +3974,18 @@
                     if (silent) {
                         // Only disturb the user with a reload if something
                         // actually changed - avoids reloading on every visit.
+                        // Guarded by sessionStorage so a backend that somehow
+                        // keeps reporting `changed: true` (stale cache, a bug,
+                        // whatever) can't reload this tab in a tight loop - at
+                        // most one auto-sync reload per order per ~20 seconds.
                         if (data.changed) {
-                            showNotification('success', data.message || 'Status updated successfully');
-                            setTimeout(() => location.reload(), 1000);
+                            const reloadGuardKey = `orderAutoSyncReload_${orderId}`;
+                            const lastReload = parseInt(sessionStorage.getItem(reloadGuardKey) || '0', 10);
+                            if (Date.now() - lastReload > 20000) {
+                                sessionStorage.setItem(reloadGuardKey, String(Date.now()));
+                                showNotification('success', data.message || 'Status updated successfully');
+                                setTimeout(() => location.reload(), 1000);
+                            }
                         }
                         return;
                     }

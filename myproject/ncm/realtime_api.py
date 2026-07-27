@@ -201,27 +201,22 @@ def api_sync_order_status(request, order_id):
             system_status = svc.map_ncm_status_to_system(latest_status)
             payment_status = None
 
-        # Check if any status field needs updating.
-        # Include order_status (legacy display field) and status_setup FK
-        # to catch cases where order.status was updated by old code but
-        # order_status/status_setup were left stale.
-        status_setup_matches = (
-            order.status_setup is not None
-            and order.status_setup.name.lower().replace(' ', '_') == system_status
-        )
-        needs_update = (
-            latest_status != order.ncm_status
-            or system_status != order.status
-            or system_status != order.order_status
-            or not status_setup_matches
-            or (payment_status and payment_status != order.payment_status)
-        )
+        # Update all status-related fields (status, order_status, status_setup
+        # FK, payment fields) - sync_order_status_fields only reports a field
+        # here if its value actually changed, so `changed` below reflects a
+        # real difference rather than re-deriving a fuzzy "does it match"
+        # check on every call. That distinction matters: the order detail
+        # page reloads itself whenever `changed` is true, so a check that
+        # could stay permanently "unmatched" (e.g. a stale status_setup FK
+        # left behind by other code paths) would reload the page forever.
+        update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
+
+        ncm_status_changed = latest_status != order.ncm_status
+        delivered_at_missing = system_status == 'delivered' and not order.delivered_at
+        needs_update = bool(update_fields) or ncm_status_changed or delivered_at_missing
 
         if needs_update:
             order.ncm_status = latest_status
-
-            # Update all status-related fields (status, order_status, status_setup FK, payment fields)
-            update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
             update_fields.append('ncm_status')
             update_fields.append('updated_at')
 

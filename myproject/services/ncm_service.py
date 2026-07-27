@@ -658,6 +658,11 @@ class NCMService:
         Updates: status, order_status, status_setup (FK),
                  payment_status, payment_status_setup (FK).
 
+        Only assigns/reports a field when its value actually differs from the
+        current one, so callers (e.g. the NCM real-time sync API) can trust
+        an empty return value to mean "nothing changed" - important because
+        that signal drives whether the order detail page reloads itself.
+
         Returns list of field names that were modified (for use in update_fields).
         """
         from dashboard.models import Setup
@@ -665,9 +670,12 @@ class NCMService:
         update_fields = []
 
         # Update status and order_status string fields
-        order.status = system_status
-        order.order_status = system_status
-        update_fields.extend(['status', 'order_status'])
+        if order.status != system_status:
+            order.status = system_status
+            update_fields.append('status')
+        if order.order_status != system_status:
+            order.order_status = system_status
+            update_fields.append('order_status')
 
         # Try to find matching Setup FK for order status
         try:
@@ -677,7 +685,7 @@ class NCMService:
                 if s.name.lower().replace(' ', '_') == sys_stat_norm:
                     status_setup = s
                     break
-            if status_setup:
+            if status_setup and order.status_setup_id != status_setup.id:
                 order.status_setup = status_setup
                 update_fields.append('status_setup')
         except Exception:
@@ -685,8 +693,9 @@ class NCMService:
 
         # Update payment status
         if payment_status:
-            order.payment_status = payment_status
-            update_fields.append('payment_status')
+            if order.payment_status != payment_status:
+                order.payment_status = payment_status
+                update_fields.append('payment_status')
 
             # Try to find matching Setup FK for payment status
             try:
@@ -696,7 +705,7 @@ class NCMService:
                     if s.name.lower().replace(' ', '_') == pay_stat_norm:
                         ps_setup = s
                         break
-                if ps_setup:
+                if ps_setup and order.payment_status_setup_id != ps_setup.id:
                     order.payment_status_setup = ps_setup
                     update_fields.append('payment_status_setup')
             except Exception:
