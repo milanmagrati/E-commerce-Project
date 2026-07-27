@@ -21795,12 +21795,13 @@ def get_notice_history(request):
             display_from_val = getattr(n, 'display_from', None)
             
             try:
-                display_from_str = timezone.localtime(display_from_val).strftime('%b %d, %Y %I:%M %p') if display_from_val else 'Immediate'
+                # display_from is null means "show immediately" -> the real start time is when it was created
+                display_from_str = timezone.localtime(display_from_val).strftime('%b %d, %Y %I:%M %p') if display_from_val else (timezone.localtime(n.created_at).strftime('%b %d, %Y %I:%M %p') + ' (Immediate)')
                 raw_display_from = timezone.localtime(display_from_val).strftime('%Y-%m-%dT%H:%M') if display_from_val else ''
                 display_until_str = timezone.localtime(n.display_until).strftime('%b %d, %Y %I:%M %p') if n.display_until else 'Never'
                 raw_display_until = timezone.localtime(n.display_until).strftime('%Y-%m-%dT%H:%M') if n.display_until else ''
             except Exception:
-                display_from_str = n.display_from.strftime('%b %d, %Y %I:%M %p') if display_from_val else 'Immediate'
+                display_from_str = n.display_from.strftime('%b %d, %Y %I:%M %p') if display_from_val else (n.created_at.strftime('%b %d, %Y %I:%M %p') + ' (Immediate)')
                 raw_display_from = n.display_from.strftime('%Y-%m-%dT%H:%M') if display_from_val else ''
                 display_until_str = n.display_until.strftime('%b %d, %Y %I:%M %p') if n.display_until else 'Never'
                 raw_display_until = n.display_until.strftime('%Y-%m-%dT%H:%M') if n.display_until else ''

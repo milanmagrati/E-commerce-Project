@@ -1644,7 +1644,7 @@
                 <!-- ==================== CHAT / MESSAGES ==================== -->
                 <li class="{% if request.path|slice:':6' == '/chat/' %}active{% endif %}">
                     <a href="{% url 'chat:inbox' %}">
-                        <i class="fas fa-comments"></i> Messages
+                        <i class="fas fa-comments"></i> Messages and Notice
                         {% if unread_chat_count > 0 %}
                         <span class="badge bg-danger float-end">{{ unread_chat_count }}</span>
                         {% endif %}

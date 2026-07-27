@@ -1224,8 +1224,18 @@
             if (qe) qe.innerHTML = content;
         }
         
-        if (fpFrom) fpFrom.setDate(displayFrom);
-        if (fpUntil) fpUntil.setDate(displayUntil);
+        // displayFrom/displayUntil come from the backend as "Y-m-dTH:i" strings, but the
+        // flatpickr instances are configured with dateFormat "m/d/Y h:i K". Passing the raw
+        // string straight to setDate() makes flatpickr parse it against that mismatched format
+        // and produce a garbled date. Convert to a real Date object first to sidestep parsing.
+        if (fpFrom) fpFrom.setDate(displayFrom ? new Date(displayFrom) : null);
+        if (fpUntil) fpUntil.setDate(displayUntil ? new Date(displayUntil) : null);
+
+        // Clear any leftover duration value from a previous edit session so it doesn't
+        // silently overwrite the just-loaded "Stop Showing At" the next time it's touched.
+        const durationValEl = document.getElementById('noticeDurationValue');
+        if (durationValEl) durationValEl.value = '';
+
         const freqEl = document.getElementById('noticeDisplayFrequency');
         if (freqEl && displayFrequency) {
             freqEl.value = displayFrequency;
