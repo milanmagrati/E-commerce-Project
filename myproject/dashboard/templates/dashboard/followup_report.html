@@ -789,29 +789,32 @@ function viewLogs(fuId, name, staffId) {
       data.logs.forEach(log => {
         let isStatus = log.field_changed === 'Status';
         let isFollowup = log.field_changed.startsWith('Followup');
+        let isEntry = log.field_changed === 'Entry Created';
         let itemClass = isStatus ? 'log-item log-item-status' : 'log-item';
-        let iconHtml = isStatus ? '<i class="fas fa-tags me-1" style="color:var(--fur-primary)"></i>' : '<i class="fas fa-user-circle me-1"></i>';
-        
+        let iconHtml = isStatus ? '<i class="fas fa-tags me-1" style="color:var(--fur-primary)"></i>' : (isEntry ? '<i class="fas fa-plus-circle me-1" style="color:var(--fur-green)"></i>' : '<i class="fas fa-user-circle me-1"></i>');
+
         let fieldColor = isStatus ? 'var(--fur-primary)' : '#ea580c';
 
         html += '<div class="' + itemClass + '">';
         html += '<div class="log-user">' + iconHtml + log.user + '</div>';
-        
+
         if (isFollowup) {
             html += '<div class="log-field" style="margin-top:6px;"><span style="background:#6c63ff; color:#fff; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.75rem;">' + log.field_changed + '</span> <span style="color:var(--fur-muted)">updated</span></div>';
         } else if (isStatus) {
             html += '<div class="log-field" style="margin-top:6px;"><span style="background:#0ea5e9; color:#fff; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.75rem;"><i class="fas fa-sync-alt me-1"></i>Status Updated</span></div>';
+        } else if (isEntry) {
+            html += '<div class="log-field" style="margin-top:6px;"><span style="background:var(--fur-green); color:#fff; padding:3px 8px; border-radius:6px; font-weight:600; font-size:0.75rem;">Entry Created</span></div>';
         } else {
             html += '<div class="log-field" style="margin-top:6px;"><span style="color:var(--fur-muted)">Changed:</span> <strong style="color:var(--fur-text)">' + log.field_changed + '</strong></div>';
         }
-        
-        html += '<div class="log-change" style="' + (isFollowup ? 'margin-top:4px;' : '') + '">';
+
+        html += '<div class="log-change" style="' + (isFollowup || isEntry ? 'margin-top:4px;' : '') + '">';
         if (log.old_value && log.old_value !== '-') html += '<span class="log-old">' + log.old_value + '</span><span class="log-arrow">&#x2192;</span>';
-        
+
         let newValClass = 'log-new';
         if (isStatus) newValClass = 'log-new log-new-status';
         else if (isFollowup) newValClass = 'log-new log-new-note';
-        
+
         html += '<span class="' + newValClass + '">' + (log.new_value || '(empty)') + '</span>';
         html += '</div>';
         html += '<div class="log-time"><i class="fas fa-clock me-1"></i>' + log.timestamp + '</div>';
