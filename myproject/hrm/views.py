@@ -6076,6 +6076,11 @@ def payslip_download(request, pk):
         cycle_start = dt_date(_year, _month, 1)
         cycle_end = dt_date(_year, _month, _cal.monthrange(_year, _month)[1])
 
+    # Fold in any bonuses approved/paid after this payslip was generated,
+    # so the printed totals aren't stale relative to the bonus rows shown below.
+    _sync_bonus_to_payslip(employee, cycle_start.month, cycle_start.year)
+    slip.refresh_from_db(fields=['salary_structure', 'gross_salary', 'net_salary'])
+
     salary_record = (
         EmployeeSalary.objects.filter(employee=employee, is_active=True)
         .prefetch_related('components')
@@ -6120,6 +6125,8 @@ def payslip_download(request, pk):
 
     for _b in _bonus_qs:
         earnings_list.append({'name': f"Bonus ({_b.get_bonus_type_display()})", 'amount': _b.amount})
+    _bonus_total = sum(_b.amount for _b in _bonus_qs) or Decimal('0')
+    _bonus_total = Decimal(str(_bonus_total)).quantize(Decimal('0.01'))
 
     for _adj in PayslipAdjustment.objects.filter(payslip=slip):
         if _adj.adjustment_type == 'earning':
@@ -6174,7 +6181,12 @@ def payslip_download(request, pk):
     elif _live_total > 0:
         advance_deduction = _live_total
         if _stored_adv == Decimal('0'):
-            _new_net = max(bd['total_earnings'] - (bd['other_deductions_total'] + advance_deduction), Decimal('0'))
+            # Base this on the payslip's own persisted gross/deductions (which
+            # already include any approved bonuses and manual adjustments),
+            # not the bare recalculated bd[] baseline -- otherwise this silently
+            # wipes out those amounts the moment an employee has a live advance
+            # that hasn't been recorded on the slip yet.
+            _new_net = max(slip.gross_salary - (slip.total_deductions + advance_deduction), Decimal('0'))
             Payslip.objects.filter(pk=slip.pk).update(advance_deduction=advance_deduction, net_salary=_new_net)
         for _adv in all_employee_advances:
             if _adv.status not in ('disbursed', 'repaying'):
@@ -6195,7 +6207,7 @@ def payslip_download(request, pk):
         net_salary = slip.net_salary
     else:
         total_deductions_comp = bd['other_deductions_total'] + advance_deduction
-        total_earnings = bd['total_earnings']
+        total_earnings = bd['total_earnings'] + _bonus_total
         net_salary = max(total_earnings - total_deductions_comp, Decimal('0'))
 
     max_rows = max(len(earnings_list), len(deductions_list), 1)
@@ -8910,6 +8922,50 @@ def holiday_apply(request, pk):
 
 # ==================== Bonus Management Views ====================
 
+def _sync_bonus_to_payslip(employee, month, year):
+    """Fold approved/paid bonuses for an employee/month/year into that
+    employee's already-generated payslip (gross_salary/net_salary), so the
+    payslip stays correct even when a bonus is approved after the payroll
+    run was generated. Mirrors the base/delta approach used by
+    _recalculate_payslip for manual adjustments.
+
+    Returns {'applied': bool, 'finalized_skipped': bool} so callers (bonus
+    approve/edit/delete) can tell the admin when a bonus change couldn't reach
+    a payslip because it's already finalized (finalized payslips are
+    intentionally locked from further edits), instead of silently no-op'ing.
+    """
+    from .models import Payslip, Bonus
+    from decimal import Decimal
+
+    base_qs = Payslip.objects.filter(employee=employee).filter(
+        Q(payroll_run__month=month, payroll_run__year=year) |
+        Q(payroll_run__pay_period_start__year=year, payroll_run__pay_period_start__month=month)
+    )
+    slip = base_qs.exclude(is_finalized=True).first()
+    if not slip:
+        return {'applied': False, 'finalized_skipped': base_qs.filter(is_finalized=True).exists()}
+
+    current_bonus_total = sum(
+        b.amount for b in Bonus.objects.filter(
+            employee=employee, month=month, year=year, status__in=['approved', 'paid']
+        )
+    ) or Decimal('0')
+    current_bonus_total = Decimal(str(current_bonus_total)).quantize(Decimal('0.01'))
+
+    struct = slip.salary_structure or {}
+    included_bonus = Decimal(str(struct.get('bonus_total_included', '0')))
+    delta = current_bonus_total - included_bonus
+    if delta == 0:
+        return {'applied': False, 'finalized_skipped': False}
+
+    struct['bonus_total_included'] = str(current_bonus_total)
+    slip.salary_structure = struct
+    slip.gross_salary = (slip.gross_salary + delta).quantize(Decimal('0.01'))
+    slip.net_salary = max(slip.net_salary + delta, Decimal('0')).quantize(Decimal('0.01'))
+    slip.save(update_fields=['salary_structure', 'gross_salary', 'net_salary', 'updated_at'])
+    return {'applied': True, 'finalized_skipped': False}
+
+
 @login_required
 def bonus_list(request):
     from .models import Bonus
@@ -8942,11 +8998,19 @@ def bonus_list(request):
     paginator = Paginator(bonuses, int(per_page))
     page_obj = paginator.get_page(request.GET.get('page', 1))
 
+    status_counts = bonuses.aggregate(
+        pending=Count('id', filter=Q(status='pending')),
+        approved=Count('id', filter=Q(status='approved')),
+        paid=Count('id', filter=Q(status='paid')),
+    )
+
     now = timezone.now()
     years = list(range(now.year - 2, now.year + 2))
+    is_admin = request.user.is_superuser or request.user.role == 'administrator'
 
     context = {
         'page_title': 'Bonus Management',
+        'is_admin': is_admin,
         'bonuses': page_obj,
         'search_query': search_query,
         'status_filter': status_filter,
@@ -8955,6 +9019,9 @@ def bonus_list(request):
         'year_filter': year_filter,
         'per_page': per_page,
         'total_bonuses': paginator.count,
+        'pending_count': status_counts['pending'],
+        'approved_count': status_counts['approved'],
+        'paid_count': status_counts['paid'],
         'bonus_type_choices': Bonus.BONUS_TYPE_CHOICES,
         'status_choices': Bonus.STATUS_CHOICES,
         'months': [(i, _cal.month_name[i]) for i in range(1, 13)],
@@ -9067,7 +9134,9 @@ def bonus_update(request, pk):
     bonus = get_object_or_404(Bonus, pk=pk)
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
-    if bonus.status in ('approved', 'paid'):
+
+    is_admin = request.user.is_superuser or request.user.role == 'administrator'
+    if bonus.status in ('approved', 'paid') and not is_admin:
         return JsonResponse({'success': False, 'error': 'Cannot edit an approved or paid bonus.'})
 
     amount = request.POST.get('amount', '').strip()
@@ -9082,13 +9151,30 @@ def bonus_update(request, pk):
     except Exception:
         return JsonResponse({'success': False, 'error': 'Invalid amount.'})
 
+    old_month, old_year, old_status = bonus.month, bonus.year, bonus.status
+
     bonus.bonus_type = request.POST.get('bonus_type', bonus.bonus_type)
     bonus.amount = amt
     bonus.month = int(month)
     bonus.year = int(year)
     bonus.remarks = request.POST.get('remarks', '').strip()
     bonus.save()
-    return JsonResponse({'success': True, 'message': f'Bonus updated successfully!'})
+
+    # Editing an already approved/paid bonus changes an amount that may already
+    # be baked into a payslip -- re-sync so the payslip doesn't go stale, and
+    # cover the period it moved out of if month/year changed too.
+    finalized_skipped = False
+    if old_status in ('approved', 'paid'):
+        r1 = _sync_bonus_to_payslip(bonus.employee, old_month, old_year)
+        finalized_skipped = r1['finalized_skipped']
+        if (bonus.month, bonus.year) != (old_month, old_year):
+            r2 = _sync_bonus_to_payslip(bonus.employee, bonus.month, bonus.year)
+            finalized_skipped = finalized_skipped or r2['finalized_skipped']
+
+    resp = {'success': True, 'message': 'Bonus updated successfully!'}
+    if finalized_skipped:
+        resp['note'] = 'A finalized payslip for this period was not changed — unfinalize it first if this edit should be reflected there.'
+    return JsonResponse(resp)
 
 
 @login_required
@@ -9097,10 +9183,22 @@ def bonus_delete(request, pk):
     bonus = get_object_or_404(Bonus, pk=pk)
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
-    if bonus.status in ('approved', 'paid'):
+
+    is_admin = request.user.is_superuser or request.user.role == 'administrator'
+    if bonus.status in ('approved', 'paid') and not is_admin:
         return JsonResponse({'success': False, 'error': 'Cannot delete an approved or paid bonus.'})
+
+    employee, month, year, status = bonus.employee, bonus.month, bonus.year, bonus.status
     bonus.delete()
-    return JsonResponse({'success': True, 'message': 'Bonus deleted successfully!'})
+
+    # If this bonus was already folded into a payslip, remove its amount again.
+    resp = {'success': True, 'message': 'Bonus deleted successfully!'}
+    if status in ('approved', 'paid'):
+        result = _sync_bonus_to_payslip(employee, month, year)
+        if result['finalized_skipped']:
+            resp['note'] = 'A finalized payslip for this period still includes the deleted bonus — unfinalize it first if this should be reflected there.'
+
+    return JsonResponse(resp)
 
 
 @login_required
@@ -9123,7 +9221,13 @@ def bonus_update_status(request, pk):
         bonus.approved_by = request.user
         bonus.approved_at = timezone.now()
     bonus.save()
-    return JsonResponse({'success': True, 'message': f'Bonus status updated to {bonus.get_status_display()}.'})
+
+    result = _sync_bonus_to_payslip(bonus.employee, bonus.month, bonus.year)
+
+    resp = {'success': True, 'message': f'Bonus status updated to {bonus.get_status_display()}.'}
+    if result['finalized_skipped']:
+        resp['note'] = 'A finalized payslip for this period was not changed — unfinalize it first if this should be reflected there.'
+    return JsonResponse(resp)
 
 
 # ==================== Payslip Adjustment & Finalization Views ====================
@@ -9234,56 +9338,40 @@ def payslip_adjust(request, pk):
 
 
 def _recalculate_payslip(slip):
-    """Recalculate gross_salary, total_deductions, net_salary based on manual adjustments."""
+    """Recalculate gross_salary, total_deductions, net_salary based on manual adjustments.
 
+    Applies only the *delta* since the last recalculation (tracked in
+    salary_structure, the same way _sync_bonus_to_payslip tracks its own
+    bonus delta) instead of resetting from a frozen base snapshot. A frozen
+    base goes stale the moment anything else -- a bonus approval, an advance
+    sync -- changes gross_salary/net_salary outside this function, and the
+    next adjustment would silently wipe that other change out.
+    """
     from decimal import Decimal
 
     adjustments = PayslipAdjustment.objects.filter(payslip=slip)
     extra_earnings = sum(a.amount for a in adjustments if a.adjustment_type == 'earning') or Decimal('0')
     extra_deductions = sum(a.amount for a in adjustments if a.adjustment_type == 'deduction') or Decimal('0')
+    extra_earnings = Decimal(str(extra_earnings)).quantize(Decimal('0.01'))
+    extra_deductions = Decimal(str(extra_deductions)).quantize(Decimal('0.01'))
 
-    # Base gross is stored; we rebuild from base (stored before adjustments)
-    # To avoid double-counting, store base values if not yet done
-    if not hasattr(slip, '_base_gross'):
-        # Use current values minus previous adjustments total as base
-        prev_earnings = sum(
-            a.amount for a in adjustments if a.adjustment_type == 'earning'
-        ) or Decimal('0')
-        prev_deductions = sum(
-            a.amount for a in adjustments if a.adjustment_type == 'deduction'
-        ) or Decimal('0')
+    struct = slip.salary_structure or {}
+    included_earnings = Decimal(str(struct.get('adj_earnings_included', '0')))
+    included_deductions = Decimal(str(struct.get('adj_deductions_included', '0')))
 
-    # The strategy: keep original auto-computed values in notes as base
-    # We store base in payslip notes field on first adjustment
-    import json
-    base_data = {}
-    try:
-        if slip.notes and slip.notes.startswith('__base__'):
-            base_data = json.loads(slip.notes[8:])
-    except Exception:
-        pass
+    delta_earnings = extra_earnings - included_earnings
+    delta_deductions = extra_deductions - included_deductions
 
-    if not base_data:
-        # First time: save current values as base
-        base_data = {
-            'gross': str(slip.gross_salary),
-            'deductions': str(slip.total_deductions),
-            'net': str(slip.net_salary),
-        }
-        slip.notes = '__base__' + json.dumps(base_data)
+    struct['adj_earnings_included'] = str(extra_earnings)
+    struct['adj_deductions_included'] = str(extra_deductions)
 
-    base_gross = Decimal(base_data['gross'])
-    base_deductions = Decimal(base_data['deductions'])
-    base_net = Decimal(base_data['net'])
-
-    new_gross = (base_gross + Decimal(str(extra_earnings))).quantize(Decimal('0.01'))
-    new_deductions = (base_deductions + Decimal(str(extra_deductions))).quantize(Decimal('0.01'))
-    new_net = max(base_net + Decimal(str(extra_earnings)) - Decimal(str(extra_deductions)), Decimal('0')).quantize(Decimal('0.01'))
-
-    slip.gross_salary = new_gross
-    slip.total_deductions = new_deductions
-    slip.net_salary = new_net
-    slip.save(update_fields=['gross_salary', 'total_deductions', 'net_salary', 'notes', 'updated_at'])
+    slip.salary_structure = struct
+    slip.gross_salary = (slip.gross_salary + delta_earnings).quantize(Decimal('0.01'))
+    slip.total_deductions = (slip.total_deductions + delta_deductions).quantize(Decimal('0.01'))
+    slip.net_salary = max(
+        slip.net_salary + delta_earnings - delta_deductions, Decimal('0')
+    ).quantize(Decimal('0.01'))
+    slip.save(update_fields=['salary_structure', 'gross_salary', 'total_deductions', 'net_salary', 'updated_at'])
 
 
 @login_required

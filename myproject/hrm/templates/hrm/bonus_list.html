@@ -29,7 +29,7 @@
             <div class="card-body d-flex justify-content-between align-items-center">
                 <div>
                     <p class="text-muted mb-1">Pending Approval</p>
-                    <h3 class="mb-0">{{ bonuses.paginator.count }}</h3>
+                    <h3 class="mb-0">{{ pending_count }}</h3>
                 </div>
                 <div class="stat-icon bg-warning"><i class="fas fa-clock"></i></div>
             </div>
@@ -40,7 +40,7 @@
             <div class="card-body d-flex justify-content-between align-items-center">
                 <div>
                     <p class="text-muted mb-1">Approved</p>
-                    <h3 class="mb-0">—</h3>
+                    <h3 class="mb-0">{{ approved_count }}</h3>
                 </div>
                 <div class="stat-icon bg-success"><i class="fas fa-check-circle"></i></div>
             </div>
@@ -51,7 +51,7 @@
             <div class="card-body d-flex justify-content-between align-items-center">
                 <div>
                     <p class="text-muted mb-1">Paid Out</p>
-                    <h3 class="mb-0">—</h3>
+                    <h3 class="mb-0">{{ paid_count }}</h3>
                 </div>
                 <div class="stat-icon bg-info"><i class="fas fa-money-check-alt"></i></div>
             </div>
@@ -192,9 +192,14 @@
                             <button class="btn btn-sm btn-outline-danger me-1" title="Reject" onclick="updateStatus({{ bonus.id }}, 'rejected')"><i class="fas fa-times"></i></button>
                             {% elif bonus.status == 'approved' %}
                             <button class="btn btn-sm btn-outline-primary me-1" title="Mark Paid" onclick="updateStatus({{ bonus.id }}, 'paid')"><i class="fas fa-money-check-alt"></i></button>
+                            {% if is_admin %}
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit (Admin)" onclick="editBonus({{ bonus.id }})"><i class="fas fa-edit"></i></button>
                             {% endif %}
-                            {% if bonus.status not in 'approved,paid' %}
-                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="confirmDelete({{ bonus.id }}, '{{ bonus.employee.full_name|escapejs }}')"><i class="fas fa-trash"></i></button>
+                            {% elif bonus.status == 'paid' and is_admin %}
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit (Admin)" onclick="editBonus({{ bonus.id }})"><i class="fas fa-edit"></i></button>
+                            {% endif %}
+                            {% if bonus.status not in 'approved,paid' or is_admin %}
+                            <button class="btn btn-sm btn-outline-danger" title="{% if bonus.status in 'approved,paid' %}Delete (Admin){% else %}Delete{% endif %}" onclick="confirmDelete({{ bonus.id }}, '{{ bonus.employee.full_name|escapejs }}', '{{ bonus.status }}')"><i class="fas fa-trash"></i></button>
                             {% endif %}
                         </td>
                     </tr>
@@ -237,6 +242,11 @@
                 <form id="bonusForm">
                     {% csrf_token %}
                     <input type="hidden" id="bonusId" value="">
+                    <div class="alert alert-warning py-2 mb-3 d-none" id="bonusEditWarning">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        This bonus is already <strong id="bonusEditWarningStatus"></strong>. Saving changes will
+                        automatically update the amount already applied to that payslip.
+                    </div>
                     <div class="row g-3">
                         <div class="col-12">
                             <div class="form-check form-switch mb-2">
@@ -325,6 +335,10 @@
             </div>
             <div class="modal-body">
                 <p>Delete bonus for <strong id="deleteBonusName"></strong>?</p>
+                <p class="text-danger d-none mb-2" id="deleteBonusPayslipNote">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    This bonus is already applied to a payslip — deleting it will remove its amount from that payslip's total.
+                </p>
                 <p class="text-muted mb-0">This action cannot be undone.</p>
             </div>
             <div class="modal-footer">
@@ -353,6 +367,7 @@ function openAddModal() {
     document.getElementById('bonusForm').reset();
     document.getElementById('bonusId').value = '';
     document.getElementById('employeeSelectWrap').style.display = '';
+    document.getElementById('bonusEditWarning').classList.add('d-none');
     bonusModal.show();
 }
 
@@ -371,7 +386,12 @@ function saveBonus() {
     fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData })
         .then(r => r.json())
         .then(data => {
-            if (data.success) { bonusModal.hide(); showToast(data.message, 'success'); setTimeout(() => location.reload(), 600); }
+            if (data.success) {
+                bonusModal.hide();
+                showToast(data.message, 'success');
+                if (data.note) { setTimeout(() => showToast(data.note, 'warning'), 400); }
+                setTimeout(() => location.reload(), data.note ? 2800 : 600);
+            }
             else { showToast(data.error || 'Something went wrong.', 'error'); }
         })
         .catch(() => showToast('Network error.', 'error'));
@@ -418,6 +438,13 @@ function editBonus(id) {
                 document.getElementById('bonusRemarks').value = b.remarks;
                 document.getElementById('bonusApplyAll').checked = b.apply_for_all;
                 toggleEmployeeSelect({ checked: b.apply_for_all });
+                const warning = document.getElementById('bonusEditWarning');
+                if (b.status === 'approved' || b.status === 'paid') {
+                    document.getElementById('bonusEditWarningStatus').textContent = b.status_display;
+                    warning.classList.remove('d-none');
+                } else {
+                    warning.classList.add('d-none');
+                }
                 bonusModal.show();
             }
         });
@@ -431,15 +458,20 @@ function updateStatus(id, status) {
     fetch(`{% url 'hrm:bonus_list' %}${id}/status/`, { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: fd })
         .then(r => r.json())
         .then(data => {
-            if (data.success) { showToast(data.message, 'success'); setTimeout(() => location.reload(), 600); }
+            if (data.success) {
+                showToast(data.message, 'success');
+                if (data.note) { setTimeout(() => showToast(data.note, 'warning'), 400); }
+                setTimeout(() => location.reload(), data.note ? 2800 : 600);
+            }
             else { showToast(data.error, 'error'); }
         });
 }
 
 let deleteId = null;
-function confirmDelete(id, name) {
+function confirmDelete(id, name, status) {
     deleteId = id;
     document.getElementById('deleteBonusName').textContent = name;
+    document.getElementById('deleteBonusPayslipNote').classList.toggle('d-none', !(status === 'approved' || status === 'paid'));
     new bootstrap.Modal(document.getElementById('deleteModal')).show();
 }
 document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
@@ -450,7 +482,8 @@ document.getElementById('confirmDeleteBtn').addEventListener('click', function()
             if (data.success) {
                 bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
                 showToast(data.message, 'success');
-                setTimeout(() => location.reload(), 600);
+                if (data.note) { setTimeout(() => showToast(data.note, 'warning'), 400); }
+                setTimeout(() => location.reload(), data.note ? 2800 : 600);
             } else { showToast(data.error, 'error'); }
         });
 });
