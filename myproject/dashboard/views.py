@@ -21975,7 +21975,7 @@ def add_follow_up(request):
         phone = data.get('phone', '').strip()
         lead_source = data.get('lead_source', '').strip()
         product_ids = data.get('product_ids', [])  # list of IDs (new M2M)
-        followup_note = data.get('followup_note', '').strip()
+        followup_note = data.get('new_followup_note', '').strip()
         status = data.get('status', '').strip()
         remarks = data.get('remarks', '').strip()
         
@@ -22011,12 +22011,27 @@ def add_follow_up(request):
                 new_follow_up.product_variations.set(valid_variations)
             
         from .models import FollowUpLog
-        
+
         FollowUpLog.objects.create(
             follow_up=new_follow_up, user=request.user, field_changed='Entry Created',
-            old_value='-', new_value=followup_note if followup_note else 'Entry Created'
+            old_value='-', new_value='Entry Created'
         )
-        
+        if followup_note:
+            FollowUpLog.objects.create(
+                follow_up=new_follow_up, user=request.user, field_changed='Followup 1',
+                old_value='-', new_value=followup_note
+            )
+        if status:
+            FollowUpLog.objects.create(
+                follow_up=new_follow_up, user=request.user, field_changed='Status',
+                old_value='-', new_value=status
+            )
+        if remarks:
+            FollowUpLog.objects.create(
+                follow_up=new_follow_up, user=request.user, field_changed='Remarks',
+                old_value='-', new_value=remarks
+            )
+
         products_data = [
             {'id': str(p.id), 'name': p.name, 'price': float(p.price)}
             for p in new_follow_up.products.all()

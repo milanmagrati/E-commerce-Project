@@ -1872,6 +1872,10 @@ class FollowUp(models.Model):
     def all_followup_logs(self):
         return self.logs.all()
 
+    @property
+    def followup_count(self):
+        return self.logs.filter(field_changed__startswith='Followup').count()
+
     def get_all_products(self):
         """Return M2M products if any, else fall back to the legacy FK product."""
         m2m = list(self.products.all())

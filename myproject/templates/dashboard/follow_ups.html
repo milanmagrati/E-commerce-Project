@@ -116,7 +116,8 @@
                             data-lead="{{ item.lead_source|default:'' }}"
                             data-products='[{% for p in all_products %}{"id":"{{ p.id }}","name":"{{ p.name|escapejs }}","price":{{ p.price }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
                             data-remarks="{{ item.remarks|default:'' }}"
-                            data-version="{{ item.version|default:1 }}">
+                            data-version="{{ item.version|default:1 }}"
+                            data-followup-count="{{ item.followup_count }}">
                             <td class="text-center sn-column">{{ page_obj.start_index|add:forloop.counter0 }}</td>
                             <td>{{ item.name|default:"-" }}</td>
                             <td>{{ item.phone }}</td>
@@ -575,6 +576,11 @@
 
 
 
+    // ===== Count how many "Followup N" log entries a row has =====
+    function countFollowupLogs(logs) {
+        return (logs || []).filter(l => (l.field_changed || '').startsWith('Followup')).length;
+    }
+
     // ===== Build followup cell HTML (for JS-added rows) =====
     function buildFuCellHtml(logs, fuId) {
         let contentHtml;
@@ -683,6 +689,7 @@
         newTr.setAttribute('data-products', JSON.stringify(data.products || []));
         newTr.setAttribute('data-remarks', data.remarks || '');
         newTr.setAttribute('data-version', data.version || 1);
+        newTr.setAttribute('data-followup-count', countFollowupLogs(data.all_logs));
 
         newTr.innerHTML = `
             <td class="text-center sn-column"></td>
@@ -725,13 +732,14 @@
         });
     }
 
-    // ===== Add Note Modal (opens for a specific field) =====
-    function openAddNoteModal(id, field) {
+    // ===== Add Note Modal =====
+    function openAddNoteModal(id) {
         currentNoteId = id;
-        currentNoteField = field; // 'followup_1' or 'followup_2'
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        const existingCount = parseInt(row?.getAttribute('data-followup-count') || '0', 10) || 0;
         document.getElementById('addNoteText').value = '';
         document.getElementById('addNoteStatus').value = '';
-        document.getElementById('addNoteFieldLabel').textContent = field === 'followup_1' ? 'Followup 1' : 'Followup 2';
+        document.getElementById('addNoteFieldLabel').textContent = `Followup ${existingCount + 1}`;
         addNoteModal.show();
     }
 
@@ -768,6 +776,7 @@
                 alertify.success('Note added successfully!');
                 
                 row.setAttribute('data-version', result.data.version || 1);
+                row.setAttribute('data-followup-count', countFollowupLogs(result.data.all_logs));
 
                 // Update the Followup cell and Status cell
                 const cells = row.querySelectorAll('td');
@@ -872,6 +881,7 @@
                 row.setAttribute('data-products', JSON.stringify(d.products || []));
                 row.setAttribute('data-remarks', d.remarks || '');
                 row.setAttribute('data-version', d.version || 1);
+                row.setAttribute('data-followup-count', countFollowupLogs(d.all_logs));
 
                 let productsHtml = '<span class="text-muted">-</span>';
                 if (d.products?.length > 0) {
@@ -882,6 +892,7 @@
                 cells[2].textContent = d.phone || '-';
                 cells[3].textContent = d.lead_source || '-';
                 cells[4].innerHTML = productsHtml;
+                cells[5].innerHTML = buildFuCellHtml(d.all_logs, currentEditId);
                 cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" style="${getStatusBadgeStyle(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
                 cells[7].textContent = d.remarks || '-';
 
@@ -934,12 +945,7 @@
             if (result.data.length === 0) { container.innerHTML = '<div class="text-center text-muted py-4">No changes have been recorded yet.</div>'; return; }
             container.innerHTML = result.data.map(log => {
                 let bodyHtml = '';
-                if (log.field_changed === 'Entry Created') {
-                    bodyHtml = `
-                        <div class="mb-1"><span class="badge bg-secondary">Entry Created</span></div>
-                        <div class="text-success fw-bold small">${log.new_value || '-'}</div>
-                    `;
-                } else if (log.field_changed === 'Status') {
+                if (log.field_changed === 'Status') {
                     bodyHtml = `
                         <div class="mb-1">
                             <span class="badge bg-info text-dark border border-info px-2 py-0 shadow-sm" style="font-size: 0.7rem;"><i class="fas fa-sync-alt me-1"></i> Status Updated</span>
@@ -952,11 +958,13 @@
                     `;
                 } else {
                     let isFollowup = (log.field_changed || '').startsWith('Followup');
+                    let isEntryCreated = log.field_changed === 'Entry Created';
                     let badgeStyle = isFollowup ? 'background-color: #6f42c1; color: white;' : '';
                     let badgeClass = isFollowup ? '' : 'bg-secondary';
-                    
+                    let suffix = isEntryCreated ? '' : ' updated';
+
                     bodyHtml = `
-                        <div class="mb-1"><span class="badge ${badgeClass}" style="${badgeStyle}">${log.field_changed}</span> updated</div>
+                        <div class="mb-1"><span class="badge ${badgeClass}" style="${badgeStyle}">${log.field_changed}</span>${suffix}</div>
                         <div class="text-muted small bg-light p-2 rounded border">
                             <del class="text-danger me-2">${log.old_value || '-'}</del>
                             <i class="fas fa-arrow-right mx-1 text-muted"></i>
