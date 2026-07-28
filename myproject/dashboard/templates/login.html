@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Sign In - Blanxer Admin{% endblock %}
+{% block title %}Sign In - {{ COMPANY_NAME|default:'Trendy Shopping' }}{% endblock %}
 
 {% block auth_content %}
 <div class="auth-wrapper">
@@ -167,7 +167,7 @@
                             </small>
                             <br>
                             <small class="text-muted mt-2 d-block">
-                                © 2026 Blanxer. All rights reserved.
+                                © 2026 {{ COMPANY_NAME|default:'Trendy Shopping' }}. All rights reserved.
                             </small>
                         </div>
                     </div>

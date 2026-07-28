@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}{% if is_group %}{{ group_name }}{% else %}Chat with {{ other_user.get_full_name|default:other_user.username }}{% endif %} - Admin Panel{% endblock %}
+{% block title %}{% if is_group %}{{ group_name }}{% else %}Chat with {{ other_user.get_full_name|default:other_user.username }}{% endif %} - {{ COMPANY_NAME }}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -1253,7 +1253,7 @@
                 if (data.success) {
                     document.getElementById('groupNameDisplay').textContent = data.group_name;
                     document.getElementById('groupNameHeader').textContent = data.group_name;
-                    document.title = data.group_name + ' - Admin Panel';
+                    document.title = data.group_name + ' - {{ COMPANY_NAME|escapejs }}';
                     var modal = bootstrap.Modal.getInstance(document.getElementById('renameGroupModal'));
                     if (modal) modal.hide();
                     if (typeof alertify !== 'undefined') alertify.success('Group renamed!');
