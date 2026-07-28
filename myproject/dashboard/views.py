@@ -1300,6 +1300,56 @@ def _attach_existing_media_to_product(request, product):
             gallery_image.image.save(os.path.basename(asset.image.name), File(f), save=True)
 
 
+def _add_gallery_image_to_media_library(product_image, request):
+    """Mirror a freshly uploaded product gallery image into the shared Media Library.
+
+    Images copied FROM the library (source_asset already set) are skipped since
+    they're already there. The new asset is linked back via source_asset so a
+    later re-save recognizes this gallery image as already-linked (see
+    _attach_existing_media_to_product) instead of duplicating it.
+
+    Best-effort: the gallery image itself is already saved by the time this runs,
+    so a storage hiccup here must not turn an otherwise-successful save into a
+    500 for the user — log and move on instead.
+    """
+    if product_image.source_asset_id or not product_image.image:
+        return
+    try:
+        asset = MediaAsset(
+            title=(product_image.alt_text or os.path.splitext(os.path.basename(product_image.image.name))[0])[:255],
+            uploaded_by=request.user,
+        )
+        with product_image.image.open('rb') as f:
+            asset.image.save(os.path.basename(product_image.image.name), File(f), save=False)
+        asset.file_size = asset.image.size
+        asset.save()
+        product_image.source_asset = asset
+        product_image.save(update_fields=['source_asset'])
+    except Exception:
+        logger.exception('Failed to mirror ProductImage %s into the Media Library', product_image.pk)
+
+
+def _add_main_image_to_media_library(product, request):
+    """Mirror a freshly uploaded main product image into the shared Media Library.
+
+    Best-effort, same reasoning as _add_gallery_image_to_media_library: the
+    product itself is already saved, so failures here are logged, not raised.
+    """
+    if not product.image:
+        return
+    try:
+        asset = MediaAsset(
+            title=product.name[:255],
+            uploaded_by=request.user,
+        )
+        with product.image.open('rb') as f:
+            asset.image.save(os.path.basename(product.image.name), File(f), save=False)
+        asset.file_size = asset.image.size
+        asset.save()
+    except Exception:
+        logger.exception('Failed to mirror main image of product %s into the Media Library', product.pk)
+
+
 @login_required
 @permission_required('can_create_products')
 
@@ -1313,6 +1363,7 @@ def product_add(request):
             product.save()
 
             # If a temporary uploaded image exists (from a previous failed validation), attach it to the saved product
+            main_image_freshly_uploaded = 'image' in request.FILES
             try:
                 temp_path = request.session.pop('temp_product_image', None)
                 if temp_path and default_storage.exists(temp_path):
@@ -1322,6 +1373,7 @@ def product_add(request):
                         default_storage.delete(temp_path)
                     except Exception:
                         pass
+                    main_image_freshly_uploaded = True
             except Exception:
                 pass
 
@@ -1404,10 +1456,15 @@ def product_add(request):
             # Handle gallery images
             gallery_images = request.FILES.getlist('gallery_images')
             for img in gallery_images:
-                ProductImage.objects.create(product=product, image=img)
+                product_image = ProductImage.objects.create(product=product, image=img)
+                _add_gallery_image_to_media_library(product_image, request)
 
             # Handle images picked from the Media Library
             _attach_existing_media_to_product(request, product)
+
+            # Mirror a freshly uploaded main product image into the Media Library too
+            if main_image_freshly_uploaded:
+                _add_main_image_to_media_library(product, request)
 
             messages.success(request, f'Product "{product.name}" created successfully!')
             # Clean up any temporary uploaded image saved in session
@@ -1514,6 +1571,7 @@ def product_edit(request, product_id):
         if form.is_valid():
             product = form.save()
             default_image_changed = False
+            main_image_freshly_uploaded = 'image' in request.FILES
 
             # Handle "Delete Main Image" checkbox — only clear if no replacement was uploaded
             if request.POST.get('clear_main_image') and 'image' not in request.FILES and product.image:
@@ -1540,6 +1598,7 @@ def product_edit(request, product_id):
                         default_storage.delete(temp_path)
                     except Exception:
                         pass
+                    main_image_freshly_uploaded = True
             except Exception:
                 pass
 
@@ -1606,10 +1665,15 @@ def product_edit(request, product_id):
             # Handle gallery images
             gallery_images = request.FILES.getlist('gallery_images')
             for img in gallery_images:
-                ProductImage.objects.create(product=product, image=img)
+                product_image = ProductImage.objects.create(product=product, image=img)
+                _add_gallery_image_to_media_library(product_image, request)
 
             # Handle images picked from the Media Library
             _attach_existing_media_to_product(request, product)
+
+            # Mirror a freshly uploaded main product image into the Media Library too
+            if main_image_freshly_uploaded:
+                _add_main_image_to_media_library(product, request)
 
             # Handle gallery image deletions
             delete_gallery_ids = request.POST.getlist('delete_gallery_image')
@@ -2185,12 +2249,13 @@ def upload_product_images(request, product_id):
             max_order = ProductImage.objects.filter(product=product).count()
 
             for idx, image in enumerate(gallery_images):
-                ProductImage.objects.create(
+                product_image = ProductImage.objects.create(
                     product=product,
                     image=image,
                     order=max_order + idx,
                     alt_text=f"{product.name} - Gallery Image {max_order + idx + 1}"
                 )
+                _add_gallery_image_to_media_library(product_image, request)
 
             messages.success(request, f'{len(gallery_images)} image(s) uploaded successfully to "{product.name}" gallery!')
         else:
@@ -12766,6 +12831,7 @@ def create_custom_product(request):
         if 'image' in request.FILES:
             product.image = request.FILES['image']
             product.save()
+            _add_main_image_to_media_library(product, request)
 
         # Return success response
         return JsonResponse({
