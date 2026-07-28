@@ -228,6 +228,58 @@ def maintenance_mode(request):
     return {**base, 'IS_ADMIN_USER': is_admin}
 
 
+def incomplete_attendance_alert(request):
+    """
+    Site-wide Incomplete Attendance alert (toast + review/fix modal).
+
+    Previously this was computed only inside the HRM Attendance Policies view,
+    so the alert only ever appeared on that one page. As a context processor
+    it's available in every template that extends base.html, matching the
+    permission checks already used by the HRM views for this feature
+    (`can_view_hrm_incomplete_attendance` / `can_view_dashboard_incomplete_attendance`).
+    """
+    if not request.user.is_authenticated:
+        return {}
+
+    user = request.user
+    can_view = (
+        getattr(user, 'is_superuser', False) or getattr(user, 'role', '') == 'administrator'
+        or getattr(user, 'can_view_hrm_incomplete_attendance', False)
+        or getattr(user, 'can_view_dashboard_incomplete_attendance', False)
+    )
+    if not can_view:
+        return {}
+
+    can_fix = (
+        getattr(user, 'is_superuser', False) or getattr(user, 'role', '') == 'administrator'
+        or (getattr(user, 'can_fix_hrm_incomplete_attendance', False) and getattr(user, 'can_view_hrm_incomplete_attendance', False))
+    )
+
+    CACHE_KEY = 'ctx_inc_att_alert_settings'
+    alert_settings = cache.get(CACHE_KEY)
+    if alert_settings is None:
+        from hrm.models import AttendanceAlertSettings
+        try:
+            s = AttendanceAlertSettings.get_settings()
+            alert_settings = {'mode': s.mode, 'interval_minutes': s.interval_minutes}
+        except Exception:
+            alert_settings = {'mode': 'refresh', 'interval_minutes': 60}
+        try:
+            cache.set(CACHE_KEY, alert_settings, 30)
+        except Exception:
+            pass
+
+    from dashboard.timezone_utils import get_nepali_now
+
+    return {
+        'can_view_incomplete_attendance_alert': True,
+        'can_fix_incomplete_attendance': can_fix,
+        'incomplete_attendance_today': get_nepali_now().date().isoformat(),
+        'INC_ATT_ALERT_MODE': alert_settings['mode'],
+        'INC_ATT_ALERT_INTERVAL_MINUTES': alert_settings['interval_minutes'],
+    }
+
+
 def expiry_notifications(request):
     """
     Provide global expiry notifications for products expiring within 30 days.

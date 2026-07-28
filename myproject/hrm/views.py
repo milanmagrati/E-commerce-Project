@@ -3698,15 +3698,10 @@ def attendance_policy_list(request):
     paginator = Paginator(qs, per_page)
     page_num = request.GET.get('page', 1)
     policies = paginator.get_page(page_num)
-    user = request.user
-    can_view_incomplete_attendance_alert = (
-        user.is_superuser or user.role == 'administrator' or user.can_view_hrm_incomplete_attendance
-    )
-    can_fix_incomplete_attendance = (
-        user.is_superuser or user.role == 'administrator'
-        or (user.can_fix_hrm_incomplete_attendance and user.can_view_hrm_incomplete_attendance)
-    )
-    from dashboard.timezone_utils import get_nepali_now
+    # can_view_incomplete_attendance_alert / can_fix_incomplete_attendance /
+    # incomplete_attendance_today are supplied globally by the
+    # incomplete_attendance_alert context processor (dashboard/context_processors.py)
+    # so the alert works the same way on every page, not just this one.
     context = {
         'page_title': 'Attendance Policies',
         'policies': policies,
@@ -3716,11 +3711,50 @@ def attendance_policy_list(request):
         'active_policies': active,
         'avg_late_grace': round(avg_late),
         'avg_overtime_rate': round(float(avg_overtime), 2),
-        'incomplete_attendance_today': get_nepali_now().date().isoformat(),
-        'can_view_incomplete_attendance_alert': can_view_incomplete_attendance_alert,
-        'can_fix_incomplete_attendance': can_fix_incomplete_attendance,
     }
     return render(request, 'hrm/attendance_policy_list.html', context)
+
+
+@login_required
+def incomplete_attendance_alert_settings(request):
+    """Admin-only: configure how often the site-wide Incomplete Attendance
+    alert toast re-appears (once per session / every refresh / custom interval)."""
+    from .models import AttendanceAlertSettings
+
+    user = request.user
+    if not (user.is_superuser or user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+
+    settings_obj = AttendanceAlertSettings.get_settings()
+
+    if request.method != 'POST':
+        return JsonResponse({
+            'success': True,
+            'mode': settings_obj.mode,
+            'interval_minutes': settings_obj.interval_minutes,
+        })
+
+    mode = request.POST.get('mode', '').strip()
+    valid_modes = [c[0] for c in AttendanceAlertSettings.MODE_CHOICES]
+    if mode not in valid_modes:
+        return JsonResponse({'success': False, 'error': 'Invalid alert mode.'}, status=400)
+
+    interval_minutes = settings_obj.interval_minutes
+    if mode == 'interval':
+        try:
+            interval_minutes = int(request.POST.get('interval_minutes', interval_minutes))
+        except (ValueError, TypeError):
+            return JsonResponse({'success': False, 'error': 'Interval must be a whole number of minutes.'}, status=400)
+        interval_minutes = max(1, min(interval_minutes, 1440))
+
+    settings_obj.mode = mode
+    settings_obj.interval_minutes = interval_minutes
+    settings_obj.save()
+    return JsonResponse({
+        'success': True,
+        'mode': settings_obj.mode,
+        'interval_minutes': settings_obj.interval_minutes,
+    })
 
 
 @login_required

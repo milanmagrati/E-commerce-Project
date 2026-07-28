@@ -639,6 +639,41 @@ class AttendanceFixLog(models.Model):
         return f"Fix on {self.attendance_record} by {self.fixed_by} at {self.fixed_at}"
 
 
+class AttendanceAlertSettings(models.Model):
+    """Singleton controlling how often the site-wide Incomplete Attendance
+    alert toast (shown to permitted users on every page) re-appears."""
+
+    MODE_CHOICES = [
+        ('session', 'Once per Browser Session'),
+        ('refresh', 'Every Page Load / Refresh'),
+        ('interval', 'Custom Time Interval'),
+    ]
+
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='refresh')
+    interval_minutes = models.PositiveIntegerField(
+        default=60, help_text='Used only when mode is "Custom Time Interval". Minutes between re-shown alerts.'
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Attendance Alert Settings'
+        verbose_name_plural = 'Attendance Alert Settings'
+
+    def __str__(self):
+        return f'Attendance Alert Settings ({self.get_mode_display()})'
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('ctx_inc_att_alert_settings')
+
+
 class AttendanceRegularization(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),

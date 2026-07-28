@@ -106,6 +106,7 @@ TEMPLATES = [
                 'store.context_processors.store_context',
                 'dashboard.context_processors.maintenance_mode',
                 'dashboard.context_processors.expiry_notifications',
+                'dashboard.context_processors.incomplete_attendance_alert',
             ],
         },
     },
