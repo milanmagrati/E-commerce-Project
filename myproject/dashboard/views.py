@@ -22387,14 +22387,19 @@ def delete_follow_up(request, pk):
     has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
     if not has_access:
         return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
-    from .models import FollowUp
+    from .models import FollowUp, FollowUpLog
     try:
         follow_up = get_object_or_404(FollowUp, pk=pk)
         follow_up.is_deleted = True
         follow_up.save()
-        
+
+        FollowUpLog.objects.create(
+            follow_up=follow_up, user=request.user, field_changed='Deleted',
+            old_value=follow_up.status or '-', new_value='Deleted'
+        )
+
         # Removed Channels WebSocket broadcast for cPanel compatibility
-            
+
         return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
@@ -23435,15 +23440,20 @@ def update_presence(request):
 @login_required
 def sync_follow_ups(request):
     """AJAX endpoint to silently fetch updated rows and active presences."""
-    from .models import FollowUp, FollowUpPresence
+    from .models import FollowUp, FollowUpPresence, FollowUpLog
     from django.utils import timezone
+    from django.db.models import Q
     import dateutil.parser
     from datetime import timedelta
 
     try:
         last_sync_str = request.GET.get('last_sync')
+        search_query = request.GET.get('q', '').strip()
+        lead_source = request.GET.get('lead_source', '').strip()
+        filter_status = request.GET.get('status', '').strip()
         updates = []
         deleted_ids = []
+        events = []
 
         # Cleanup stale presences (older than 10 seconds)
         stale_threshold = timezone.now() - timedelta(seconds=10)
@@ -23459,6 +23469,23 @@ def sync_follow_ups(request):
             
             # Find recently updated rows
             updated_rows = FollowUp.objects.filter(updated_at__gt=last_sync, is_deleted=False).prefetch_related('products', 'product_variations', 'logs')
+
+            # Determine which of those rows still match the requester's active
+            # list filters, so the client can add/keep or drop them accordingly
+            # instead of showing entries that don't belong to the current filter.
+            filtered_qs = updated_rows
+            if search_query:
+                filtered_qs = filtered_qs.filter(
+                    Q(name__icontains=search_query) |
+                    Q(phone__icontains=search_query) |
+                    Q(remarks__icontains=search_query)
+                )
+            if lead_source:
+                filtered_qs = filtered_qs.filter(lead_source__iexact=lead_source)
+            if filter_status:
+                filtered_qs = filtered_qs.filter(status__iexact=filter_status)
+            matching_ids = set(filtered_qs.values_list('id', flat=True))
+
             for follow_up in updated_rows:
                 products_data = [
                     {'id': str(p.id), 'name': p.name, 'price': float(p.price)}
@@ -23490,11 +23517,53 @@ def sync_follow_ups(request):
                     'remarks': follow_up.remarks,
                     'all_logs': all_logs,
                     'version': getattr(follow_up, 'version', 1),
+                    'matches_filter': follow_up.id in matching_ids,
                 })
-            
+
             # Find recently deleted rows
             deleted_rows = FollowUp.objects.filter(updated_at__gt=last_sync, is_deleted=True).values_list('id', flat=True)
             deleted_ids = list(deleted_rows)
+
+            # Build lightweight notification events from other users' activity,
+            # so the requester can be alerted about changes even when they
+            # don't match (and therefore aren't shown under) the requester's
+            # current list filters. Own actions are excluded since the client
+            # already reflects those instantly.
+            recent_logs = FollowUpLog.objects.filter(
+                timestamp__gt=last_sync
+            ).exclude(user=request.user).select_related('user', 'follow_up').order_by('timestamp')
+
+            events_by_fu = {}
+            event_order = []
+            for log in recent_logs:
+                fu = log.follow_up
+                if fu is None:
+                    continue
+                if fu.id not in events_by_fu:
+                    events_by_fu[fu.id] = {
+                        'followup_id': fu.id,
+                        'name': fu.name,
+                        'phone': fu.phone,
+                        'lead_source': fu.lead_source,
+                        'status': fu.status,
+                        'is_deleted': fu.is_deleted,
+                        'changes': [],
+                    }
+                    event_order.append(fu.id)
+                ev = events_by_fu[fu.id]
+                ev['user'] = log.user.username if log.user else 'System'
+                ev['timestamp'] = timezone.localtime(log.timestamp).strftime("%I:%M %p")
+                ev['changes'].append({
+                    'field': log.field_changed,
+                    'old': log.old_value,
+                    'new': log.new_value,
+                })
+
+            for fu_id in event_order:
+                ev = events_by_fu[fu_id]
+                ev['is_new'] = any(c['field'] == 'Entry Created' for c in ev['changes'])
+                ev['matches_filter'] = (not ev['is_deleted']) and (fu_id in matching_ids)
+                events.append(ev)
 
         current_time = timezone.now().isoformat()
         
@@ -23503,7 +23572,8 @@ def sync_follow_ups(request):
             'timestamp': current_time,
             'updates': updates,
             'deleted_ids': deleted_ids,
-            'presences': active_presences
+            'presences': active_presences,
+            'events': events
         })
     except Exception as e:
         logger.error(f"Error in sync_follow_ups: {e}")

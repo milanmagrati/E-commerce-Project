@@ -7,6 +7,8 @@
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
+<div id="fuToastContainer" class="fu-toast-container" aria-live="polite"></div>
+
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="mb-0"><i class="fas fa-list-alt text-primary me-2"></i> Follow-ups</h4>
@@ -436,6 +438,103 @@
 .typing-dots span:nth-child(2) { animation-delay: 0.4s; }
 .typing-dots span:nth-child(3) { animation-delay: 0.6s; }
 @keyframes typingBlink { 0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1.2); } }
+
+/* ===== Live Update Toasts ===== */
+.fu-toast-container {
+    position: fixed;
+    top: 78px;
+    right: 18px;
+    z-index: 2000;
+    width: 360px;
+    max-width: calc(100vw - 24px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+.fu-toast {
+    pointer-events: auto;
+    position: relative;
+    display: flex;
+    gap: 10px;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 12px 14px 14px 12px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18), 0 2px 8px rgba(15, 23, 42, 0.08);
+    border-left: 4px solid #64748b;
+    overflow: hidden;
+    cursor: pointer;
+    transform: translateX(120%) scale(0.96);
+    opacity: 0;
+    animation: fuToastIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.fu-toast:hover { box-shadow: 0 14px 36px rgba(15, 23, 42, 0.24), 0 4px 10px rgba(15, 23, 42, 0.1); transform: translateY(-2px); }
+.fu-toast.fu-toast-out { animation: fuToastOut 0.25s cubic-bezier(0.4, 0, 1, 1) forwards; }
+.fu-toast.fu-toast-new { border-left-color: #22c55e; }
+.fu-toast.fu-toast-updated { border-left-color: #3b82f6; }
+.fu-toast.fu-toast-deleted { border-left-color: #ef4444; }
+
+@keyframes fuToastIn {
+    0% { transform: translateX(120%) scale(0.96); opacity: 0; }
+    60% { transform: translateX(-6px) scale(1.01); opacity: 1; }
+    100% { transform: translateX(0) scale(1); opacity: 1; }
+}
+@keyframes fuToastOut {
+    0% { transform: translateX(0) scale(1); opacity: 1; max-height: 200px; margin-bottom: 10px; }
+    100% { transform: translateX(110%) scale(0.94); opacity: 0; max-height: 0; margin-bottom: 0; }
+}
+
+.fu-toast-avatar {
+    flex: 0 0 auto;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 0.85rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    text-transform: uppercase;
+}
+.fu-toast-body { flex: 1 1 auto; min-width: 0; }
+.fu-toast-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+    margin-bottom: 2px;
+}
+.fu-toast-actor { font-size: 0.83rem; font-weight: 700; color: #0f172a; }
+.fu-toast-verb { font-weight: 500; color: #475569; }
+.fu-toast-time { font-size: 0.68rem; color: #94a3b8; white-space: nowrap; flex-shrink: 0; }
+.fu-toast-target { font-size: 0.78rem; color: #334155; margin-bottom: 4px; word-break: break-word; }
+.fu-toast-target strong { color: #0f172a; }
+.fu-toast-changes { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }
+.fu-toast-chip {
+    font-size: 0.68rem; padding: 2px 7px; border-radius: 999px;
+    background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;
+    display: inline-flex; align-items: center; gap: 4px;
+}
+.fu-toast-chip .arrow { color: #94a3b8; }
+.fu-toast-hidden-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.68rem; font-weight: 600; color: #b45309;
+    background: #fffbeb; border: 1px solid #fde68a;
+    padding: 2px 7px; border-radius: 999px; margin-top: 4px;
+}
+.fu-toast-close {
+    position: absolute; top: 6px; right: 8px;
+    background: none; border: none; color: #cbd5e1; font-size: 0.9rem;
+    line-height: 1; cursor: pointer; padding: 4px;
+}
+.fu-toast-close:hover { color: #64748b; }
+.fu-toast-progress {
+    position: absolute; left: 0; bottom: 0; height: 3px;
+    background: linear-gradient(90deg, #60a5fa, #a78bfa);
+    width: 100%;
+    animation-name: fuToastShrink;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+}
+.fu-toast.fu-toast-new .fu-toast-progress { background: linear-gradient(90deg, #34d399, #22c55e); }
+.fu-toast.fu-toast-deleted .fu-toast-progress { background: linear-gradient(90deg, #f87171, #ef4444); }
+.fu-toast.fu-toast-paused .fu-toast-progress { animation-play-state: paused; }
+@keyframes fuToastShrink { from { width: 100%; } to { width: 0%; } }
 </style>
 
 <script>
@@ -444,6 +543,32 @@
     let editModal = null;
     let addNoteModal = null;
     let currentNoteId = null;
+
+    // Currently active filters (from server-rendered context), used to keep
+    // live-synced rows consistent with what the user has filtered for.
+    const activeFilters = {
+        q: "{{ search_query|escapejs }}",
+        lead_source: "{{ lead_source|escapejs }}",
+        status: "{{ filter_status|escapejs }}"
+    };
+
+    // Mirrors the backend filtering in follow_ups_list/sync_follow_ups, so
+    // locally-made edits (inline status, add note, full edit) can decide
+    // whether the row still belongs under the currently active filters.
+    function rowMatchesActiveFilters(d) {
+        if (activeFilters.q) {
+            const q = activeFilters.q.toLowerCase();
+            const haystack = `${d.name || ''} ${d.phone || ''} ${d.remarks || ''}`.toLowerCase();
+            if (!haystack.includes(q)) return false;
+        }
+        if (activeFilters.lead_source && (d.lead_source || '').toLowerCase() !== activeFilters.lead_source.toLowerCase()) {
+            return false;
+        }
+        if (activeFilters.status && (d.status || '').toLowerCase() !== activeFilters.status.toLowerCase()) {
+            return false;
+        }
+        return true;
+    }
     
     function changePerPage(value) {
         let url = new URL(window.location.href);
@@ -562,6 +687,140 @@
         });
     }
 
+
+    // ===== Live Update Toast Notifications =====
+    const FU_AVATAR_PALETTE = ['#6366f1', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#0ea5e9', '#84cc16', '#f43f5e', '#a855f7', '#06b6d4'];
+
+    function fuAvatarColor(name) {
+        const str = name || '?';
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        return FU_AVATAR_PALETTE[Math.abs(hash) % FU_AVATAR_PALETTE.length];
+    }
+
+    function fuToastVerb(ev, type) {
+        if (type === 'new') return 'created a new follow-up';
+        if (type === 'deleted') return 'deleted a follow-up';
+        const fields = (ev.changes || []).map(c => c.field);
+        if (fields.includes('Status')) return 'changed the status';
+        if (fields.some(f => (f || '').startsWith('Followup'))) return 'added a follow-up note';
+        if (fields.includes('Remarks')) return 'updated remarks';
+        return 'updated details';
+    }
+
+    function fuToastChangeChip(change) {
+        if (!change || change.field === 'Entry Created' || change.field === 'Deleted') return null;
+        let newVal = (change.new || '-').toString();
+        if (newVal.length > 40) newVal = newVal.slice(0, 40) + '…';
+        if ((change.field || '').startsWith('Followup')) {
+            return `<span class="fu-toast-chip"><i class="fas fa-sticky-note"></i> ${escapeHtml(newVal)}</span>`;
+        }
+        let oldVal = (change.old || '-').toString();
+        if (oldVal.length > 18) oldVal = oldVal.slice(0, 18) + '…';
+        return `<span class="fu-toast-chip">${escapeHtml(change.field)}: ${escapeHtml(oldVal)} <span class="arrow">&rarr;</span> ${escapeHtml(newVal)}</span>`;
+    }
+
+    function dismissFuToast(el) {
+        if (!el || el.classList.contains('fu-toast-out')) return;
+        el.classList.add('fu-toast-out');
+        el.addEventListener('animationend', () => el.remove(), { once: true });
+    }
+
+    function locateFollowUpEntry(ev) {
+        const row = document.querySelector(`tr[data-id="${ev.followup_id}"]`);
+        if (row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.style.transition = 'background-color 0.4s';
+            row.style.backgroundColor = '#fef9c3';
+            setTimeout(() => row.style.backgroundColor = '', 1600);
+            return;
+        }
+        // Not visible under the active filters (or on another page) — jump
+        // straight to it by searching for its phone number.
+        const url = new URL(window.location.href);
+        url.searchParams.set('q', ev.phone || '');
+        url.searchParams.set('lead_source', '');
+        url.searchParams.set('status', '');
+        url.searchParams.set('page', '1');
+        window.location.href = url.toString();
+    }
+
+    function showUpdateToast(ev) {
+        const container = document.getElementById('fuToastContainer');
+        if (!container) return;
+
+        const type = ev.is_deleted ? 'deleted' : (ev.is_new ? 'new' : 'updated');
+        const verb = fuToastVerb(ev, type);
+        const initial = (ev.user || '?').trim().charAt(0) || '?';
+
+        const changeChips = (ev.changes || [])
+            .map(fuToastChangeChip)
+            .filter(Boolean)
+            .slice(0, 4)
+            .join('');
+
+        const statusChip = (!ev.is_deleted && ev.status)
+            ? `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(ev.status)}" style="${getStatusBadgeStyle(ev.status)} font-size:0.65rem;" data-status-val="${ev.status.toLowerCase()}">${escapeHtml(ev.status)}</span>`
+            : '';
+
+        const hiddenTag = (!ev.is_deleted && !ev.matches_filter)
+            ? `<div class="fu-toast-hidden-tag"><i class="fas fa-filter"></i> Not shown in current filter — click to view</div>`
+            : '';
+
+        const el = document.createElement('div');
+        el.className = `fu-toast fu-toast-${type}`;
+        el.innerHTML = `
+            <div class="fu-toast-avatar" style="background:${fuAvatarColor(ev.user)}">${escapeHtml(initial)}</div>
+            <div class="fu-toast-body">
+                <div class="fu-toast-head">
+                    <span><span class="fu-toast-actor">${escapeHtml(ev.user || 'Someone')}</span> <span class="fu-toast-verb">${verb}</span></span>
+                    <span class="fu-toast-time">${escapeHtml(ev.timestamp || '')}</span>
+                </div>
+                <div class="fu-toast-target"><strong>${escapeHtml(ev.name) || 'Unnamed'}</strong> &middot; ${escapeHtml(ev.phone || '-')} ${statusChip}</div>
+                ${changeChips ? `<div class="fu-toast-changes">${changeChips}</div>` : ''}
+                ${hiddenTag}
+            </div>
+            <button type="button" class="fu-toast-close" title="Dismiss">&times;</button>
+            <div class="fu-toast-progress"></div>
+        `;
+
+        container.prepend(el);
+
+        const DURATION = 2800;
+        const progressEl = el.querySelector('.fu-toast-progress');
+        progressEl.style.animationDuration = `${DURATION}ms`;
+        progressEl.style.animationName = 'fuToastShrink';
+
+        let dismissTimer = setTimeout(() => dismissFuToast(el), DURATION);
+
+        el.addEventListener('mouseenter', () => {
+            el.classList.add('fu-toast-paused');
+            clearTimeout(dismissTimer);
+        });
+        el.addEventListener('mouseleave', () => {
+            el.classList.remove('fu-toast-paused');
+            dismissTimer = setTimeout(() => dismissFuToast(el), 2000);
+        });
+
+        el.querySelector('.fu-toast-close').addEventListener('click', (e) => {
+            e.stopPropagation();
+            clearTimeout(dismissTimer);
+            dismissFuToast(el);
+        });
+
+        el.addEventListener('click', () => {
+            clearTimeout(dismissTimer);
+            locateFollowUpEntry(ev);
+            dismissFuToast(el);
+        });
+
+        // Keep the stack from growing unbounded during busy periods.
+        const MAX_TOASTS = 5;
+        const toasts = container.querySelectorAll('.fu-toast:not(.fu-toast-out)');
+        if (toasts.length > MAX_TOASTS) {
+            dismissFuToast(toasts[toasts.length - 1]);
+        }
+    }
 
     function validatePhone(input, errId) {
         const errEl = document.getElementById(errId);
@@ -774,14 +1033,22 @@
             if (result.success) {
                 addNoteModal.hide();
                 alertify.success('Note added successfully!');
-                
+
+                const finalStatus = result.data.status || '';
+                if (!rowMatchesActiveFilters({ name: row.getAttribute('data-name'), phone: row.getAttribute('data-phone'), remarks: row.getAttribute('data-remarks'), lead_source: row.getAttribute('data-lead'), status: finalStatus })) {
+                    row.remove();
+                    updateSerialNumbers();
+                    return;
+                }
+
                 row.setAttribute('data-version', result.data.version || 1);
+                row.setAttribute('data-status', finalStatus);
                 row.setAttribute('data-followup-count', countFollowupLogs(result.data.all_logs));
 
                 // Update the Followup cell and Status cell
                 const cells = row.querySelectorAll('td');
                 cells[5].innerHTML = buildFuCellHtml(result.data.all_logs, currentNoteId);
-                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(result.data.status)}" style="${getStatusBadgeStyle(result.data.status)}" data-status-val="${(result.data.status||'').toLowerCase()}">${result.data.status || '-'}</span>`;
+                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalStatus)}" style="${getStatusBadgeStyle(finalStatus)}" data-status-val="${finalStatus.toLowerCase()}">${finalStatus || '-'}</span>`;
 
             } else {
                 alertify.error('Error: ' + result.error);
@@ -874,6 +1141,15 @@
         .then(result => {
             if (result.success) {
                 const d = result.data;
+
+                if (!rowMatchesActiveFilters(d)) {
+                    row.remove();
+                    updateSerialNumbers();
+                    editModal.hide();
+                    alertify.success('Updated successfully!');
+                    return;
+                }
+
                 row.setAttribute('data-status', d.status || '');
                 row.setAttribute('data-name', d.name || '');
                 row.setAttribute('data-phone', d.phone || '');
@@ -1056,6 +1332,17 @@
             cell.classList.remove('inline-editing');
             if (result.success) {
                 const finalStatus = result.data.status || '';
+
+                // If the new status no longer matches the active filters,
+                // drop the row from view instead of leaving a mismatched
+                // entry displayed under the current filter.
+                if (!rowMatchesActiveFilters({ name: row.getAttribute('data-name'), phone: row.getAttribute('data-phone'), remarks: row.getAttribute('data-remarks'), lead_source: row.getAttribute('data-lead'), status: finalStatus })) {
+                    row.remove();
+                    updateSerialNumbers();
+                    alertify.success('Status updated!');
+                    return;
+                }
+
                 row.setAttribute('data-status', finalStatus);
                 row.setAttribute('data-version', result.data.version || 1);
                 cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalStatus)}" style="${getStatusBadgeStyle(finalStatus)}" data-status-val="${finalStatus.toLowerCase()}">${finalStatus || '-'}</span>`;
@@ -1079,12 +1366,18 @@
 
     function startSyncLoop() {
         setInterval(() => {
-            fetch(`/api/orders/follow-ups/sync/?last_sync=${encodeURIComponent(lastSyncTimestamp)}`)
+            const params = new URLSearchParams({
+                last_sync: lastSyncTimestamp,
+                q: activeFilters.q,
+                lead_source: activeFilters.lead_source,
+                status: activeFilters.status
+            });
+            fetch(`/api/orders/follow-ups/sync/?${params.toString()}`)
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
                     lastSyncTimestamp = data.timestamp;
-                    
+
                     // Handle deleted rows
                     data.deleted_ids.forEach(id => {
                         const row = document.querySelector(`tr[data-id="${id}"]`);
@@ -1097,6 +1390,17 @@
                     // Handle added/updated rows
                     data.updates.forEach(d => {
                         let row = document.querySelector(`tr[data-id="${d.id}"]`);
+
+                        if (!d.matches_filter) {
+                            // Doesn't match the currently active filters.
+                            // Remove it if it's shown, otherwise ignore it entirely.
+                            if (row) {
+                                row.remove();
+                                updateSerialNumbers();
+                            }
+                            return;
+                        }
+
                         if (!row) {
                             appendNewRow(d);
                             row = document.querySelector(`tr[data-id="${d.id}"]`);
@@ -1119,13 +1423,16 @@
                                 cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" style="${getStatusBadgeStyle(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
                             }
                         }
-                        
+
                         if (row) {
                             row.style.transition = 'background-color 0.5s';
                             row.style.backgroundColor = '#d4edda';
                             setTimeout(() => row.style.backgroundColor = '', 1500);
                         }
                     });
+
+                    // Handle live-update notification toasts (other users' activity)
+                    (data.events || []).forEach(ev => showUpdateToast(ev));
 
                     // Handle presence indicators
                     document.querySelectorAll('.presence-indicator').forEach(el => el.remove()); // clear all
@@ -1140,7 +1447,7 @@
                 }
             })
             .catch(err => console.error("Sync error:", err));
-        }, 4000); // Check every 4 seconds
+        }, 2000); // Check every 2 seconds for snappier notifications
     }
     
     function sendPresence(type, id) {
