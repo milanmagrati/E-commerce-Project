@@ -270,6 +270,33 @@ def logout_view(request):
     return redirect('login')
 
 
+def landing_view(request):
+    """Public marketing site. Standalone template — no dashboard chrome.
+
+    Footer legal links are driven by the store's published CMS pages so the
+    landing page never links to a page that doesn't exist yet.
+    """
+    try:
+        from store.models import Page
+        legal_pages = list(Page.objects.filter(is_published=True).only('title', 'slug')[:6])
+    except Exception:
+        legal_pages = []
+    return render(request, 'landing.html', {'legal_pages': legal_pages})
+
+
+def home_view(request):
+    """Root URL dispatcher.
+
+    Anonymous visitors get the public landing page instead of being bounced
+    to /login/; authenticated users get the dashboard exactly as before.
+    Registered under name='dashboard' so every existing {% url 'dashboard' %}
+    keeps resolving to '/'.
+    """
+    if not request.user.is_authenticated:
+        return landing_view(request)
+    return dashboard_view(request)
+
+
 @login_required
 def dashboard_view(request):
     # Role-based access: only admins/superusers or users with can_view_dashboard can access

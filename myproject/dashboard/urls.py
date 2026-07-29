@@ -6,7 +6,8 @@ from . import page_views
 
 
 urlpatterns = [
-    path('', views.dashboard_view, name='dashboard'),
+    path('', views.home_view, name='dashboard'),
+    path('welcome/', views.landing_view, name='landing'),
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
 
