@@ -570,11 +570,13 @@ class NCMService:
         return ''.join(filter(str.isdigit, str(phone)))
     
     #: NCM statuses that mean an order is somewhere in the return-to-vendor
-    #: pipeline. Kept as a set (not just dict values) so the substring
-    #: fallback below can recognize branch-qualified variants NCM sends from
-    #: its tracking/history endpoints, e.g. "Arrived at RETURN (TINKUNE)" or
+    #: pipeline but NOT yet confirmed as physically received at the vendor.
+    #: Kept as a set (not just dict values) so the substring fallback below
+    #: can recognize branch-qualified variants NCM sends from its
+    #: tracking/history endpoints, e.g. "Arrived at RETURN (TINKUNE)" or
     #: "Dispatched to RETURN (TINKUNE)", which don't exactly match any fixed
-    #: key.
+    #: key. Only the literal "Returned to Warehouse" string (handled as an
+    #: exact dict entry below) represents confirmed arrival.
     RETURN_STATUS_KEYWORDS = ('return', 'rtv', 'sent to vendor')
 
     @staticmethod
@@ -599,18 +601,19 @@ class NCMService:
             'Returned': 'returned',
             'Return Initiated': 'return_initiated',
             'Return Approved': 'return_approved',
-            'Order Marked Return': 'return',
-            'Sent to Vendor': 'return',
+            'Order Marked Return': 'return_processing',
+            'Sent to Vendor': 'return_processing',
             'Returned to Warehouse': 'return',
         }
         if ncm_status in mapping:
             return mapping[ncm_status]
 
         # Fallback: any status mentioning a return/RTV keyword (including
-        # branch-qualified variants NCM doesn't send a fixed key for) is
-        # part of the return-to-vendor pipeline.
+        # branch-qualified variants NCM doesn't send a fixed key for) means
+        # the order is somewhere in the return-to-vendor pipeline but not yet
+        # confirmed as physically received - treat as the intermediate stage.
         if ncm_status and any(kw in ncm_status.lower() for kw in NCMService.RETURN_STATUS_KEYWORDS):
-            return 'return'
+            return 'return_processing'
 
         return 'processing'
 
@@ -631,8 +634,17 @@ class NCMService:
         The NCM API returns status='Delivered' for both successful deliveries and
         vendor returns (RTV) - the vendor_return flag differentiates them. That
         flag can also accompany other statuses throughout the RTV pipeline
-        (e.g. "Sent to Vendor", "Order Marked Return"), so whenever it's true
-        the order is treated as returned regardless of the raw NCM status text.
+        (e.g. "Sent to Vendor", "Order Marked Return", "Returned to
+        Warehouse"), so whenever it's confirmed true the order is treated as
+        returned ('return') regardless of the raw NCM status text - NCM only
+        sets/reports this flag once it has actually confirmed the order is in
+        the RTV pipeline, so the flag itself is treated as sufficient.
+        'return_processing' (the earlier "marked for return, not yet
+        confirmed" stage) is only produced via map_ncm_status_to_system below,
+        for raw statuses like "Order Marked Return"/"Sent to Vendor" seen
+        WITHOUT the vendor_return flag - e.g. the initial `order_marked_rtv`
+        webhook event, whose payload typically doesn't include vendor_return
+        yet.
 
         Returns:
             (system_status, payment_status) tuple
@@ -642,7 +654,7 @@ class NCMService:
         vendor_return = NCMService.parse_vendor_return(vendor_return_raw)
 
         if vendor_return:
-            return ('return', None)  # Returned to vendor, no payment update
+            return ('return', None)  # Confirmed in the RTV pipeline (vendor_return flag)
 
         if ncm_status == 'Delivered':
             return ('delivered', 'paid')  # Successful delivery, mark as paid
@@ -665,9 +677,12 @@ class NCMService:
 
         Returns list of field names that were modified (for use in update_fields).
         """
-        from dashboard.models import Setup
-
         update_fields = []
+
+        # Guard against a caller passing an empty/None status - writing that
+        # through would blank the order's status rather than leave it alone.
+        if not system_status:
+            return update_fields
 
         # Update status and order_status string fields
         if order.status != system_status:
@@ -677,19 +692,16 @@ class NCMService:
             order.order_status = system_status
             update_fields.append('order_status')
 
-        # Try to find matching Setup FK for order status
+        # Link the matching Setup FK for order status. Wrapped defensively:
+        # a lookup problem must not prevent the status strings above from
+        # being saved.
         try:
-            status_setup = None
-            sys_stat_norm = system_status.lower().replace(' ', '_')
-            for s in Setup.objects.filter(setup_type='status', is_active=True):
-                if s.name.lower().replace(' ', '_') == sys_stat_norm:
-                    status_setup = s
-                    break
+            status_setup = NCMService._resolve_setup('status', system_status)
             if status_setup and order.status_setup_id != status_setup.id:
                 order.status_setup = status_setup
                 update_fields.append('status_setup')
         except Exception:
-            pass
+            logger.exception(f"Could not resolve status Setup for '{system_status}'")
 
         # Update payment status
         if payment_status:
@@ -697,18 +709,41 @@ class NCMService:
                 order.payment_status = payment_status
                 update_fields.append('payment_status')
 
-            # Try to find matching Setup FK for payment status
             try:
-                ps_setup = None
-                pay_stat_norm = payment_status.lower().replace(' ', '_')
-                for s in Setup.objects.filter(setup_type='payment_status', is_active=True):
-                    if s.name.lower().replace(' ', '_') == pay_stat_norm:
-                        ps_setup = s
-                        break
+                ps_setup = NCMService._resolve_setup('payment_status', payment_status)
                 if ps_setup and order.payment_status_setup_id != ps_setup.id:
                     order.payment_status_setup = ps_setup
                     update_fields.append('payment_status_setup')
             except Exception:
-                pass
+                logger.exception(f"Could not resolve payment_status Setup for '{payment_status}'")
 
         return update_fields
+
+    @staticmethod
+    def _resolve_setup(setup_type, value):
+        """Find the active Setup row whose name matches a system status value.
+
+        Setup names are human-readable ("Return Processing") while system
+        status values are normalized ("return_processing"), so matching
+        compares both sides normalized. The indexed name__iexact lookup
+        resolves the usual case in a single query; the full scan below is
+        only reached for names that normalize equal without matching
+        literally (e.g. one that already contains underscores), which keeps
+        this correct while avoiding a table scan per order during bulk sync.
+        """
+        from dashboard.models import Setup
+
+        if not value:
+            return None
+
+        normalized = str(value).lower().replace(' ', '_')
+        candidates = Setup.objects.filter(setup_type=setup_type, is_active=True)
+
+        match = candidates.filter(name__iexact=normalized.replace('_', ' ')).first()
+        if match:
+            return match
+
+        for s in candidates:
+            if s.name.lower().replace(' ', '_') == normalized:
+                return s
+        return None

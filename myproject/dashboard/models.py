@@ -1620,6 +1620,11 @@ class APISettings(models.Model):
         default=30,
         help_text="Timeout (in seconds) for each NCM API request. Default: 30.",
     )
+    bulk_sync_included_statuses = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Order statuses eligible for the background NCM bulk status sync. Empty = use default (sync all except cancelled/delivered/return/returned/return_initiated/return_approved).",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

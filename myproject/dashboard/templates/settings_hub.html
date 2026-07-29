@@ -1016,6 +1016,33 @@
         </div>
       </div>
 
+      <!-- Order statuses eligible for the background NCM bulk-sync (cPanel cron -> sync_all_ncm_orders) -->
+      <div class="mt-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <label class="form-label fw-semibold mb-0" style="font-size:.82rem;color:#525f7f;">
+            Order Statuses to Include in Background Sync
+            <span class="badge rounded-pill bg-light text-dark border ms-1" id="bulkSyncStatusCount" style="font-weight:600;"></span>
+          </label>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkSyncSelectAll">Select All</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkSyncClearAll">Clear All</button>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-2" id="bulkSyncStatusGroup">
+          {% for choice in bulk_sync_status_choices %}
+          <input type="checkbox" class="btn-check bulk-sync-status-check" name="included_statuses"
+                 value="{{ choice.value }}" id="incstat-{{ forloop.counter }}" autocomplete="off"
+                 {% if choice.checked %}checked{% endif %}>
+          <label class="btn btn-outline-primary btn-sm" for="incstat-{{ forloop.counter }}" style="border-radius:20px;">{{ choice.label }}</label>
+          {% empty %}
+          <small class="text-muted">No order statuses found in Setup Management yet.</small>
+          {% endfor %}
+        </div>
+        <small class="text-muted d-block mt-2">
+          <i class="fas fa-info-circle"></i> Leave all unchecked to use the default: sync every active order except cancelled/delivered/return statuses.
+        </small>
+      </div>
+
       <!-- Last updated info -->
       <div class="mt-3">
         <small class="text-muted"><i class="fas fa-info-circle me-1"></i>Last updated: {{ api_settings.updated_at|date:"Y-m-d H:i:s" }}</small>
@@ -1510,6 +1537,39 @@ document.addEventListener('DOMContentLoaded', function() {
     input.addEventListener('input', function() { updateSyncDisplay(this.value); });
   }
 });
+
+/* ===================== BULK SYNC STATUS TOGGLES ===================== */
+(function() {
+  var checks = document.querySelectorAll('.bulk-sync-status-check');
+  var countBadge = document.getElementById('bulkSyncStatusCount');
+  var selectAllBtn = document.getElementById('bulkSyncSelectAll');
+  var clearAllBtn = document.getElementById('bulkSyncClearAll');
+
+  function updateCount() {
+    if (!countBadge) return;
+    var checkedCount = document.querySelectorAll('.bulk-sync-status-check:checked').length;
+    countBadge.textContent = checkedCount > 0 ? checkedCount + ' selected' : 'All (default)';
+  }
+
+  checks.forEach(function(chk) {
+    chk.addEventListener('change', updateCount);
+  });
+
+  if (selectAllBtn) {
+    selectAllBtn.addEventListener('click', function() {
+      checks.forEach(function(chk) { chk.checked = true; });
+      updateCount();
+    });
+  }
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', function() {
+      checks.forEach(function(chk) { chk.checked = false; });
+      updateCount();
+    });
+  }
+
+  updateCount();
+})();
 
 /* ===================== MAINTENANCE MODE ===================== */
 var _mmIsEnabled = {{ maintenance.is_enabled|yesno:"true,false" }};

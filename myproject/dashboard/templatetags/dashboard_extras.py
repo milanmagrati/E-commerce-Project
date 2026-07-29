@@ -18,6 +18,8 @@ def order_badge(status):
         'delivered': 'success',
         'cancelled': 'danger',
         'returned': 'dark',
+        'return': 'dark',
+        'return_processing': 'warning',
     }
     return badge_classes.get(status, 'secondary')
 
@@ -34,6 +36,8 @@ def get_badge_class(status):
         'delivered': 'success',
         'cancelled': 'danger',
         'returned': 'dark',
+        'return': 'dark',
+        'return_processing': 'warning',
         'in_stock': 'success',
         'low_stock': 'warning',
         'out_of_stock': 'danger',
@@ -119,6 +123,8 @@ def status_icon(status):
         'delivered': 'fa-check-double',
         'cancelled': 'fa-times-circle',
         'returned': 'fa-undo',
+        'return': 'fa-box-open',
+        'return_processing': 'fa-truck',
     }
     return icons.get(status, 'fa-question-circle')
 
@@ -149,6 +155,8 @@ def get_order_status_color(status):
         'delivered': '#28a745',
         'cancelled': '#dc3545',
         'returned': '#343a40',
+        'return': '#343a40',
+        'return_processing': '#fd7e14',
     }
     return colors.get(status, '#6c757d')
 

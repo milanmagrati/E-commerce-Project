@@ -44,6 +44,42 @@ def set_cached_comments(order_id, data):
     _comment_cache[cache_key] = (data, timezone.now())
 
 
+def _order_display_fields(order):
+    """
+    Display-ready status fields for clients that patch the order detail page's
+    DOM in place instead of reloading (status/payment badges, etc.) - mirrors
+    the `|replace:"_: "|upper` template filter used in order_detail.html.
+
+    The raw `status`/`order_status`/`payment_status` values are included
+    alongside the display strings because the page uses them as its
+    change-detection baseline (`lastOrderState`). Without them a manual sync
+    would patch the visible badges but leave that baseline stale, so the next
+    poll would re-report the same change as if it were new.
+    """
+    if order.status_setup_id:
+        raw_status = order.status_setup.name
+    else:
+        raw_status = order.order_status or order.status or 'pending'
+    status_display = str(raw_status).replace('_', ' ').upper()
+
+    if order.payment_status_setup_id:
+        raw_payment = order.payment_status_setup.name
+    else:
+        raw_payment = order.payment_status or 'pending'
+    payment_status_display = str(raw_payment).replace('_', ' ').upper()
+
+    return {
+        'status': order.status,
+        'order_status': order.order_status,
+        'status_display': status_display,
+        'payment_status': order.payment_status,
+        'payment_status_display': payment_status_display,
+        'payment_status_css': order.payment_status or 'pending',
+        'ncm_status': order.ncm_status,
+        'delivered_at': order.delivered_at.isoformat() if order.delivered_at else None,
+    }
+
+
 def send_ncm_comment_async(ncm_order_id, comment_text, order_id, user_id, api_config_id=None):
     """
     Send comment to NCM in background thread to avoid blocking the response.
@@ -82,7 +118,7 @@ def api_get_order_status(request, order_id):
         
         # If no NCM order ID, return local status
         if not order.ncm_order_id:
-            return JsonResponse({
+            local_status = {
                 'success': True,
                 'order_id': order.id,
                 'order_number': order.order_number,
@@ -97,13 +133,15 @@ def api_get_order_status(request, order_id):
                 'total_amount': float(order.total_amount or 0),
                 'source': 'local',
                 'timestamp': timezone.now().isoformat()
-            })
-        
+            }
+            local_status.update(_order_display_fields(order))
+            return JsonResponse(local_status)
+
         # Use order-specific NCM API account
         svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
         # Try to fetch latest status from NCM
         ncm_status_result = svc.get_order_status(order.ncm_order_id)
-        
+
         status_data = {
             'success': True,
             'order_id': order.id,
@@ -120,6 +158,7 @@ def api_get_order_status(request, order_id):
             'source': 'hybrid',  # local + NCM
             'timestamp': timezone.now().isoformat()
         }
+        status_data.update(_order_display_fields(order))
         
         # Add NCM remote status if available
         if ncm_status_result['success']:
@@ -156,13 +195,15 @@ def api_sync_order_status(request, order_id):
             # Don't let a sync (manual click, or the automatic sync that now
             # fires when the order page loads) silently resurrect an order
             # the staff already cancelled locally.
-            return JsonResponse({
+            cancelled_response = {
                 'success': True,
                 'message': 'Order is cancelled; status sync skipped',
                 'order_id': order.id,
                 'order_number': order.order_number,
                 'changed': False
-            })
+            }
+            cancelled_response.update(_order_display_fields(order))
+            return JsonResponse(cancelled_response)
 
         # Use order-specific NCM API account
         svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
@@ -242,7 +283,7 @@ def api_sync_order_status(request, order_id):
 
             logger.info(f"[SUCCESS] API Sync: {order.order_number} -> {system_status}" + (f", payment: {payment_status}" if payment_status else ""))
 
-            return JsonResponse({
+            changed_response = {
                 'success': True,
                 'message': 'Status updated',
                 'order_id': order.id,
@@ -252,16 +293,20 @@ def api_sync_order_status(request, order_id):
                 'ncm_status': latest_status,
                 'payment_status': order.payment_status,
                 'changed': True
-            })
+            }
+            changed_response.update(_order_display_fields(order))
+            return JsonResponse(changed_response)
         else:
-            return JsonResponse({
+            unchanged_response = {
                 'success': True,
                 'message': 'Status unchanged',
                 'order_id': order.id,
                 'order_number': order.order_number,
                 'status': system_status,
                 'changed': False
-            })
+            }
+            unchanged_response.update(_order_display_fields(order))
+            return JsonResponse(unchanged_response)
         
     except Exception as e:
         logger.error(f"Error syncing order: {str(e)}")

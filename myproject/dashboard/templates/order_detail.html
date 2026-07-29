@@ -82,7 +82,7 @@
             <div class="status-info">
                 <h6>ORDER STATUS</h6>
                 <!-- ✅ NEW: Display status_setup name if available -->
-                <p class="status-value">
+                <p class="status-value" id="orderStatusValue">
                     {% if order.status_setup %}
                     {{ order.status_setup.name|replace:"_: "|upper }}
                     {% else %}
@@ -100,7 +100,7 @@
             </div>
             <div class="status-info">
                 <h6>PAYMENT STATUS</h6>
-                <span class="payment-badge payment-badge-{{ order.payment_status|default:'pending' }}">
+                <span class="payment-badge payment-badge-{{ order.payment_status|default:'pending' }}" id="paymentStatusBadge">
                     {% if order.payment_status_setup %}
                     {{ order.payment_status_setup.name|replace:"_: "|upper }}
                     {% else %}
@@ -636,7 +636,7 @@
                                 <span class="ncm-detail-label">
                                     <i class="fas fa-info-circle"></i> NCM Status:
                                 </span>
-                                <span class="badge bg-primary">{{ order.ncm_status|default:"Unknown" }}</span>
+                                <span class="badge bg-primary" id="ncmStatusBadge">{{ order.ncm_status|default:"Unknown" }}</span>
                             </div>
                             <div class="ncm-detail-row">
                                 <span class="ncm-detail-label">
@@ -3935,8 +3935,8 @@
 
     // ✅ AJAX NCM STATUS SYNC FUNCTION
     // `silent=true` is used for the automatic sync on page load/refresh: no
-    // button/spinner UI, and the page only reloads if the status actually
-    // changed (so an unchanged order doesn't get reloaded on every visit).
+    // button/spinner UI. Neither path reloads the page - both patch the
+    // visible status badges/history in place via applyNCMStatusPatch().
     function syncNCMStatusAJAX(orderId, silent = false) {
         if (ncmSyncInProgress) {
             if (!silent) {
@@ -3952,6 +3952,13 @@
         if (!silent && syncBtn && syncBtnText) {
             syncBtn.disabled = true;
             syncBtnText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+        }
+
+        function resetButton() {
+            if (syncBtn && syncBtnText) {
+                syncBtn.disabled = false;
+                syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
+            }
         }
 
         // Send AJAX request to sync status
@@ -3972,38 +3979,28 @@
                 ncmSyncInProgress = false;
                 if (data.success) {
                     if (silent) {
-                        // Only disturb the user with a reload if something
-                        // actually changed - avoids reloading on every visit.
-                        // Guarded by sessionStorage so a backend that somehow
+                        // Throttle notification/DOM churn so a backend that somehow
                         // keeps reporting `changed: true` (stale cache, a bug,
-                        // whatever) can't reload this tab in a tight loop - at
-                        // most one auto-sync reload per order per ~20 seconds.
+                        // whatever) can't spam this tab in a tight loop - at
+                        // most one auto-sync update per order per ~20 seconds.
                         if (data.changed) {
-                            const reloadGuardKey = `orderAutoSyncReload_${orderId}`;
-                            const lastReload = parseInt(sessionStorage.getItem(reloadGuardKey) || '0', 10);
-                            if (Date.now() - lastReload > 20000) {
-                                sessionStorage.setItem(reloadGuardKey, String(Date.now()));
-                                showNotification('success', data.message || 'Status updated successfully');
-                                setTimeout(() => location.reload(), 1000);
+                            const guardKey = `orderAutoSyncReload_${orderId}`;
+                            const lastRun = parseInt(sessionStorage.getItem(guardKey) || '0', 10);
+                            if (Date.now() - lastRun > 20000) {
+                                sessionStorage.setItem(guardKey, String(Date.now()));
+                                applyNCMStatusPatch(data);
                             }
                         }
                         return;
                     }
 
                     showNotification('success', data.message || 'Status updated successfully');
-
-                    // Always reload when user explicitly clicks sync,
-                    // so display fields (status_setup, order_status) are always fresh
-                    setTimeout(() => {
-                        location.reload();
-                    }, 1000);
+                    applyNCMStatusPatch(data);
+                    resetButton();
                 } else {
                     if (!silent) {
                         showNotification('error', data.message || 'Failed to update status');
-                        if (syncBtn && syncBtnText) {
-                            syncBtn.disabled = false;
-                            syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
-                        }
+                        resetButton();
                     }
                 }
             })
@@ -4012,10 +4009,7 @@
                 console.error('Error syncing status:', error);
                 if (!silent) {
                     showNotification('error', 'Failed to sync status. Please try again.');
-                    if (syncBtn && syncBtnText) {
-                        syncBtn.disabled = false;
-                        syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
-                    }
+                    resetButton();
                 }
             });
     }
@@ -4064,6 +4058,46 @@
         loadNCMStatusHistory({{ order.ncm_order_id }});
     });
     {% endif %}
+
+    // ✅ PATCH THE VISIBLE STATUS BADGES/HISTORY IN PLACE (no page reload)
+    // Used by both the NCM sync response (syncNCMStatusAJAX) and the local-DB
+    // poller (checkOrderChanges/notifyStatusChange) so any code path that
+    // learns about a status change - whether from a live NCM call or from
+    // the background cron job (sync_all_ncm_orders) writing to the DB while
+    // this tab is open - ends up here instead of calling location.reload().
+    function applyNCMStatusPatch(data) {
+        const statusEl = document.getElementById('orderStatusValue');
+        if (statusEl && data.status_display) {
+            statusEl.textContent = data.status_display;
+        }
+
+        const payEl = document.getElementById('paymentStatusBadge');
+        if (payEl && data.payment_status_css) {
+            payEl.className = 'payment-badge payment-badge-' + data.payment_status_css;
+            if (data.payment_status_display) {
+                payEl.textContent = data.payment_status_display;
+            }
+        }
+
+        const ncmBadge = document.getElementById('ncmStatusBadge');
+        if (ncmBadge && data.ncm_status) {
+            ncmBadge.textContent = data.ncm_status;
+        }
+
+        {% if order.ncm_order_id %}
+        loadNCMStatusHistory({{ order.ncm_order_id }});
+        {% endif %}
+
+        // Keep the local-DB poller's baseline in sync so it doesn't
+        // immediately re-fire a duplicate "changed" notification for a
+        // change that was just displayed.
+        if (typeof lastOrderState !== 'undefined') {
+            if (data.status !== undefined) lastOrderState.status = data.status;
+            if (data.ncm_status !== undefined) lastOrderState.ncm_status = data.ncm_status;
+            if (data.payment_status !== undefined) lastOrderState.payment_status = data.payment_status;
+            if (data.delivered_at !== undefined) lastOrderState.delivered_at = data.delivered_at;
+        }
+    }
 
     // ✅ NOTIFICATION HELPER FUNCTION
     function showNotification(type, message) {
@@ -4139,7 +4173,11 @@
     }
 
     /**
-     * Check if order status has changed and notify user
+     * Check if order status has changed and notify user. This is the
+     * read-only local-DB poller (fetchOrderStatus -> api_get_order_status,
+     * no NCM call) - it's what surfaces changes written by the background
+     * cron job (sync_all_ncm_orders) while this tab is open, so it patches
+     * the DOM in place rather than reloading.
      */
     function checkOrderChanges(data) {
         const currentState = {
@@ -4150,20 +4188,22 @@
             cod_collected: data.cod_collected
         };
 
+        let anyChanged = false;
+
         // Check for status changes
         if (lastOrderState.status !== currentState.status) {
             notifyStatusChange('Order Status', lastOrderState.status, currentState.status);
-            lastOrderState.status = currentState.status;
+            anyChanged = true;
         }
 
         if (lastOrderState.ncm_status !== currentState.ncm_status) {
             notifyStatusChange('NCM Delivery Status', lastOrderState.ncm_status, currentState.ncm_status);
-            lastOrderState.ncm_status = currentState.ncm_status;
+            anyChanged = true;
         }
 
         if (lastOrderState.payment_status !== currentState.payment_status) {
             notifyStatusChange('Payment Status', lastOrderState.payment_status, currentState.payment_status, 'info');
-            lastOrderState.payment_status = currentState.payment_status;
+            anyChanged = true;
         }
 
         if (lastOrderState.delivered_at !== currentState.delivered_at && currentState.delivered_at) {
@@ -4175,16 +4215,22 @@
             alertify.notify(`✅ COD Amount Collected: रू ${currentState.cod_collected}`, 'success', 5);
             lastOrderState.cod_collected = currentState.cod_collected;
         }
+
+        if (anyChanged) {
+            applyNCMStatusPatch(data);
+        }
     }
 
     /**
-     * Notify user about status changes with alertify
+     * Notify user about status changes with alertify (toast only - the
+     * caller, checkOrderChanges, is responsible for patching the DOM).
      */
     function notifyStatusChange(fieldName, oldValue, newValue, type = 'success') {
         const statusMessages = {
             'in_transit': '📍 In Transit - Order is on the way to delivery',
             'delivered': '✅ Delivered - Order has been successfully delivered',
             'return': '↩️ Return - Order has been returned',
+            'return_processing': '🚚 Return Processing - Item is on its way back to the vendor',
             'return_initiated': '↩️ Return Initiated - Return process started',
             'processing': '⏳ Processing - Order is being processed',
             'pending': '⏸️ Pending - Awaiting confirmation',
@@ -4206,29 +4252,18 @@
         } else {
             alertify.notify(message, 'info', 5);
         }
-
-        // Reload the page after short delay for status to update in UI
-        setTimeout(() => {
-            location.reload();
-        }, 2000);
     }
 
     /**
      * Start auto-sync process
      */
     function startAutoSync() {
-        // Pull the latest status from NCM immediately and persist it - this
-        // is what makes opening/refreshing the order page keep the status
-        // current without needing a manual "Sync Status" click. Runs silently
-        // (no button UI) and only reloads the page if something changed.
-        // Skipped for cancelled orders so a stale/late NCM status can't
-        // silently resurrect a cancellation (the backend also enforces this).
-        {% if order.status != 'cancelled' %}
-        syncNCMStatusAJAX('{{ order.id }}', true);
-        {% endif %}
-
-        // Set interval for periodic local-status change detection
-        // (cheap - reads the DB, doesn't call the NCM API)
+        // No live NCM call fires here anymore - a background cron job
+        // (sync_all_ncm_orders, run via cPanel Cron every ~10 min - see
+        // Settings -> API Sync Settings for which order statuses it covers)
+        // keeps NCM status fresh in the DB independent of anyone viewing
+        // this page. This timer only polls the local DB (cheap, no NCM call)
+        // so any change the cron job made surfaces here without a reload.
         autoSyncTimer = setInterval(() => {
             fetchOrderStatus();
         }, autoSyncInterval);

@@ -4839,10 +4839,13 @@ def return_orders_list(request):
     from decimal import Decimal
     import pytz
 
-    # Get all orders with "Return" status
+    # Get all orders with "Return" status (including the in-transit
+    # "Return Processing" stage, so this monitoring page reflects the whole
+    # active return pipeline, not just items already physically arrived)
     orders = Order.objects.filter(
         is_deleted=False,
-        order_status__iexact='return'  # Case-insensitive search for 'Return' status
+    ).filter(
+        Q(order_status__iexact='return') | Q(order_status__iexact='return_processing')
     ).select_related(
         'customer', 'created_by', 'status_setup',
         'payment_setup', 'payment_status_setup'
@@ -11407,18 +11410,25 @@ def returns_list(request):
 
 
 def _mark_order_as_returned(order, user, rma_number):
-    """Set an order's status to 'return' and log it on the order's own
-    activity timeline (order_detail's right-side Activity Log), so a scan
-    from the Return Management page shows up the same way an NCM RTV
-    webhook/sync does. No-op for cancelled orders or orders already marked
-    'return', to avoid clobbering a cancellation or logging a redundant entry.
+    """Set an order's status to 'returned' (the final stage of the return
+    lifecycle) and log it on the order's own activity timeline (order_detail's
+    right-side Activity Log). This fires when staff scan/create a
+    ReturnRequest on the Return Management page - physical possession by
+    staff is a stronger signal than NCM's own return-pipeline stage, so this
+    sets 'returned' directly rather than the intermediate 'return_processing'/
+    'return' values NCM's own sync/webhook produces. No-op for cancelled
+    orders or orders already marked 'returned', to avoid clobbering a
+    cancellation or logging a redundant entry. (return_detail's
+    process_refund branch also sets 'returned' once a ReturnRequest completes
+    its own approve/receive/inspect/refund workflow - setting the same value
+    here too, at scan-time, is intentional and idempotent.)
     """
-    if order.status in ('cancelled', 'return'):
+    if order.status in ('cancelled', 'returned'):
         return
 
     from services.ncm_service import NCMService
     old_status = order.status
-    update_fields = NCMService.sync_order_status_fields(order, 'return')
+    update_fields = NCMService.sync_order_status_fields(order, 'returned')
     update_fields.append('updated_at')
     order.save(update_fields=list(dict.fromkeys(update_fields)))
 
@@ -11428,8 +11438,8 @@ def _mark_order_as_returned(order, user, rma_number):
         user=user,
         field_name='status',
         old_value=old_status,
-        new_value='return',
-        description=f'Order marked as Return via Return Management (RMA {rma_number})'
+        new_value='returned',
+        description=f'Order marked as Returned via Return Management (RMA {rma_number})'
     )
 
 
@@ -16500,7 +16510,7 @@ def staff_performance_analytics(request):
         # Determine effective status
         if status in ['delivered', 'completed'] or order_status in ['delivered', 'completed']:
             status_breakdown['delivered'] += 1
-        elif status in ['returned', 'return'] or order_status in ['returned', 'return']:
+        elif status in ['returned', 'return', 'return_processing'] or order_status in ['returned', 'return', 'return_processing']:
             status_breakdown['returns'] += 1
         elif status in ['pending', 'processing'] or order_status in ['pending', 'processing']:
             status_breakdown['pending'] += 1
@@ -16701,6 +16711,8 @@ def api_product_staff_orders(request):
             'delivered': '#10b981',
             'cancelled': '#ef4444',
             'returned': '#374151',
+            'return': '#374151',
+            'return_processing': '#f97316',
             'pending': '#f59e0b',
         }
         order_status = (order.order_status or order.status or 'processing').lower()
@@ -16811,6 +16823,8 @@ def api_product_staff_orders(request):
         'delivered': '#10b981',
         'cancelled': '#ef4444',
         'returned': '#374151',
+        'return': '#374151',
+        'return_processing': '#f97316',
         'pending': '#f59e0b',
         'inquiry': '#374151',
     }
@@ -19905,15 +19919,42 @@ def settings_hub(request):
         api_settings.order_sync_interval = _safe_int('order_sync_interval', api_settings.order_sync_interval, 60, 86400)
         api_settings.webhook_check_interval = _safe_int('webhook_check_interval', api_settings.webhook_check_interval, 10, 3600)
         api_settings.ncm_api_timeout = _safe_int('ncm_api_timeout', api_settings.ncm_api_timeout, 5, 120)
+
+        # Only persist statuses that actually exist in Setup Management. This
+        # list feeds a `status__in` filter in the background sync, so an
+        # unrecognized value (stale checkbox, hand-crafted POST) would
+        # silently narrow the sync to nothing instead of erroring.
+        valid_status_values = {
+            s.name.lower().replace(' ', '_')
+            for s in Setup.objects.filter(setup_type='status', is_active=True)
+        }
+        submitted_statuses = request.POST.getlist('included_statuses')
+        api_settings.bulk_sync_included_statuses = [
+            s for s in dict.fromkeys(submitted_statuses) if s in valid_status_values
+        ]
         api_settings.save()
         messages.success(request, 'API settings saved successfully!')
         from django.urls import reverse
         return redirect(reverse('settings_hub') + '?section=api_settings')
 
+    # Order statuses selectable for the background NCM bulk-sync (Settings -> API Sync Settings).
+    # Same Setup-driven source/normalization as the orders-list status filter (see orders_list view).
+    order_status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    included_statuses = set(api_settings.bulk_sync_included_statuses or [])
+    bulk_sync_status_choices = [
+        {
+            'value': setup.name.lower().replace(' ', '_'),
+            'label': setup.name,
+            'checked': setup.name.lower().replace(' ', '_') in included_statuses,
+        }
+        for setup in order_status_setups
+    ]
+
     context = {
         'active_section': active_section,
         'company': company,
         'api_settings': api_settings,
+        'bulk_sync_status_choices': bulk_sync_status_choices,
         'devices': device_list,
         'device_count': len(device_list),
         'maintenance': maintenance,

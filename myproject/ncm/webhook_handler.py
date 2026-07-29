@@ -67,8 +67,8 @@ class NCMWebhookHandler:
         'Returned': 'returned',
         'Return Initiated': 'return_initiated',
         'Return Approved': 'return_approved',
-        'Order Marked Return': 'return',
-        'Sent to Vendor': 'return',
+        'Order Marked Return': 'return_processing',
+        'Sent to Vendor': 'return_processing',
         'Returned to Warehouse': 'return',
     }
 
@@ -390,15 +390,16 @@ class NCMWebhookHandler:
                 return
 
             # Map resolved system status to notification type.
-            # 'return' is the status NCMService actually resolves to for the
-            # RTV pipeline (see resolve_delivered_status/map_ncm_status_to_system);
+            # 'return_processing' and 'return' are the two statuses NCMService
+            # actually resolves to for the RTV pipeline (see
+            # resolve_delivered_status/map_ncm_status_to_system);
             # 'returned'/'return_initiated'/'return_approved' are kept for
             # any legacy/other callers that still produce those values.
             if status in ['delivered']:
                 notification_status = 'delivered'
             elif status in ['in_transit', 'shipped']:
                 notification_status = 'in_transit'
-            elif status in ['return', 'returned', 'return_initiated', 'return_approved']:
+            elif status in ['return', 'return_processing', 'returned', 'return_initiated', 'return_approved']:
                 notification_status = 'returned'
             else:
                 return
