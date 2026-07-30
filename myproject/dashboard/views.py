@@ -20358,7 +20358,10 @@ def ncm_rtvs_list(request):
     """
     from services.ncm_service import NCMService
     from dashboard.models import RTVOrder, LogisticsAPIConfig, RTVFollowUp
-    from dashboard.timezone_utils import format_nepali_datetime_or_none
+    from dashboard.timezone_utils import (
+        format_nepali_datetime_or_none, get_nepali_now,
+        nepali_day_start, nepali_day_end_exclusive,
+    )
     from django.db import models
 
     # All NCM API configs (for the selector UI)
@@ -20467,6 +20470,70 @@ def ncm_rtvs_list(request):
             Q(comment__icontains=search)
         )
 
+    # "Today's RTVs" is a fixed daily counter (like Total RTVs), scoped to the
+    # portal/status/search filters above but deliberately NOT to the date
+    # filter below — picking a date range shouldn't change what "today" means.
+    # Counted off rtv_marked_at (NCM's real event time), same field the date
+    # filter and the Added Time column use — see commit 76207d8.
+    today_nepal = get_nepali_now().date()
+    today_count = qs.filter(
+        rtv_marked_at__gte=nepali_day_start(today_nepal),
+        rtv_marked_at__lt=nepali_day_end_exclusive(today_nepal),
+    ).count()
+
+    # ---------- Date filter (rtv_marked_at, Nepal calendar days) ----------
+    date_preset = request.GET.get('date_preset', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    range_start = None
+    range_end = None
+
+    if date_preset == 'today':
+        range_start = nepali_day_start(today_nepal)
+        range_end = nepali_day_end_exclusive(today_nepal)
+        date_from = date_to = today_nepal.isoformat()
+    elif date_preset == 'yesterday':
+        y = today_nepal - timedelta(days=1)
+        range_start = nepali_day_start(y)
+        range_end = nepali_day_end_exclusive(y)
+        date_from = date_to = y.isoformat()
+    elif date_preset == 'last7':
+        start_day = today_nepal - timedelta(days=6)
+        range_start = nepali_day_start(start_day)
+        range_end = nepali_day_end_exclusive(today_nepal)
+        date_from, date_to = start_day.isoformat(), today_nepal.isoformat()
+    elif date_preset == 'thismonth':
+        start_day = today_nepal.replace(day=1)
+        range_start = nepali_day_start(start_day)
+        range_end = nepali_day_end_exclusive(today_nepal)
+        date_from, date_to = start_day.isoformat(), today_nepal.isoformat()
+    elif date_preset == 'lastmonth':
+        first_this = today_nepal.replace(day=1)
+        last_month_end = first_this - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+        range_start = nepali_day_start(last_month_start)
+        range_end = nepali_day_end_exclusive(last_month_end)
+        date_from, date_to = last_month_start.isoformat(), last_month_end.isoformat()
+    elif date_preset == 'custom' and date_from and date_to:
+        try:
+            df = datetime.strptime(date_from, '%Y-%m-%d').date()
+            dt_ = datetime.strptime(date_to, '%Y-%m-%d').date()
+            if df > dt_:
+                df, dt_ = dt_, df
+            range_start = nepali_day_start(df)
+            range_end = nepali_day_end_exclusive(dt_)
+            date_from, date_to = df.isoformat(), dt_.isoformat()
+        except ValueError:
+            date_preset = ''
+            date_from = date_to = ''
+    else:
+        date_preset = ''
+        date_from = date_to = ''
+
+    if range_start is not None:
+        qs = qs.filter(rtv_marked_at__gte=range_start, rtv_marked_at__lt=range_end)
+
     # Paginate at DB level
     page_size = 25
     page = request.GET.get('page', 1)
@@ -20546,6 +20613,20 @@ def ncm_rtvs_list(request):
     from dashboard.models import RTVStatus
     rtv_statuses = list(RTVStatus.objects.filter(is_active=True).order_by('name').values('id', 'name', 'color'))
 
+    date_preset_labels = {
+        'today': 'Today',
+        'yesterday': 'Yesterday',
+        'last7': 'Last 7 Days',
+        'thismonth': 'This Month',
+        'lastmonth': 'Last Month',
+    }
+    if date_preset == 'custom' and date_from and date_to:
+        d_from_fmt = datetime.strptime(date_from, '%Y-%m-%d').strftime('%b %d')
+        d_to_fmt = datetime.strptime(date_to, '%Y-%m-%d').strftime('%b %d')
+        date_filter_label = d_from_fmt if date_from == date_to else f'{d_from_fmt} → {d_to_fmt}'
+    else:
+        date_filter_label = date_preset_labels.get(date_preset, '')
+
     context = {
         'rtvs': page_rtvs,
         'total_count': total_count,
@@ -20562,6 +20643,11 @@ def ncm_rtvs_list(request):
         'selected_config': selected_config,
         'rtv_statuses': rtv_statuses,
         'selected_rtv_status_id': rtv_status_id,
+        'today_count': today_count,
+        'selected_date_preset': date_preset,
+        'selected_date_from': date_from,
+        'selected_date_to': date_to,
+        'date_filter_label': date_filter_label,
     }
     return render(request, 'ncm_rtvs.html', context)
 

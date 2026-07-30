@@ -120,25 +120,51 @@
         margin-top: 0.2rem;
     }
 
+    .rtv-stat-chip .lbl i {
+        font-size: 0.68rem;
+        margin-right: 0.15rem;
+    }
+
+    .rtv-stat-chip-today {
+        background: rgba(255, 255, 255, 0.94);
+        border-color: rgba(255, 255, 255, 0.94);
+    }
+
+    .rtv-stat-chip-today .val {
+        color: #5b21b6;
+    }
+
+    .rtv-stat-chip-today .lbl {
+        color: #764ba2;
+        opacity: 1;
+    }
+
     /* --- Toolbar ---------------------------------------------------- */
+    /* Always a single line, at any screen size or browser zoom: the row
+       never wraps. If it's ever too narrow to fit everything, it scrolls
+       horizontally (like the table below it) instead of breaking onto a
+       second line. On normal desktop widths this scrollbar never appears —
+       the compact paddings/gaps below keep everything fitting natively. */
     .rtv-toolbar {
         background: #fff;
         border-radius: 14px;
-        padding: 1rem 1.5rem;
+        padding: 1rem 1.25rem;
         margin-bottom: 1.5rem;
         box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        flex-wrap: wrap;
+        gap: 0.5rem;
+        flex-wrap: nowrap;
         min-width: 0;
-        overflow: hidden;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: thin;
     }
 
     .rtv-search-box {
-        flex: 1;
-        min-width: 180px;
-        max-width: 100%;
+        flex: 1 1 160px;
+        min-width: 140px;
+        max-width: 260px;
         position: relative;
     }
 
@@ -203,13 +229,13 @@
 
     .rtv-filter-group {
         display: flex;
-        gap: 0.45rem;
+        gap: 0.35rem;
         flex-wrap: wrap;
     }
 
     .rtv-filter-btn {
         height: 38px;
-        padding: 0 1rem;
+        padding: 0 0.75rem;
         border: 2px solid #e2e8f0;
         border-radius: 10px;
         background: #fff;
@@ -238,8 +264,9 @@
 
     .rtv-toolbar-right {
         display: flex;
-        gap: 0.5rem;
+        gap: 0.4rem;
         margin-left: auto;
+        flex-shrink: 0;
     }
 
     .rtv-refresh-btn {
@@ -265,7 +292,7 @@
 
     .rtv-new-btn {
         height: 38px;
-        padding: 0 1.1rem;
+        padding: 0 0.9rem;
         border-radius: 10px;
         border: none;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -1304,21 +1331,7 @@
 
         .rtv-toolbar {
             padding: 0.85rem 1rem;
-            gap: 0.6rem;
-        }
-
-        .toolbar-divider {
-            display: none;
-        }
-
-        .rtv-search-box {
-            min-width: 100%;
-            flex: 1 1 100%;
-        }
-
-        .rtv-toolbar-right {
-            margin-left: 0;
-            flex-wrap: wrap;
+            gap: 0.5rem;
         }
 
         .rtv-table-card {
@@ -1379,7 +1392,7 @@
     /* ---- Fetch RTVs Button ---- */
     .rtv-fetch-btn {
         height: 38px;
-        padding: 0 1.1rem;
+        padding: 0 0.9rem;
         border-radius: 10px;
         border: 2px solid #667eea;
         background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
@@ -1573,7 +1586,7 @@
 
     .rtv-status-filter-btn {
         height: 38px;
-        padding: 0 1rem;
+        padding: 0 0.8rem;
         border: 2px solid #e2e8f0;
         border-radius: 10px;
         background: #fff;
@@ -1699,6 +1712,161 @@
         background: #e2e8f0;
         margin: 0.35rem 0;
     }
+
+    /* ---- Date Range Filter ---- */
+    .rtv-date-filter {
+        position: relative;
+    }
+
+    .date-filter-dropdown {
+        position: fixed;
+        width: 300px;
+        max-height: min(420px, calc(100vh - 16px));
+        overflow-y: auto;
+        background: #fff;
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.14);
+        padding: 0.5rem;
+        z-index: 9999;
+        display: none;
+        animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .date-filter-dropdown.show {
+        display: block;
+    }
+
+    .date-filter-dropdown .dfd-presets {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .date-filter-dropdown .dfd-item {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        padding: 0.5rem 0.85rem;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: #475569;
+        transition: all 0.15s ease;
+        margin-bottom: 2px;
+        border: none;
+        background: none;
+        width: 100%;
+        text-align: left;
+        font-family: inherit;
+    }
+
+    .date-filter-dropdown .dfd-item:hover {
+        background: #f1f5f9;
+        color: #1e293b;
+    }
+
+    .date-filter-dropdown .dfd-item.active {
+        background: #e0e7ff;
+        color: #3730a3;
+        font-weight: 700;
+    }
+
+    .date-filter-dropdown .dfd-item i.dfd-icon {
+        width: 16px;
+        text-align: center;
+        color: #94a3b8;
+        font-size: 0.78rem;
+    }
+
+    .date-filter-dropdown .dfd-item.active i.dfd-icon {
+        color: #667eea;
+    }
+
+    .date-filter-dropdown .dfd-item .sfd-check {
+        margin-left: auto;
+        font-size: 0.72rem;
+        color: #667eea;
+        opacity: 0;
+        transition: opacity 0.15s;
+    }
+
+    .date-filter-dropdown .dfd-item.active .sfd-check {
+        opacity: 1;
+    }
+
+    .date-filter-dropdown .dfd-divider {
+        height: 1px;
+        background: #e2e8f0;
+        margin: 0.4rem 0;
+    }
+
+    .date-filter-dropdown .dfd-custom {
+        padding: 0.5rem 0.6rem 0.35rem;
+    }
+
+    .date-filter-dropdown .dfd-custom-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #94a3b8;
+        margin-bottom: 0.5rem;
+    }
+
+    .date-filter-dropdown .dfd-custom-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.6rem;
+    }
+
+    .date-filter-dropdown .dfd-custom-row input[type="date"] {
+        flex: 1;
+        min-width: 0;
+        height: 36px;
+        padding: 0 0.6rem;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        color: #1e293b;
+        font-family: inherit;
+        transition: border-color 0.18s;
+    }
+
+    .date-filter-dropdown .dfd-custom-row input[type="date"]:focus {
+        border-color: #667eea;
+        outline: none;
+    }
+
+    .date-filter-dropdown .dfd-custom-row span {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        flex-shrink: 0;
+    }
+
+    .date-filter-dropdown .dfd-apply-btn {
+        width: 100%;
+        height: 36px;
+        border: none;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: #fff;
+        font-weight: 700;
+        font-size: 0.82rem;
+        cursor: pointer;
+        transition: all 0.18s;
+    }
+
+    .date-filter-dropdown .dfd-apply-btn:hover {
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
+    }
+
+    .date-filter-dropdown .dfd-apply-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        box-shadow: none;
+    }
 </style>
 <style>
     /* Order Detail Modal - responsive grid overrides via JS inline styles
@@ -1743,6 +1911,10 @@
                 <p>Track and manage all return-to-vendor orders submitted to NCM logistics</p>
             </div>
             <div class="rtv-header-stats">
+                <div class="rtv-stat-chip rtv-stat-chip-today">
+                    <span class="val">{{ today_count }}</span>
+                    <span class="lbl"><i class="fas fa-calendar-day"></i> Today's RTVs</span>
+                </div>
                 <div class="rtv-stat-chip">
                     <span class="val">{{ total_count }}</span>
                     <span class="lbl">Total RTVs</span>
@@ -1856,6 +2028,58 @@
                     <i class="fas fa-check sfd-check"></i>
                 </button>
                 {% endfor %}
+            </div>
+        </div>
+
+        <!-- Date Range Filter -->
+        <div class="rtv-date-filter" id="dateFilterWrap">
+            <button type="button" class="rtv-status-filter-btn {% if selected_date_preset %}has-filter{% endif %}" id="dateFilterBtn" onclick="toggleDateFilterDropdown(event)">
+                <i class="fas fa-calendar-alt"></i>
+                {% if selected_date_preset %}
+                    <span id="dateFilterLabel">{{ date_filter_label }}</span>
+                    <span class="filter-clear" onclick="clearDateFilter(event)" title="Clear filter"><i class="fas fa-times"></i></span>
+                {% else %}
+                    Date
+                    <i class="fas fa-chevron-down filter-arrow"></i>
+                {% endif %}
+            </button>
+            <div class="date-filter-dropdown" id="dateFilterDropdown">
+                <div class="dfd-presets">
+                    <button type="button" class="dfd-item {% if not selected_date_preset %}active{% endif %}" onclick="selectDatePreset('')">
+                        <i class="fas fa-infinity dfd-icon"></i> All Time
+                        <i class="fas fa-check sfd-check"></i>
+                    </button>
+                    <button type="button" class="dfd-item {% if selected_date_preset == 'today' %}active{% endif %}" onclick="selectDatePreset('today')">
+                        <i class="fas fa-calendar-day dfd-icon"></i> Today
+                        <i class="fas fa-check sfd-check"></i>
+                    </button>
+                    <button type="button" class="dfd-item {% if selected_date_preset == 'yesterday' %}active{% endif %}" onclick="selectDatePreset('yesterday')">
+                        <i class="fas fa-calendar-minus dfd-icon"></i> Yesterday
+                        <i class="fas fa-check sfd-check"></i>
+                    </button>
+                    <button type="button" class="dfd-item {% if selected_date_preset == 'last7' %}active{% endif %}" onclick="selectDatePreset('last7')">
+                        <i class="fas fa-calendar-week dfd-icon"></i> Last 7 Days
+                        <i class="fas fa-check sfd-check"></i>
+                    </button>
+                    <button type="button" class="dfd-item {% if selected_date_preset == 'thismonth' %}active{% endif %}" onclick="selectDatePreset('thismonth')">
+                        <i class="fas fa-calendar dfd-icon"></i> This Month
+                        <i class="fas fa-check sfd-check"></i>
+                    </button>
+                    <button type="button" class="dfd-item {% if selected_date_preset == 'lastmonth' %}active{% endif %}" onclick="selectDatePreset('lastmonth')">
+                        <i class="fas fa-calendar dfd-icon"></i> Last Month
+                        <i class="fas fa-check sfd-check"></i>
+                    </button>
+                </div>
+                <div class="dfd-divider"></div>
+                <div class="dfd-custom">
+                    <div class="dfd-custom-label">Custom Range</div>
+                    <div class="dfd-custom-row">
+                        <input type="date" id="dfdCustomFrom" value="{% if selected_date_preset == 'custom' %}{{ selected_date_from }}{% endif %}">
+                        <span>&rarr;</span>
+                        <input type="date" id="dfdCustomTo" value="{% if selected_date_preset == 'custom' %}{{ selected_date_to }}{% endif %}">
+                    </div>
+                    <button type="button" class="dfd-apply-btn" id="dfdApplyBtn" onclick="applyCustomDateRange()" {% if not selected_date_from or not selected_date_to or selected_date_preset != 'custom' %}disabled{% endif %}>Apply</button>
+                </div>
             </div>
         </div>
 
@@ -2075,7 +2299,7 @@
             </span>
             <div class="rtv-pagination">
                 {% if has_prev %}
-                <a href="?page={{ current_page|add:'-1' }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}{% if selected_rtv_status_id %}&rtv_status_id={{ selected_rtv_status_id }}{% endif %}"
+                <a href="?page={{ current_page|add:'-1' }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}{% if selected_rtv_status_id %}&rtv_status_id={{ selected_rtv_status_id }}{% endif %}{% if selected_date_preset %}&date_preset={{ selected_date_preset }}{% if selected_date_preset == 'custom' %}&date_from={{ selected_date_from }}&date_to={{ selected_date_to }}{% endif %}{% endif %}"
                     class="page-btn" title="Previous">
                     <i class="fas fa-chevron-left"></i>
                 </a>
@@ -2084,14 +2308,14 @@
                 {% if p == current_page %}
                 <span class="page-btn active">{{ p }}</span>
                 {% elif p == 1 or p == total_pages or p >= current_page|add:'-2' and p <= current_page|add:'2' %} <a
-                    href="?page={{ p }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}{% if selected_rtv_status_id %}&rtv_status_id={{ selected_rtv_status_id }}{% endif %}"
+                    href="?page={{ p }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}{% if selected_rtv_status_id %}&rtv_status_id={{ selected_rtv_status_id }}{% endif %}{% if selected_date_preset %}&date_preset={{ selected_date_preset }}{% if selected_date_preset == 'custom' %}&date_from={{ selected_date_from }}&date_to={{ selected_date_to }}{% endif %}{% endif %}"
                     class="page-btn">{{ p }}</a>
                     {% elif p == current_page|add:'-3' or p == current_page|add:'3' %}
                     <span class="page-btn dots">…</span>
                     {% endif %}
                     {% endfor %}
                     {% if has_next %}
-                    <a href="?page={{ current_page|add:'1' }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}{% if selected_rtv_status_id %}&rtv_status_id={{ selected_rtv_status_id }}{% endif %}"
+                    <a href="?page={{ current_page|add:'1' }}{% if search %}&search={{ search|urlencode }}{% endif %}{% if selected_api_config_id %}&api_config_id={{ selected_api_config_id }}{% endif %}{% if selected_rtv_status_id %}&rtv_status_id={{ selected_rtv_status_id }}{% endif %}{% if selected_date_preset %}&date_preset={{ selected_date_preset }}{% if selected_date_preset == 'custom' %}&date_from={{ selected_date_from }}&date_to={{ selected_date_to }}{% endif %}{% endif %}"
                         class="page-btn" title="Next">
                         <i class="fas fa-chevron-right"></i>
                     </a>
@@ -3372,6 +3596,89 @@
     document.addEventListener('click', function (e) {
         var wrap = document.getElementById('statusFilterWrap');
         var dd = document.getElementById('statusFilterDropdown');
+        if (wrap && dd && !wrap.contains(e.target)) {
+            dd.classList.remove('show');
+        }
+    });
+
+    // ==================== DATE RANGE FILTER ====================
+    window.toggleDateFilterDropdown = function (e) {
+        e.stopPropagation();
+        var dd = document.getElementById('dateFilterDropdown');
+        var btn = document.getElementById('dateFilterBtn');
+        if (!dd || !btn) return;
+        var isOpen = dd.classList.contains('show');
+        if (isOpen) {
+            dd.classList.remove('show');
+        } else {
+            var rect = btn.getBoundingClientRect();
+            // Keep the 300px-wide dropdown from overflowing the right edge
+            var left = Math.min(rect.left, window.innerWidth - 316);
+            dd.style.left = Math.max(8, left) + 'px';
+            // Show first (off-visible-flow via fixed positioning won't jump)
+            // so offsetHeight reflects the real rendered height, then decide
+            // whether it fits below the button or needs to open upward.
+            dd.style.top = (rect.bottom + 4) + 'px';
+            dd.classList.add('show');
+            var ddHeight = dd.offsetHeight;
+            if (rect.bottom + ddHeight + 8 > window.innerHeight) {
+                dd.style.top = Math.max(8, rect.top - ddHeight - 4) + 'px';
+            }
+        }
+    };
+
+    function navigateWithDateParams(params) {
+        var url = new URL(window.location.href);
+        url.searchParams.delete('page');
+        url.searchParams.delete('date_preset');
+        url.searchParams.delete('date_from');
+        url.searchParams.delete('date_to');
+        Object.keys(params).forEach(function (key) {
+            if (params[key]) url.searchParams.set(key, params[key]);
+        });
+        window.location.href = url.toString();
+    }
+
+    window.selectDatePreset = function (preset) {
+        navigateWithDateParams(preset ? { date_preset: preset } : {});
+    };
+
+    window.applyCustomDateRange = function () {
+        var from = document.getElementById('dfdCustomFrom').value;
+        var to = document.getElementById('dfdCustomTo').value;
+        if (!from || !to) return;
+        navigateWithDateParams({ date_preset: 'custom', date_from: from, date_to: to });
+    };
+
+    window.clearDateFilter = function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        selectDatePreset('');
+    };
+
+    // Enable the Apply button only once both custom dates are picked
+    document.addEventListener('DOMContentLoaded', function () {
+        var fromInput = document.getElementById('dfdCustomFrom');
+        var toInput = document.getElementById('dfdCustomTo');
+        var applyBtn = document.getElementById('dfdApplyBtn');
+        if (!fromInput || !toInput || !applyBtn) return;
+        function syncApplyState() {
+            applyBtn.disabled = !(fromInput.value && toInput.value);
+        }
+        syncApplyState();
+        fromInput.addEventListener('change', syncApplyState);
+        toInput.addEventListener('change', syncApplyState);
+        [fromInput, toInput].forEach(function (input) {
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && !applyBtn.disabled) applyCustomDateRange();
+            });
+        });
+    });
+
+    // Close date dropdown when clicking outside
+    document.addEventListener('click', function (e) {
+        var wrap = document.getElementById('dateFilterWrap');
+        var dd = document.getElementById('dateFilterDropdown');
         if (wrap && dd && !wrap.contains(e.target)) {
             dd.classList.remove('show');
         }
