@@ -40,12 +40,68 @@
     }
 
     /* Quill editor */
-    #editor-container { min-height: 220px; background: #fff; border-radius: 0 0 10px 10px; }
-    #notes-editor-container { min-height: 100px; background: #fff; border-radius: 0 0 10px 10px; }
-    .ql-toolbar.ql-snow { border-radius: 10px 10px 0 0; border-color: #e2e8f0 !important; background: #f8fafc; }
-    .ql-container.ql-snow { border-color: #e2e8f0 !important; font-size: .95rem; }
-    .ql-editor { min-height: 220px; }
+    .editor-shell {
+        border-radius: 12px; transition: box-shadow .2s, border-color .2s;
+        border: 1.5px solid #e2e8f0; overflow: hidden;
+    }
+    .editor-shell.is-focused { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.12); }
+    #editor-container { min-height: 220px; background: #fff; }
+    #notes-editor-container { min-height: 100px; background: #fff; }
+    .ql-toolbar.ql-snow {
+        border: none !important; border-bottom: 1px solid #e2e8f0 !important;
+        background: #f8fafc; padding: .5rem .6rem;
+        display: flex; flex-wrap: wrap; align-items: center;
+    }
+    .ql-toolbar.ql-snow .ql-formats {
+        margin-right: .5rem !important; padding-right: .5rem;
+        border-right: 1px solid #e2e8f0;
+    }
+    .ql-toolbar.ql-snow .ql-formats:last-child { border-right: none; margin-right: 0 !important; }
+    .ql-toolbar.ql-snow button { width: 30px; height: 30px; border-radius: 7px; }
+    .ql-toolbar.ql-snow button:hover,
+    .ql-toolbar.ql-snow button:focus,
+    .ql-toolbar.ql-snow .ql-picker-label:hover {
+        background: #e0e7ff; color: #4338ca;
+    }
+    .ql-toolbar.ql-snow button:hover .ql-stroke,
+    .ql-toolbar.ql-snow button:focus .ql-stroke { stroke: #4338ca; }
+    .ql-toolbar.ql-snow button:hover .ql-fill,
+    .ql-toolbar.ql-snow button:focus .ql-fill { fill: #4338ca; }
+    .ql-toolbar.ql-snow button.ql-active { background: #6366f1; }
+    .ql-toolbar.ql-snow button.ql-active .ql-stroke { stroke: #fff; }
+    .ql-toolbar.ql-snow button.ql-active .ql-fill { fill: #fff; }
+    .ql-toolbar.ql-snow .ql-picker-label { border-radius: 7px; border-color: transparent !important; }
+    .ql-toolbar.ql-snow .ql-picker-options {
+        border-radius: 10px !important; border-color: #e2e8f0 !important;
+        box-shadow: 0 10px 28px rgba(15,23,42,.12); padding: .35rem;
+    }
+    .ql-container.ql-snow { border: none !important; font-size: .95rem; font-family: inherit; position: relative; }
+    .ql-editor { min-height: 220px; padding: 1rem 1.15rem; line-height: 1.65; color: #1e293b; }
+    .ql-editor.ql-blank::before { color: #94a3b8; font-style: normal; left: 1.15rem; right: 1.15rem; }
     #notes-editor-container .ql-editor { min-height: 100px; }
+
+    /* Link-edit tooltip — pinned inside the editor so it can never be
+       clipped by the page's ancestor `overflow-x:hidden` wrappers, which
+       was cutting off its left edge (showing "ink:" instead of "Link:"). */
+    .ql-snow .ql-tooltip {
+        z-index: 20; position: absolute !important;
+        left: 10px !important; top: 10px !important; transform: none !important;
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+        box-shadow: 0 10px 28px rgba(15,23,42,.16);
+        padding: .5rem .65rem; white-space: nowrap;
+    }
+    .ql-snow .ql-tooltip::before { color: #64748b; font-size: .82rem; }
+    .ql-snow .ql-tooltip input[type=text] {
+        border: 1.5px solid #e2e8f0; border-radius: 8px;
+        padding: .35rem .65rem; font-size: .85rem; outline: none; margin: 0 .4rem;
+    }
+    .ql-snow .ql-tooltip input[type=text]:focus {
+        border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+    }
+    .ql-snow .ql-tooltip a.ql-action, .ql-snow .ql-tooltip a.ql-remove {
+        color: #6366f1; font-weight: 600;
+    }
+    .ql-snow .ql-tooltip a.ql-remove { color: #dc2626; margin-left: .5rem; }
     .styled-select {
         border: 1.5px solid #e2e8f0; border-radius: 10px;
         padding: .6rem .9rem; font-size: .95rem; color: #1e293b;
@@ -165,13 +221,17 @@
 
             <div class="col-12">
                 <div class="form-group-label">Content <span class="text-muted" style="text-transform:none;font-weight:500;">— use the numbered-list button for step-by-step instructions</span></div>
-                <div id="editor-container">{{ resource.content|default:''|safe }}</div>
+                <div class="editor-shell" id="editorShell">
+                    <div id="editor-container">{{ resource.content|default:''|safe }}</div>
+                </div>
                 <textarea name="content" id="content-input" style="display:none;"></textarea>
             </div>
 
             <div class="col-12">
                 <div class="form-group-label">Notes <span class="text-muted" style="text-transform:none;font-weight:500;">— shown in a highlighted callout box</span></div>
-                <div id="notes-editor-container">{{ resource.notes|default:''|safe }}</div>
+                <div class="editor-shell" id="notesEditorShell">
+                    <div id="notes-editor-container">{{ resource.notes|default:''|safe }}</div>
+                </div>
                 <textarea name="notes" id="notes-input" style="display:none;"></textarea>
             </div>
 
@@ -250,6 +310,14 @@
         modules: {
             toolbar: [['bold', 'italic'], ['link'], ['clean']],
         },
+    });
+
+    document.getElementById('editorShell').classList.remove('is-focused');
+    quill.on('selection-change', range => {
+        document.getElementById('editorShell').classList.toggle('is-focused', !!range);
+    });
+    notesQuill.on('selection-change', range => {
+        document.getElementById('notesEditorShell').classList.toggle('is-focused', !!range);
     });
 
     const form = document.getElementById('resourceForm');

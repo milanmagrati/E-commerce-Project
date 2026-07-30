@@ -42,9 +42,13 @@
         padding: .55rem .7rem; border-radius: 10px; margin-bottom: .3rem;
         text-decoration: none; color: #334155; font-weight: 600; font-size: .86rem;
         border-left: 3px solid transparent; transition: all .18s; min-width: 0;
+        background: color-mix(in srgb, var(--tc, #6366f1) 28%, #fff);
     }
-    .topic-row:hover { background: #f8fafc; color: #1e293b; }
-    .topic-row.active { background: #6366f1; color: #fff; box-shadow: 0 4px 12px rgba(99,102,241,.3); }
+    .topic-row:hover { background: color-mix(in srgb, var(--tc, #6366f1) 40%, #fff); color: #1e293b; }
+    .topic-row.active {
+        background: var(--tc, #6366f1); color: #fff;
+        box-shadow: 0 4px 12px color-mix(in srgb, var(--tc, #6366f1) 40%, transparent);
+    }
     .topic-row.active .topic-count { background: rgba(255,255,255,.25); color: #fff; }
     .topic-icon {
         width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
@@ -238,8 +242,8 @@
         </div>
 
         {% for t in topics %}
-        <div class="topic-row-wrapper {% if active_topic.id == t.id %}active-wrapper{% endif %}">
-            <a href="?topic={{ t.id }}" class="topic-row {% if active_topic.id == t.id %}active{% endif %}" style="border-left-color:{{ t.color }};">
+        <div class="topic-row-wrapper {% if active_topic.id == t.id %}active-wrapper{% endif %}" data-color="{{ t.color }}">
+            <a href="?topic={{ t.id }}" class="topic-row {% if active_topic.id == t.id %}active{% endif %}" style="--tc:{{ t.color }}; border-left-color:{{ t.color }};">
                 <span class="topic-icon" style="background:{{ t.color }}22;color:{{ t.color }};"><i class="fas {{ t.icon }}"></i></span>
                 <span class="topic-name">{{ t.name }}</span>
                 <span class="topic-count">{{ t.article_count }}</span>
@@ -451,12 +455,18 @@
         document.querySelectorAll('.color-opt').forEach(el => el.classList.toggle('selected', el.dataset.color === val));
     }
 
+    function nextAutoColor() {
+        const used = new Set(Array.from(document.querySelectorAll('.topic-row-wrapper[data-color]')).map(el => el.dataset.color));
+        const palette = Array.from(document.querySelectorAll('#colorGrid .color-opt')).map(el => el.dataset.color);
+        return palette.find(c => !used.has(c)) || palette[0];
+    }
+
     function openTopicModal(id, name, icon, color) {
         editingTopicId = id || null;
         document.getElementById('topicModalTitle').textContent = id ? 'Edit Topic' : 'Add Topic';
         document.getElementById('topicNameInput').value = name || '';
         selectIcon(icon || 'fa-folder');
-        selectColor(color || '#6366f1');
+        selectColor(color || nextAutoColor());
         topicModal.show();
     }
 
