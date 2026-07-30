@@ -323,8 +323,12 @@
                             {% endwith %}
                         </td>
                         <td class="hide-sm">
-                            <span class="small text-muted">{{ entry.rtv_date|date:"M d, Y" }}</span>
+                            {% if entry.rtv_date %}
+                            <span class="small text-muted">{% if not entry.rtv_date_trusted %}~ {% endif %}{{ entry.rtv_date|date:"M d, Y" }}</span>
                             <div class="small text-muted">{{ entry.rtv_date|time:"h:i A" }}</div>
+                            {% else %}
+                            <span class="small text-muted fst-italic" title="No RTV date from NCM yet">syncing…</span>
+                            {% endif %}
                         </td>
                         <td class="text-center">
                             <div class="btn-group btn-group-sm" role="group">

@@ -486,6 +486,22 @@
         white-space: nowrap;
     }
 
+    /* Date present but from an approximate source (not NCM's "RTV marked"
+       comment) — still queued for verification, so it reads as provisional. */
+    .rtv-time .t-date.rtv-time-approx {
+        font-weight: 500;
+        color: #b45309;
+        cursor: help;
+    }
+
+    .rtv-time-pending {
+        color: #94a3b8;
+        font-size: 0.82rem;
+        font-style: italic;
+        white-space: nowrap;
+        cursor: help;
+    }
+
     /* Action buttons */
     .rtv-actions {
         display: flex;
@@ -1968,12 +1984,17 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if rtv.created_at and rtv.created_at != "—" %}
+                            {% if rtv.marked_at %}
                             <div class="rtv-time">
-                                <span class="t-date">{{ rtv.created_at }}</span>
+                                {% if rtv.marked_at_trusted %}
+                                <span class="t-date">{{ rtv.marked_at }}</span>
+                                {% else %}
+                                <span class="t-date rtv-time-approx"
+                                    title="Approximate — source: {{ rtv.marked_at_source }}. Awaiting confirmation from NCM.">~ {{ rtv.marked_at }}</span>
+                                {% endif %}
                             </div>
                             {% else %}
-                            <span style="color:#cbd5e1;">—</span>
+                            <span class="rtv-time-pending" title="No RTV date from NCM yet — the background comment sync is still working through the queue.">syncing…</span>
                             {% endif %}
                         </td>
                         <td>
@@ -2836,7 +2857,13 @@
                     html += '<div style="flex:1; min-width:0;">';
                     html += '<div style="font-weight:700; font-size:0.85rem; color:#92400e;">Return to Vendor (RTV)</div>';
                     html += '<div style="font-size:0.8rem; color:#a16207;">Reason: ' + escapeHtml(rtvInfo.comment || 'No reason specified') + '</div>';
-                    html += '<div style="font-size:0.75rem; color:#b45309; margin-top:0.15rem;"><i class="fas fa-clock me-1"></i>' + escapeHtml(rtvInfo.rtv_marked_at || rtvInfo.created_at) + '</div>';
+                    // Marked-at only — rtvInfo.created_at is the local DB insert
+                    // time and reads as a plausible but wrong RTV date.
+                    var markedLabel = rtvInfo.rtv_marked_at
+                        ? (rtvInfo.rtv_marked_at_trusted ? rtvInfo.rtv_marked_at
+                           : '~ ' + rtvInfo.rtv_marked_at + ' (approx — ' + (rtvInfo.rtv_marked_at_source || 'unverified') + ')')
+                        : 'RTV date not synced from NCM yet';
+                    html += '<div style="font-size:0.75rem; color:#b45309; margin-top:0.15rem;"><i class="fas fa-clock me-1"></i>' + escapeHtml(markedLabel) + '</div>';
                     html += '</div></div>';
                 }
 
@@ -3111,7 +3138,7 @@
                         if (!isLast) html += '<div style="position:absolute; left:12px; top:26px; bottom:0; width:2px; background:#e2e8f0;"></div>';
                         html += '<div style="width:26px; height:26px; border-radius:50%; background:' + (idx === 0 ? 'linear-gradient(135deg, #667eea, #764ba2)' : '#e2e8f0') + '; display:flex; align-items:center; justify-content:center; flex-shrink:0; z-index:1;"><i class="fas fa-circle" style="font-size:0.35rem; color:' + (idx === 0 ? '#fff' : '#94a3b8') + ';"></i></div>';
                         html += '<div style="flex:1;"><div style="font-weight:700; font-size:0.82rem; color:#1e293b;">' + escapeHtml(sh.status) + '</div>';
-                        if (sh.timestamp) html += '<div style="font-size:0.75rem; color:#94a3b8;">' + escapeHtml(sh.timestamp) + '</div>';
+                        if (sh.timestamp_display || sh.timestamp) html += '<div style="font-size:0.75rem; color:#94a3b8;">' + escapeHtml(sh.timestamp_display || sh.timestamp) + '</div>';
                         if (sh.remarks) html += '<div style="font-size:0.78rem; color:#64748b; margin-top:0.15rem;">' + escapeHtml(sh.remarks) + '</div>';
                         html += '</div></div>';
                     });

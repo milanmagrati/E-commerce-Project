@@ -1043,6 +1043,26 @@
         </small>
       </div>
 
+      <!-- Use NCM's own event time for activity-log entries created by the
+           background sync, instead of the moment the sync ran. -->
+      <div class="mt-4">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch"
+                 name="bulk_sync_fetch_event_times" id="bulkSyncFetchEventTimes"
+                 {% if api_settings.bulk_sync_fetch_event_times %}checked{% endif %}>
+          <label class="form-check-label fw-semibold" for="bulkSyncFetchEventTimes"
+                 style="font-size:.82rem;color:#525f7f;">
+            Use NCM's real event times in the order timeline
+          </label>
+        </div>
+        <small class="text-muted d-block mt-2">
+          <i class="fas fa-info-circle"></i> Fetches NCM's own timestamp for each order whose status
+          changed (one extra API request per changed order &mdash; not per order scanned). When off,
+          activity log entries are dated with the time the sync ran, which can be days after the
+          event actually happened in NCM.
+        </small>
+      </div>
+
       <!-- Last updated info -->
       <div class="mt-3">
         <small class="text-muted"><i class="fas fa-info-circle me-1"></i>Last updated: {{ api_settings.updated_at|date:"Y-m-d H:i:s" }}</small>

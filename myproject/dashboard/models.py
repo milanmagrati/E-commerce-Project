@@ -727,11 +727,33 @@ class OrderActivityLog(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # When the logistics provider says the event actually happened, as opposed
+    # to created_at = when we found out about it. NULL for locally-originated
+    # actions (staff edits, redirections), which is the vast majority of rows.
+    #
+    # Keeping both is the point: NCM webhooks arrive late, and status sync runs
+    # on page load / cron, so "NCM marked this on Jul 20" and "we recorded it
+    # on Jul 30" are different facts and the UI shows both.
+    event_at = models.DateTimeField(
+        null=True, blank=True, db_index=True,
+        help_text="Provider-reported event time (NCM added_time / webhook timestamp). "
+                  "NULL for locally-originated actions.",
+    )
+
+    @property
+    def effective_at(self):
+        """Best known time this event happened — provider time if we have it."""
+        return self.event_at or self.created_at
+
     def __str__(self):
         return f"{self.order.order_number} - {self.get_action_type_display()}"
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            # Every read site filters by order and sorts newest-first.
+            models.Index(fields=['order', '-created_at'], name='oal_order_created_idx'),
+        ]
 
 
 class OrderAdminNote(models.Model):
@@ -1625,6 +1647,12 @@ class APISettings(models.Model):
         blank=True,
         help_text="Order statuses eligible for the background NCM bulk status sync. Empty = use default (sync all except cancelled/delivered/return/returned/return_initiated/return_approved).",
     )
+    bulk_sync_fetch_event_times = models.BooleanField(
+        default=True,
+        help_text="During background sync, fetch NCM's real event time for each order whose "
+                  "status changed (one extra API request per changed order). When off, activity "
+                  "log entries are timestamped with the sync run's own time instead.",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -1669,6 +1697,44 @@ class RTVStatus(models.Model):
 # ==================== NCM RTV (Return to Vendor) ====================
 class RTVOrder(models.Model):
     """Tracks orders returned to vendor via NCM API"""
+
+    # Where rtv_marked_at came from. Ranked: a lower-ranked source must never
+    # overwrite a higher-ranked one (see apply_rtv_marked_at in
+    # services/ncm_service.py). 'order_created' is the known-wrong legacy
+    # value — the sync used to fall back to NCM's *order creation* date, which
+    # then stuck forever because every repair query filtered on
+    # rtv_marked_at IS NULL. Tracking provenance is what makes those rows
+    # findable and fixable instead of permanent.
+    SOURCE_UNKNOWN = ''
+    SOURCE_ORDER_CREATED = 'order_created'
+    SOURCE_STATUS_TIMELINE = 'status_timeline'
+    SOURCE_NCM_STAFF_COMMENT = 'ncm_staff_comment'
+    SOURCE_COMMENT = 'comment'
+    SOURCE_WEBHOOK = 'webhook'
+    SOURCE_MANUAL = 'manual'
+
+    RTV_MARKED_SOURCES = [
+        (SOURCE_UNKNOWN, 'Unknown'),
+        (SOURCE_ORDER_CREATED, 'NCM order created_date (wrong — legacy)'),
+        (SOURCE_STATUS_TIMELINE, 'NCM status timeline return step (approximate)'),
+        (SOURCE_NCM_STAFF_COMMENT, 'Latest NCM Staff comment (approximate)'),
+        (SOURCE_COMMENT, 'NCM "RTV marked" comment'),
+        (SOURCE_WEBHOOK, 'NCM order_marked_rtv webhook'),
+        (SOURCE_MANUAL, 'Marked locally via this app'),
+    ]
+
+    SOURCE_RANK = {
+        SOURCE_UNKNOWN: 0,
+        SOURCE_ORDER_CREATED: 1,
+        SOURCE_STATUS_TIMELINE: 2,
+        SOURCE_NCM_STAFF_COMMENT: 3,
+        SOURCE_COMMENT: 4,
+        SOURCE_WEBHOOK: 4,
+        SOURCE_MANUAL: 4,
+    }
+
+    TRUSTED_SOURCES = (SOURCE_COMMENT, SOURCE_WEBHOOK, SOURCE_MANUAL)
+
     order_id = models.IntegerField(unique=True, help_text="NCM order ID")
     comment = models.TextField(blank=True, default='')
     vendor_return = models.BooleanField(default=True)
@@ -1676,6 +1742,21 @@ class RTVOrder(models.Model):
     rtv_marked_at = models.DateTimeField(
         null=True, blank=True,
         help_text="When NCM staff marked this order as vendor_return (from RTV comment added_time)",
+    )
+    rtv_marked_at_source = models.CharField(
+        max_length=20, choices=RTV_MARKED_SOURCES, default=SOURCE_UNKNOWN,
+        blank=True, db_index=True,
+        help_text="Where rtv_marked_at came from; drives which rows get re-verified",
+    )
+    rtv_marked_at_checked_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Last time we asked NCM for this order's RTV date. Repair passes take "
+                  "the least-recently-checked rows so a bounded batch size converges.",
+    )
+    ncm_created_date = models.DateTimeField(
+        null=True, blank=True,
+        help_text="NCM's order creation date. Kept for filtering/reference only — "
+                  "this is NOT when the RTV was marked.",
     )
     # NCM order fields (populated from v2 vendor/orders API)
     receiver_name = models.CharField(max_length=255, blank=True, default='')
@@ -1715,6 +1796,15 @@ class RTVOrder(models.Model):
 
     def __str__(self):
         return f"RTV #{self.order_id} by {self.vendor}"
+
+    @property
+    def rtv_marked_at_is_trusted(self):
+        """True when rtv_marked_at came from an authoritative source.
+
+        Untrusted values are still displayed (flagged approximate) rather than
+        hidden, but they stay in the repair queue until NCM confirms them.
+        """
+        return bool(self.rtv_marked_at) and self.rtv_marked_at_source in self.TRUSTED_SOURCES
 
 
 class RTVFollowUp(models.Model):

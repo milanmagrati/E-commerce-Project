@@ -1247,7 +1247,12 @@
                                 </span>
                                 <span class="activity-time">
                                     <i class="fas fa-clock"></i>
-                                    {{ log.created_at|date:"M d, Y h:i A" }}
+                                    {{ log.effective_at|date:"M d, Y h:i A" }}
+                                    {% if log.event_at %}
+                                    <span class="activity-synced-note"
+                                        title="Reported by NCM as {{ log.event_at|date:'M d, Y h:i A' }}; recorded here {{ log.created_at|date:'M d, Y h:i A' }}">
+                                        · synced {{ log.created_at|date:"M d" }}</span>
+                                    {% endif %}
                                 </span>
                             </div>
                             <div class="activity-description">
@@ -2879,6 +2884,14 @@
         gap: 5px;
     }
 
+    /* Shown when the provider's event time differs from when we recorded it,
+       so a late webhook doesn't look like it happened at sync time. */
+    .activity-synced-note {
+        font-size: 0.72rem;
+        color: #cbd5e1;
+        cursor: help;
+    }
+
     .activity-description {
         font-size: 0.95rem;
         color: #374151;
@@ -4037,7 +4050,7 @@
                         if (!isLast) html += '<div style="position:absolute; left:12px; top:26px; bottom:0; width:2px; background:#e2e8f0;"></div>';
                         html += '<div style="width:26px; height:26px; border-radius:50%; background:' + (idx === 0 ? 'linear-gradient(135deg, #667eea, #764ba2)' : '#e2e8f0') + '; display:flex; align-items:center; justify-content:center; flex-shrink:0; z-index:1;"><i class="fas fa-circle" style="font-size:0.35rem; color:' + (idx === 0 ? '#fff' : '#94a3b8') + ';"></i></div>';
                         html += '<div style="flex:1;"><div style="font-weight:700; font-size:0.82rem; color:#1e293b;">' + escapeHtml(sh.status) + '</div>';
-                        if (sh.timestamp) html += '<div style="font-size:0.75rem; color:#94a3b8;">' + escapeHtml(sh.timestamp) + '</div>';
+                        if (sh.timestamp_display || sh.timestamp) html += '<div style="font-size:0.75rem; color:#94a3b8;">' + escapeHtml(sh.timestamp_display || sh.timestamp) + '</div>';
                         if (sh.remarks) html += '<div style="font-size:0.78rem; color:#64748b; margin-top:0.15rem;">' + escapeHtml(sh.remarks) + '</div>';
                         html += '</div></div>';
                     });
@@ -4348,11 +4361,11 @@
     /**
      * Format date/time for display
      */
-    function formatCommentTime(dateString) {
-        if (!dateString) return '';
+    function formatCommentTime(dateString, displayString) {
+        if (!dateString) return displayString || '';
         try {
             const d = new Date(dateString);
-            if (isNaN(d.getTime())) return dateString;
+            if (isNaN(d.getTime())) return displayString || dateString;
 
             const now = new Date();
             const diffMs = now - d;
@@ -4365,10 +4378,13 @@
             if (diffHours < 24) return `${diffHours}h ago`;
             if (diffDays < 7) return `${diffDays}d ago`;
 
+            // Absolute dates come pre-formatted in Nepal time from the server;
+            // toLocale* here would render in the viewer's own timezone.
+            if (displayString) return displayString;
             return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
                 ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
         } catch (e) {
-            return dateString;
+            return displayString || dateString;
         }
     }
 
@@ -4398,7 +4414,7 @@
         const roleClass = role === 'ncm' ? 'role-ncm' : (role === 'system' ? 'role-system' : 'role-admin');
         const roleLabel = role === 'ncm' ? 'NCM Staff' : (role === 'system' ? 'System' : 'You');
         const initial = author.charAt(0).toUpperCase();
-        const timeDisplay = formatCommentTime(time);
+        const timeDisplay = formatCommentTime(time, comment.created_at_display);
 
         const div = document.createElement('div');
         div.className = 'ncm-comment-item';

@@ -1402,7 +1402,7 @@ def meta_webhook(request):
                             if 'read' in event:
                                 watermark = event['read'].get('watermark')
                                 if watermark:
-                                    watermark_dt = datetime.datetime.fromtimestamp(watermark / 1000.0, tz=timezone.utc)
+                                    watermark_dt = datetime.datetime.fromtimestamp(watermark / 1000.0, tz=datetime.timezone.utc)
                                     CRMMessage.objects.filter(
                                         conversation__contact__meta_id=sender_id,
                                         is_outbound=True,
@@ -1413,7 +1413,7 @@ def meta_webhook(request):
                             if 'delivery' in event:
                                 watermark = event['delivery'].get('watermark')
                                 if watermark:
-                                    watermark_dt = datetime.datetime.fromtimestamp(watermark / 1000.0, tz=timezone.utc)
+                                    watermark_dt = datetime.datetime.fromtimestamp(watermark / 1000.0, tz=datetime.timezone.utc)
                                     CRMMessage.objects.filter(
                                         conversation__contact__meta_id=sender_id,
                                         is_outbound=True,

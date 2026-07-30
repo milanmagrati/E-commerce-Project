@@ -12,10 +12,12 @@ from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.core.mail import send_mail
 from dashboard.models import Order, OrderActivityLog
+from dashboard.timezone_utils import format_nepali_datetime, parse_ncm_datetime
 from services.ncm_service import NCMService
 import logging
 import json
 import threading
+from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 
 logger = logging.getLogger('ncm')
@@ -231,6 +233,12 @@ def api_sync_order_status(request, order_id):
             latest_status = order.ncm_status
             latest_entry = {}
 
+        # When NCM says this status actually happened. Without it the activity
+        # log would be stamped with the moment this sync ran — and this sync
+        # fires on every order-page load, so an event from days ago would look
+        # like it happened just now.
+        event_at = parse_ncm_datetime((latest_entry or {}).get('added_time'))
+
         # Map to system status using vendor_return-aware resolution
         old_status = order.status
         old_ncm_status = order.ncm_status
@@ -262,7 +270,7 @@ def api_sync_order_status(request, order_id):
             update_fields.append('updated_at')
 
             if system_status == 'delivered' and not order.delivered_at:
-                order.delivered_at = timezone.now()
+                order.delivered_at = event_at or timezone.now()
                 update_fields.append('delivered_at')
 
             # Deduplicate
@@ -277,6 +285,7 @@ def api_sync_order_status(request, order_id):
                 field_name='ncm_status',
                 old_value=old_ncm_status,
                 new_value=latest_status,
+                event_at=event_at,
                 description=f'Manual API sync: {old_status} → {system_status}'
                             + (f', payment: {old_payment_status} → {payment_status}' if payment_status else '')
             )
@@ -397,10 +406,13 @@ def api_get_order_activity_log(request, order_id):
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
         limit = int(request.GET.get('limit', 10))
         
+        from django.db.models.functions import Coalesce
         activities = OrderActivityLog.objects.filter(
             order=order
-        ).select_related('user').order_by('-created_at')[:limit]
-        
+        ).select_related('user').annotate(
+            _at=Coalesce('event_at', 'created_at')
+        ).order_by('-_at')[:limit]
+
         activities_data = []
         for activity in activities:
             activities_data.append({
@@ -411,7 +423,11 @@ def api_get_order_activity_log(request, order_id):
                 'new_value': activity.new_value,
                 'description': activity.description,
                 'user': activity.user.get_full_name() if activity.user else 'System',
-                'created_at': activity.created_at.isoformat()
+                'created_at': activity.created_at.isoformat(),
+                # When NCM says it happened vs when we recorded it.
+                'event_at': activity.event_at.isoformat() if activity.event_at else None,
+                'effective_at': activity.effective_at.isoformat(),
+                'effective_at_display': format_nepali_datetime(activity.effective_at),
             })
         
         return JsonResponse({
@@ -485,6 +501,7 @@ def api_get_order_comments(request, order_id):
                 'comment': log.new_value or '',
                 'created_by': username,
                 'created_at': log.created_at.isoformat() if log.created_at else '',
+                'created_at_display': format_nepali_datetime(log.created_at),
                 'role': 'admin',
                 'is_local': True
             })
@@ -499,11 +516,18 @@ def api_get_order_comments(request, order_id):
                 for nc in ncm_comments:
                     comment_text = nc.get('comment', '').strip().lower()
                     if comment_text not in existing_texts:
-                        # Normalize field names to match createCommentElement expectations
+                        # Normalize field names to match createCommentElement
+                        # expectations. created_at is normalized to an
+                        # offset-bearing ISO string so the browser can't parse
+                        # it as local time — local rows already emit isoformat(),
+                        # and mixing the two forms in one list made the
+                        # displayed times depend on the viewer's timezone.
+                        nc_dt = parse_ncm_datetime(nc.get('added_time', nc.get('created_at', '')))
                         all_comments.append({
                             'comment': nc.get('comment', ''),
                             'created_by': nc.get('added_by', nc.get('created_by', 'NCM Staff')),
-                            'created_at': nc.get('added_time', nc.get('created_at', '')),
+                            'created_at': nc_dt.isoformat() if nc_dt else '',
+                            'created_at_display': format_nepali_datetime(nc_dt),
                             'role': 'ncm' if 'ncm' in nc.get('added_by', '').lower() else 'admin',
                             'is_ncm_staff': 'ncm' in nc.get('added_by', '').lower(),
                         })
@@ -535,6 +559,15 @@ def api_get_order_comments(request, order_id):
                                 existing_texts.add(c.strip().lower())
         except Exception as detail_err:
             logger.warning(f"Could not fetch NCM order details for order {order.ncm_order_id}: {detail_err}")
+
+        # Local comments were appended ascending and NCM's in whatever order
+        # the API returned, so the merged list had no defined order at all.
+        # Sort newest-first on the parsed timestamp; undated entries sink.
+        def _comment_sort_key(c):
+            dt = parse_ncm_datetime(c.get('created_at') or c.get('added_time'))
+            return (dt is not None, dt or datetime.min.replace(tzinfo=dt_timezone.utc))
+
+        all_comments.sort(key=_comment_sort_key, reverse=True)
 
         # Cache the results to reduce API calls (429 rate limiting)
         set_cached_comments(order_id, all_comments)

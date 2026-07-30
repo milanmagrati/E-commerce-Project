@@ -4036,7 +4036,15 @@ def order_detail(request, order_id):
 
     # Now get order items and activity logs from fresh order instance
     order_items = order.items.select_related('product', 'product_variation').all()
-    activity_logs = order.activity_logs.select_related('user').order_by('-created_at')[:20]
+    # Sort by when the event actually happened (NCM event time when known),
+    # not when we recorded it — a webhook that arrives days late would
+    # otherwise jump to the top of the timeline.
+    from django.db.models.functions import Coalesce as _Coalesce
+    activity_logs = (
+        order.activity_logs.select_related('user')
+        .annotate(_at=_Coalesce('event_at', 'created_at'))
+        .order_by('-_at')[:20]
+    )
 
     # Get Setup options for dropdowns
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
@@ -5143,7 +5151,7 @@ def possible_redirection_list(request):
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
             # Use Coalesce to prefer rtv_marked_at over created_at for date filtering
             from django.db.models.functions import Coalesce
-            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
+            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'ncm_created_date', 'created_at'))
             rtvs = rtvs.filter(_rtv_date__gte=nepali_day_start(start_date_obj), _rtv_date__lt=nepali_day_end_exclusive(end_date_obj))
         except ValueError:
             pass
@@ -5152,7 +5160,7 @@ def possible_redirection_list(request):
             from .timezone_utils import nepali_day_start
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
             from django.db.models.functions import Coalesce
-            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
+            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'ncm_created_date', 'created_at'))
             rtvs = rtvs.filter(_rtv_date__gte=nepali_day_start(start_date_obj))
         except ValueError:
             pass
@@ -5161,7 +5169,7 @@ def possible_redirection_list(request):
             from .timezone_utils import nepali_day_end_exclusive
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
             from django.db.models.functions import Coalesce
-            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
+            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'ncm_created_date', 'created_at'))
             rtvs = rtvs.filter(_rtv_date__lt=nepali_day_end_exclusive(end_date_obj))
         except ValueError:
             pass
@@ -5319,7 +5327,10 @@ def possible_redirection_list(request):
             'ncm_order_id': rtv.order_id,
             'api_config_name': rtv.api_config.api_name if rtv.api_config else '—',
             'comment': rtv.comment or '',
-            'rtv_date': rtv.rtv_marked_at or rtv.created_at,
+            # No created_at fallback: that's the local DB insert time, not when
+            # NCM marked the RTV. Blank is honest; a wrong date is not.
+            'rtv_date': rtv.rtv_marked_at,
+            'rtv_date_trusted': rtv.rtv_marked_at_is_trusted,
             'local_order': local_order,
             'has_local': local_order is not None,
             'customer_name': local_order.customer_name if local_order else (rtv.receiver_name or ''),
@@ -5436,6 +5447,9 @@ def redirect_orders_list(request):
         'customer', 'branch', 'status_setup', 'payment_status_setup', 'payment_setup'
     ).prefetch_related(
         _Pf('items', queryset=OrderItem.objects.only('product_name', 'quantity', 'price', 'total')),
+        # Intentionally ordered by created_at, not Coalesce(event_at, ...):
+        # redirections are local staff actions, so event_at is always NULL here
+        # and created_at IS the event time.
         _Pf('activity_logs', queryset=OrderActivityLog.objects.filter(action_type='redirected').order_by('-created_at'))
     ).order_by('-updated_at')
 
@@ -12968,9 +12982,12 @@ def ncm_order_detail(request, order_id):
     activity_logs = []
     try:
         from dashboard.models import OrderActivityLog
+        from django.db.models.functions import Coalesce as _Coalesce
         activity_logs = OrderActivityLog.objects.filter(
             order=order
-        ).select_related('user').order_by('-created_at')[:50]
+        ).select_related('user').annotate(
+            _at=_Coalesce('event_at', 'created_at')
+        ).order_by('-_at')[:50]
     except Exception as e:
         pass
 
@@ -13136,17 +13153,36 @@ def ncm_sync_all_statuses(request):
                         new_status = latest_status.get('status', '')
 
                         if new_status and new_status != order.ncm_status:
+                            from dashboard.timezone_utils import parse_ncm_datetime
+
                             system_status, payment_status = svc.resolve_delivered_status(latest_status)
-                            
+                            event_at = parse_ncm_datetime(latest_status.get('added_time'))
+                            old_ncm_status = order.ncm_status
+                            old_system_status = order.status
+
                             order.ncm_status = new_status
                             update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
                             update_fields.extend(['ncm_status', 'updated_at'])
-                            
+
                             if system_status == 'delivered' and not order.delivered_at:
-                                order.delivered_at = timezone.now()
+                                order.delivered_at = event_at or timezone.now()
                                 update_fields.append('delivered_at')
-                                
+
                             order.save(update_fields=list(dict.fromkeys(update_fields)))
+
+                            # This path used to rewrite order status with no
+                            # activity log at all, leaving no trace of who or
+                            # what changed it.
+                            OrderActivityLog.objects.create(
+                                order=order,
+                                action_type='status_changed',
+                                user=request.user,
+                                field_name='ncm_status',
+                                old_value=old_ncm_status or 'None',
+                                new_value=new_status,
+                                event_at=event_at,
+                                description=f'Sync all statuses: {old_system_status} → {system_status}',
+                            )
                             updated += 1
 
                 # ✅ Fetch and update delivery charge from NCM
@@ -19194,9 +19230,12 @@ def logistics_orders_list(request):
         from dashboard.models import OrderActivityLog
 
         order_ids = [order.id for order in orders_page]
+        from django.db.models.functions import Coalesce as _Coalesce
         all_logs = OrderActivityLog.objects.filter(
             order_id__in=order_ids
-        ).select_related('user', 'order').order_by('-created_at')
+        ).select_related('user', 'order').annotate(
+            _at=_Coalesce('event_at', 'created_at')
+        ).order_by('-_at')
 
         for log in all_logs:
             if log.order_id not in activity_logs:
@@ -19932,6 +19971,7 @@ def settings_hub(request):
         api_settings.bulk_sync_included_statuses = [
             s for s in dict.fromkeys(submitted_statuses) if s in valid_status_values
         ]
+        api_settings.bulk_sync_fetch_event_times = bool(request.POST.get('bulk_sync_fetch_event_times'))
         api_settings.save()
         messages.success(request, 'API settings saved successfully!')
         from django.urls import reverse
@@ -20234,6 +20274,81 @@ def get_rtv_followups(request, rtv_id):
     return JsonResponse({'success': True, 'followups': data})
 
 
+def sync_rtv_from_ncm_comments(ncm_service, order_id, use_status_fallback=False):
+    """Refresh one RTVOrder's date/comment/vendor_return from NCM.
+
+    Single source of truth for "ask NCM when this RTV was marked", shared by
+    both sync modes and the repair management command — three divergent copies
+    of this logic is how the wrong dates got in.
+
+    Only the "RTV marked" comment's added_time is authoritative. When there is
+    no such comment and use_status_fallback is set, the order's status timeline
+    supplies an approximate (upper-bound) date instead, recorded as such so a
+    later real comment can still replace it.
+
+    Returns:
+        (changed: bool, resolved: bool) — resolved is False when NCM couldn't
+        be reached, in which case rtv_marked_at_checked_at is left alone so the
+        row stays at the front of the repair queue.
+    """
+    from dashboard.models import RTVOrder
+    from services.ncm_service import NCMService
+
+    rtv = RTVOrder.objects.filter(order_id=order_id).first()
+    if not rtv:
+        return (False, False)
+
+    cresult = ncm_service.get_order_comments(order_id)
+    if not cresult.get('success'):
+        return (False, False)
+
+    found = NCMService.extract_rtv_marked_at(cresult.get('data') or [])
+
+    changed = False
+    simple_fields = []
+    if found['comment'] and rtv.comment != found['comment']:
+        rtv.comment = found['comment']
+        simple_fields.append('comment')
+        changed = True
+    if found['vendor_return'] is not None and rtv.vendor_return != found['vendor_return']:
+        rtv.vendor_return = found['vendor_return']
+        simple_fields.append('vendor_return')
+        changed = True
+
+    marked_at, source = found['marked_at'], found['source']
+    if marked_at is None and use_status_fallback:
+        sresult = ncm_service.get_order_status(order_id)
+        if sresult.get('success'):
+            data = sresult.get('data') or []
+            entries = data if isinstance(data, list) else [data]
+            marked_at, source = NCMService.extract_return_step_time(entries)
+
+    # apply_rtv_marked_at always stamps checked_at, so the row leaves the front
+    # of the repair queue even when NCM had no date for us.
+    date_changed = NCMService.apply_rtv_marked_at(rtv, marked_at, source, save=False)
+    rtv.save(update_fields=simple_fields + [
+        'rtv_marked_at_checked_at',
+        *(['rtv_marked_at', 'rtv_marked_at_source'] if date_changed else []),
+    ])
+
+    return (changed or date_changed, True)
+
+
+def rtv_needs_date_verification(queryset):
+    """RTVs whose rtv_marked_at is missing or came from an untrusted source.
+
+    Ordered least-recently-checked first so a bounded batch (NCM rate limits
+    cap us at a handful per call) works through the backlog instead of
+    re-picking the same rows every sync.
+    """
+    from dashboard.models import RTVOrder
+
+    return queryset.filter(
+        Q(rtv_marked_at__isnull=True)
+        | ~Q(rtv_marked_at_source__in=RTVOrder.TRUSTED_SOURCES)
+    ).order_by(F('rtv_marked_at_checked_at').asc(nulls_first=True), 'id')
+
+
 @login_required
 @permission_required('can_view_orders')
 def ncm_rtvs_list(request):
@@ -20243,8 +20358,8 @@ def ncm_rtvs_list(request):
     """
     from services.ncm_service import NCMService
     from dashboard.models import RTVOrder, LogisticsAPIConfig, RTVFollowUp
+    from dashboard.timezone_utils import format_nepali_datetime_or_none
     from django.db import models
-    import pytz
 
     # All NCM API configs (for the selector UI)
     ncm_api_configs = list(
@@ -20287,6 +20402,10 @@ def ncm_rtvs_list(request):
         result = ncm_service.return_order(order_id, comment=comment or None)
 
         if result['success']:
+            # We just marked it, so we know the exact time — record it as
+            # 'manual' (top rank) so a later approximate sync can't override it.
+            # update_or_create overwriting on re-submit is correct: a
+            # re-submitted RTV really was re-marked, now.
             RTVOrder.objects.update_or_create(
                 order_id=order_id,
                 defaults={
@@ -20294,6 +20413,9 @@ def ncm_rtvs_list(request):
                     'vendor_return': True,
                     'vendor': request.user,
                     'api_config': chosen_config,
+                    'rtv_marked_at': timezone.now(),
+                    'rtv_marked_at_source': RTVOrder.SOURCE_MANUAL,
+                    'rtv_marked_at_checked_at': timezone.now(),
                 },
             )
             return JsonResponse({'success': True, 'message': 'RTV submitted successfully'})
@@ -20376,7 +20498,6 @@ def ncm_rtvs_list(request):
                 rtv.api_config_id = primary_cfg.id
 
     # Build follow-up metadata directly from RTVFollowUp (no local Order needed)
-    nepal_tz = pytz.timezone('Asia/Kathmandu')
     followup_meta = {}
     if rtv_ids_page:
         latest_followups = RTVFollowUp.objects.filter(
@@ -20390,7 +20511,7 @@ def ncm_rtvs_list(request):
                 followup_meta[fu.rtv_order_id] = {
                     'has_followups': True,
                     'last_user': (fu.user.get_full_name() or fu.user.username) if fu.user else None,
-                    'last_date': fu.created_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p') if fu.created_at else None,
+                    'last_date': format_nepali_datetime_or_none(fu.created_at),
                     'last_type': fu.get_followup_type_display(),
                     'last_type_key': fu.followup_type,
                     'last_comment': fu.comment,
@@ -20398,15 +20519,10 @@ def ncm_rtvs_list(request):
 
     page_rtvs = []
     for rtv in page_objs:
-        # rtv_marked_at = authoritative date (from NCM RTV comment added_time)
-        # created_at    = local DB insert time; may have been corrupted in older syncs
-        #                 by overwriting with NCM's order created_date — do NOT trust it
-        #                 as a fallback for display.
-        if rtv.rtv_marked_at:
-            display_time_str = rtv.rtv_marked_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p')
-        else:
-            display_time_str = '—'
-
+        # The RTV-marked date is the only correct "Added Time": rtv.created_at
+        # is the local DB insert time and NCM's order created_date is weeks
+        # earlier. Rows whose date came from an untrusted source are shown
+        # flagged rather than hidden — see rtv_marked_at_is_trusted.
         status_dict = None
         if rtv.rtv_status:
             status_dict = {
@@ -20419,7 +20535,9 @@ def ncm_rtvs_list(request):
             'rtv_id': rtv.id,
             'order_id': rtv.order_id,
             'comment': rtv.comment or '—',
-            'created_at': display_time_str,
+            'marked_at': format_nepali_datetime_or_none(rtv.rtv_marked_at),
+            'marked_at_trusted': rtv.rtv_marked_at_is_trusted,
+            'marked_at_source': rtv.get_rtv_marked_at_source_display(),
             'status': status_dict,
             'api_config_name': rtv.api_config.api_name if rtv.api_config else None,
             'followup': followup_meta.get(rtv.id),
@@ -20464,7 +20582,7 @@ def ncm_rtvs_sync(request):
     """
     from services.ncm_service import NCMService
     from dashboard.models import RTVOrder, LogisticsAPIConfig
-    from django.utils.dateparse import parse_datetime
+    from dashboard.timezone_utils import parse_ncm_datetime
     from django.db import models
     import time
 
@@ -20489,100 +20607,45 @@ def ncm_rtvs_sync(request):
         for cfg in configs:
             try:
                 ncm_service = NCMService(api_config_id=cfg.id)
-                # Priority 1: orders with a comment but no rtv_marked_at
-                #   (these had their date fetch 429'd — most likely do have an RTV marked comment)
+                # Priority 1: date missing or from an untrusted source
+                #   (includes rows still carrying the old created_date fallback)
                 # Priority 2: orders with no comment at all
-                # Take up to 6 total per sync call to stay within rate limits
+                # Priority 3: least-recently-checked active RTVs, to notice
+                #   unmark -> re-mark. This used to be order_by('?'), which
+                #   never guaranteed progress; checked_at ordering does.
+                # Take up to 6 total per sync call to stay within rate limits.
                 priority_ids = list(
-                    RTVOrder.objects.filter(
-                        rtv_marked_at__isnull=True, api_config=cfg
-                    ).exclude(comment='').values_list('order_id', flat=True)[:3]
+                    rtv_needs_date_verification(
+                        RTVOrder.objects.filter(api_config=cfg)
+                    ).values_list('order_id', flat=True)[:3]
                 )
                 fallback_ids = list(
                     RTVOrder.objects.filter(
                         comment='', api_config=cfg
-                    ).values_list('order_id', flat=True)[:3]
+                    ).exclude(order_id__in=priority_ids).values_list('order_id', flat=True)[:3]
                 )
 
-                # Priority 3: Random active RTVs to keep existing records fresh
-                # (helps catch unmark -> re-mark scenarios that otherwise aren't noticed)
                 remaining = 6 - (len(priority_ids) + len(fallback_ids))
-                random_ids = []
+                refresh_ids = []
                 if remaining > 0:
-                    random_ids = list(
+                    refresh_ids = list(
                         RTVOrder.objects.filter(
                             vendor_return=True, api_config=cfg
                         ).exclude(
                             order_id__in=priority_ids + fallback_ids
-                        ).order_by('?')[:remaining].values_list('order_id', flat=True)
+                        ).order_by(
+                            F('rtv_marked_at_checked_at').asc(nulls_first=True), 'id'
+                        ).values_list('order_id', flat=True)[:remaining]
                     )
 
-                no_comment_ids = priority_ids + fallback_ids + random_ids
+                no_comment_ids = priority_ids + fallback_ids + refresh_ids
                 for i, oid in enumerate(no_comment_ids):
                     if i > 0:
                         time.sleep(1.0)  # 1-second delay between sequential requests
                     try:
-                        cresult = ncm_service.get_order_comments(oid)
-                        if cresult['success'] and cresult['data']:
-                            rtv_comment = ''
-                            rtv_marked_at = None
-                            vendor_return_status = None
-                            # Comments are newest-first, so the first match is the latest state
-                            for c in cresult['data']:
-                                text = c.get('comment', '')
-                                if text.startswith('RTV marked'):
-                                    rtv_comment = text.replace('RTV marked - ', '').strip()
-                                    vendor_return_status = True
-                                    added_time_str = c.get('added_time', '')
-                                    if added_time_str:
-                                        try:
-                                            from django.utils.dateparse import parse_datetime
-                                            parsed_dt = parse_datetime(added_time_str)
-                                            if parsed_dt:
-                                                rtv_marked_at = parsed_dt
-                                        except Exception:
-                                            pass
-                                    break
-                                elif text.startswith('RTV removed'):
-                                    vendor_return_status = False
-                                    break
-
-                            if vendor_return_status is None and not rtv_comment:
-                                for c in cresult['data']:
-                                    if c.get('added_by', '') == 'NCM Staff':
-                                        rtv_comment = c.get('comment', '')
-                                        if not rtv_marked_at:
-                                            fallback_time_str = c.get('added_time', '')
-                                            if fallback_time_str:
-                                                try:
-                                                    from django.utils.dateparse import parse_datetime
-                                                    rtv_marked_at = parse_datetime(fallback_time_str)
-                                                except Exception:
-                                                    pass
-                                        break
-
-                            update_fields = {}
-                            if rtv_comment:
-                                update_fields['comment'] = rtv_comment
-                            if rtv_marked_at:
-                                update_fields['rtv_marked_at'] = rtv_marked_at
-                            if vendor_return_status is not None:
-                                update_fields['vendor_return'] = vendor_return_status
-
-                            if update_fields:
-                                existing_rtv = RTVOrder.objects.filter(order_id=oid).first()
-                                if existing_rtv:
-                                    changed = False
-                                    if 'comment' in update_fields and existing_rtv.comment != update_fields['comment']:
-                                        changed = True
-                                    if 'rtv_marked_at' in update_fields and existing_rtv.rtv_marked_at != update_fields['rtv_marked_at']:
-                                        changed = True
-                                    if 'vendor_return' in update_fields and existing_rtv.vendor_return != update_fields['vendor_return']:
-                                        changed = True
-                                    
-                                    if changed:
-                                        RTVOrder.objects.filter(order_id=oid).update(**update_fields)
-                                        comments_updated += 1
+                        changed, _resolved = sync_rtv_from_ncm_comments(ncm_service, oid)
+                        if changed:
+                            comments_updated += 1
                     except Exception:
                         pass
             except Exception:
@@ -20668,12 +20731,9 @@ def ncm_rtvs_sync(request):
                         existing_ids.add(oid)
                         ncm_date = order.get('created_date', '')
                         if ncm_date:
-                            try:
-                                dt = parse_datetime(ncm_date)
-                                if dt:
-                                    date_map[oid] = dt
-                            except Exception:
-                                pass
+                            dt = parse_ncm_datetime(ncm_date)
+                            if dt:
+                                date_map[oid] = dt
                     else:
                         # Existing RTV — update with latest NCM data
                         # This handles the unmark → re-mark scenario:
@@ -20753,89 +20813,38 @@ def ncm_rtvs_sync(request):
                     new_count += len(new_rtvs)
                     if date_map:
                         for oid, dt in date_map.items():
-                            # Store NCM's created_date into rtv_marked_at as a fallback
-                            # display date. Do NOT overwrite created_at — that field tracks
-                            # when we first saved the record locally and is used as the last
-                            # fallback. The real RTV date will be set from comment added_time
-                            # during the immediate comment-fetch below.
-                            RTVOrder.objects.filter(
-                                order_id=oid, rtv_marked_at__isnull=True
-                            ).update(rtv_marked_at=dt)
+                            # NCM's order created_date goes into its own column.
+                            # It must NEVER land in rtv_marked_at: it's the date
+                            # the order was created (often weeks before the
+                            # return), and because every repair query used to
+                            # filter rtv_marked_at IS NULL, writing it there
+                            # made the wrong date permanent. The real RTV date
+                            # comes from the "RTV marked" comment's added_time
+                            # in the comment fetch below.
+                            RTVOrder.objects.filter(order_id=oid).update(ncm_created_date=dt)
 
                 # Immediately fetch comments for:
                 # 1. New RTVs (up to 8) — to get rtv_marked_at from the start
-                # 2. Existing RTVs missing dates (rtv_marked_at=NULL, up to 6)
-                #    — catches re-marked orders and old records that never had dates
-                # For re-marked orders there may be multiple "RTV marked" comments;
-                # we want the LAST one (newest date).
+                # 2. Existing RTVs whose date is missing or untrusted (up to 6)
+                #    — catches re-marked orders and rows still carrying the old
+                #      created_date fallback, least-recently-checked first
+                # Caps + the 1s spacing stay: NCMService._make_request has no
+                # 429 backoff, so this is the only thing keeping us under NCM's
+                # rate limit on an interactive request.
                 comment_fetch_oids = [r.order_id for r in new_rtvs[:8]]
-                # Prioritize existing RTVs that have no date yet
-                missing_date_oids = list(
-                    RTVOrder.objects.filter(
-                        order_id__in=found_oids,
-                        rtv_marked_at__isnull=True,
+                stale_date_oids = list(
+                    rtv_needs_date_verification(
+                        RTVOrder.objects.filter(order_id__in=found_oids)
                     ).exclude(
                         order_id__in=comment_fetch_oids,
                     ).values_list('order_id', flat=True)[:6]
                 )
-                comment_fetch_oids.extend(missing_date_oids)
+                comment_fetch_oids.extend(stale_date_oids)
                 for i, oid in enumerate(comment_fetch_oids):
                     if i > 0:
                         time.sleep(1.0)
                     try:
-                        cresult = ncm_service.get_order_comments(oid)
-                        if cresult.get('success') and cresult.get('data'):
-                            comments = cresult['data']
-                            rtv_comment = ''
-                            rtv_marked_at = None
-                            vendor_return_status = None
-                            # Comments are newest-first, so the first match is the latest state
-                            for c in comments:
-                                text = c.get('comment', '')
-                                if text.startswith('RTV marked'):
-                                    rtv_comment = text.replace('RTV marked - ', '').strip()
-                                    vendor_return_status = True
-                                    at = c.get('added_time', '')
-                                    if at:
-                                        parsed_dt = parse_datetime(at)
-                                        if parsed_dt:
-                                            rtv_marked_at = parsed_dt
-                                    break
-                                elif text.startswith('RTV removed'):
-                                    vendor_return_status = False
-                                    break
-
-                            if vendor_return_status is None and not rtv_comment:
-                                for c in comments:
-                                    if c.get('added_by', '') == 'NCM Staff':
-                                        rtv_comment = c.get('comment', '')
-                                        if not rtv_marked_at:
-                                            at = c.get('added_time', '')
-                                            if at:
-                                                rtv_marked_at = parse_datetime(at)
-                                        break
-
-                            upd = {}
-                            if rtv_comment:
-                                upd['comment'] = rtv_comment
-                            if rtv_marked_at:
-                                upd['rtv_marked_at'] = rtv_marked_at
-                            if vendor_return_status is not None:
-                                upd['vendor_return'] = vendor_return_status
-
-                            if upd:
-                                existing_rtv = RTVOrder.objects.filter(order_id=oid).first()
-                                if existing_rtv:
-                                    changed = False
-                                    if 'comment' in upd and existing_rtv.comment != upd['comment']:
-                                        changed = True
-                                    if 'rtv_marked_at' in upd and existing_rtv.rtv_marked_at != upd['rtv_marked_at']:
-                                        changed = True
-                                    if 'vendor_return' in upd and existing_rtv.vendor_return != upd['vendor_return']:
-                                        changed = True
-                                    
-                                    if changed:
-                                        RTVOrder.objects.filter(order_id=oid).update(**upd)
+                        sync_rtv_from_ncm_comments(ncm_service, oid)
                     except Exception:
                         pass
 
@@ -21167,9 +21176,15 @@ def ncm_rtv_order_detail(request, ncm_order_id):
 
             for s in statuses:
                 if isinstance(s, dict):
+                    from dashboard.timezone_utils import format_ncm_datetime
+                    raw_timestamp = s.get('date', s.get('timestamp', s.get('added_time', s.get('created_at', ''))))
                     response_data['status_history'].append({
                         'status': s.get('status', s.get('Status', '')),
-                        'timestamp': s.get('date', s.get('timestamp', s.get('added_time', s.get('created_at', '')))),
+                        # Raw kept for back-compat; *_display is the formatted
+                        # Nepal-time string the UI should show instead of
+                        # printing NCM's ISO value verbatim.
+                        'timestamp': raw_timestamp,
+                        'timestamp_display': format_ncm_datetime(raw_timestamp),
                         'remarks': s.get('remarks', s.get('comment', '')),
                     })
 
@@ -21309,13 +21324,14 @@ def ncm_rtv_order_detail(request, ncm_order_id):
 
     # 5. Get RTV record and enrich ncm_data with stored fields
     try:
-        from django.utils.timezone import localtime
+        from dashboard.timezone_utils import format_nepali_datetime_or_none
         rtv = RTVOrder.objects.get(order_id=ncm_order_id)
-        _fmt = lambda dt: localtime(dt).strftime('%b %d, %Y %I:%M %p') if dt else ''
         response_data['rtv_info'] = {
             'comment': rtv.comment or '',
-            'created_at': _fmt(rtv.created_at),
-            'rtv_marked_at': _fmt(rtv.rtv_marked_at),
+            'created_at': format_nepali_datetime_or_none(rtv.created_at) or '',
+            'rtv_marked_at': format_nepali_datetime_or_none(rtv.rtv_marked_at) or '',
+            'rtv_marked_at_trusted': rtv.rtv_marked_at_is_trusted,
+            'rtv_marked_at_source': rtv.get_rtv_marked_at_source_display(),
             'vendor_name': rtv.vendor.get_full_name() if rtv.vendor else 'Unknown',
             'product_description': rtv.product_description or '',
         }

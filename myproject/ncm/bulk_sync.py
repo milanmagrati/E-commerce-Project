@@ -11,6 +11,7 @@ import logging
 from django.utils import timezone
 
 from dashboard.models import Order, OrderActivityLog, APISettings
+from dashboard.timezone_utils import parse_ncm_datetime
 from services.ncm_service import NCMService
 
 logger = logging.getLogger('ncm')
@@ -35,7 +36,7 @@ PROTECTED_STATUSES = ('cancelled',)
 CHUNK_SIZE = 100
 
 
-def run_bulk_ncm_status_sync(user=None, order_ids=None):
+def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None):
     """
     Sync NCM status for all active NCM orders.
 
@@ -50,8 +51,17 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None):
     aborting the run - this is driven by cron, so one malformed NCM payload
     must not stop every remaining order from syncing.
 
+    Args:
+        fetch_event_times: None = use the APISettings toggle (default on);
+            True/False overrides it. Costs one extra NCM request per order
+            whose status actually changed, in exchange for activity-log
+            timestamps that match NCM instead of the cron run's clock.
+
     Returns a summary dict: {'total_orders', 'updated_count', 'errors'}.
     """
+    if fetch_event_times is None:
+        fetch_event_times = APISettings.get_settings().bulk_sync_fetch_event_times
+
     ncm_orders = Order.objects.filter(
         ncm_order_id__isnull=False,
         is_deleted=False,
@@ -113,7 +123,8 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None):
                 if raw_status is None:
                     continue
                 try:
-                    if _sync_one_order(svc, order, raw_status, user):
+                    if _sync_one_order(svc, order, raw_status, user,
+                                       fetch_event_times=fetch_event_times):
                         updated_count += 1
                 except Exception as e:
                     errors.append(f"Order {order.order_number}: {e}")
@@ -131,14 +142,22 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None):
     return summary
 
 
-def _sync_one_order(svc, order, raw_status, user):
+def _sync_one_order(svc, order, raw_status, user, fetch_event_times=True):
     """Resolve one order's NCM status and persist it if it changed.
+
+    Args:
+        fetch_event_times: spend one extra /order/status call on orders whose
+            status actually changed, to learn NCM's real event time. The bulk
+            endpoint returns only a status string, so without this the activity
+            log falls back to the cron run's own clock — which is how a status
+            change from days ago ends up dated "now".
 
     Returns True when the order was updated, False when nothing changed.
     """
     old_ncm_status = order.ncm_status
     old_system_status = order.status
     old_payment_status = order.payment_status
+    event_at = None
 
     # The bulk endpoint returns only a status string, which can't distinguish
     # a real delivery from an RTV "delivered back to vendor" - that needs the
@@ -151,6 +170,7 @@ def _sync_one_order(svc, order, raw_status, user):
             if isinstance(entry, dict):
                 system_status, payment_status = svc.resolve_delivered_status(entry)
                 new_status = entry.get('status') or entry.get('Status') or raw_status
+                event_at = parse_ncm_datetime(entry.get('added_time'))
             else:
                 system_status = svc.map_ncm_status_to_system(raw_status)
                 payment_status = None
@@ -162,6 +182,7 @@ def _sync_one_order(svc, order, raw_status, user):
     elif isinstance(raw_status, dict):
         system_status, payment_status = svc.resolve_delivered_status(raw_status)
         new_status = raw_status.get('status') or raw_status.get('Status') or ''
+        event_at = parse_ncm_datetime(raw_status.get('added_time'))
     else:
         new_status = raw_status
         system_status = svc.map_ncm_status_to_system(new_status)
@@ -170,12 +191,17 @@ def _sync_one_order(svc, order, raw_status, user):
     if order.ncm_status == new_status and order.status == system_status:
         return False
 
+    # Only reached for orders that actually changed, so this costs one request
+    # per real change - not one per order in the run.
+    if event_at is None and fetch_event_times:
+        event_at = _fetch_event_time(svc, order, new_status)
+
     order.ncm_status = new_status
     update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
     update_fields.extend(['ncm_status', 'updated_at'])
 
     if system_status == 'delivered' and not order.delivered_at:
-        order.delivered_at = timezone.now()
+        order.delivered_at = event_at or timezone.now()
         update_fields.append('delivered_at')
 
     order.save(update_fields=list(dict.fromkeys(update_fields)))
@@ -187,7 +213,39 @@ def _sync_one_order(svc, order, raw_status, user):
         field_name='ncm_status',
         old_value=old_ncm_status,
         new_value=new_status,
+        event_at=event_at,
         description=f'Bulk sync: {old_system_status} → {system_status}'
                     + (f', payment: {old_payment_status} → {payment_status}' if payment_status else '')
     )
     return True
+
+
+def _fetch_event_time(svc, order, new_status):
+    """NCM's added_time for `new_status` on this order, or None.
+
+    Prefers the timeline entry matching the status we're recording; falls back
+    to the newest entry. Never raises - a missing event time just means the log
+    keeps its local timestamp.
+    """
+    try:
+        result = svc.get_order_status(order.ncm_order_id)
+    except Exception as e:
+        logger.debug(f"Event-time fetch failed for {order.order_number}: {e}")
+        return None
+
+    if not result.get('success') or not result.get('data'):
+        return None
+
+    data = result['data']
+    entries = data if isinstance(data, list) else [data]
+    entries = [e for e in entries if isinstance(e, dict)]
+    if not entries:
+        return None
+
+    for entry in entries:
+        status = entry.get('status') or entry.get('Status') or ''
+        if status == new_status:
+            return parse_ncm_datetime(entry.get('added_time'))
+
+    # /order/status is newest-first.
+    return parse_ncm_datetime(entries[0].get('added_time'))

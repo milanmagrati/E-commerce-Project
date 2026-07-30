@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
 """
+SUPERSEDED — use `python manage.py repair_rtv_marked_at` instead.
+
+Do not re-run this script. It parses NCM's added_time with a bare
+parse_datetime() and writes the result straight to rtv_marked_at without
+recording provenance, so it can overwrite a verified date with a weaker one and
+leaves rtv_marked_at_source stale. The management command handles ranking,
+the checked-at bookkeeping and the same 429 backoff.
+
+Historical original description:
 Sequential RTV date fix — 1 request/second, proper 429 backoff.
 Retries ALL orders still missing rtv_marked_at after the parallel batch.
 """

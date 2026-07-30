@@ -663,6 +663,196 @@ class NCMService:
         system_status = NCMService.map_ncm_status_to_system(ncm_status)
         return (system_status, None)
 
+    # ==================== RTV DATE EXTRACTION ====================
+    # NCM never exposes "when was this order marked RTV" as a field. The
+    # authoritative answer is the added_time of the staff comment whose text
+    # starts with "RTV marked"; everything else below is a ranked approximation.
+    # These live here (rather than inline in the views) because the RTV list
+    # sync, the comment-only sync and the repair command all need identical
+    # semantics — three divergent copies is how the wrong dates crept in.
+
+    RTV_MARKED_PREFIX = 'RTV marked'
+    RTV_REMOVED_PREFIX = 'RTV removed'
+
+    # Status texts that mean the package is already moving back to the vendor.
+    RTV_TIMELINE_STATUSES = (
+        'order marked return',
+        'sent to vendor',
+        'returned to warehouse',
+    )
+
+    @staticmethod
+    def extract_rtv_marked_at(comments) -> dict:
+        """Find when NCM marked an order as RTV, from its comment list.
+
+        Picks the RTV comment with the LATEST added_time rather than the first
+        one in the list. NCM's comment endpoint has no documented ordering and
+        get_order_comments() doesn't sort, so an unmark -> re-mark sequence
+        leaves several "RTV marked" comments whose list position says nothing
+        about which is current.
+
+        Args:
+            comments: list of dicts as returned by NCMService.get_order_comments()
+        Returns:
+            {
+              'marked_at':     aware datetime or None,
+              'comment':       reason text ('' if none found),
+              'vendor_return': True / False / None (None = comments say nothing),
+              'source':        RTVOrder.SOURCE_* value for the winning entry,
+            }
+        """
+        from dashboard.timezone_utils import parse_ncm_datetime
+
+        result = {'marked_at': None, 'comment': '', 'vendor_return': None, 'source': ''}
+        if not comments:
+            return result
+
+        # Parse every timestamp once, up front.
+        parsed = []
+        for c in comments:
+            if not isinstance(c, dict):
+                continue
+            parsed.append((
+                (c.get('comment') or '').strip(),
+                parse_ncm_datetime(c.get('added_time')),
+                (c.get('added_by') or '').strip(),
+            ))
+
+        rtv_entries = [
+            (text, dt) for text, dt, _ in parsed
+            if text.startswith(NCMService.RTV_MARKED_PREFIX)
+            or text.startswith(NCMService.RTV_REMOVED_PREFIX)
+        ]
+
+        if rtv_entries:
+            # Newest wins. Entries whose added_time didn't parse sort last, so
+            # they're only chosen when nothing else parsed at all — better than
+            # discarding the only evidence we have.
+            from datetime import datetime, timezone as _dt_timezone
+            _floor = datetime.min.replace(tzinfo=_dt_timezone.utc)
+            text, dt = max(rtv_entries, key=lambda pair: pair[1] or _floor)
+
+            if text.startswith(NCMService.RTV_REMOVED_PREFIX):
+                result['vendor_return'] = False
+                return result
+
+            result['vendor_return'] = True
+            result['comment'] = text.replace('RTV marked - ', '').replace('RTV marked', '', 1).strip()
+            if dt is not None:
+                result['marked_at'] = dt
+                result['source'] = 'comment'
+            return result
+
+        # No RTV comment at all — fall back to the newest NCM Staff comment,
+        # which at least brackets when staff last touched the order.
+        staff = [
+            (text, dt) for text, dt, added_by in parsed
+            if added_by == 'NCM Staff' and (text or dt)
+        ]
+        if staff:
+            dated = [(text, dt) for text, dt in staff if dt is not None]
+            text, dt = max(dated, key=lambda pair: pair[1]) if dated else (staff[0][0], None)
+            result['comment'] = text
+            if dt is not None:
+                result['marked_at'] = dt
+                result['source'] = 'ncm_staff_comment'
+
+        return result
+
+    @staticmethod
+    def extract_return_step_time(status_entries):
+        """Approximate the RTV-marked time from an order's NCM status timeline.
+
+        UPPER BOUND ONLY: this returns when the package was first seen moving
+        back to the vendor ("Order Marked Return", "Sent to Vendor",
+        "Dispatched to RETURN ( TINKUNE)", ...), and marking always precedes
+        dispatch. Never let this overwrite a comment-sourced date.
+
+        Note the vendor_return flag on these entries is useless for dating —
+        NCM stamps the order-level flag onto every historical row, including
+        "Pickup Order Created" from before the return existed.
+
+        Args:
+            status_entries: list of dicts from NCMService.get_order_status()
+        Returns:
+            (aware datetime or None, 'status_timeline')
+        """
+        import re
+
+        from dashboard.timezone_utils import parse_ncm_datetime
+
+        if not status_entries:
+            return (None, 'status_timeline')
+
+        candidates = []
+        for entry in status_entries:
+            if not isinstance(entry, dict):
+                continue
+            status = (entry.get('status') or entry.get('Status') or '').strip()
+            if not status:
+                continue
+            lowered = status.lower()
+            is_return_step = (
+                any(marker in lowered for marker in NCMService.RTV_TIMELINE_STATUSES)
+                # "Dispatched to RETURN ( TINKUNE)" / "Arrived at RETURN (...)"
+                or re.search(r'\bRETURN\b', status) is not None
+            )
+            if not is_return_step:
+                continue
+            dt = parse_ncm_datetime(entry.get('added_time') or entry.get('date'))
+            if dt is not None:
+                candidates.append(dt)
+
+        # Earliest return-step entry is the closest to the actual marking.
+        return (min(candidates) if candidates else None, 'status_timeline')
+
+    @staticmethod
+    def apply_rtv_marked_at(rtv, dt, source, save=True) -> bool:
+        """Write rtv_marked_at only when `source` is at least as trustworthy.
+
+        Everything that sets an RTV date goes through here. Without the rank
+        check, a cheap approximation (an order's created_date, or a status
+        timeline entry) could overwrite the real "RTV marked" comment time on
+        the next sync — which is the bug this whole change exists to kill.
+
+        Always stamps rtv_marked_at_checked_at, even when nothing else changes,
+        so repair passes that take the least-recently-checked rows make
+        progress instead of re-picking the same handful forever.
+
+        Args:
+            rtv: RTVOrder instance
+            dt: datetime / NCM timestamp string / None
+            source: one of RTVOrder.SOURCE_* values
+            save: persist immediately (False = caller saves the listed fields)
+        Returns:
+            True if rtv_marked_at was updated.
+        """
+        from django.utils import timezone as dj_timezone
+
+        from dashboard.models import RTVOrder
+        from dashboard.timezone_utils import parse_ncm_datetime
+
+        fields = ['rtv_marked_at_checked_at']
+        rtv.rtv_marked_at_checked_at = dj_timezone.now()
+
+        parsed = parse_ncm_datetime(dt)
+        incoming_rank = RTVOrder.SOURCE_RANK.get(source, 0)
+        current_rank = RTVOrder.SOURCE_RANK.get(rtv.rtv_marked_at_source, 0)
+
+        # Equal rank overwrites on purpose: a fresh "RTV marked" comment after
+        # an unmark/re-mark is newer information than the old one.
+        should_write = parsed is not None and incoming_rank >= current_rank
+
+        if should_write:
+            rtv.rtv_marked_at = parsed
+            rtv.rtv_marked_at_source = source
+            fields.extend(['rtv_marked_at', 'rtv_marked_at_source'])
+
+        if save:
+            rtv.save(update_fields=fields)
+
+        return should_write
+
     @staticmethod
     def sync_order_status_fields(order, system_status, payment_status=None):
         """Update all status-related fields on an order to keep them in sync.

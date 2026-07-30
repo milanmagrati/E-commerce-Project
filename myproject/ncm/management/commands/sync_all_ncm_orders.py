@@ -36,6 +36,20 @@ class Command(BaseCommand):
             action='store_true',
             help='Run even if a lock file is present (use when a previous run is known to be dead).',
         )
+        parser.add_argument(
+            '--fetch-event-times',
+            dest='fetch_event_times',
+            action='store_true',
+            default=None,
+            help="Fetch NCM's real event time for each changed order (one extra API request "
+                 'per change). Overrides the API Sync Settings toggle.',
+        )
+        parser.add_argument(
+            '--no-fetch-event-times',
+            dest='fetch_event_times',
+            action='store_false',
+            help='Skip event-time lookups; activity log entries get this run\'s timestamp.',
+        )
 
     def handle(self, *args, **options):
         force = options.get('force', False)
@@ -51,7 +65,9 @@ class Command(BaseCommand):
             return
 
         try:
-            summary = run_bulk_ncm_status_sync(user=None)
+            summary = run_bulk_ncm_status_sync(
+                user=None, fetch_event_times=options.get('fetch_event_times')
+            )
         except Exception as e:
             logger.exception('sync_all_ncm_orders failed')
             self.stderr.write(self.style.ERROR(f'sync_all_ncm_orders failed: {e}'))

@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from dashboard.models import Order, OrderActivityLog
+from dashboard.timezone_utils import parse_ncm_datetime
 from ncm.models import WebhookLog
 from services.sms_service import SMSService
 import logging
@@ -158,6 +159,11 @@ class NCMWebhookHandler:
         event = payload.get('event', '')
         status = payload.get('status', '')
         timestamp_str = payload.get('timestamp', '')
+        # NCM's own time for the event. Webhooks can arrive minutes or days
+        # after the fact (NCM retries, and the RTV steps are pushed
+        # unreliably), so stamping the activity log with receipt time made the
+        # order timeline disagree with what NCM shows.
+        event_at = parse_ncm_datetime(timestamp_str)
 
         webhook_log = None
 
@@ -192,6 +198,9 @@ class NCMWebhookHandler:
             # Generate deterministic idempotency key from payload fields.
             # NCM does not send a webhook_id, so we derive one by hashing
             # the content. Using SHA-256 keeps it within the 100-char DB limit.
+            # Hash the RAW timestamp string, never the parsed value: normalizing
+            # it would change every webhook_id already stored and make past
+            # webhooks look new.
             ids_part = ','.join(sorted(order_ids))
             raw_key = f"{ids_part}|{event}|{timestamp_str}"
             webhook_id = hashlib.sha256(raw_key.encode()).hexdigest()
@@ -242,7 +251,8 @@ class NCMWebhookHandler:
                         result = self._update_order_from_webhook(
                             order,
                             status,
-                            payload
+                            payload,
+                            event_at=event_at
                         )
 
                         if result['success']:
@@ -304,8 +314,14 @@ class NCMWebhookHandler:
             }
     
     def _update_order_from_webhook(self, order: Order, status: str,
-                                   payload: dict = None) -> dict:
-        """Update order fields from webhook data based on NCM payload"""
+                                   payload: dict = None, event_at=None) -> dict:
+        """Update order fields from webhook data based on NCM payload
+
+        Args:
+            event_at: NCM's timestamp for this event (aware datetime) or None.
+                      Recorded on the activity log so the order timeline shows
+                      when NCM says it happened, not when we received the push.
+        """
         try:
             from services.ncm_service import NCMService
 
@@ -344,7 +360,7 @@ class NCMWebhookHandler:
 
             # Set delivered_at timestamp for delivered orders
             if system_status == 'delivered' and not order.delivered_at:
-                order.delivered_at = timezone.now()
+                order.delivered_at = event_at or timezone.now()
                 update_fields.append('delivered_at')
 
             # Deduplicate
@@ -360,8 +376,15 @@ class NCMWebhookHandler:
                 field_name='ncm_status',
                 old_value=old_ncm_status or 'None',
                 new_value=status,
+                event_at=event_at,
                 description=f'NCM Webhook ({event_name}): {old_status} -> {system_status}'
             )
+
+            # An RTV mark pushed by NCM is the authoritative moment the return
+            # started — record it so the RTV page doesn't have to wait for the
+            # rate-limited comment sync to discover it.
+            if event_name == 'order_marked_rtv' and event_at:
+                self._record_rtv_marked(order, event_at)
 
             logger.info(f"Updated: {order.order_number} - Status: {old_status}->{system_status}, NCM: {old_ncm_status}->{status}, Payment: {old_payment_status}->{order.payment_status}")
 
@@ -382,6 +405,42 @@ class NCMWebhookHandler:
                 'error': str(e)
             }
     
+    def _record_rtv_marked(self, order: Order, event_at):
+        """Store NCM's RTV-mark time on the matching RTVOrder row.
+
+        The RTV list otherwise only learns this date from a per-order comment
+        fetch that NCM rate-limits to a handful per sync, so pushes give us the
+        right date for free. Ranked equal to a "RTV marked" comment: both come
+        straight from NCM.
+
+        Never raises — a bookkeeping miss must not fail the webhook. The inner
+        atomic() is a savepoint, not decoration: this runs inside the caller's
+        transaction, so swallowing a database error without one would leave that
+        transaction unusable and take down the whole webhook anyway.
+        """
+        from dashboard.models import RTVOrder
+        from services.ncm_service import NCMService
+
+        try:
+            with transaction.atomic():
+                rtv, created = RTVOrder.objects.get_or_create(
+                    order_id=int(order.ncm_order_id),
+                    defaults={
+                        'vendor_return': True,
+                        'vendor': self.system_user,
+                        'api_config_id': order.api_config_id,
+                        'rtv_marked_at': event_at,
+                        'rtv_marked_at_source': RTVOrder.SOURCE_WEBHOOK,
+                        'rtv_marked_at_checked_at': timezone.now(),
+                    },
+                )
+                if not created:
+                    NCMService.apply_rtv_marked_at(rtv, event_at, RTVOrder.SOURCE_WEBHOOK)
+        except (TypeError, ValueError):
+            logger.warning(f"Could not record RTV mark: bad NCM order id {order.ncm_order_id!r}")
+        except Exception as e:
+            logger.error(f"Could not record RTV mark for order {order.order_number}: {e}")
+
     def _send_status_notification(self, order: Order, status: str):
         """Send SMS notification to customer based on resolved system status"""
         try:

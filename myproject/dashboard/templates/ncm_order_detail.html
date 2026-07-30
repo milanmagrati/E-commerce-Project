@@ -480,7 +480,12 @@
                                 <span class="activity-action-badge">{{ log.action_type|title|replace:"_: " }}</span>
                                 <span class="activity-time">
                                     <i class="fas fa-clock"></i>
-                                    {{ log.created_at|date:"M d, Y h:i A" }}
+                                    {{ log.effective_at|date:"M d, Y h:i A" }}
+                                    {% if log.event_at %}
+                                    <span style="font-size:0.72rem; color:#cbd5e1; cursor:help;"
+                                        title="Reported by NCM as {{ log.event_at|date:'M d, Y h:i A' }}; recorded here {{ log.created_at|date:'M d, Y h:i A' }}">
+                                        · synced {{ log.created_at|date:"M d" }}</span>
+                                    {% endif %}
                                 </span>
                             </div>
                             <div class="activity-description">

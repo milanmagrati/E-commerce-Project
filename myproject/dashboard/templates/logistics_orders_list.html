@@ -333,7 +333,8 @@
                                                     <span class="activity-badge-mini">{{ log.action_type|title }}</span>
                                                     <span class="activity-time-mini">
                                                         <i class="fas fa-clock"></i>
-                                                        {{ log.created_at|date:"M d, h:i A" }}
+                                                        {# NCM event time when known; see OrderActivityLog.effective_at #}
+                                                        {{ log.effective_at|date:"M d, h:i A" }}
                                                     </span>
                                                 </div>
                                                 <div class="activity-description-mini">

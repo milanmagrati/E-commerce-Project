@@ -11,6 +11,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404
 
 from dashboard.models import Order, OrderActivityLog
+from dashboard.timezone_utils import parse_ncm_datetime
 from services.ncm_service import NCMService
 
 import logging
@@ -74,13 +75,16 @@ def verify_ncm_order(request, order_id):
         
         if result['success'] and result['data']:
             # Order found and has status
-            latest_status = result['data'][0].get('status', 'Unknown')
+            latest_entry = result['data'][0]
+            latest_status = latest_entry.get('status', 'Unknown')
             old_status = order.ncm_status
-            
+            # NCM's timestamp for the status, not the moment we verified it.
+            event_at = parse_ncm_datetime(latest_entry.get('added_time'))
+
             order.ncm_status = latest_status
             order.status = svc.map_ncm_status_to_system(latest_status)
             order.save()
-            
+
             OrderActivityLog.objects.create(
                 order=order,
                 action_type='status_changed',
@@ -88,6 +92,7 @@ def verify_ncm_order(request, order_id):
                 field_name='ncm_status',
                 old_value=old_status or 'Unknown',
                 new_value=latest_status,
+                event_at=event_at,
                 description=f'✅ Order verified in NCM: {latest_status}'
             )
             

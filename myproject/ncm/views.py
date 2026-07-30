@@ -22,6 +22,7 @@ from ncm.bulk_sync import run_bulk_ncm_status_sync
 
 # Import models from accounts app
 from dashboard.models import Order, OrderActivityLog
+from dashboard.timezone_utils import parse_ncm_datetime
 from ncm.models import WebhookLog
 
 import json
@@ -273,9 +274,11 @@ def create_ncm_shipment(request, order_id):
                 update_fields.extend(['ncm_status', 'updated_at'])
                 
                 if system_status == 'delivered' and not order.delivered_at:
-                    order.delivered_at = timezone.now()
+                    order.delivered_at = (
+                        parse_ncm_datetime(latest_status_data.get('added_time')) or timezone.now()
+                    )
                     update_fields.append('delivered_at')
-                
+
                 order.save(update_fields=list(dict.fromkeys(update_fields)))
             
             OrderActivityLog.objects.create(
@@ -340,6 +343,9 @@ def sync_ncm_status(request, order_id):
             old_status = order.status
             old_payment_status = order.payment_status
 
+            # NCM's own timestamp for this status, not the moment we synced.
+            event_at = parse_ncm_datetime(latest_status_data.get('added_time'))
+
             # Use resolve_delivered_status to handle vendor_return flag
             system_status, payment_status = svc.resolve_delivered_status(latest_status_data)
 
@@ -351,7 +357,7 @@ def sync_ncm_status(request, order_id):
             update_fields.append('updated_at')
 
             if system_status == 'delivered' and not order.delivered_at:
-                order.delivered_at = timezone.now()
+                order.delivered_at = event_at or timezone.now()
                 update_fields.append('delivered_at')
 
             # Deduplicate
@@ -365,6 +371,7 @@ def sync_ncm_status(request, order_id):
                 field_name='ncm_status',
                 old_value=old_ncm_status or 'None',
                 new_value=latest_status,
+                event_at=event_at,
                 description=f'Manual sync: {old_status} → {system_status}'
                             + (f', payment: {old_payment_status} → {payment_status}' if payment_status else '')
             )
