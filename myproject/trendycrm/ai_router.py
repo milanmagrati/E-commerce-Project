@@ -81,7 +81,9 @@ def _call_gemini_rest(model_name: str, system_prompt: str, user_message: str, ap
         raise ValueError(f"Gemini returned no candidates (blockReason={block_reason})")
 
     parts = candidates[0].get('content', {}).get('parts', [])
-    text = ''.join(p.get('text', '') for p in parts if 'text' in p).strip()
+    # Skip parts the API flags as hidden reasoning — they carry `text` too, and
+    # concatenating them corrupts the visible answer.
+    text = ''.join(p.get('text', '') for p in parts if 'text' in p and not p.get('thought')).strip()
     if not text:
         raise ValueError(f"Gemini returned empty text (finishReason={candidates[0].get('finishReason')})")
     return text
@@ -137,7 +139,9 @@ def _call_gemini_vision_rest(model_name: str, system_prompt: str, prompt_text: s
         raise ValueError(f"Gemini vision returned no candidates (blockReason={block_reason})")
 
     parts = candidates[0].get('content', {}).get('parts', [])
-    text = ''.join(p.get('text', '') for p in parts if 'text' in p).strip()
+    # Skip parts the API flags as hidden reasoning — they carry `text` too, and
+    # concatenating them corrupts the visible answer.
+    text = ''.join(p.get('text', '') for p in parts if 'text' in p and not p.get('thought')).strip()
     if not text:
         raise ValueError(f"Gemini vision returned empty text (finishReason={candidates[0].get('finishReason')})")
     return text
@@ -154,6 +158,41 @@ def _get_ai_config():
         'openai_api_key': env_config('OPENAI_API_KEY', default=''),
         'gemini_api_key': env_config('GEMINI_API_KEY', default=''),
     }
+
+
+# ─── Response length ──────────────────────────────────────────────────────────
+# CRMChatbotConfig.response_length stores '100' / '500' / '1500'. Those numbers were
+# being passed straight through as maxOutputTokens, which is a hard cut-off — the
+# model gets guillotined mid-sentence ("Short & Punchy" produced replies like
+# "Yes, we"). Length is a *style* instruction; the token budget only needs to be
+# generous enough that the model can finish the thought it planned.
+LENGTH_PROFILES = {
+    '100': (400, 'Keep your reply very short — 1-2 sentences, no preamble.'),
+    '500': (900, 'Keep your reply concise — at most a short paragraph.'),
+    '1500': (2200, 'You may answer in detail, but stay organised and skimmable.'),
+}
+DEFAULT_LENGTH_PROFILE = LENGTH_PROFILES['500']
+
+
+def _length_profile(config):
+    """(max_tokens, style_instruction) for a chatbot config's response_length."""
+    if not config:
+        return DEFAULT_LENGTH_PROFILE
+    return LENGTH_PROFILES.get(str(getattr(config, 'response_length', '500')), DEFAULT_LENGTH_PROFILE)
+
+
+def _max_tokens(config):
+    return _length_profile(config)[0]
+
+
+def _temperature(config, default=0.7):
+    """Creativity level as a float, tolerant of a blank/corrupt stored value."""
+    if not config:
+        return default
+    try:
+        return float(getattr(config, 'creativity_level', default) or default)
+    except (TypeError, ValueError):
+        return default
 
 
 def _get_page_profile(integration):
@@ -224,8 +263,8 @@ def _gen_text(provider: str, model_name: str, user_message: str, system_prompt: 
 
     # gemini
     model = (model_name or GEMINI_FLASH_MODEL).strip()
-    temperature = float(getattr(chatbot_config, 'creativity_level', '0.7')) if chatbot_config else 0.7
-    max_tokens = int(getattr(chatbot_config, 'response_length', '500')) if chatbot_config else 500
+    temperature = _temperature(chatbot_config)
+    max_tokens = _max_tokens(chatbot_config)
     if 'pro' in model:
         # Pro models can be quota-0 on free-tier keys — fall back to Flash on failure.
         try:
@@ -262,11 +301,80 @@ def build_dynamic_prompt(chatbot_config, page_profile=None, intent: str = 'gener
         f"About the business: {about}" if about else "",
         f"Welcome message to use: {welcome}" if welcome else "",
     ]
+    if chatbot_config.business_email:
+        system_parts.append(f"Support email: {chatbot_config.business_email}")
+    if chatbot_config.business_phone:
+        system_parts.append(f"Support phone: {chatbot_config.business_phone}")
+    if getattr(chatbot_config, 'business_address', None):
+        system_parts.append(f"Business address: {chatbot_config.business_address}")
+
+    cities = [c for c in (getattr(chatbot_config, 'cities_served', None) or []) if c]
+    if cities:
+        # Spelled out as an exhaustive list so the model answers "do you deliver
+        # to X?" from the operator's coverage instead of guessing.
+        system_parts.append(
+            "Cities/areas we serve and deliver to: " + ", ".join(cities) +
+            ". If a customer asks about anywhere not on this list, say we don't "
+            "currently cover it and offer to check with the team — never assume we do."
+        )
+
+    socials = [
+        (label, getattr(chatbot_config, field, None))
+        for label, field in (
+            ('Facebook', 'social_facebook'),
+            ('Instagram', 'social_instagram'),
+            ('TikTok', 'social_tiktok'),
+            ('WhatsApp', 'social_whatsapp'),
+        )
+    ]
+    socials = [f"{label}: {value}" for label, value in socials if value]
+    if socials:
+        system_parts.append(
+            "Our official channels (share these only when asked, exactly as written): "
+            + " | ".join(socials)
+        )
+
+    # ── Business Knowledge Base ───────────────────────────────────────────────
+    # Every section the operator fills in on the Chatbot page must reach the model —
+    # otherwise the Offerings/FAQs/Playbook tabs are just a text editor that does nothing.
+    response_tone_map = {
+        'professional_friendly': 'Sound professional but warm and approachable.',
+        'formal': 'Sound formal, precise, and polite. Avoid slang and emojis.',
+        'casual': 'Sound casual and relaxed, like a friendly shopkeeper.',
+        'energetic': 'Sound energetic and enthusiastic. Use upbeat language.',
+        'empathetic': 'Sound empathetic and supportive. Acknowledge feelings first.',
+    }
+    tone_setting = response_tone_map.get(getattr(chatbot_config, 'response_tone', ''), '')
+    if tone_setting:
+        system_parts.append(f"\nHOUSE TONE: {tone_setting}")
+
+    if chatbot_config.tone_voice:
+        system_parts.append(
+            "\n--- BRAND VOICE (follow this closely) ---\n" + chatbot_config.tone_voice
+        )
+    if chatbot_config.offerings:
+        system_parts.append(
+            "\n--- PRODUCTS & SERVICES WE SELL ---\n" + chatbot_config.offerings +
+            "\nOnly recommend products from this list. Never invent products or prices."
+        )
+    if chatbot_config.faq_text:
+        system_parts.append(
+            "\n--- FREQUENTLY ASKED QUESTIONS (use these answers verbatim where they fit) ---\n"
+            + chatbot_config.faq_text
+        )
+    if chatbot_config.playbook:
+        system_parts.append(
+            "\n--- SALES & SUPPORT PLAYBOOK (internal rules — never quote these to the customer) ---\n"
+            + chatbot_config.playbook
+        )
 
     if getattr(chatbot_config, 'primary_language', 'auto') != 'auto':
+        # 'ne' is romanized Nepali — that's what the Language picker promises,
+        # and what customers actually type on Messenger/WhatsApp.
         lang_map = {
-            'en': 'English', 'es': 'Spanish', 'fr': 'French', 
-            'ne': 'Nepali', 'hi': 'Hindi'
+            'en': 'English', 'es': 'Spanish', 'fr': 'French',
+            'ne': 'romanized Nepali (Nepali written in the Latin alphabet, not Devanagari)',
+            'hi': 'Hindi',
         }
         lang_name = lang_map.get(chatbot_config.primary_language, 'English')
         system_parts.append(f"\nCRITICAL RULE: You MUST reply entirely in {lang_name}.")
@@ -324,6 +432,9 @@ def build_dynamic_prompt(chatbot_config, page_profile=None, intent: str = 'gener
     }
 
     system_parts.append(intent_rules.get(intent, intent_rules['general_query']))
+
+    # Length is enforced by instruction, not by truncating the model mid-sentence.
+    system_parts.append(f"\nLENGTH: {_length_profile(chatbot_config)[1]}")
     return "\n".join(p for p in system_parts if p)
 
 
@@ -359,16 +470,20 @@ Respond with ONLY the category name, nothing else. No explanation, no punctuatio
     try:
         response_text = ""
         if gemini_key:
+            # Gemini spends hidden reasoning tokens out of this same budget, so the
+            # old 20-token cap left nothing for the answer — it returned a truncated
+            # fragment ('much') or empty text, and every message silently fell back
+            # to 'general_query'. 128 is still one cheap call, with room to reply.
             response_text = _call_gemini_rest(
                 GEMINI_FLASH_MODEL, None, classification_prompt, gemini_key,
-                temperature=0.1, max_tokens=20,
+                temperature=0.1, max_tokens=128,
             )
         elif openai_key:
             client = _get_openai_client(api_key=openai_key)
             response = client.chat.completions.create(
                 model='gpt-4o-mini',
                 messages=[{'role': 'user', 'content': classification_prompt}],
-                max_tokens=10,
+                max_tokens=32,
                 temperature=0.1
             )
             response_text = response.choices[0].message.content
@@ -377,15 +492,23 @@ Respond with ONLY the category name, nothing else. No explanation, no punctuatio
             return 'general_query'
 
         intent = response_text.strip().lower().replace(' ', '_')
-        valid_intents = {'purchase_intent', 'general_query', 'product_issue', 'spam_noise'}
-        
+        valid_intents = ('purchase_intent', 'general_query', 'product_issue', 'spam_noise')
+
         if intent in valid_intents:
             return intent
-        # Try partial match
+        # Models like to wrap the answer in punctuation, quotes or a short sentence
+        # ("Category: purchase_intent."), so look for the label anywhere in the text…
         for v in valid_intents:
             if v in intent:
                 return v
-                
+        # …then fall back to the distinctive half of each label, which survives
+        # reformatting like "purchase intent" → "purchase-intent" or "purchase".
+        for keyword, v in (('purchase', 'purchase_intent'), ('issue', 'product_issue'),
+                           ('spam', 'spam_noise'), ('noise', 'spam_noise'),
+                           ('query', 'general_query'), ('general', 'general_query')):
+            if keyword in intent:
+                return v
+
         logger.warning(f"Intent classifier returned unexpected value: '{intent}'. Defaulting to general_query.")
         return 'general_query'
         
@@ -564,7 +687,15 @@ def route_message(
 
     except Exception as e:
         logger.exception(f"AI Router failed: {e}")
-        result['error'] = str(e)
+        detail = str(e)
+        # Free-tier Gemini/OpenAI keys are rate limited per minute; the raw
+        # RESOURCE_EXHAUSTED blob tells the operator nothing actionable.
+        if 'RESOURCE_EXHAUSTED' in detail or '429' in detail or 'rate limit' in detail.lower():
+            result['error'] = ('AI provider rate limit reached — your API key has used its quota '
+                               'for the moment. Wait a minute and try again, or upgrade the plan. '
+                               f'({detail[:180]})')
+        else:
+            result['error'] = detail
         result['reply'] = "I'm sorry, I'm having trouble processing your request right now. Please try again shortly."
 
     return result
@@ -573,8 +704,8 @@ def route_message(
 # ─── Model Callers ────────────────────────────────────────────────────────────
 def _call_gemini_flash(user_message: str, system_prompt: str, api_key: str, config=None) -> str:
     """Calls Gemini Flash — low cost, high speed. For FAQs and spam."""
-    temperature = float(getattr(config, 'creativity_level', '0.7')) if config else 0.7
-    max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
+    temperature = _temperature(config)
+    max_tokens = _max_tokens(config)
     return _call_gemini_rest(GEMINI_FLASH_MODEL, system_prompt, user_message, api_key,
                               temperature=temperature, max_tokens=max_tokens)
 
@@ -583,8 +714,8 @@ def _call_openai_chat(user_message: str, system_prompt: str, api_key: str, model
     """Calls OpenAI Chat API. Defaults to gpt-4o, but can accept gpt-4o-mini for cost-savings."""
     client = _get_openai_client(api_key=api_key)
     
-    temp = float(getattr(config, 'creativity_level', '0.7')) if config else 0.7
-    max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
+    temp = _temperature(config)
+    max_tokens = _max_tokens(config)
     
     response = client.chat.completions.create(
         model=model,
@@ -610,8 +741,8 @@ def _call_openai_vision(prompt_text: str, system_prompt: str, api_key: str, conf
     """
     client = _get_openai_client(api_key=api_key)
 
-    temp = float(getattr(config, 'creativity_level', '0.7')) if config else 0.5
-    max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
+    temp = _temperature(config, default=0.5)
+    max_tokens = _max_tokens(config)
     model = (model or 'gpt-4o').strip()
 
     if image_b64:
@@ -641,8 +772,8 @@ def _call_gemini_pro(user_message: str, system_prompt: str, api_key: str, config
     Free-tier Gemini keys get a 0 request/day quota for Pro models, so on any failure
     (quota, availability) this falls back to Flash rather than dropping the reply entirely.
     """
-    temperature = float(getattr(config, 'creativity_level', '0.7')) if config else 0.7
-    max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
+    temperature = _temperature(config)
+    max_tokens = _max_tokens(config)
     try:
         return _call_gemini_rest(GEMINI_PRO_MODEL, system_prompt, user_message, api_key,
                                   temperature=temperature, max_tokens=max_tokens)
@@ -660,8 +791,8 @@ def _call_gemini_vision(prompt_text: str, system_prompt: str, api_key: str, conf
     When image_b64 is provided, the actual image is sent inline so the model reads it.
     If no image bytes are supplied, falls back to a text-only description (legacy callers).
     """
-    temperature = float(getattr(config, 'creativity_level', '0.7')) if config else 0.5
-    max_tokens = int(getattr(config, 'response_length', '500')) if config else 500
+    temperature = _temperature(config, default=0.5)
+    max_tokens = _max_tokens(config)
     model = (model or GEMINI_FLASH_MODEL).strip()
     # Pro models have a 0-quota on free-tier keys; use Flash for vision unless told otherwise.
     if 'pro' in model:
@@ -782,9 +913,17 @@ def process_comment_to_dm(comment, integration, chatbot_config=None):
                 if checkout and intent == 'purchase_intent' and checkout not in dm_text:
                     dm_text += f"\n\n👉 Order here: {checkout}"
 
-                if send_meta_message(integration, sender_id, dm_text):
+                dm_sent, dm_send_error = send_meta_message(integration, sender_id, dm_text)
+                if dm_sent:
                     result['dm_sent'] = True
                     logger.info(f"DM sent to {sender_id} (intent={intent}, model={result['model_used']})")
+                    from .views import charge_ai_credits
+                    charge_ai_credits(
+                        chatbot_config,
+                        action='comment_dm',
+                        model_used=result['model_used'],
+                        description=f"Comment-to-DM: {message_text}",
+                    )
                     # Persist it into the CRM inbox so it shows up on the
                     # Conversations page, same as the keyword-automation funnel does.
                     try:
@@ -792,7 +931,7 @@ def process_comment_to_dm(comment, integration, chatbot_config=None):
                     except Exception:
                         logger.exception("record_outbound_dm failed for Comment-to-DM funnel")
                 else:
-                    logger.warning(f"send_meta_message failed for sender_id={sender_id}")
+                    logger.warning(f"send_meta_message failed for sender_id={sender_id}: {dm_send_error}")
 
         # ── Auto-open support ticket for product issues ────────────────────────
         if intent == 'product_issue':

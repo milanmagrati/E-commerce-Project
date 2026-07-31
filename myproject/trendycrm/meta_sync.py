@@ -1,5 +1,7 @@
-import requests
+import json
 import logging
+import mimetypes
+import requests
 from django.utils import timezone
 from dateutil.parser import parse
 from .models import CRMIntegration, CRMContact, CRMConversation, CRMMessage, CRMSocialPost, CRMSocialComment
@@ -14,6 +16,13 @@ GRAPH_API_VERSION = "v25.0"
 # after OAuth connect, or the "sync everything" webhook fallback) from replaying
 # AI replies onto old conversation history.
 RECENT_MESSAGE_WINDOW_MINUTES = 10
+
+# Statuses that still count as "this account is ours" when routing *inbound*
+# traffic. A page flagged 'error' has a token Graph won't let us send with, but
+# Meta keeps delivering its webhooks regardless (the subscription is app-level,
+# not token-level) — dropping those messages would lose real customer enquiries,
+# which is far worse than the send failure that caused the flag.
+LIVE_INTEGRATION_STATUSES = ['connected', 'error']
 
 REACTION_TYPES = ['LIKE', 'LOVE', 'HAHA', 'WOW', 'SAD', 'ANGRY', 'CARE']
 REACTION_FIELDS = ','.join(
@@ -58,9 +67,12 @@ def sync_meta_conversations(integration):
     try:
         response = requests.get(url, params=params, timeout=10)
         if response.status_code != 200:
-            logger.error(f"Failed to fetch conversations from Meta: {response.text}")
+            err = _extract_graph_error(response)
+            logger.error(f"Failed to fetch conversations from Meta: {err}")
+            _flag_integration_auth_error(integration, response, err)
             return
-            
+
+        clear_integration_auth_error(integration)
         data = response.json()
         conversations = data.get('data', [])
         
@@ -208,97 +220,194 @@ def _process_meta_conversation(integration, conv_data):
                 except Exception:
                     logger.exception("process_incoming_webhook_message failed during conversation sync")
 
-def send_meta_message(integration, recipient_id, message_text=None, attachment_url=None, attachment_type=None):
+def _open_attachment(attachment_file):
     """
-    Sends a message via the Meta Graph API to the recipient PSID. Sends an
-    attachment (image/audio/file) when attachment_url is given, otherwise
-    plain text. Messenger's attachment payload has no caption slot, so when
-    both are present the attachment takes priority and the text is dropped
-    from this API call (it is still saved locally on the message).
+    Returns (filename, file object, mimetype) for a Django FieldFile so it can be
+    uploaded to Graph as multipart form data. Uploading the bytes is the only
+    thing that works when MEDIA_URL is not publicly reachable (local dev, or any
+    deployment where /media/ sits behind auth) — Meta fetches `payload.url`
+    itself, so a 127.0.0.1 link can never be downloaded on their side.
+    """
+    name = (getattr(attachment_file, 'name', '') or 'attachment').rsplit('/', 1)[-1]
+    mimetype = mimetypes.guess_type(name)[0] or 'application/octet-stream'
+    attachment_file.open('rb')
+    return name, attachment_file, mimetype
+
+
+def _handle_send_response(integration, response, context):
+    """Shared success/failure handling for a Graph send call. Returns (ok, error)."""
+    if response.status_code == 200:
+        clear_integration_auth_error(integration)
+        return True, None
+
+    err = _extract_graph_error(response)
+    logger.error(
+        f"{context} failed on {integration.account_name or integration.channel_type}: "
+        f"HTTP {response.status_code} - {err}"
+    )
+    _flag_integration_auth_error(integration, response, err)
+    return False, err
+
+
+def send_meta_message(integration, recipient_id, message_text=None, attachment_file=None, attachment_type=None):
+    """
+    Sends a message via the Meta Graph API to the recipient PSID. Uploads an
+    attachment (image/audio/file) when attachment_file is given, plain text
+    otherwise. Messenger's attachment payload has no caption slot, so when both
+    are present they go out as two messages — attachment first, then the text.
+    Dropping the text would silently lose whatever the agent typed alongside it.
+
+    Returns (success: bool, error: str | None) — the error string carries the
+    real Graph message so the UI can explain *why* delivery failed instead of
+    showing a generic "check your permissions".
     """
     if not integration.access_token:
         logger.error(f"Cannot send Meta message for {integration.channel_type}: No access token.")
-        return False
+        return False, 'No access token on this page — reconnect the integration.'
 
-    if attachment_url:
-        meta_attachment_type = {'image': 'image', 'audio': 'audio', 'document': 'file'}.get(attachment_type, 'file')
-        message_payload = {'attachment': {'type': meta_attachment_type, 'payload': {'url': attachment_url, 'is_reusable': True}}}
-    elif message_text:
-        message_payload = {'text': message_text}
-    else:
-        return False
+    if not attachment_file and not message_text:
+        return False, 'Nothing to send.'
 
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/messages"
     params = {'access_token': integration.access_token}
-    payload = {
-        'recipient': {'id': recipient_id},
-        'messaging_type': 'RESPONSE',
-        'message': message_payload,
-    }
+    recipient = {'id': recipient_id}
+
+    if attachment_file:
+        meta_attachment_type = {'image': 'image', 'audio': 'audio', 'document': 'file'}.get(attachment_type, 'file')
+        try:
+            name, fh, mimetype = _open_attachment(attachment_file)
+            try:
+                # Graph wants the JSON parts stringified alongside the binary part.
+                response = requests.post(
+                    url, params=params, timeout=60,
+                    data={
+                        'recipient': json.dumps(recipient),
+                        'messaging_type': 'RESPONSE',
+                        'message': json.dumps({
+                            'attachment': {'type': meta_attachment_type, 'payload': {'is_reusable': True}}
+                        }),
+                    },
+                    files={'filedata': (name, fh, mimetype)},
+                )
+            finally:
+                # Leaving the handle open locks the media file on Windows.
+                attachment_file.close()
+        except Exception as e:
+            logger.error(f"Failed to send Meta attachment: {e}")
+            return False, str(e)
+
+        ok, err = _handle_send_response(integration, response, 'Meta attachment send')
+        if not ok or not message_text:
+            return ok, err
 
     try:
-        response = requests.post(url, params=params, json=payload, timeout=10)
-        response.raise_for_status()
-        return True
+        response = requests.post(
+            url, params=params, timeout=10,
+            json={'recipient': recipient, 'messaging_type': 'RESPONSE', 'message': {'text': message_text}},
+        )
     except Exception as e:
-        logger.error(f"Failed to send Meta message: {e} - Response: {getattr(e.response, 'text', '')}")
-        return False
+        logger.error(f"Failed to send Meta message: {e}")
+        return False, str(e)
 
-def send_whatsapp_message(integration, recipient_wa_id, message_text=None, attachment_url=None, attachment_type=None):
+    return _handle_send_response(integration, response, 'Meta message send')
+
+
+def send_whatsapp_message(integration, recipient_wa_id, message_text=None, attachment_file=None, attachment_type=None):
     """
     Sends a message via the WhatsApp Cloud API from the connected phone number.
-    Sends an attachment (image/audio/document) when attachment_url is given,
-    otherwise plain text. Image/document attachments carry message_text as a
-    caption; WhatsApp audio messages don't support captions.
+    Uploads an attachment (image/audio/document) to the media endpoint first when
+    attachment_file is given, plain text otherwise. Image/document attachments
+    carry message_text as a caption; WhatsApp audio has no caption slot, so there
+    the text follows as its own message rather than being dropped.
+    Returns (success: bool, error: str | None).
     """
     if not integration.access_token:
         logger.error("Cannot send WhatsApp message: No access token.")
-        return False
+        return False, 'No access token on this number — reconnect the integration.'
 
     phone_number_id = (integration.meta or {}).get('phone_number_id')
     if not phone_number_id:
         logger.error("Cannot send WhatsApp message: integration has no phone_number_id.")
-        return False
+        return False, 'This WhatsApp integration has no phone number ID — reconnect it.'
 
-    if attachment_url:
+    if not attachment_file and not message_text:
+        return False, 'Nothing to send.'
+
+    headers = {'Authorization': f'Bearer {integration.access_token}'}
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{phone_number_id}/messages"
+
+    def _post(payload, context):
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+        except Exception as e:
+            logger.error(f"{context} failed: {e}")
+            return False, str(e)
+        return _handle_send_response(integration, response, context)
+
+    text_still_pending = bool(message_text)
+
+    if attachment_file:
         wa_type = {'image': 'image', 'audio': 'audio', 'document': 'document'}.get(attachment_type, 'document')
-        media_payload = {'link': attachment_url}
+        # Cloud API takes an uploaded media ID (or a public link); upload the
+        # bytes so local/protected MEDIA files still go through.
+        media_id, media_err = _upload_whatsapp_media(integration, phone_number_id, attachment_file, headers)
+        if not media_id:
+            return False, media_err
+        media_payload = {'id': media_id}
         if message_text and wa_type in ('image', 'document'):
             media_payload['caption'] = message_text
-        payload = {
+            text_still_pending = False
+        ok, err = _post({
             'messaging_product': 'whatsapp',
             'to': recipient_wa_id,
             'type': wa_type,
             wa_type: media_payload,
-        }
-    elif message_text:
-        payload = {
-            'messaging_product': 'whatsapp',
-            'to': recipient_wa_id,
-            'type': 'text',
-            'text': {'body': message_text},
-        }
-    else:
-        return False
+        }, 'WhatsApp attachment send')
+        if not ok or not text_still_pending:
+            return ok, err
 
-    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{phone_number_id}/messages"
-    headers = {'Authorization': f'Bearer {integration.access_token}'}
+    return _post({
+        'messaging_product': 'whatsapp',
+        'to': recipient_wa_id,
+        'type': 'text',
+        'text': {'body': message_text},
+    }, 'WhatsApp message send')
 
+
+def _upload_whatsapp_media(integration, phone_number_id, attachment_file, headers):
+    """Uploads a file to the WhatsApp Cloud API media endpoint. Returns (media_id, error)."""
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        response.raise_for_status()
-        return True
+        name, fh, mimetype = _open_attachment(attachment_file)
+        try:
+            response = requests.post(
+                f"https://graph.facebook.com/{GRAPH_API_VERSION}/{phone_number_id}/media",
+                headers=headers,
+                data={'messaging_product': 'whatsapp', 'type': mimetype},
+                files={'file': (name, fh, mimetype)},
+                timeout=60,
+            )
+        finally:
+            attachment_file.close()
     except Exception as e:
-        logger.error(f"Failed to send WhatsApp message: {e} - Response: {getattr(e.response, 'text', '')}")
-        return False
+        logger.error(f"WhatsApp media upload failed: {e}")
+        return None, str(e)
+
+    if response.status_code == 200:
+        return response.json().get('id'), None
+
+    err = _extract_graph_error(response)
+    logger.error(f"WhatsApp media upload failed: HTTP {response.status_code} - {err}")
+    _flag_integration_auth_error(integration, response, err)
+    return None, err
 
 
 def _resolve_whatsapp_integration(phone_number_id):
-    """Find the connected WhatsApp integration that owns the given phone_number_id."""
+    """Find the WhatsApp integration that owns the given phone_number_id."""
     if not phone_number_id:
         return None
     return CRMIntegration.objects.filter(
-        channel_type='whatsapp', status='connected', meta__phone_number_id=str(phone_number_id)
+        channel_type='whatsapp', status__in=LIVE_INTEGRATION_STATUSES,
+        meta__phone_number_id=str(phone_number_id),
     ).first()
 
 
@@ -643,6 +752,48 @@ def _extract_graph_error(response):
         return (getattr(response, 'text', '') or '')[:300]
 
 
+def _flag_integration_auth_error(integration, response, error_label):
+    """
+    Marks an integration as needing a reconnect when Graph rejects its token.
+
+    Code 190 (OAuthException) means the page token itself is dead or the page was
+    never granted to this app — e.g. the user re-ran Facebook Login and only
+    ticked *some* of their pages, silently invalidating the tokens of the ones
+    they left out. Nothing else notices that, so the page keeps looking
+    "Connected" while every send fails; flagging it here is what surfaces the
+    reconnect prompt on the Integrations page.
+    """
+    try:
+        code = (response.json().get('error') or {}).get('code')
+    except Exception:
+        return
+    if code != 190:
+        return
+
+    integration.status = 'error'
+    meta = integration.meta if isinstance(integration.meta, dict) else {}
+    meta['token_error'] = error_label
+    meta['token_error_at'] = timezone.now().isoformat()
+    integration.meta = meta
+    integration.save(update_fields=['status', 'meta'])
+    logger.error(
+        f"Marking {integration.channel_type} integration "
+        f"'{integration.account_name}' as needing reconnect: {error_label}"
+    )
+
+
+def clear_integration_auth_error(integration):
+    """Undo _flag_integration_auth_error once the page talks to Graph again."""
+    if integration.status != 'error':
+        return
+    integration.status = 'connected'
+    meta = integration.meta if isinstance(integration.meta, dict) else {}
+    meta.pop('token_error', None)
+    meta.pop('token_error_at', None)
+    integration.meta = meta
+    integration.save(update_fields=['status', 'meta'])
+
+
 def send_comment_dm(integration, comment_id, message_text, sender_id=None):
     """
     Deliver a DM to someone who commented on a post.
@@ -660,10 +811,11 @@ def send_comment_dm(integration, comment_id, message_text, sender_id=None):
 
     # Fallback — only possible when Facebook gave us a usable PSID for the sender.
     if sender_id:
-        if send_meta_message(integration, sender_id, message_text):
+        sent, send_err = send_meta_message(integration, sender_id, message_text)
+        if sent:
             logger.info(f"DM delivered via Send API fallback for comment {comment_id}")
             return True, 'send_api', None
-        return False, 'send_api', err or 'Send API delivery failed.'
+        return False, 'send_api', send_err or err or 'Send API delivery failed.'
 
     return False, 'private_reply', err
 
@@ -822,11 +974,12 @@ def process_incoming_webhook_message(integration, contact, conversation, message
                 reply_text += f"\n\n👉 Order here: {checkout}"
 
             # Send the AI reply via the channel's messaging API
+            delivered = True
             if contact and contact.meta_id:
-                if integration.channel_type == 'whatsapp':
-                    send_whatsapp_message(integration, contact.meta_id, reply_text)
-                else:
-                    send_meta_message(integration, contact.meta_id, reply_text)
+                send_fn = send_whatsapp_message if integration.channel_type == 'whatsapp' else send_meta_message
+                delivered, send_error = send_fn(integration, contact.meta_id, reply_text)
+                if not delivered:
+                    logger.error(f"AI auto-reply could not be delivered: {send_error}")
 
             # Save the AI reply as an outbound message in the conversation
             CRMMessage.objects.create(
@@ -834,6 +987,7 @@ def process_incoming_webhook_message(integration, contact, conversation, message
                 sender=f"Trendy AI ({result.get('model_used', 'ai')})",
                 body=reply_text,
                 is_outbound=True,
+                status='sent' if delivered else 'failed',
             )
             conversation.last_message = reply_text
             conversation.updated_at = timezone.now()
@@ -842,6 +996,16 @@ def process_incoming_webhook_message(integration, contact, conversation, message
             logger.info(
                 f"AI auto-reply sent | intent={result.get('intent')} | "
                 f"model={result.get('model_used')} | channel={integration.channel_type}"
+            )
+
+            # Bill the reply against this business's AI credits so the balance and
+            # credit history on the Chatbot page reflect real usage.
+            from .views import charge_ai_credits
+            charge_ai_credits(
+                chatbot,
+                action='auto_reply',
+                model_used=result.get('model_used', ''),
+                description=f"{integration.channel_type}: {message_text}",
             )
 
         # If the AI flagged a product issue, auto-create a support ticket
@@ -864,12 +1028,12 @@ def process_incoming_webhook_message(integration, contact, conversation, message
 
 
 def _resolve_integration_by_page(page_id):
-    """Find the connected FB/IG integration that owns the given page id."""
+    """Find the FB/IG integration that owns the given page id."""
     if not page_id:
         return None
     page_id = str(page_id)
     qs = CRMIntegration.objects.filter(
-        channel_type__in=['facebook', 'instagram'], status='connected'
+        channel_type__in=['facebook', 'instagram'], status__in=LIVE_INTEGRATION_STATUSES
     )
     # Fast path: account_name stores "Name (page_id)"
     integ = qs.filter(account_name__contains=f"({page_id})").first()

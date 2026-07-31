@@ -196,7 +196,7 @@
            class="integ-channel-item {% if ch.is_active %}active{% endif %}"
            data-name="{{ ch.meta.label|lower }}">
             <div class="integ-channel-icon" style="background:{{ ch.meta.color }}22;">
-                <i class="fab {{ ch.meta.icon }}" style="color:{{ ch.meta.color }};"></i>
+                <i class="{{ ch.meta.prefix|default:'fab' }} {{ ch.meta.icon }}" style="color:{{ ch.meta.color }};"></i>
             </div>
             <div class="integ-channel-name">{{ ch.meta.label }}</div>
             {% if ch.is_connected %}
@@ -216,7 +216,7 @@
                 </div>
                 <div class="integ-detail-title">
                     <div class="integ-detail-big-icon" style="background:{{ active_meta.color }}22;">
-                        <i class="fab {{ active_meta.icon }}" style="color:{{ active_meta.color }};font-size:1.3rem;"></i>
+                        <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}" style="color:{{ active_meta.color }};font-size:1.3rem;"></i>
                     </div>
                     <div>
                         <div style="font-weight:700;font-size:1rem;color:var(--crm-text);">{{ active_meta.label }}</div>
@@ -271,25 +271,49 @@
                     <div style="display:flex; align-items:center; gap:0.75rem;">
                         <div style="position:relative;">
                             <div style="width: 40px; height: 40px; border-radius: 50%; background-color: #f3f4f6; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-                               <i class="fab {{ active_meta.icon }}" style="color:var(--crm-primary); font-size: 1.2rem;"></i>
+                               <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}" style="color:var(--crm-primary); font-size: 1.2rem;"></i>
                             </div>
-                            <!-- Green checkmark badge -->
+                            <!-- Status badge -->
                             <div style="position:absolute; bottom:-2px; right:-2px; background:white; border-radius:50%; padding:2px; display:flex; align-items:center; justify-content:center;">
+                                {% if integ.status == 'error' %}
+                                 <i class="fas fa-exclamation-circle" style="color:#ef4444; font-size:14px; background:white; border-radius:50%;"></i>
+                                {% else %}
                                  <i class="fas fa-check-circle" style="color:#10b981; font-size:14px; background:white; border-radius:50%;"></i>
+                                {% endif %}
                             </div>
                         </div>
                         <div>
                             <div style="font-weight:600;font-size:0.9rem;color:#111827;">{{ integ.parsed_name }}</div>
                             <div style="display:flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:#6b7280; margin-top:0.2rem;">
+                                {% if integ.status == 'error' %}
+                                <span style="width:6px; height:6px; border-radius:50%; background-color:#ef4444;"></span>
+                                <span style="color:#ef4444;">Reconnect required</span>
+                                {% else %}
                                 <span style="width:6px; height:6px; border-radius:50%; background-color:#10b981;"></span>
                                 <span style="color:#10b981;">Active</span>
+                                {% endif %}
                                 {% if integ.parsed_id %}
                                 <span style="color:#9ca3af;">&middot;</span>
                                 <span>{{ integ.parsed_id }}</span>
                                 {% endif %}
                             </div>
+                            {% if integ.status == 'error' %}
+                            <div style="font-size:0.72rem; color:#b91c1c; margin-top:0.35rem; max-width:32rem; line-height:1.4;">
+                                Meta rejected this page's access token, so messages can't be sent or synced.
+                                Click <strong>Reconnect</strong> and make sure this page is ticked in Facebook's page picker.
+                                {% if integ.meta.token_error %}
+                                <div style="color:#7f1d1d; margin-top:0.2rem;">{{ integ.meta.token_error }}</div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
+                    {% if integ.status == 'error' and fb_oauth_url %}
+                    <button type="button" onclick="window.location.href='{{ fb_oauth_url }}';"
+                        class="btn-crm-primary" style="border:none; cursor:pointer; margin-left:auto; margin-right:0.5rem; white-space:nowrap;">
+                        <i class="fas fa-rotate-right" style="margin-right:0.4rem;"></i>Reconnect
+                    </button>
+                    {% endif %}
                     <div style="position: relative;" class="dropdown">
                         <button type="button" class="btn-crm-outline" style="border:none; background:transparent; padding:0.5rem; color:#6b7280; cursor:pointer; font-size:1.2rem;" onclick="const menu = this.nextElementSibling; menu.style.display = menu.style.display === 'block' ? 'none' : 'block';">
                             <i class="fas fa-ellipsis-h"></i>
@@ -312,7 +336,7 @@
             <!-- Not Connected State -->
             <div class="no-account-box">
                 <div class="no-account-icon">
-                    <i class="fab {{ active_meta.icon }}"></i>
+                    <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}"></i>
                 </div>
                 <div style="font-weight:600;font-size:0.9rem;color:var(--crm-text);margin-bottom:0.3rem;">No account connected</div>
                 <div style="font-size:0.8rem;color:var(--crm-text-muted);margin-bottom:1.2rem;">
@@ -322,7 +346,7 @@
                 <button type="button"
                    onclick="window.location.href='{{ fb_oauth_url }}';"
                    class="btn-crm-primary" style="display:inline-flex; align-items:center; gap:0.5rem; border:none; cursor:pointer;">
-                    <i class="fab {{ active_meta.icon }}"></i> Connect {{ active_meta.label }}
+                    <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}"></i> Connect {{ active_meta.label }}
                 </button>
                 {% else %}
                 <button type="button" class="btn-crm-primary" onclick="document.getElementById('connectModal').style.display='flex'">
@@ -360,7 +384,7 @@
 <div id="connectModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
     <div style="background:white; padding:2rem; border-radius:12px; width:450px; max-width:90%; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
         <div style="font-weight:700; font-size:1.1rem; margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;">
-            <i class="fab {{ active_meta.icon }}" style="color:{{ active_meta.color }};"></i> Connect {{ active_meta.label }}
+            <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}" style="color:{{ active_meta.color }};"></i> Connect {{ active_meta.label }}
         </div>
         <form method="post" action="{% url 'trendycrm:integration_connect' active_key %}">
             {% csrf_token %}
@@ -406,7 +430,7 @@
 <div id="settingsModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
     <div style="background:white; padding:2rem; border-radius:12px; width:450px; max-width:90%; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
         <div style="font-weight:700; font-size:1.1rem; margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;">
-            <i class="fab {{ active_meta.icon }}" style="color:{{ active_meta.color }};"></i> {{ active_meta.label }} Settings
+            <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}" style="color:{{ active_meta.color }};"></i> {{ active_meta.label }} Settings
         </div>
         
         {% if webhook_url %}

@@ -67,8 +67,9 @@ def fake_private_reply(integration, comment_id, message_text):
 
 def fake_send_meta_message(integration, recipient_id, message_text):
     # Stub for the Send-API fallback path inside send_comment_dm().
+    # Same (success, error) contract as the real send_meta_message().
     sent_send_api.append((recipient_id, message_text))
-    return True
+    return True, None
 
 
 # Patch the names imported into views._check_comment_automations
@@ -211,7 +212,7 @@ try:
 
         # ── 7. Both channels fail -> surfaced error, no false success ─────────
         print("\n7) Both DM channels fail -> real error surfaced, no false 'sent'")
-        meta_sync.send_meta_message = lambda integration, rid, txt: False
+        meta_sync.send_meta_message = lambda integration, rid, txt: (False, None)
         no_psid = CRMSocialComment.objects.create(
             post=post, meta_comment_id='cmt_nopsid',
             sender_name='Anon', sender_id='',  # no PSID -> no fallback possible

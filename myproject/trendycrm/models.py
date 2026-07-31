@@ -194,6 +194,14 @@ class CRMChatbotConfig(models.Model):
     business_phone = models.CharField(max_length=30, blank=True, null=True)
     about_blurb = models.TextField(blank=True, null=True, help_text='About your business for the AI')
     welcome_message = models.TextField(blank=True, null=True)
+    business_address = models.TextField(blank=True, null=True, help_text='Shop/office address the AI can give out')
+    # Delivery/service coverage, e.g. ["Kathmandu", "Lalitpur", "Pokhara"]. A list
+    # rather than free text so the AI can answer "do you deliver to X?" precisely.
+    cities_served = models.JSONField(default=list, blank=True)
+    social_facebook = models.CharField(max_length=255, blank=True, null=True)
+    social_instagram = models.CharField(max_length=255, blank=True, null=True)
+    social_tiktok = models.CharField(max_length=255, blank=True, null=True)
+    social_whatsapp = models.CharField(max_length=255, blank=True, null=True)
     # Business Knowledge Sections
     tone_voice = models.TextField(blank=True, null=True, help_text='How should the AI speak? Describe tone, style, brand voice.')
     offerings = models.TextField(blank=True, null=True, help_text='Products and services you sell.')

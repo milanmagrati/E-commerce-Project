@@ -6,6 +6,10 @@ from django.views.decorators.http import require_POST
 from django.utils import timezone
 from django.conf import settings
 from django.contrib import messages
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
+from django.db.models import F
+from dashboard.timezone_utils import format_nepali_datetime
 import json
 import requests
 import logging
@@ -57,6 +61,7 @@ from .meta_sync import (
     sync_meta_conversations, _process_meta_conversation,
     sync_meta_posts, sync_meta_comments, reply_to_meta_comment, hide_meta_comment, delete_meta_comment,
     _resolve_integration_by_page, process_whatsapp_message_webhook,
+    LIVE_INTEGRATION_STATUSES,
 )
 from .models import (
     CRMContact, CRMConversation, CRMMessage,
@@ -156,9 +161,13 @@ def crm_home(request):
 # ─── Conversations ────────────────────────────────────────────────────────────
 @login_required
 def crm_conversations(request):
-    # Try to auto-sync connected meta channels when opening the inbox
+    # Try to auto-sync connected meta channels when opening the inbox. Pages
+    # flagged 'error' are retried too — a successful sync is what clears the
+    # flag once the operator re-grants the page.
     try:
-        active_integrations = CRMIntegration.objects.filter(channel_type__in=['facebook', 'instagram'], status='connected')
+        active_integrations = CRMIntegration.objects.filter(
+            channel_type__in=['facebook', 'instagram'], status__in=LIVE_INTEGRATION_STATUSES
+        )
         for integ in active_integrations:
             sync_meta_conversations(integ)
     except Exception as e:
@@ -290,6 +299,25 @@ ATTACHMENT_PREVIEW_TEXT = {
 }
 
 
+def _delivery_failure_message(integration, send_error):
+    """
+    Build the toast shown when an outbound message doesn't reach the provider.
+    Names the account it was sent from and quotes the provider's own reason —
+    a bare "check your permissions" gives the agent nothing to act on, and the
+    most common cause (a page that was left unticked during Facebook Login, so
+    its token is dead) is only diagnosable from the Graph error text.
+    """
+    account = integration.parsed_name or integration.account_name if integration else None
+    prefix = f"Couldn't deliver to {account}" if account else "Couldn't deliver the message"
+    reason = f" — {send_error}" if send_error else "."
+    if integration and integration.status == 'error':
+        return (
+            f"{prefix}{reason} This page needs to be reconnected: open Integrations → "
+            f"Connect, and make sure this page is ticked in Facebook's page picker."
+        )
+    return f"{prefix}{reason}"
+
+
 @login_required
 @require_POST
 def crm_send_message(request, conv_id):
@@ -327,24 +355,30 @@ def crm_send_message(request, conv_id):
             send_fn = send_whatsapp_message if conv.channel == 'whatsapp' else send_meta_message
             send_kwargs = {}
             if msg.attachment:
+                # Hand over the file itself, not a URL — Meta fetches `payload.url`
+                # from their own servers, so a local /media/ link is unreachable.
                 send_kwargs = {
-                    'attachment_url': request.build_absolute_uri(msg.attachment.url),
+                    'attachment_file': msg.attachment,
                     'attachment_type': attachment_type,
                 }
-            success = False
+            success, send_error, used_integration = False, None, None
             if conv.integration:
-                success = send_fn(conv.integration, conv.contact.meta_id, body, **send_kwargs)
+                used_integration = conv.integration
+                success, send_error = send_fn(conv.integration, conv.contact.meta_id, body, **send_kwargs)
             else:
                 integrations = CRMIntegration.objects.filter(channel_type=conv.channel, status='connected')
                 for integration in integrations:
-                    if send_fn(integration, conv.contact.meta_id, body, **send_kwargs):
-                        success = True
+                    used_integration = integration
+                    success, send_error = send_fn(integration, conv.contact.meta_id, body, **send_kwargs)
+                    if success:
                         break
+                if not integrations:
+                    send_error = f"No connected {conv.get_channel_display()} account to send from."
 
             if not success:
                 msg.status = 'failed'
                 msg.save(update_fields=['status'])
-                messages.error(request, "Failed to send message to Meta. Please check your page connection and permissions.")
+                messages.error(request, _delivery_failure_message(used_integration, send_error))
 
     from django.urls import reverse
     return redirect(f"{reverse('trendycrm:conversations')}?id={conv_id}")
@@ -414,12 +448,16 @@ def crm_create_conversation(request):
                 send_integration = integration
                 if not send_integration:
                     send_integration = CRMIntegration.objects.filter(channel_type=channel, status='connected').first()
-                if send_integration and send_fn(send_integration, contact.meta_id, first_message):
-                    pass
+
+                if send_integration:
+                    sent, send_error = send_fn(send_integration, contact.meta_id, first_message)
                 else:
+                    sent, send_error = False, f"No connected {channel} account to send from."
+
+                if not sent:
                     msg.status = 'failed'
                     msg.save(update_fields=['status'])
-                    messages.error(request, "Message saved but failed to send — check the channel connection.")
+                    messages.error(request, _delivery_failure_message(send_integration, send_error))
 
         return redirect(f"{reverse('trendycrm:conversations')}?id={conv.pk}")
     
@@ -602,38 +640,101 @@ def crm_resolve_conversation(request, conv_id):
 # ─── Chatbot ─────────────────────────────────────────────────────────────────
 @login_required
 def crm_chatbot_list(request):
-    chatbots = CRMChatbotConfig.objects.all()
+    """
+    Multi-business setup hub. Each CRMChatbotConfig represents one business/brand —
+    its own identity, knowledge base, agent settings, and set of connected channels.
+    """
+    chatbots = list(
+        CRMChatbotConfig.objects.all().prefetch_related('integrations').order_by('-is_active', 'name')
+    )
+
+    # Decorate each business with its assigned channels so the card can show real
+    # icons (Font Awesome has no brand glyph for the mail channels) and an
+    # unambiguous count — "assigned to this business", not "connected overall".
+    for bot in chatbots:
+        assigned = list(bot.integrations.all())
+        bot.assigned_channels = [
+            {
+                'meta': channel_meta(i.channel_type),
+                'display_name': i.get_channel_type_display(),
+                'account_name': i.parsed_name or i.account_name,
+                'is_connected': i.status == 'connected',
+            }
+            for i in assigned
+        ]
+        bot.assigned_count = len(assigned)
+
+    total_businesses = len(chatbots)
+    active_count = sum(1 for b in chatbots if b.is_active)
+    connected_channels_count = CRMIntegration.objects.filter(status='connected').count()
+    unassigned_connected_count = CRMIntegration.objects.filter(
+        status='connected', chatbot_config__isnull=True
+    ).count()
+
     context = {
         'chatbots': chatbots,
+        'unassigned_connected_count': unassigned_connected_count,
+        'total_businesses': total_businesses,
+        'active_count': active_count,
+        'connected_channels_count': connected_channels_count,
         'crm_section': 'chatbot',
     }
     return render(request, 'trendycrm/chatbot_list.html', context)
 
+
 @login_required
 @require_POST
 def crm_chatbot_create(request):
-    bot = CRMChatbotConfig.objects.create(name="New Business AI", business_name="New Business")
-    messages.success(request, 'New business chatbot created. Please configure it.')
+    """Create a new business AI configuration and send the operator straight to setup."""
+    # Count-based naming collides after a delete (delete #1 of 2, create again →
+    # a second "New Business 2"), so walk up until the name is actually free.
+    taken = set(CRMChatbotConfig.objects.values_list('business_name', flat=True))
+    default_name = "New Business"
+    n = 1
+    while default_name in taken:
+        n += 1
+        default_name = f"New Business {n}"
+    bot = CRMChatbotConfig.objects.create(name=f"{default_name} AI", business_name=default_name)
+    messages.success(request, f'"{default_name}" created. Fill in its knowledge base to bring it online.')
     return redirect('trendycrm:chatbot', bot_id=bot.id)
+
+
+@login_required
+@require_POST
+def crm_chatbot_delete(request, bot_id):
+    """AJAX: Delete a business's chatbot configuration. Its channels simply become unassigned."""
+    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
+    name = chatbot.business_name or chatbot.name
+    chatbot.delete()
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'status': 'ok'})
+    messages.success(request, f'"{name}" deleted.')
+    return redirect('trendycrm:chatbot_list')
+
 
 @login_required
 def crm_chatbot(request, bot_id):
     chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
-    integrations = CRMIntegration.objects.all()
+    integrations = CRMIntegration.objects.all().select_related('chatbot_config')
     recent_logs = chatbot.credit_logs.all()[:20]
+    other_businesses = CRMChatbotConfig.objects.exclude(pk=bot_id).order_by('name')
 
     channel_groups = []
     for ct, ct_display in CRMIntegration.CHANNEL_TYPE_CHOICES:
         integs = [i for i in integrations if i.channel_type == ct]
         if not integs:
             continue
-            
+
         is_connected = any(i.status == 'connected' for i in integs)
-        
+
         channel_groups.append({
             'channel_type': ct,
             'display_name': ct_display,
             'is_connected': is_connected,
+            'meta': channel_meta(ct),
+            # Accounts this business is already auto-replying on — used to
+            # auto-expand the group so an enabled toggle isn't hidden.
+            'enabled_here': any(i.chatbot_config_id == chatbot.pk for i in integs),
             'accounts': integs,
         })
 
@@ -647,29 +748,64 @@ def crm_chatbot(request, bot_id):
         'channel_groups': channel_groups,
         'recent_logs': recent_logs,
         'crm_section': 'chatbot',
+        'other_businesses': other_businesses,
         'openai_available': providers_available['openai'],
         'gemini_available': providers_available['gemini'],
+        # Seeds the hidden field behind the Cities Served tag input, so the list
+        # survives a submit even if the tag JS never runs.
+        'cities_served_json': json.dumps(chatbot.cities_served or []),
     }
     return render(request, 'trendycrm/chatbot.html', context)
 
 
 @login_required
 @require_POST
-def crm_chatbot_delete(request, bot_id):
-    """AJAX: Delete a chatbot configuration."""
-    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
-    chatbot.delete()
-    return JsonResponse({'status': 'ok'})
-
-
-@login_required
-@require_POST
 def crm_chatbot_toggle(request, bot_id):
-    """AJAX: Toggle the global AI on/off switch."""
+    """
+    AJAX: Set the global AI on/off switch.
+
+    The caller sends the state it wants ('enabled': 'true'/'false') so a stale page
+    or a second browser tab can't flip the AI the opposite way from what the
+    operator just confirmed. Falls back to a plain flip if no state is sent.
+    """
     chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
-    chatbot.is_active = not chatbot.is_active
+    desired = request.POST.get('enabled')
+    if desired in ('true', 'false'):
+        chatbot.is_active = (desired == 'true')
+    else:
+        chatbot.is_active = not chatbot.is_active
     chatbot.save(update_fields=['is_active', 'updated_at'])
-    return JsonResponse({'is_active': chatbot.is_active})
+    return JsonResponse({'status': 'ok', 'is_active': chatbot.is_active})
+
+
+def _parse_city_list(raw):
+    """
+    Normalise the 'cities served' field into a de-duplicated list of names.
+    Accepts the JSON array the tag input posts, or a plain comma-separated
+    string, so the field still saves if JS is unavailable.
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return []
+
+    values = None
+    if raw.startswith('['):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                values = parsed
+        except (ValueError, TypeError):
+            values = None
+    if values is None:
+        values = raw.split(',')
+
+    cities, seen = [], set()
+    for city in values:
+        city = str(city).strip()
+        if city and city.lower() not in seen:
+            seen.add(city.lower())
+            cities.append(city)
+    return cities
 
 
 @login_required
@@ -678,15 +814,41 @@ def crm_chatbot_save_knowledge(request, bot_id):
     """
     AJAX: Save the 5-section Business Knowledge Base.
     Saves: about_blurb (identity), tone_voice, offerings, faq_text, playbook,
-           business_name, business_email, business_phone, welcome_message.
+           business_name, business_email, business_phone, welcome_message,
+           business_address, cities_served, and the social handles.
     """
     chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
 
     chatbot.business_name = request.POST.get('business_name', '').strip() or chatbot.business_name
-    chatbot.business_email = request.POST.get('business_email', '').strip() or chatbot.business_email
-    chatbot.business_phone = request.POST.get('business_phone', '').strip() or chatbot.business_phone
+
+    # Email/phone are optional, so an empty submission means "clear it" — the old
+    # `or <existing>` fallback made them impossible to remove once set.
+    email = request.POST.get('business_email', '').strip()
+    if email:
+        try:
+            validate_email(email)
+        except ValidationError:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse(
+                    {'status': 'error', 'message': f'"{email}" is not a valid email address.'},
+                    status=400,
+                )
+            messages.error(request, f'"{email}" is not a valid email address.')
+            return redirect('trendycrm:chatbot', bot_id=bot_id)
+    chatbot.business_email = email or None
+    chatbot.business_phone = request.POST.get('business_phone', '').strip() or None
+
     chatbot.about_blurb = request.POST.get('about_blurb', '').strip() or None
     chatbot.welcome_message = request.POST.get('welcome_message', '').strip() or None
+    chatbot.business_address = request.POST.get('business_address', '').strip() or None
+
+    # Cities are posted as a JSON array from the tag input. Fall back to a
+    # comma-separated string so a non-JS submit (or an API caller) still works.
+    chatbot.cities_served = _parse_city_list(request.POST.get('cities_served', ''))
+
+    for field in ('social_facebook', 'social_instagram', 'social_tiktok', 'social_whatsapp'):
+        setattr(chatbot, field, request.POST.get(field, '').strip() or None)
+
     chatbot.tone_voice = request.POST.get('tone_voice', '').strip() or None
     chatbot.offerings = request.POST.get('offerings', '').strip() or None
     chatbot.faq_text = request.POST.get('faq_text', '').strip() or None
@@ -785,6 +947,31 @@ def crm_chatbot_toggle_channel(request, bot_id):
     return JsonResponse({'status': 'error', 'message': 'integration_id required'}, status=400)
 
 
+def charge_ai_credits(chatbot, action, model_used='', description='', credits=1):
+    """
+    Record one AI call against a business's credit balance.
+
+    `credits_used` follows the CRMCreditLog convention: negative = usage,
+    positive = top-up. The balance is decremented with an F() expression so
+    concurrent webhook replies can't clobber each other's writes.
+
+    Never raises — an accounting failure must not break the AI reply itself.
+    """
+    if not chatbot or not credits:
+        return
+    try:
+        CRMChatbotConfig.objects.filter(pk=chatbot.pk).update(ai_credits=F('ai_credits') - credits)
+        CRMCreditLog.objects.create(
+            chatbot_config=chatbot,
+            action=action,
+            credits_used=-credits,
+            model_used=(model_used or '')[:50],
+            description=(description or '')[:300],
+        )
+    except Exception:
+        logger.exception("Failed to record AI credit usage for chatbot %s", getattr(chatbot, 'pk', None))
+
+
 @login_required
 def crm_credit_history(request, bot_id):
     """AJAX: Returns JSON list of recent credit log entries."""
@@ -797,12 +984,11 @@ def crm_credit_history(request, bot_id):
             'credits_used': l.credits_used,
             'model_used': l.model_used or '—',
             'description': l.description or '',
-            'created_at': l.created_at.strftime('%b %d, %Y %H:%M'),
+            'created_at': format_nepali_datetime(l.created_at, '%b %d, %Y %H:%M'),
             'is_topup': l.credits_used > 0,
         }
         for l in logs
     ]
-    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
     return JsonResponse({'logs': data, 'balance': chatbot.ai_credits})
 
 
@@ -929,15 +1115,26 @@ def crm_quick_replies_search(request):
 
 
 # ─── Integrations ─────────────────────────────────────────────────────────────
+# 'prefix' is the Font Awesome style class the icon actually lives in — the mail
+# channels use solid (fas) glyphs because Font Awesome has no Gmail/Outlook/Zoho
+# brand icons. Rendering these with a hardcoded `fab` produces a blank square.
 INTEGRATION_META = {
-    'whatsapp': {'label': 'WhatsApp', 'icon': 'fa-whatsapp', 'color': '#25D366', 'group': 'MESSAGING CHANNELS'},
-    'instagram': {'label': 'Instagram', 'icon': 'fa-instagram', 'color': '#E1306C', 'group': 'MESSAGING CHANNELS'},
-    'facebook': {'label': 'Facebook Messenger', 'icon': 'fa-facebook-messenger', 'color': '#0084FF', 'group': 'MESSAGING CHANNELS'},
-    'tiktok': {'label': 'TikTok', 'icon': 'fa-tiktok', 'color': '#010101', 'group': 'MESSAGING CHANNELS'},
-    'gmail': {'label': 'Gmail', 'icon': 'fa-envelope', 'color': '#EA4335', 'group': 'MESSAGING CHANNELS'},
-    'outlook': {'label': 'Outlook', 'icon': 'fa-envelope-open', 'color': '#0078D4', 'group': 'MESSAGING CHANNELS'},
-    'zoho_mail': {'label': 'Zoho Mail', 'icon': 'fa-mail-bulk', 'color': '#E42527', 'group': 'MESSAGING CHANNELS'},
+    'whatsapp': {'label': 'WhatsApp', 'icon': 'fa-whatsapp', 'prefix': 'fab', 'color': '#25D366', 'tint': '#d1fae5', 'group': 'MESSAGING CHANNELS'},
+    'instagram': {'label': 'Instagram', 'icon': 'fa-instagram', 'prefix': 'fab', 'color': '#E1306C', 'tint': '#fce7f3', 'group': 'MESSAGING CHANNELS'},
+    'facebook': {'label': 'Facebook Messenger', 'icon': 'fa-facebook-messenger', 'prefix': 'fab', 'color': '#0084FF', 'tint': '#dbeafe', 'group': 'MESSAGING CHANNELS'},
+    'tiktok': {'label': 'TikTok', 'icon': 'fa-tiktok', 'prefix': 'fab', 'color': '#010101', 'tint': '#f3f4f6', 'group': 'MESSAGING CHANNELS'},
+    'gmail': {'label': 'Gmail', 'icon': 'fa-envelope', 'prefix': 'fas', 'color': '#EA4335', 'tint': '#fee2e2', 'group': 'MESSAGING CHANNELS'},
+    'outlook': {'label': 'Outlook', 'icon': 'fa-envelope-open', 'prefix': 'fas', 'color': '#0078D4', 'tint': '#dbeafe', 'group': 'MESSAGING CHANNELS'},
+    'zoho_mail': {'label': 'Zoho Mail', 'icon': 'fa-mail-bulk', 'prefix': 'fas', 'color': '#E42527', 'tint': '#fee2e2', 'group': 'MESSAGING CHANNELS'},
 }
+
+# Fallback so an unknown/legacy channel_type still renders a visible icon.
+FALLBACK_CHANNEL_META = {'label': 'Channel', 'icon': 'fa-plug', 'prefix': 'fas', 'color': '#6b7280', 'tint': '#f3f4f6'}
+
+
+def channel_meta(channel_type):
+    """Icon/colour metadata for a channel type, never None."""
+    return INTEGRATION_META.get(channel_type, FALLBACK_CHANNEL_META)
 
 
 @login_required
@@ -953,7 +1150,9 @@ def crm_integrations(request):
     integrations = CRMIntegration.objects.all()
     active_key = request.GET.get('channel', 'instagram')
     active_integrations = integrations.filter(channel_type=active_key)
-    connected_integrations = active_integrations.filter(status='connected')
+    # 'error' accounts are listed too — a page whose token Graph has rejected is
+    # still linked here, and hiding it would leave no way to reconnect or remove it.
+    connected_integrations = active_integrations.filter(status__in=['connected', 'error'])
     active_meta = INTEGRATION_META.get(active_key, {})
 
     channels_with_meta = []
@@ -1214,6 +1413,11 @@ def _handle_oauth_callback(request, channel_key, state_session_key):
                             integ.account_name = account_name
                             integ.access_token = page_access_token
                             integ.connected_at = timezone.now()
+                            # Clear any "reconnect required" flag from a previously
+                            # rejected token — this grant supersedes it.
+                            if isinstance(integ.meta, dict):
+                                integ.meta.pop('token_error', None)
+                                integ.meta.pop('token_error_at', None)
                             integ.save()
                             logger.info(f"Successfully connected {channel_key} page: {page_name}")
                             connected_count += 1
@@ -1566,7 +1770,9 @@ from django.http import JsonResponse
 # ─── Social Posts & Comments ──────────────────────────────────────────────────
 @login_required
 def crm_social_posts(request):
-    integrations = CRMIntegration.objects.filter(channel_type__in=['facebook', 'instagram'], status='connected')
+    integrations = CRMIntegration.objects.filter(
+        channel_type__in=['facebook', 'instagram'], status__in=LIVE_INTEGRATION_STATUSES
+    )
     for integration in integrations:
         sync_meta_posts(integration)
         _backfill_facebook_user_names(integration)
@@ -1818,7 +2024,9 @@ def crm_page_profiles(request):
     Dashboard view to manage Page Profiles for the Centralized Knowledge Core.
     One profile per connected integration (social page).
     """
-    integrations = CRMIntegration.objects.filter(status='connected')
+    # 'error' pages are included: their knowledge/profile must stay editable
+    # while the operator sorts the reconnect out.
+    integrations = CRMIntegration.objects.filter(status__in=LIVE_INTEGRATION_STATUSES)
     profiles = {p.integration_id: p for p in CRMPageProfile.objects.all()}
 
     # Auto-create missing profiles for connected pages
@@ -1916,6 +2124,15 @@ def crm_ai_test(request):
             image_data=image_data,
             image_mime=image_mime,
         )
+        if result.get('success') and not result.get('error'):
+            charge_ai_credits(
+                chatbot,
+                action='manual_test',
+                model_used=result.get('model_used', ''),
+                description=(message_text or '[image only]'),
+            )
+            chatbot.refresh_from_db(fields=['ai_credits'])
+            result['credits_remaining'] = chatbot.ai_credits
         return JsonResponse(result)
     except Exception as e:
         logger.exception("AI test failed")
@@ -2037,7 +2254,7 @@ def _check_comment_automations(integration, comment_obj):
 @login_required
 def crm_comment_automations(request):
     """List / manage all comment automation rules."""
-    integrations = CRMIntegration.objects.filter(status='connected')
+    integrations = CRMIntegration.objects.filter(status__in=LIVE_INTEGRATION_STATUSES)
     automations = CommentAutomation.objects.select_related('integration').all()
 
     # Stats

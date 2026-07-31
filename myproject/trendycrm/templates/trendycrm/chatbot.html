@@ -1,8 +1,49 @@
 {% extends "trendycrm/base_crm.html" %}
 {% load static %}
 
-{% block title %}Chatbot (AI) — Trendy CRM{% endblock %}
-{% block topbar_title %}Chatbot (AI){% endblock %}
+{% block title %}{{ chatbot.business_name|default:chatbot.name }} — Chatbot (AI) — Trendy CRM{% endblock %}
+{% block topbar_title %}{{ chatbot.business_name|default:chatbot.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="biz-switcher-wrap">
+    <button type="button" class="biz-switcher-btn" onclick="toggleBizSwitcher()" id="bizSwitcherBtn">
+        <i class="fas fa-store"></i>
+        <span>Switch Business</span>
+        <i class="fas fa-chevron-down" style="font-size:.7rem;"></i>
+    </button>
+    <div class="biz-switcher-menu" id="bizSwitcherMenu">
+        <div class="biz-switcher-current">
+            <div class="cb-avatar-sm">{{ chatbot.business_name|default:chatbot.name|slice:":1"|upper }}</div>
+            <div>
+                <div class="biz-switcher-name">{{ chatbot.business_name|default:chatbot.name }}</div>
+                <div class="biz-switcher-tag">Currently editing</div>
+            </div>
+        </div>
+        {% if other_businesses %}
+        <div class="biz-switcher-divider"></div>
+        {% for biz in other_businesses %}
+        <a href="{% url 'trendycrm:chatbot' biz.id %}" class="biz-switcher-item">
+            <div class="cb-avatar-sm">{{ biz.business_name|default:biz.name|slice:":1"|upper }}</div>
+            <div style="flex:1; min-width:0;">
+                <div class="biz-switcher-name">{{ biz.business_name|default:biz.name }}</div>
+            </div>
+            {% if biz.is_active %}<span class="status-badge active" style="padding:1px 7px;">Active</span>{% else %}<span class="status-badge paused" style="padding:1px 7px;">Paused</span>{% endif %}
+        </a>
+        {% endfor %}
+        {% endif %}
+        <div class="biz-switcher-divider"></div>
+        <a href="{% url 'trendycrm:chatbot_list' %}" class="biz-switcher-item biz-switcher-action">
+            <i class="fas fa-th-large"></i> All Businesses
+        </a>
+        <form action="{% url 'trendycrm:chatbot_create' %}" method="POST" style="margin:0;">
+            {% csrf_token %}
+            <button type="submit" class="biz-switcher-item biz-switcher-action" style="width:100%; text-align:left; background:none; border:none; cursor:pointer; font:inherit;">
+                <i class="fas fa-plus"></i> Add New Business
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
 
 {% block extra_style %}
 :root {
@@ -272,6 +313,39 @@
 .lang-info h6 { margin: 0 0 .2rem 0; font-size: .85rem; font-weight: 700; color: #1f2937; }
 .lang-info p { margin: 0; font-size: .72rem; color: #6b7280; line-height: 1.4; }
 .lang-box.active .lang-info h6 { color: #5b21b6; }
+
+/* ── Business Switcher ─────────────────────── */
+.biz-switcher-wrap { position: relative; }
+.biz-switcher-btn {
+    display: flex; align-items: center; gap: .5rem;
+    background: #fff; border: 1.5px solid #e5e7eb; border-radius: 9px;
+    padding: .5rem .9rem; font-size: .82rem; font-weight: 600; color: #4b5563;
+    cursor: pointer; transition: all .15s;
+}
+.biz-switcher-btn:hover { border-color: #a78bfa; color: #7c3aed; }
+.biz-switcher-menu {
+    display: none; position: absolute; right: 0; top: calc(100% + 8px);
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.12); width: 280px; z-index: 200;
+    padding: .5rem; max-height: 70vh; overflow-y: auto;
+}
+.biz-switcher-menu.open { display: block; }
+.biz-switcher-current, .biz-switcher-item {
+    display: flex; align-items: center; gap: .65rem; padding: .55rem .6rem; border-radius: 8px;
+    text-decoration: none; color: inherit;
+}
+.biz-switcher-current { background: #f5f3ff; }
+a.biz-switcher-item:hover { background: #f9fafb; }
+.biz-switcher-action { color: #7c3aed; font-weight: 600; font-size: .82rem; }
+.biz-switcher-name { font-size: .84rem; font-weight: 600; color: #1e1b4b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.biz-switcher-tag { font-size: .7rem; color: #9ca3af; }
+.biz-switcher-divider { height: 1px; background: #f3f4f6; margin: .4rem 0; }
+.cb-avatar-sm {
+    width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--crm-primary), var(--crm-accent));
+    color: #fff; font-weight: 800; font-size: .8rem;
+    display: flex; align-items: center; justify-content: center;
+}
 {% endblock %}
 
 {% block crm_content %}
@@ -318,6 +392,20 @@
         <input type="checkbox" id="masterToggle" {% if chatbot.is_active %}checked{% endif %}>
         <span class="ai-toggle-slider"></span>
     </label>
+</div>
+
+<!-- ── AI Credits ──────────────────────────────────────────── -->
+<div class="credit-bar">
+    <div style="display:flex; align-items:center; gap:.9rem;">
+        <i class="fas fa-bolt" style="color:#f59e0b; font-size:1.3rem;"></i>
+        <div>
+            <div class="credit-label">AI credits remaining</div>
+            <div class="credit-amount" id="creditBalance">{{ chatbot.ai_credits }}</div>
+        </div>
+    </div>
+    <button type="button" class="btn-outline" onclick="openCreditHistory()">
+        <i class="fas fa-clock-rotate-left"></i> Usage history
+    </button>
 </div>
 
 <!-- ── AI Test Console ─────────────────────────────────────── -->
@@ -397,6 +485,38 @@
                             <div class="full">
                                 <label class="form-label">Welcome Message <span class="hint">— First message the AI sends</span></label>
                                 <textarea name="welcome_message" class="cb-textarea" rows="2" placeholder="Hi! 👋 Welcome to Trendy Shop. How can I help you today?">{{ chatbot.welcome_message|default:'' }}</textarea>
+                            </div>
+                            <div class="full">
+                                <label class="form-label">Address <span class="hint">— Optional. Where customers can find you</span></label>
+                                <textarea name="business_address" class="cb-textarea" rows="2" placeholder="Putalisadak, Kathmandu 44600, Nepal">{{ chatbot.business_address|default:'' }}</textarea>
+                            </div>
+                            <div class="full">
+                                <label class="form-label">Cities Served <span class="hint">— Optional. Where you deliver / operate</span></label>
+                                <div class="tag-input-container" id="cityTagContainer">
+                                    {% for city in chatbot.cities_served %}
+                                    <div class="tag" data-val="{{ city }}">
+                                        {{ city }} <i class="fas fa-times delete-tag"></i>
+                                    </div>
+                                    {% endfor %}
+                                    <input type="text" id="cityTagInput" placeholder="Add city and press Enter" style="border:none;outline:none;background:transparent;flex:1;min-width:150px;font-size:.85rem;padding:.2rem 0;">
+                                </div>
+                                <input type="hidden" name="cities_served" id="citiesServedHidden" value="{{ cities_served_json }}">
+                            </div>
+                            <div>
+                                <label class="form-label">Facebook <span class="hint">— Optional</span></label>
+                                <input name="social_facebook" type="text" class="cb-input" value="{{ chatbot.social_facebook|default:'' }}" placeholder="facebook.com/trendyshop">
+                            </div>
+                            <div>
+                                <label class="form-label">Instagram <span class="hint">— Optional</span></label>
+                                <input name="social_instagram" type="text" class="cb-input" value="{{ chatbot.social_instagram|default:'' }}" placeholder="instagram.com/trendyshop">
+                            </div>
+                            <div>
+                                <label class="form-label">TikTok <span class="hint">— Optional</span></label>
+                                <input name="social_tiktok" type="text" class="cb-input" value="{{ chatbot.social_tiktok|default:'' }}" placeholder="tiktok.com/@trendyshop">
+                            </div>
+                            <div>
+                                <label class="form-label">WhatsApp <span class="hint">— Optional</span></label>
+                                <input name="social_whatsapp" type="text" class="cb-input" value="{{ chatbot.social_whatsapp|default:'' }}" placeholder="+977 98XXXXXXXX">
                             </div>
                         </div>
                     </div>
@@ -516,28 +636,36 @@
                 </p>
                 {% for group in channel_groups %}
                 <div class="ch-group-item" style="border-bottom:1px solid rgba(124,58,237,.05); padding:.45rem 0;">
-                    <div class="ch-item" style="border-bottom:none; padding:.2rem 0; cursor:{% if group.is_connected %}pointer{% else %}default{% endif %};" 
+                    <div class="ch-item" style="border-bottom:none; padding:.2rem 0; cursor:{% if group.is_connected %}pointer{% else %}default{% endif %};"
                          {% if group.is_connected %}onclick="toggleDropdown('{{ group.channel_type }}')"{% endif %}>
-                        <div class="ch-icon" style="background:{% if group.channel_type == 'whatsapp' %}#d1fae5{% elif group.channel_type == 'instagram' %}#fce7f3{% elif group.channel_type == 'facebook' %}#dbeafe{% elif group.channel_type == 'gmail' %}#fee2e2{% elif group.channel_type == 'tiktok' %}#f3f4f6{% else %}#f3f4f6{% endif %};">
-                            <i class="fab fa-{{ group.channel_type }}" style="color:{% if group.channel_type == 'whatsapp' %}#059669{% elif group.channel_type == 'instagram' %}#be185d{% elif group.channel_type == 'facebook' %}#1d4ed8{% elif group.channel_type == 'gmail' %}#dc2626{% else %}#6b7280{% endif %};"></i>
+                        <div class="ch-icon" style="background:{{ group.meta.tint }};">
+                            <i class="{{ group.meta.prefix }} {{ group.meta.icon }}" style="color:{{ group.meta.color }};"></i>
                         </div>
                         <div class="ch-name">{{ group.display_name }}</div>
-                        <div>
+                        <div style="display:flex; align-items:center; gap:.4rem;">
                             {% if group.is_connected %}
-                            <i class="fas fa-chevron-down" id="icon-{{ group.channel_type }}" style="color:#9ca3af; font-size:.85rem; transition:transform 0.2s;"></i>
+                            {% if group.enabled_here %}<span class="status-badge active" style="font-size:.62rem; padding:1px 6px;">On</span>{% endif %}
+                            <i class="fas fa-chevron-down" id="icon-{{ group.channel_type }}" style="color:#9ca3af; font-size:.85rem; transition:transform 0.2s;{% if group.enabled_here %}transform:rotate(180deg);{% endif %}"></i>
                             {% else %}
                             <span class="ch-status">Not connected</span>
                             {% endif %}
                         </div>
                     </div>
                     {% if group.is_connected %}
-                    <div id="dropdown-{{ group.channel_type }}" style="display:none; padding: .5rem 0 .5rem 2.5rem; background:#fafafa; border-radius:8px; margin-top:.3rem; border: 1px solid #f3f4f6;">
+                    <div id="dropdown-{{ group.channel_type }}" style="display:{% if group.enabled_here %}block{% else %}none{% endif %}; padding: .5rem 0 .5rem 2.5rem; background:#fafafa; border-radius:8px; margin-top:.3rem; border: 1px solid #f3f4f6;">
                         {% for acc in group.accounts %}
                             {% if acc.status == 'connected' %}
                             <div style="display:flex; justify-content:space-between; align-items:center; padding: .4rem .6rem;">
-                                <span style="font-size:.8rem; font-weight:500; color:#374151;">{{ acc.account_name|default:"Unnamed Account" }}</span>
-                                <label class="ai-toggle-wrap" title="Toggle auto-reply for {{ acc.account_name }}" style="width:38px;height:20px;" onclick="event.stopPropagation()">
+                                <div style="min-width:0;">
+                                    <span style="font-size:.8rem; font-weight:500; color:#374151;">{{ acc.account_name|default:"Unnamed Account" }}</span>
+                                    {% if acc.chatbot_config_id and acc.chatbot_config_id != chatbot.id %}
+                                    <div style="font-size:.68rem; color:#b45309; margin-top:1px;"><i class="fas fa-exclamation-triangle"></i> In use by {{ acc.chatbot_config.business_name|default:acc.chatbot_config.name }} — enabling here moves it</div>
+                                    {% endif %}
+                                </div>
+                                <label class="ai-toggle-wrap" title="Toggle auto-reply for {{ acc.account_name }}" style="width:38px;height:20px;flex-shrink:0;" onclick="event.stopPropagation()">
                                     <input type="checkbox" class="channel-toggle" data-integration-id="{{ acc.id }}"
+                                        data-owned-by-other="{% if acc.chatbot_config_id and acc.chatbot_config_id != chatbot.id %}1{% else %}0{% endif %}"
+                                        data-owner-name="{% if acc.chatbot_config %}{{ acc.chatbot_config.business_name|default:acc.chatbot_config.name|escapejs }}{% endif %}"
                                         {% if acc.chatbot_config_id == chatbot.id %}checked{% endif %}>
                                     <span class="ai-toggle-slider" style="border-radius:20px;"></span>
                                 </label>
@@ -569,15 +697,9 @@
                     
                     <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden;">
                         
-                        <!-- AI Model -->
-                        <div style="padding:.65rem .85rem; border-bottom:1px solid #e5e7eb;">
-                            <label class="form-label" style="margin:0 0 .25rem 0; font-size:.78rem; font-weight:600;">AI Model</label>
-                            <select name="ai_model" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0; border:1px solid #d1d5db;">
-                                {% for val, label in chatbot.AI_MODEL_CHOICES %}
-                                <option value="{{ val }}" {% if chatbot.ai_model == val %}selected{% endif %}>{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
+                        <!-- NOTE: the old "AI Model" select was removed — the router picks
+                             models from the Model Routing block below, so that control was
+                             saved but never read. Configure models there instead. -->
 
                         <!-- Response Tone -->
                         <div style="padding:.65rem .85rem; border-bottom:1px solid #e5e7eb;">
@@ -693,10 +815,21 @@
     </div>
 </div>
 
+<!-- ── Credit History Modal ─────────────────────────────────────── -->
+<div class="cb-modal" id="creditHistoryModal">
+    <div class="cb-modal-box">
+        <div class="cb-modal-header">
+            <h5><i class="fas fa-bolt" style="color:#f59e0b;"></i> AI Credit Usage</h5>
+            <button type="button" class="cb-modal-close" onclick="closeModal('creditHistoryModal')">&times;</button>
+        </div>
+        <div class="cb-modal-body" id="creditHistoryBody" style="padding:0;"></div>
+    </div>
+</div>
+
 <!-- ── Bottom Action Bar ────────────────────────────────────────── -->
 <div class="bottom-action-bar">
     <a href="{% url 'trendycrm:chatbot_list' %}" class="btn-outline-back">
-        <i class="fas fa-arrow-left"></i> Back to Dashboard
+        <i class="fas fa-arrow-left"></i> Back to All Businesses
     </a>
     <button onclick="saveAllSettings()" class="btn-primary-apply" id="globalApplyBtn">
         <i class="fas fa-check-double"></i> Apply Changes
@@ -809,12 +942,19 @@ document.addEventListener('touchend', handleDragEnd);
 async function executeMasterToggle(enabled) {
     masterToggle.checked = enabled; // Flip switch visually
     try {
+        // Send the state we want, not "flip whatever you have" — otherwise a stale
+        // page or a second tab makes the server go the opposite way.
+        const fd = new FormData();
+        fd.append('enabled', enabled ? 'true' : 'false');
         const resp = await fetch('{% url "trendycrm:chatbot_toggle" chatbot.id %}', {
             method: 'POST',
+            body: fd,
             headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
         });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
         const active = data.is_active;
+        masterToggle.checked = active; // trust the server's answer
 
         const bar = document.getElementById('toggleBar');
         const icon = document.getElementById('toggleIcon');
@@ -852,54 +992,65 @@ knowledgeInputs.forEach(el => el.addEventListener('input', () => {
     document.getElementById('knowledgeUnsaved').classList.add('show');
 }));
 
-knowledgeForm.addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const btn = document.getElementById('knowledgeSaveBtn');
-    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+// Both forms post through this helper so "Apply Changes" can await them.
+// Returns true only when the server confirmed the save.
+async function submitCrmForm(form, btn, idleHtml) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
     try {
-        const resp = await fetch(this.action, {
+        const resp = await fetch(form.action, {
             method: 'POST',
-            body: new FormData(this),
+            body: new FormData(form),
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         });
-        const data = await resp.json();
-        if (data.status === 'ok') {
-            showToast('✓ ' + data.message);
-            document.getElementById('knowledgeSaveStatus').textContent = 'Saved just now';
-            document.getElementById('knowledgeUnsaved').classList.remove('show');
-        } else { showToast('Error saving', true); }
-    } catch(e) { showToast('Network error', true); }
-    finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Save Knowledge Base'; }
-});
-
-// ── Agent Config Form ────────────────────────────────────────────────────────
-function confirmDisconnect(inputId) {
-    if (confirm('Are you sure you want to disconnect this AI? Your chatbot will lose these capabilities.')) {
-        document.getElementById(inputId).value = '1';
-        document.getElementById('agentSaveBtn').click();
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data.status === 'ok') {
+            return { ok: true, message: data.message || 'Saved' };
+        }
+        return { ok: false, message: data.message || 'Error saving' };
+    } catch (e) {
+        return { ok: false, message: 'Network error' };
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = idleHtml;
     }
 }
 
-document.getElementById('agentForm').addEventListener('submit', async function(e) {
+async function saveKnowledge(silent) {
+    const btn = document.getElementById('knowledgeSaveBtn');
+    const res = await submitCrmForm(knowledgeForm, btn, '<i class="fas fa-save"></i> Save Knowledge Base');
+    if (res.ok) {
+        if (!silent) showToast('✓ ' + res.message);
+        document.getElementById('knowledgeSaveStatus').textContent = 'Saved just now';
+        document.getElementById('knowledgeUnsaved').classList.remove('show');
+    } else {
+        showToast(res.message, true);
+    }
+    return res.ok;
+}
+
+knowledgeForm.addEventListener('submit', function(e) {
     e.preventDefault();
-    
-    // Frontend Validation (API Keys are now managed via .env, no inputs to validate here)
+    saveKnowledge(false);
+});
+
+// ── Agent Config Form ────────────────────────────────────────────────────────
+const agentForm = document.getElementById('agentForm');
+
+async function saveAgent(silent) {
     const btn = document.getElementById('agentSaveBtn');
-    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
-    try {
-        const resp = await fetch(this.action, {
-            method: 'POST',
-            body: new FormData(this),
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        const data = await resp.json();
-        if (data.status === 'ok') {
-            showToast('✓ ' + data.message);
-            // Reload page to reflect new API key status badges
-            setTimeout(() => location.reload(), 1200);
-        } else { showToast('Error saving', true); }
-    } catch(e) { showToast('Network error', true); }
-    finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Save Configuration'; }
+    const res = await submitCrmForm(agentForm, btn, '<i class="fas fa-save"></i> Save Configuration');
+    if (res.ok) {
+        if (!silent) showToast('✓ ' + res.message);
+    } else {
+        showToast(res.message, true);
+    }
+    return res.ok;
+}
+
+agentForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    saveAgent(false);
 });
 
 // ── Channel Toggles ──────────────────────────────────────────────────────────
@@ -907,6 +1058,12 @@ document.querySelectorAll('.channel-toggle').forEach(toggle => {
     toggle.addEventListener('change', async function() {
         const integrationId = this.dataset.integrationId;
         const enabled = this.checked;
+
+        if (enabled && this.dataset.ownedByOther === '1') {
+            const ok = confirm(`This channel is currently handled by "${this.dataset.ownerName}". Enabling it here will move it to this business and stop auto-replies from the other one. Continue?`);
+            if (!ok) { this.checked = false; return; }
+        }
+
         const fd = new FormData();
         fd.append('integration_id', integrationId);
         fd.append('enabled', enabled ? 'true' : 'false');
@@ -925,6 +1082,18 @@ document.querySelectorAll('.channel-toggle').forEach(toggle => {
             showToast('Failed to update channel account', true);
         }
     });
+});
+
+// ── Business Switcher ────────────────────────────────────────────────────────
+function toggleBizSwitcher() {
+    document.getElementById('bizSwitcherMenu').classList.toggle('open');
+}
+document.addEventListener('click', function(e) {
+    const wrap = document.querySelector('.biz-switcher-wrap');
+    const menu = document.getElementById('bizSwitcherMenu');
+    if (wrap && menu && !wrap.contains(e.target)) {
+        menu.classList.remove('open');
+    }
 });
 
 function toggleDropdown(channelType) {
@@ -984,7 +1153,8 @@ function createTag(val) {
     const div = document.createElement('div');
     div.className = 'tag';
     div.dataset.val = val;
-    div.innerHTML = `${val} <i class="fas fa-times delete-tag"></i>`;
+    // Trigger phrases are operator input — escape before it touches innerHTML.
+    div.innerHTML = `${escapeHtml(val)} <i class="fas fa-times delete-tag"></i>`;
     tagContainer.insertBefore(div, tagInput);
     tags.push(val);
     updateHiddenTagInput();
@@ -1022,6 +1192,74 @@ tagContainer.addEventListener('click', function(e) {
     }
 });
 
+// ── Cities Served Tags ────────────────────────────────────────────────────────
+// Unlike handoff triggers these don't auto-save: they live inside the knowledge
+// form, so they go out with "Save Knowledge Base" alongside the rest of Identity.
+const cityContainer = document.getElementById('cityTagContainer');
+const cityInput = document.getElementById('cityTagInput');
+const citiesHidden = document.getElementById('citiesServedHidden');
+let cities = [];
+
+cityContainer.querySelectorAll('.tag').forEach(el => cities.push(el.dataset.val));
+syncCities();
+
+function syncCities() {
+    citiesHidden.value = JSON.stringify(cities);
+}
+
+function markKnowledgeDirty() {
+    document.getElementById('knowledgeUnsaved').classList.add('show');
+}
+
+function addCity(val) {
+    const div = document.createElement('div');
+    div.className = 'tag';
+    div.dataset.val = val;
+    // City names are operator input — escape before it touches innerHTML.
+    div.innerHTML = `${escapeHtml(val)} <i class="fas fa-times delete-tag"></i>`;
+    cityContainer.insertBefore(div, cityInput);
+    cities.push(val);
+    syncCities();
+    markKnowledgeDirty();
+}
+
+function removeCity(tagEl) {
+    cities = cities.filter(c => c !== tagEl.dataset.val);
+    tagEl.remove();
+    syncCities();
+    markKnowledgeDirty();
+}
+
+cityInput.addEventListener('keydown', function(e) {
+    // Comma commits too — pasting "Kathmandu, Pokhara" shouldn't need Enter twice.
+    if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        const val = this.value.trim().replace(/,$/, '');
+        if (val && !cities.some(c => c.toLowerCase() === val.toLowerCase())) {
+            addCity(val);
+        }
+        this.value = '';
+    } else if (e.key === 'Backspace' && this.value === '' && cities.length > 0) {
+        const existing = cityContainer.querySelectorAll('.tag');
+        removeCity(existing[existing.length - 1]);
+    }
+});
+
+// Don't lose a half-typed city when the operator clicks Save straight away.
+cityInput.addEventListener('blur', function() {
+    const val = this.value.trim();
+    if (val && !cities.some(c => c.toLowerCase() === val.toLowerCase())) {
+        addCity(val);
+    }
+    this.value = '';
+});
+
+cityContainer.addEventListener('click', function(e) {
+    if (e.target.classList.contains('delete-tag')) {
+        removeCity(e.target.closest('.tag'));
+    }
+});
+
 async function selectLanguage(langCode, el) {
     document.querySelectorAll('.lang-box').forEach(box => box.classList.remove('active'));
     el.classList.add('active');
@@ -1044,19 +1282,42 @@ async function selectLanguage(langCode, el) {
     }
 }
 
-// ── API Key Visibility Toggle ─────────────────────────────────────────────────
-function toggleKeyVis(inputId, btn) {
-    const inp = document.getElementById(inputId);
-    if (inp.type === 'password') {
-        inp.type = 'text';
-        btn.innerHTML = '<i class="fas fa-eye-slash"></i>';
-    } else {
-        inp.type = 'password';
-        btn.innerHTML = '<i class="fas fa-eye"></i>';
+// ── Credit History ───────────────────────────────────────────────────────────
+async function openCreditHistory() {
+    openModal('creditHistoryModal');
+    const body = document.getElementById('creditHistoryBody');
+    body.innerHTML = '<div style="text-align:center;padding:1.5rem;color:#9ca3af;"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';
+    try {
+        const resp = await fetch('{% url "trendycrm:credit_history" chatbot.id %}', {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+        document.getElementById('creditBalance').textContent = data.balance;
+        if (!data.logs.length) {
+            body.innerHTML = '<div style="text-align:center;padding:2rem;color:#9ca3af;font-size:.85rem;">'
+                + '<i class="fas fa-bolt" style="font-size:1.6rem;display:block;margin-bottom:.5rem;color:#e5e7eb;"></i>'
+                + 'No AI usage recorded yet. Run a test above or let the AI answer a customer.</div>';
+            return;
+        }
+        const rows = data.logs.map(l =>
+            '<tr><td>' + l.created_at + '</td>'
+            + '<td>' + escapeHtml(l.action) + '<div style="font-size:.72rem;color:#9ca3af;">' + escapeHtml(l.description) + '</div></td>'
+            + '<td>' + escapeHtml(l.model_used) + '</td>'
+            + '<td style="text-align:right;"><span class="credit-badge ' + (l.is_topup ? 'topup' : 'usage') + '">'
+            + (l.is_topup ? '+' : '') + l.credits_used + '</span></td></tr>'
+        ).join('');
+        body.innerHTML = '<table class="hist-table"><thead><tr><th>When</th><th>Action</th><th>Model</th>'
+            + '<th style="text-align:right;">Credits</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    } catch (e) {
+        body.innerHTML = '<div style="padding:1.5rem;color:#dc2626;font-size:.85rem;">Could not load credit history.</div>';
     }
 }
 
-
+function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : s;
+    return d.innerHTML;
+}
 
 // ── Modal Helpers ─────────────────────────────────────────────────────────────
 function openModal(id) { document.getElementById(id).classList.add('open'); }
@@ -1081,27 +1342,35 @@ function getCookie(name) {
 }
 
 // ── Global Save Logic ─────────────────────────────────────────────────────────
-function saveAllSettings() {
+// Waits for both saves to actually come back before reporting success. The old
+// version fired two clicks and declared victory on a timer, so a slow Knowledge
+// Base save could still be in flight when the page reloaded — losing the edit.
+async function saveAllSettings() {
     const globalApplyBtn = document.getElementById('globalApplyBtn');
-    const originalText = globalApplyBtn.innerHTML;
-    
+    const originalText = '<i class="fas fa-check-double"></i> Apply Changes';
+
     globalApplyBtn.disabled = true;
     globalApplyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-    
-    // Trigger hidden clicks on both form save buttons
-    const kBtn = document.getElementById('knowledgeSaveBtn');
-    const aBtn = document.getElementById('agentSaveBtn');
-    
-    if (kBtn) kBtn.click();
-    if (aBtn) aBtn.click();
-    
-    setTimeout(() => {
-        globalApplyBtn.disabled = false;
+
+    const [knowledgeOk, agentOk] = await Promise.all([
+        saveKnowledge(true),
+        saveAgent(true),
+    ]);
+
+    globalApplyBtn.disabled = false;
+    if (knowledgeOk && agentOk) {
         globalApplyBtn.innerHTML = '<i class="fas fa-check-double"></i> Saved Successfully';
-        setTimeout(() => {
-            globalApplyBtn.innerHTML = originalText;
-        }, 3000);
-    }, 800); // give enough time for ajax requests to fire
+        showToast('✓ All settings saved');
+    } else if (knowledgeOk || agentOk) {
+        globalApplyBtn.innerHTML = originalText;
+        showToast(knowledgeOk ? 'Agent configuration failed to save' : 'Knowledge Base failed to save', true);
+        return;
+    } else {
+        globalApplyBtn.innerHTML = originalText;
+        showToast('Nothing was saved — check your connection', true);
+        return;
+    }
+    setTimeout(() => { globalApplyBtn.innerHTML = originalText; }, 3000);
 }
 
 // ── AI Test Console ─────────────────────────────────────────────────────────
@@ -1173,23 +1442,28 @@ async function runAiTest() {
         resultEl.style.display = 'block';
         if (data.error) {
             resultEl.className = 'ai-test-result error';
-            resultEl.innerHTML = '<strong><i class="fas fa-exclamation-circle"></i> Error:</strong> ' + data.error;
+            resultEl.innerHTML = '<strong><i class="fas fa-exclamation-circle"></i> Error:</strong> ' + escapeHtml(data.error);
         } else {
             resultEl.className = 'ai-test-result success';
             const ticketHtml = data.open_ticket ? '<span class="result-badge badge-ticket"><i class="fas fa-ticket-alt"></i> Ticket Auto-Created</span>' : '';
-            const checkoutHtml = data.checkout_link ? '<div style="margin-top:.75rem; padding-top:.6rem; border-top:1px solid #e5e7eb; font-size:.8rem;"><i class="fas fa-link" style="color:var(--crm-primary);"></i> <strong>Checkout Link:</strong> <a href="' + data.checkout_link + '" target="_blank" style="color:var(--crm-primary); text-decoration:none;">' + data.checkout_link + '</a></div>' : '';
-            const noticeHtml = data.notice ? '<div style="margin-bottom:.55rem; padding:.4rem .6rem; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; color:#92400e; font-size:.72rem;"><i class="fas fa-info-circle"></i> ' + data.notice + '</div>' : '';
+            const checkoutHtml = data.checkout_link ? '<div style="margin-top:.75rem; padding-top:.6rem; border-top:1px solid #e5e7eb; font-size:.8rem;"><i class="fas fa-link" style="color:var(--crm-primary);"></i> <strong>Checkout Link:</strong> <a href="' + encodeURI(data.checkout_link) + '" target="_blank" rel="noopener" style="color:var(--crm-primary); text-decoration:none;">' + escapeHtml(data.checkout_link) + '</a></div>' : '';
+            const noticeHtml = data.notice ? '<div style="margin-bottom:.55rem; padding:.4rem .6rem; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; color:#92400e; font-size:.72rem;"><i class="fas fa-info-circle"></i> ' + escapeHtml(data.notice) + '</div>' : '';
             const imageHtml = sentImageSrc ? '<div style="margin-bottom:.6rem;"><img src="' + sentImageSrc + '" alt="sent image" style="max-width:160px; max-height:160px; border-radius:8px; border:1px solid #e5e7eb;"></div>' : '';
 
             resultEl.innerHTML = '<div class="result-meta">' +
-                '<span class="result-badge badge-intent"><i class="fas fa-bullseye"></i> Intent: ' + data.intent + '</span>' +
-                '<span class="result-badge badge-model"><i class="fas fa-microchip"></i> Model: ' + data.model_used + '</span>' +
+                '<span class="result-badge badge-intent"><i class="fas fa-bullseye"></i> Intent: ' + escapeHtml(data.intent) + '</span>' +
+                '<span class="result-badge badge-model"><i class="fas fa-microchip"></i> Model: ' + escapeHtml(data.model_used) + '</span>' +
                 ticketHtml +
                 '</div>' +
                 noticeHtml +
                 imageHtml +
                 '<div style="color:#1f2937; margin-bottom:.4rem;"><strong>AI Reply:</strong></div>' +
-                '<div style="color:#4b5563; white-space:pre-wrap;">' + (data.reply || '—') + '</div>' + checkoutHtml;
+                '<div style="color:#4b5563; white-space:pre-wrap;">' + escapeHtml(data.reply || '—') + '</div>' + checkoutHtml;
+
+            // Each test costs a credit — keep the balance on screen honest.
+            if (typeof data.credits_remaining === 'number') {
+                document.getElementById('creditBalance').textContent = data.credits_remaining;
+            }
         }
     } catch (err) {
         resultEl.style.display = 'block';
