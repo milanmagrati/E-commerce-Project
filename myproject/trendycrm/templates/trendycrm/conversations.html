@@ -93,6 +93,10 @@
 .conv-list::-webkit-scrollbar { width: 4px; }
 .conv-list::-webkit-scrollbar-thumb { background: var(--crm-accent); border-radius: 2px; }
 
+#accountFilterScroll::-webkit-scrollbar { width: 4px; }
+#accountFilterScroll::-webkit-scrollbar-thumb { background: var(--crm-accent); border-radius: 2px; }
+.account-filter-row:hover { background: var(--crm-hover); }
+
 .conv-item {
     padding: 0.85rem 1rem;
     border-bottom: 1px solid rgba(124,58,237,0.05);
@@ -364,7 +368,7 @@
                         
                         {% if label_filter %}
                             <li>
-                                <a class="dropdown-item d-flex align-items-center gap-2" href="?{% if page_filter %}page_filter={{ page_filter }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.2rem;color:#dc3545;">
+                                <a class="dropdown-item d-flex align-items-center gap-2" href="?{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.2rem;color:#dc3545;">
                                     <i class="fas fa-times" style="width:16px;text-align:center;"></i> Clear filter
                                 </a>
                             </li>
@@ -373,7 +377,7 @@
                         {% if all_labels %}
                             {% for label in all_labels %}
                                 <li>
-                                    <a class="dropdown-item d-flex align-items-center gap-2 {% if label_filter == label.pk %}active{% endif %}" href="?label_filter={{ label.pk }}{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.2rem;{% if label_filter == label.pk %}background:var(--crm-active-bg);color:var(--crm-primary);{% endif %}">
+                                    <a class="dropdown-item d-flex align-items-center gap-2 {% if label_filter == label.pk %}active{% endif %}" href="?label_filter={{ label.pk }}{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.2rem;{% if label_filter == label.pk %}background:var(--crm-active-bg);color:var(--crm-primary);{% endif %}">
                                         <span style="width:12px;height:12px;border-radius:50%;background:{{ label.color_hex }};display:inline-block;"></span>
                                         <span style="font-weight:500;">{{ label.name }}</span>
                                     </a>
@@ -394,54 +398,71 @@
 
                 <!-- Account Filter Dropdown -->
                 <div class="dropdown">
-                    <button type="button" class="dropdown-toggle no-caret" data-bs-toggle="dropdown" aria-expanded="false" style="background:{% if page_filter %}rgba(37,99,235,0.1){% else %}rgba(124,58,237,0.1){% endif %};border:none;color:var(--crm-primary);cursor:pointer;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;transition:all 0.2s;" title="Filter Inbox">
-                        {% if not page_filter %}
+                    <button type="button" class="dropdown-toggle no-caret" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="background:{% if page_filters %}rgba(37,99,235,0.1){% else %}rgba(124,58,237,0.1){% endif %};border:none;color:var(--crm-primary);cursor:pointer;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;transition:all 0.2s;position:relative;" title="Filter Inbox">
+                        {% if not page_filters %}
                             <i class="fas fa-filter" style="font-size:0.75rem;"></i>
+                        {% elif single_filter_integration %}
+                            {% if single_filter_integration.channel_type == 'facebook' %}
+                                <i class="fab fa-facebook-messenger" style="color:#2563eb;font-size:1.05rem;"></i>
+                            {% elif single_filter_integration.channel_type == 'instagram' %}
+                                <i class="fab fa-instagram" style="color:#db2777;font-size:1.05rem;"></i>
+                            {% elif single_filter_integration.channel_type == 'tiktok' %}
+                                <i class="fab fa-tiktok" style="color:#010101;font-size:1.05rem;"></i>
+                            {% elif single_filter_integration.channel_type == 'whatsapp' %}
+                                <i class="fab fa-whatsapp" style="color:#25D366;font-size:1.05rem;"></i>
+                            {% else %}
+                                <i class="fas fa-filter" style="font-size:0.75rem;"></i>
+                            {% endif %}
                         {% else %}
-                            {% for integ in connected_integrations %}
-                                {% if page_filter == integ.pk %}
-                                    {% if integ.channel_type == 'facebook' %}
-                                        <i class="fab fa-facebook-messenger" style="color:#2563eb;font-size:1.05rem;"></i>
-                                    {% elif integ.channel_type == 'instagram' %}
-                                        <i class="fab fa-instagram" style="color:#db2777;font-size:1.05rem;"></i>
-                                    {% elif integ.channel_type == 'tiktok' %}
-                                        <i class="fab fa-tiktok" style="color:#010101;font-size:1.05rem;"></i>
-                                    {% elif integ.channel_type == 'whatsapp' %}
-                                        <i class="fab fa-whatsapp" style="color:#25D366;font-size:1.05rem;"></i>
-                                    {% else %}
-                                        <i class="fas fa-filter" style="font-size:0.75rem;"></i>
-                                    {% endif %}
-                                {% endif %}
-                            {% endfor %}
+                            <i class="fas fa-filter" style="font-size:0.75rem;"></i>
+                            <span style="position:absolute;top:-3px;right:-3px;background:var(--crm-primary);color:#fff;border-radius:999px;font-size:0.55rem;font-weight:700;min-width:14px;height:14px;line-height:14px;text-align:center;padding:0 2px;">{{ page_filters|length }}</span>
                         {% endif %}
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow" style="border:none;border-radius:12px;padding:0.5rem;min-width:240px;font-size:0.85rem;margin-top:0.5rem;">
-                        <li><h6 class="dropdown-header" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--crm-text-muted);margin-bottom:0.25rem;">Filter by account</h6></li>
-                        <li>
-                            <a class="dropdown-item d-flex align-items-center gap-2 {% if not page_filter %}active{% endif %}" href="?{% if active_conv %}id={{ active_conv.pk }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.2rem;">
-                                <div style="width:20px;display:flex;justify-content:center;"><img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:16px;height:16px;filter:grayscale(100%);opacity:0.6;"></div>
+                    <form method="GET" action="{% url 'trendycrm:conversations' %}" onsubmit="return prepAccountFilterSubmit();" class="dropdown-menu dropdown-menu-end shadow" style="border:none;border-radius:12px;padding:0.6rem;min-width:250px;font-size:0.85rem;margin-top:0.5rem;">
+                        {% if active_conv %}<input type="hidden" name="id" value="{{ active_conv.pk }}">{% endif %}
+                        {% if read_status %}<input type="hidden" name="read_status" value="{{ read_status }}">{% endif %}
+                        {% if label_filter %}<input type="hidden" name="label_filter" value="{{ label_filter }}">{% endif %}
+                        {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}"><input type="hidden" name="search_type" value="{{ search_type }}">{% endif %}
+
+                        <h6 class="dropdown-header" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--crm-text-muted);margin-bottom:0.25rem;padding:0 0.5rem;">Filter by account</h6>
+
+                        <div class="account-filter-row" style="display:flex;align-items:center;gap:0.6rem;border-radius:8px;padding:0.5rem 0.5rem;margin-bottom:0.1rem;">
+                            <input type="checkbox" name="page_filter" value="all" id="page_filter_all" onchange="toggleAllAccounts(this)" {% if not page_filters %}checked{% endif %} style="cursor:pointer;flex-shrink:0;width:15px;height:15px;margin:0;">
+                            <label for="page_filter_all" style="display:flex;align-items:center;gap:0.5rem;width:100%;cursor:pointer;margin:0;">
+                                <span style="width:20px;display:flex;justify-content:center;flex-shrink:0;"><img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:16px;height:16px;filter:grayscale(100%);opacity:0.6;"></span>
                                 <span style="font-weight:600;font-size:0.85rem;">All Accounts</span>
-                            </a>
-                        </li>
-                        {% for integ in connected_integrations %}
-                        <li>
-                            <a class="dropdown-item d-flex align-items-center gap-2 {% if page_filter == integ.pk %}active{% endif %}" href="?page_filter={{ integ.pk }}{% if active_conv %}&id={{ active_conv.pk }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.2rem;">
-                                <div style="width:20px;display:flex;justify-content:center;">
-                                    {% if integ.channel_type == 'facebook' %}
-                                        <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:16px;height:16px;">
-                                    {% elif integ.channel_type == 'instagram' %}
-                                        <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:16px;height:16px;">
-                                    {% elif integ.channel_type == 'tiktok' %}
-                                        <i class="fab fa-tiktok" style="font-size:14px;"></i>
-                                    {% elif integ.channel_type == 'whatsapp' %}
-                                        <i class="fab fa-whatsapp" style="color:#25D366;font-size:14px;"></i>
-                                    {% endif %}
-                                </div>
-                                <span style="font-weight:500;white-space:normal;line-height:1.2;font-size:0.85rem;">{{ integ.account_name }}</span>
-                            </a>
-                        </li>
-                        {% endfor %}
-                    </ul>
+                            </label>
+                        </div>
+
+                        {% if connected_integrations %}
+                        <hr style="margin:0.4rem 0;">
+                        <div style="max-height:230px;overflow-y:auto;overflow-x:hidden;" id="accountFilterScroll">
+                            {% for integ in connected_integrations %}
+                            <div class="account-filter-row" style="display:flex;align-items:center;gap:0.6rem;border-radius:8px;padding:0.5rem 0.5rem;margin-bottom:0.1rem;">
+                                <input type="checkbox" class="account-filter-cb" name="page_filter" value="{{ integ.pk }}" id="page_filter_{{ integ.pk }}" onchange="onAccountCbChange()" {% if not page_filters or integ.pk in page_filters %}checked{% endif %} style="cursor:pointer;flex-shrink:0;width:15px;height:15px;margin:0;">
+                                <label for="page_filter_{{ integ.pk }}" style="display:flex;align-items:center;gap:0.5rem;width:100%;cursor:pointer;margin:0;">
+                                    <span style="width:20px;display:flex;justify-content:center;flex-shrink:0;">
+                                        {% if integ.channel_type == 'facebook' %}
+                                            <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:16px;height:16px;">
+                                        {% elif integ.channel_type == 'instagram' %}
+                                            <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:16px;height:16px;">
+                                        {% elif integ.channel_type == 'tiktok' %}
+                                            <i class="fab fa-tiktok" style="font-size:14px;"></i>
+                                        {% elif integ.channel_type == 'whatsapp' %}
+                                            <i class="fab fa-whatsapp" style="color:#25D366;font-size:14px;"></i>
+                                        {% endif %}
+                                    </span>
+                                    <span style="font-weight:500;white-space:normal;line-height:1.2;font-size:0.85rem;">{{ integ.account_name }}</span>
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <button type="submit" id="accountFilterApplyBtn" class="btn-crm-primary btn-sm w-100" style="margin-top:0.6rem;font-weight:600;border-radius:8px;">
+                            Apply{% if page_filters|length > 0 %} ({{ page_filters|length }}){% endif %}
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -454,12 +475,12 @@
                         <i class="fas fa-search" style="color:var(--crm-text-muted); font-size:0.9rem; padding-left: 0.5rem;"></i>
                         <input type="text" name="q" placeholder="Search name, phone, order #..." value="{{ search_query|default:'' }}" style="border:none; background:transparent; width:100%; outline:none; font-size:0.85rem; padding:0.4rem 0.5rem; font-family: 'Inter', sans-serif;">
                         {% if search_query %}
-                        <a href="?{% if page_filter %}page_filter={{ page_filter }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="color:var(--crm-text-muted); text-decoration:none; padding: 0.2rem 0.5rem; font-size:0.9rem;" title="Clear input">
+                        <a href="?{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="color:var(--crm-text-muted); text-decoration:none; padding: 0.2rem 0.5rem; font-size:0.9rem;" title="Clear input">
                             <i class="fas fa-times-circle"></i>
                         </a>
                         {% endif %}
                     </div>
-                    {% if page_filter %}<input type="hidden" name="page_filter" value="{{ page_filter }}">{% endif %}
+                    {% for pf in page_filters %}<input type="hidden" name="page_filter" value="{{ pf }}">{% endfor %}
                     {% if read_status %}<input type="hidden" name="read_status" value="{{ read_status }}">{% endif %}
                     {% if label_filter %}<input type="hidden" name="label_filter" value="{{ label_filter }}">{% endif %}
                     
@@ -477,15 +498,15 @@
 
 
         <div style="padding:0.4rem 0.75rem;border-bottom:1px solid var(--crm-border); display:flex; gap:0.5rem;">
-            <a href="?{% if page_filter %}page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if not read_status %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">All</a>
-            <a href="?read_status=unread{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if read_status == 'unread' %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">Unread</a>
-            <a href="?read_status=read{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if read_status == 'read' %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">Read</a>
+            <a href="?{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if not read_status %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">All</a>
+            <a href="?read_status=unread{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if read_status == 'unread' %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">Unread</a>
+            <a href="?read_status=read{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if read_status == 'read' %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">Read</a>
         </div>
 
         <div class="conv-list">
             {% if conversations %}
                 {% for conv in conversations %}
-                <div onclick="if(!event.target.closest('.dropdown') && !event.target.closest('a')){ window.location.href='?id={{ conv.pk }}{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}'; }" class="conv-item {% if active_conv and active_conv.pk == conv.pk %}active{% endif %}">
+                <div onclick="if(!event.target.closest('.dropdown') && !event.target.closest('a')){ window.location.href='?id={{ conv.pk }}{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}'; }" class="conv-item {% if active_conv and active_conv.pk == conv.pk %}active{% endif %}">
                     <div class="conv-avatar">
                         {{ conv.contact.name|first|upper|default:"?" }}
                     </div>
@@ -853,6 +874,47 @@
         }
     }
 
+    // Account filter checkboxes: checking "All Accounts" visually checks every individual
+    // account box too, but they stay enabled and clickable so any one of them can be
+    // deselected on its own. Unchecking one while "All" was checked drops "All" back to
+    // unchecked (since it's no longer a blanket selection) and leaves the rest checked —
+    // a normal "everything except this one" pick. Manually checking every individual box
+    // back up collapses back into the "All" state.
+    function toggleAllAccounts(allCb) {
+        document.querySelectorAll('.account-filter-cb').forEach(cb => { cb.checked = allCb.checked; });
+        updateAccountFilterApplyBtn();
+    }
+    function onAccountCbChange() {
+        const boxes = document.querySelectorAll('.account-filter-cb');
+        const allCb = document.getElementById('page_filter_all');
+        const allChecked = boxes.length > 0 && Array.from(boxes).every(cb => cb.checked);
+        if (allCb) allCb.checked = allChecked;
+        updateAccountFilterApplyBtn();
+    }
+    function updateAccountFilterApplyBtn() {
+        const btn = document.getElementById('accountFilterApplyBtn');
+        if (!btn) return;
+        const allCb = document.getElementById('page_filter_all');
+        if (allCb && allCb.checked) {
+            btn.textContent = 'Apply';
+            return;
+        }
+        const count = document.querySelectorAll('.account-filter-cb:checked').length;
+        btn.textContent = count > 0 ? `Apply (${count})` : 'Apply';
+    }
+    // Filtering by every connected integration id is not the same as "no filter" — it
+    // would drop conversations with no integration attached (e.g. manually created ones).
+    // So when "All Accounts" is still checked at submit time (nothing was individually
+    // excluded), disable the individual boxes just before the browser serializes the
+    // form so only the bare page_filter=all reaches the server.
+    function prepAccountFilterSubmit() {
+        const allCb = document.getElementById('page_filter_all');
+        if (allCb && allCb.checked) {
+            document.querySelectorAll('.account-filter-cb').forEach(cb => { cb.disabled = true; });
+        }
+        return true;
+    }
+
     // AJAX for Sidebar Features
     const currentConvId = "{{ active_conv.pk|default:'' }}";
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]') ? document.querySelector('[name=csrfmiddlewaretoken]').value : '{{ csrf_token }}';
@@ -932,7 +994,7 @@
                     const existing = filterMenu.querySelector(`a[href*="label_filter=${data.label.id}"]`);
                     if (!existing) {
                         const li = document.createElement('li');
-                        const url = `?label_filter=${data.label.id}{% if page_filter %}&page_filter={{ page_filter }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}`;
+                        const url = `?label_filter=${data.label.id}{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}`;
                         li.innerHTML = `
                             <a class="dropdown-item d-flex align-items-center gap-2 " href="${url}" style="border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.2rem;">
                                 <span style="width:12px;height:12px;border-radius:50%;background:${data.label.color_hex};display:inline-block;"></span>
@@ -1478,7 +1540,7 @@
                 headerRow.style.display = 'flex';
                 sessionStorage.setItem('searchOpen', 'false');
                 if (isCloseBtn && '{{ search_query }}' !== '') {
-                    window.location.href = "?{% if page_filter %}page_filter={{ page_filter }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}";
+                    window.location.href = "?{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}";
                 }
             }
         }

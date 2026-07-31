@@ -174,11 +174,12 @@ def crm_conversations(request):
         logger.exception("Failed auto-sync on inbox load")
 
     conversations = CRMConversation.objects.select_related('contact', 'assigned_to', 'integration').all().order_by('-updated_at')
-    
-    page_filter = request.GET.get('page_filter')
-    if page_filter:
-        conversations = conversations.filter(integration_id=page_filter)
-        
+
+    page_filter_raw = request.GET.getlist('page_filter')
+    page_filters = sorted({int(pf) for pf in page_filter_raw if pf.isdigit()})
+    if page_filters:
+        conversations = conversations.filter(integration_id__in=page_filters)
+
     read_status = request.GET.get('read_status')
     if read_status == 'unread':
         conversations = conversations.filter(is_read=False)
@@ -208,6 +209,10 @@ def crm_conversations(request):
     connected_integrations = CRMIntegration.objects.filter(status='connected')
     all_labels = CRMLabel.objects.all().order_by('name')
 
+    single_filter_integration = None
+    if len(page_filters) == 1:
+        single_filter_integration = connected_integrations.filter(pk=page_filters[0]).first()
+
     active_conv = None
     conv_id = request.GET.get('id')
     messages = []
@@ -219,7 +224,7 @@ def crm_conversations(request):
             return redirect('trendycrm:conversations')
 
     # Auto-redirect to the first relevant chat when a filter is applied
-    if not active_conv and (label_filter or page_filter or read_status or search_query) and conversations.exists():
+    if not active_conv and (label_filter or page_filters or read_status or search_query) and conversations.exists():
         active_conv = conversations.first()
         
     if active_conv:
@@ -244,7 +249,8 @@ def crm_conversations(request):
         'all_labels': all_labels,
         'employees': employees,
         'assigned_employee_name': _employee_display_name(active_conv.assigned_to) if active_conv else None,
-        'page_filter': int(page_filter) if page_filter and page_filter.isdigit() else None,
+        'page_filters': page_filters,
+        'single_filter_integration': single_filter_integration,
         'read_status': read_status,
         'search_query': search_query,
         'search_type': search_type,
