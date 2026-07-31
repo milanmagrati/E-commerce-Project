@@ -295,7 +295,7 @@
     }
     .pv-week-hdr.wknd { color:#be185d; }
     .pv-week-day {
-        border-radius:10px; border:1.5px solid #e2e8f0;
+        border-radius:10px; border:1.5px solid #e2e8f0; position:relative;
         padding:0.7rem 0.4rem; text-align:center; transition:transform 0.12s;
     }
     .pv-week-day:hover { transform:translateY(-2px); }
@@ -303,6 +303,10 @@
     .pv-week-day .day-lbl { font-size:0.68rem; font-weight:700; text-transform:uppercase; color:#94a3b8; }
     .pv-week-day .day-num { font-size:1.2rem; font-weight:700; color:#1e293b; margin:4px 0; }
     .pv-week-day .day-status { font-size:0.68rem; font-weight:600; border-radius:12px; padding:2px 7px; display:inline-block; }
+    .pv-week-day .nep-badge {
+        position:absolute; top:6px; right:8px;
+        font-size:0.78rem; font-weight:800; line-height:1;
+    }
     .pv-week-day-pad { visibility:hidden; border:none; background:transparent; padding:0; }
 
     /* Month calendar */
@@ -365,8 +369,9 @@
     .pv-cal-cell.today .cal-num { color:#4338ca !important; }
     .pv-cal-cell.wknd-cell { background:#fdf2f8; }
     .pv-cal-cell .cal-num {
-        font-weight:900; font-size:1.05rem; line-height:1;
-        margin-bottom:6px; color:#111827;
+        position:absolute; top:6px; right:8px;
+        font-weight:900; font-size:0.78rem; line-height:1;
+        color:#111827;
     }
     .pv-cal-cell.wknd-cell .cal-num { color:#9d174d; }
     .pv-cal-cell.empty .cal-num { color:#d1d5db; }
@@ -1427,7 +1432,7 @@ function renderWeekView(data) {
             const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
             nepDate = toNepaliDigits(new ND(d).getDate()); 
         } catch(e) { console.error('NepaliDate conversion error:', e); }
-        const dayNumHtml = (color) => `<div style="display:flex;justify-content:center;align-items:baseline;gap:6px;margin:4px 0;"><span style="font-size:1.05rem;font-weight:bold;color:${color};">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d.getDate()}</span></div>`;
+        const dayNumHtml = (color) => `<span class="nep-badge" style="color:${color};">${nepDate}</span><div style="font-size:1.55rem;font-weight:800;color:#4f46e5;margin:4px 0;">${d.getDate()}</div>`;
 
         if (rec) {
             const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
@@ -1460,7 +1465,7 @@ function renderWeekView(data) {
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Absent</span>
             </div>`;
         } else {
-            cards += `<div class="pv-week-day no-record${isTd ? ' today' : ''}">
+            cards += `<div class="pv-week-day no-record"${isTd ? ' style="outline:2px solid #6366f1;outline-offset:2px;"' : ''}>
                 <div class="day-lbl">${dayNames[jsDay]}</div>
                 ${dayNumHtml('#1e293b')}
                 <span class="day-status" style="background:#f1f5f9;color:#94a3b8;">—</span>
@@ -1479,7 +1484,29 @@ function renderCustomView(data) {
     const start = new Date(_fy, _fm - 1, _fd);
     const end = new Date(_ty, _tm - 1, _td);
     const totalDays = Math.round((end - start) / 86400000) + 1;
-    
+
+    // Nepali + English month-range title (e.g. "Asar - Ashoj २०८३ | July - September 2026")
+    let rangeTitle = '';
+    try {
+        const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
+        const nepMonthNames = ["Baisakh","Jestha","Asar","Shrawan","Bhadra","Ashoj","Kartik","Mangsir","Poush","Magh","Falgun","Chaitra"];
+        const engMonthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+        const ndFrom = new ND(start), ndTo = new ND(end);
+        const nepFromYr = ndFrom.getYear(), nepToYr = ndTo.getYear();
+        const nepPart = (ndFrom.getMonth() === ndTo.getMonth() && nepFromYr === nepToYr)
+            ? `${nepMonthNames[ndFrom.getMonth()]} ${toNepaliDigits(nepFromYr)}`
+            : (nepFromYr === nepToYr)
+                ? `${nepMonthNames[ndFrom.getMonth()]} - ${nepMonthNames[ndTo.getMonth()]} ${toNepaliDigits(nepFromYr)}`
+                : `${nepMonthNames[ndFrom.getMonth()]} ${toNepaliDigits(nepFromYr)} - ${nepMonthNames[ndTo.getMonth()]} ${toNepaliDigits(nepToYr)}`;
+        const engFromYr = start.getFullYear(), engToYr = end.getFullYear();
+        const engPart = (start.getMonth() === end.getMonth() && engFromYr === engToYr)
+            ? `${engMonthNames[start.getMonth()]} ${engFromYr}`
+            : (engFromYr === engToYr)
+                ? `${engMonthNames[start.getMonth()]} - ${engMonthNames[end.getMonth()]} ${engFromYr}`
+                : `${engMonthNames[start.getMonth()]} ${engFromYr} - ${engMonthNames[end.getMonth()]} ${engToYr}`;
+        rangeTitle = `${nepPart} | ${engPart}`;
+    } catch(e) { console.error('Nepali range header error:', e); }
+
     const today = _localDateStr(new Date());
     const weekendNums = data.weekend_nums || [5, 6];
     const holidayDates = new Set(data.holiday_dates || []);
@@ -1512,7 +1539,7 @@ function renderCustomView(data) {
             const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
             nepDate = toNepaliDigits(new ND(d).getDate()); 
         } catch(e) { console.error('NepaliDate conversion error:', e); }
-        const dayNumHtml = (color) => `<div style="display:flex;justify-content:center;align-items:baseline;gap:6px;margin:4px 0;"><span style="font-size:1.05rem;font-weight:bold;color:${color};">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d.getDate()}</span></div>`;
+        const dayNumHtml = (color) => `<span class="nep-badge" style="color:${color};">${nepDate}</span><div style="font-size:1.55rem;font-weight:800;color:#4f46e5;margin:4px 0;">${d.getDate()}</div>`;
 
         if (rec) {
             const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
@@ -1545,7 +1572,7 @@ function renderCustomView(data) {
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Absent</span>
             </div>`;
         } else {
-            cards += `<div class="pv-week-day no-record${isTd ? ' today' : ''}">
+            cards += `<div class="pv-week-day no-record"${isTd ? ' style="outline:2px solid #6366f1;outline-offset:2px;"' : ''}>
                 <div class="day-lbl">${dayNames[jsDay]}</div>
                 ${dayNumHtml('#1e293b')}
                 <span class="day-status" style="background:#f1f5f9;color:#94a3b8;">—</span>
@@ -1561,6 +1588,9 @@ function renderCustomView(data) {
     }
 
     let html = `<div class="p-4"><div class="pv-week-wrap"><div class="pv-week-scroll-inner">
+        ${rangeTitle ? `<div class="pv-cal-nav" style="justify-content:center;">
+            <span class="pv-cal-month-title"><i class="fas fa-calendar-alt"></i>${rangeTitle}</span>
+        </div>` : ''}
         <div class="pv-week-hdr-row">${dayHdrs}</div>
         <div class="pv-week-grid" style="grid-template-columns:repeat(7,1fr);">${cards}</div>
     </div></div>`;
@@ -1614,7 +1644,7 @@ function renderMonthView(data) {
             const ND = (window.NepaliDate && window.NepaliDate.default) ? window.NepaliDate.default : window.NepaliDate;
             nepDate = toNepaliDigits(new ND(new Date(year, month - 1, d)).getDate()); 
         } catch(e) { console.error('NepaliDate conversion error:', e); }
-        const numHtml = (color) => `<div style="display:flex;justify-content:space-between;width:100%;margin-bottom:4px;"><span class="cal-num" style="font-size:1.05rem;font-weight:900;line-height:1;color:${color};margin:0;">${nepDate}</span><span style="font-size:1.15rem;font-weight:800;color:#4f46e5;">${d}</span></div>`;
+        const numHtml = (color) => `<span class="cal-num" style="color:${color};">${nepDate}</span><div style="font-size:1.3rem;font-weight:800;color:#4f46e5;margin-bottom:6px;">${d}</div>`;
 
         if (rec) {
             const ci  = rec.clock_in  || '–';
