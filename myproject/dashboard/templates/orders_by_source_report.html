@@ -216,6 +216,17 @@
 .empty-state { text-align: center; padding: 40px 20px; color: #9ca3af; }
 .empty-state i { font-size: 2rem; margin-bottom: 10px; display: block; color: #d1d5db; }
 
+/* Source filter button + modal */
+.sf-badge { background: var(--sr-purple); color: #fff; border-radius: 10px; padding: 2px 7px; font-size: .7rem; font-weight: 700; margin-left: 4px; }
+.source-filter-toolbar { display: flex; gap: 8px; align-items: center; }
+.source-filter-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 10px; border-radius: 8px; cursor: pointer; transition: background .15s;
+}
+.source-filter-row:hover { background: #f8fafc; }
+.source-filter-row input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--sr-purple); }
+#sourceFilterList { max-height: 340px; overflow-y: auto; }
+
 .skeleton-row td { color: transparent !important; }
 .skeleton-row .sk-bar { display: block; height: 12px; border-radius: 4px; background: linear-gradient(90deg,#f0f1f3 25%,#e5e7eb 37%,#f0f1f3 63%); background-size: 400% 100%; animation: sk 1.4s ease infinite; }
 @keyframes sk { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
@@ -324,7 +335,12 @@
     <div class="chart-card">
         <div class="chart-header">
             <h5><i class="fas fa-chart-line" style="color:var(--sr-purple)"></i> Orders by Source — Trend</h5>
-            <span style="font-size:.8rem;color:#9ca3af;">Daily order count per source over the selected range</span>
+            <div class="source-filter-toolbar">
+                <span style="font-size:.8rem;color:#9ca3af;" class="d-none d-md-inline">Daily order count per source over the selected range</span>
+                <button type="button" class="btn-export no-print" id="sourceFilterBtn" data-bs-toggle="modal" data-bs-target="#sourceFilterModal" title="Choose which sources appear on the charts and table">
+                    <i class="fas fa-sliders" style="color:var(--sr-purple)"></i> Sources <span class="sf-badge" id="sourceFilterBadge">–/–</span>
+                </button>
+            </div>
         </div>
         <div class="chart-body">
             <div class="chart-canvas-wrap" id="trendChartWrap">
@@ -466,6 +482,37 @@
         </div>
     </div>
 </div>
+
+<!-- Source Filter Modal -->
+<div class="modal fade" id="sourceFilterModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-sliders" style="color:var(--sr-purple)"></i> Filter Sources</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-2" style="font-size:.82rem;">Choose which sources appear on the trend, ranking, and share charts below. Changes apply instantly.</p>
+                <div class="d-flex gap-2 align-items-center mb-2">
+                    <div class="search-box" style="max-width:none;flex:1;">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="sourceFilterSearch" placeholder="Search sources...">
+                    </div>
+                    <button type="button" class="btn-export" style="padding:6px 12px;font-size:.75rem;" id="sourceFilterSelectAll">All</button>
+                    <button type="button" class="btn-export" style="padding:6px 12px;font-size:.75rem;" id="sourceFilterSelectNone">None</button>
+                </div>
+                <div id="sourceFilterList"></div>
+                <div class="empty-state" id="sourceFilterEmptyMsg" style="display:none;padding:20px;">
+                    <i class="fas fa-magnifying-glass"></i>No sources match your search.
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid var(--sr-border);">
+                <span class="text-muted me-auto" id="sourceFilterCount" style="font-size:.8rem;"></span>
+                <button type="button" class="btn btn-sm btn-primary" data-bs-dismiss="modal">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -496,8 +543,19 @@
     let rankingPage = 1;
     let rankingPageSize = 8;
 
+    // Sources the user has unchecked in the "Sources" filter modal. Absent = visible.
+    // Kept as an exclusion set (rather than an inclusion set) so newly-appearing
+    // sources (e.g. after switching date range) default to visible.
+    let deselectedSources = new Set();
+    let allSourcesList = [];
+    let lastChartData = null;
+
     function colorFor(source) {
         return colorMap[source] || '#9ca3af';
+    }
+
+    function isSourceVisible(source) {
+        return !deselectedSources.has(source);
     }
 
     function fmtMoney(v) {
@@ -604,11 +662,14 @@
                 rankingPage = 1;
                 colorMap = {};
                 (data.chart.sources || []).forEach((s, i) => { colorMap[s] = palette[i % palette.length]; });
+                allSourcesList = data.chart.sources || [];
+                lastChartData = data.chart;
                 renderStats(data.totals);
                 renderTrendChart(data.chart);
                 renderRankCharts(rankingData);
                 renderRankingTable();
                 populateSourceFilter(data.chart.sources || []);
+                renderSourceFilterList();
             })
             .catch(err => {
                 console.error('Failed to load orders-by-source analytics', err);
@@ -633,7 +694,7 @@
         }
     }
 
-    function toggleEmptyState(wrapId, canvasId, isEmpty) {
+    function toggleEmptyState(wrapId, canvasId, isEmpty, message) {
         const wrap = document.getElementById(wrapId);
         let msg = wrap.querySelector('.chart-empty');
         const canvas = document.getElementById(canvasId);
@@ -642,9 +703,11 @@
             if (!msg) {
                 msg = document.createElement('div');
                 msg.className = 'chart-empty';
-                msg.innerHTML = '<i class="fas fa-chart-line"></i><span>No orders in this period</span>';
                 wrap.appendChild(msg);
             }
+            const icon = message === 'sources' ? 'fa-sliders' : 'fa-chart-line';
+            const text = message === 'sources' ? 'No sources selected — open the Sources filter' : 'No orders in this period';
+            msg.innerHTML = `<i class="fas ${icon}"></i><span>${text}</span>`;
         } else {
             canvas.style.visibility = 'visible';
             if (msg) msg.remove();
@@ -652,13 +715,15 @@
     }
 
     function renderTrendChart(chart) {
-        const hasData = (chart.sources || []).length > 0;
-        toggleEmptyState('trendChartWrap', 'sourceTrendChart', !hasData);
+        const allSources = chart.sources || [];
+        const sources = allSources.filter(isSourceVisible);
+        const hasData = sources.length > 0;
+        toggleEmptyState('trendChartWrap', 'sourceTrendChart', !hasData, (allSources.length && !sources.length) ? 'sources' : null);
         if (trendChart) trendChart.destroy();
         if (!hasData) { trendChart = null; return; }
 
         const ctx = document.getElementById('sourceTrendChart').getContext('2d');
-        const datasets = (chart.sources || []).map(source => ({
+        const datasets = sources.map(source => ({
             label: source,
             data: chart.data[source],
             borderColor: colorFor(source),
@@ -689,14 +754,16 @@
     }
 
     function renderRankCharts(ranking) {
-        const hasData = ranking.length > 0;
-        toggleEmptyState('barChartWrap', 'sourceRankBarChart', !hasData);
-        toggleEmptyState('shareChartWrap', 'sourceShareChart', !hasData);
+        const filtered = ranking.filter(r => isSourceVisible(r.source));
+        const hasData = filtered.length > 0;
+        const emptyReason = (ranking.length && !filtered.length) ? 'sources' : null;
+        toggleEmptyState('barChartWrap', 'sourceRankBarChart', !hasData, emptyReason);
+        toggleEmptyState('shareChartWrap', 'sourceShareChart', !hasData, emptyReason);
         if (barChart) barChart.destroy();
         if (shareChart) shareChart.destroy();
         if (!hasData) { barChart = null; shareChart = null; return; }
 
-        const top = ranking.slice(0, 10);
+        const top = filtered.slice(0, 10);
         const barCtx = document.getElementById('sourceRankBarChart').getContext('2d');
         barChart = new Chart(barCtx, {
             type: 'bar',
@@ -735,10 +802,10 @@
         shareChart = new Chart(shareCtx, {
             type: 'doughnut',
             data: {
-                labels: ranking.map(r => r.source),
+                labels: filtered.map(r => r.source),
                 datasets: [{
-                    data: ranking.map(r => r.count),
-                    backgroundColor: ranking.map(r => colorFor(r.source)),
+                    data: filtered.map(r => r.count),
+                    backgroundColor: filtered.map(r => colorFor(r.source)),
                     borderWidth: 2,
                     borderColor: '#fff',
                     hoverOffset: 8,
@@ -753,7 +820,7 @@
                     tooltip: {
                         callbacks: {
                             label: ctx => {
-                                const r = ranking[ctx.dataIndex];
+                                const r = filtered[ctx.dataIndex];
                                 return r.source + ': ' + r.count + ' orders (' + r.share_pct + '%)';
                             },
                         },
@@ -778,21 +845,25 @@
 
     function renderRankingTable() {
         const body = document.getElementById('rankingTableBody');
+        const filtered = rankingData.filter(r => isSourceVisible(r.source));
 
-        if (!rankingData.length) {
-            body.innerHTML = '<tr><td colspan="10"><div class="empty-state"><i class="fas fa-inbox"></i>No orders found for this period.</div></td></tr>';
+        if (!filtered.length) {
+            const msg = rankingData.length
+                ? '<i class="fas fa-sliders"></i>No sources selected. Open the Sources filter to choose at least one.'
+                : '<i class="fas fa-inbox"></i>No orders found for this period.';
+            body.innerHTML = `<tr><td colspan="10"><div class="empty-state">${msg}</div></td></tr>`;
             renderSmartPagination('rankingPaginationWrap', { totalItems: 0 });
             return;
         }
 
-        const totalPages = Math.max(Math.ceil(rankingData.length / rankingPageSize), 1);
+        const totalPages = Math.max(Math.ceil(filtered.length / rankingPageSize), 1);
         rankingPage = Math.min(Math.max(rankingPage, 1), totalPages);
         const startIdx = (rankingPage - 1) * rankingPageSize;
-        const pageRows = rankingData.slice(startIdx, startIdx + rankingPageSize);
+        const pageRows = filtered.slice(startIdx, startIdx + rankingPageSize);
 
-        body.innerHTML = pageRows.map(r => `
+        body.innerHTML = pageRows.map((r, i) => `
             <tr>
-                <td>${rankBadge(r.rank)}</td>
+                <td>${rankBadge(startIdx + i + 1)}</td>
                 <td><span class="source-dot" style="background:${colorFor(r.source)}"></span><strong>${escapeHtml(r.source)}</strong></td>
                 <td>${r.count.toLocaleString()}</td>
                 <td>
@@ -815,7 +886,7 @@
         renderSmartPagination('rankingPaginationWrap', {
             page: rankingPage,
             totalPages,
-            totalItems: rankingData.length,
+            totalItems: filtered.length,
             pageSize: rankingPageSize,
             pageSizeOptions: [5, 8, 15, 25, 50],
             itemLabel: 'sources',
@@ -831,6 +902,76 @@
             sources.map(s => `<option value="${escapeAttr(s)}">${escapeHtml(s)}</option>`).join('');
         if (sources.includes(current)) select.value = current;
     }
+
+    // ---------- Sources filter modal (checkbox-driven chart/table visibility) ----------
+    function updateSourceFilterBadge() {
+        const total = allSourcesList.length;
+        const visible = allSourcesList.filter(isSourceVisible).length;
+        const badge = document.getElementById('sourceFilterBadge');
+        if (badge) badge.textContent = visible + '/' + total;
+        const countLabel = document.getElementById('sourceFilterCount');
+        if (countLabel) countLabel.textContent = visible + ' of ' + total + ' source' + (total === 1 ? '' : 's') + ' selected';
+    }
+
+    function renderSourceFilterList() {
+        const listEl = document.getElementById('sourceFilterList');
+        const emptyMsg = document.getElementById('sourceFilterEmptyMsg');
+        if (!listEl) return;
+        const q = (document.getElementById('sourceFilterSearch').value || '').trim().toLowerCase();
+
+        const countMap = {};
+        rankingData.forEach(r => { countMap[r.source] = r.count; });
+        const sorted = allSourcesList.slice().sort((a, b) => (countMap[b] || 0) - (countMap[a] || 0));
+        const filtered = q ? sorted.filter(s => s.toLowerCase().includes(q)) : sorted;
+
+        if (!filtered.length) {
+            listEl.innerHTML = '';
+            emptyMsg.style.display = 'block';
+        } else {
+            emptyMsg.style.display = 'none';
+            listEl.innerHTML = filtered.map(s => `
+                <label class="source-filter-row">
+                    <span class="d-flex align-items-center gap-2">
+                        <input type="checkbox" class="source-filter-checkbox" data-source="${escapeAttr(s)}" ${isSourceVisible(s) ? 'checked' : ''}>
+                        <span class="source-dot" style="background:${colorFor(s)}"></span>
+                        <span>${escapeHtml(s)}</span>
+                    </span>
+                    <span class="text-muted" style="font-size:.78rem;">${(countMap[s] || 0).toLocaleString()} orders</span>
+                </label>
+            `).join('');
+        }
+        updateSourceFilterBadge();
+    }
+
+    function applySourceFilterChange() {
+        rankingPage = 1;
+        if (lastChartData) renderTrendChart(lastChartData);
+        renderRankCharts(rankingData);
+        renderRankingTable();
+        updateSourceFilterBadge();
+    }
+
+    document.getElementById('sourceFilterList').addEventListener('change', function(e) {
+        if (!e.target.classList.contains('source-filter-checkbox')) return;
+        const source = e.target.dataset.source;
+        if (e.target.checked) deselectedSources.delete(source);
+        else deselectedSources.add(source);
+        applySourceFilterChange();
+    });
+
+    document.getElementById('sourceFilterSearch').addEventListener('input', renderSourceFilterList);
+
+    document.getElementById('sourceFilterSelectAll').addEventListener('click', function() {
+        deselectedSources.clear();
+        renderSourceFilterList();
+        applySourceFilterChange();
+    });
+
+    document.getElementById('sourceFilterSelectNone').addEventListener('click', function() {
+        allSourcesList.forEach(s => deselectedSources.add(s));
+        renderSourceFilterList();
+        applySourceFilterChange();
+    });
 
     // ---------- Detail table ----------
     function fetchTable() {
@@ -937,7 +1078,7 @@
     // ---------- Export ----------
     window.exportRankingCsv = function() {
         let csv = 'Rank,Source,Orders,Share %,Revenue,Avg Order Value,Growth %,Top Creator,Staff Count\n';
-        rankingData.forEach(r => {
+        rankingData.filter(r => isSourceVisible(r.source)).forEach(r => {
             csv += `${r.rank},"${r.source}",${r.count},${r.share_pct},${r.revenue},${r.avg_order_value},${r.growth_pct},"${r.top_creator}",${r.unique_creators}\n`;
         });
         downloadCsv(csv, 'orders_by_source_ranking_' + new Date().toISOString().slice(0,10) + '.csv');
