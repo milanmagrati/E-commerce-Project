@@ -71,16 +71,15 @@
                     <div class="container-fluid pb-5 mb-5">
                         <div class="row justify-content-center">
                             <div class="col-lg-10 col-xl-8">
-                                <div class="page-content-card">
-                                    <div class="dynamic-content">
-                                        {{ page.content|safe|default:"<p class='text-muted text-center py-5'>No content yet. Switch to the Edit tab to add some!</p>" }}
-                                    </div>
+                                <div class="page-content-card p-0">
+                                    <iframe id="previewFrame" class="preview-content-frame" title="Page content preview" sandbox="allow-same-origin"></iframe>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+            {{ page.content|default:""|json_script:"page-content-data" }}
             
             <div class="text-end">
                 <button type="button" class="btn btn-primary px-4 rounded-pill shadow-sm" onclick="document.getElementById('edit-tab').click()">
@@ -95,20 +94,23 @@
                 <div class="card-body p-4 p-md-5">
                     <form method="POST" action="">
                         {% csrf_token %}
-                        
-                        <div class="alert alert-warning alert-permanent border-0 shadow-sm mb-4 rounded-3" role="alert" style="background-color: #fff8e1; color: #856404; border-left: 4px solid #ffc107 !important;">
+
+                        <div class="alert alert-info alert-permanent border-0 shadow-sm mb-4 rounded-3" role="alert" style="background-color: #eef6ff; color: #1a4971; border-left: 4px solid #3b82f6 !important;">
                             <div class="d-flex align-items-center mb-2">
-                                <i class="fas fa-robot fs-4 me-2 text-warning"></i>
-                                <strong class="fs-6">Using ChatGPT or AI to write your page?</strong>
+                                <i class="fas fa-robot fs-4 me-2" style="color:#3b82f6;"></i>
+                                <strong class="fs-6">Writing this page with ChatGPT, Gemini, or another AI?</strong>
                             </div>
                             <p class="mb-0 font-sm">
-                                If you ask an AI to generate this code, prompt it exactly like this: <br>
-                                <em class="bg-white px-2 py-1 rounded mt-1 d-inline-block shadow-sm">"Provide ONLY the HTML body content. Do NOT include <code>&lt;html&gt;</code>, <code>&lt;head&gt;</code>, or <code>&lt;body&gt;</code> tags."</em><br>
-                                <small class="text-muted mt-1 d-block">Pasting full-page structural tags will conflict with the store's layout and break the page.</small>
+                                Just ask it to write the page (e.g. <em>"Write a Privacy Policy page for an e-commerce store, as a full HTML page with CSS"</em>), then copy its entire reply &mdash; code fences and all &mdash; and paste it straight into the box below.
                             </p>
+                            <ul class="mb-0 font-sm mt-2 ps-3">
+                                <li>A full document (with <code>&lt;html&gt;</code>, <code>&lt;head&gt;</code>, <code>&lt;body&gt;</code> tags) or just a body fragment both work &mdash; wrapper tags are stripped automatically on save.</li>
+                                <li>Its <code>&lt;style&gt;</code> and <code>&lt;script&gt;</code> are kept and run safely sandboxed to this page, so they can't affect the rest of the site (navbar, footer, other pages) even if the AI writes broad CSS like <code>body{...}</code> or <code>*{...}</code>.</li>
+                                <li>If the AI's page already includes its own title/"last updated" heading, you can remove it from the pasted content since this page adds its own above the content automatically.</li>
+                            </ul>
                         </div>
-                
-                <div class="row g-4">
+
+                        <div class="row g-4">
                     <!-- Title -->
                     <div class="col-md-6">
                         <label for="title" class="form-label fw-bold text-dark">Page Title <span class="text-danger">*</span></label>
@@ -130,7 +132,7 @@
                         <label for="content" class="form-label fw-bold text-dark">Page Content (HTML, CSS, JS, or Plain Text) <span class="text-danger">*</span></label>
                         <textarea class="form-control bg-dark text-light border-0 rounded-3 p-4" id="content" name="content" rows="15" required style="font-family: monospace; font-size: 14px; line-height: 1.5;" placeholder="Enter raw HTML, <style>, <script>, or plain text here...">{{ page.content }}</textarea>
                         <div class="form-text text-muted font-xs mt-2 mb-2">
-                            <i class="fas fa-info-circle me-1"></i> You have full control. You can write plain text, or inject full <code>&lt;style&gt;</code>, <code>&lt;script&gt;</code>, and <code>HTML</code> tags.
+                            <i class="fas fa-info-circle me-1"></i> You have full control. Write plain text, an HTML fragment with <code>&lt;style&gt;</code>/<code>&lt;script&gt;</code>, or paste a complete document (including <code>&lt;html&gt;</code>, <code>&lt;head&gt;</code>, <code>&lt;body&gt;</code> tags) &mdash; it's automatically cleaned up to fit the page on save.
                         </div>
                     </div>
 
@@ -175,6 +177,42 @@
             slugInput.value = slug;
         });
         {% endif %}
+
+        // Render the page content inside a sandboxed iframe so any <style>/<script>
+        // pasted into the content can't leak out and break the admin page itself
+        // (e.g. global CSS resets/overrides, scroll locks, runaway scripts).
+        const dataEl = document.getElementById('page-content-data');
+        const frame = document.getElementById('previewFrame');
+        const rawContent = dataEl ? JSON.parse(dataEl.textContent) : '';
+
+        const previewDoc = `<!DOCTYPE html><html><head><meta charset="utf-8">
+            <style>
+                body { margin: 0; padding: 4rem; box-sizing: border-box; white-space: pre-wrap;
+                    font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 1.125rem;
+                    line-height: 1.85; color: #374151; }
+                h1, h2, h3, h4 { color: #111827; margin-top: 3rem; margin-bottom: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+                h1:first-child, h2:first-child { margin-top: 0; }
+                h2 { font-size: 1.875rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
+                h3 { font-size: 1.5rem; }
+                p { margin-bottom: 1.5rem; }
+                ul, ol { margin-bottom: 2rem; padding-left: 1.5rem; }
+                li { margin-bottom: 0.75rem; padding-left: 0.5rem; }
+                a { color: #F85606; text-decoration: none; font-weight: 600; border-bottom: 2px solid transparent; }
+                a:hover { color: #d94a05; border-bottom-color: currentColor; }
+                strong, b { color: #111827; font-weight: 700; }
+                blockquote { border-left: 4px solid #F85606; padding: 1.5rem 1.5rem 1.5rem 2rem; margin: 2.5rem 0;
+                    color: #4b5563; font-style: italic; background: #f3f4f6; border-radius: 0 8px 8px 0; font-size: 1.25rem; }
+            </style></head><body>${rawContent || '<p style="color:#6b7280;text-align:center;padding:3rem 0;">No content yet. Switch to the Edit tab to add some!</p>'}</body></html>`;
+
+        frame.setAttribute('srcdoc', previewDoc);
+        frame.addEventListener('load', function () {
+            try {
+                const h = frame.contentWindow.document.documentElement.scrollHeight;
+                frame.style.height = Math.max(h, 200) + 'px';
+            } catch (e) {
+                frame.style.height = '400px';
+            }
+        });
     });
 </script>
 
@@ -228,44 +266,17 @@
         background: #ffffff;
         border-radius: 16px;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
-        padding: 4rem;
         border: 1px solid rgba(229, 231, 235, 0.5);
+        overflow: hidden;
     }
-    
-    /* Typography & Content Formatting */
-    .dynamic-content {
-        line-height: 1.85;
-        font-size: 1.125rem;
-        color: #374151;
-        font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        white-space: pre-wrap; /* Supports plain text line breaks */
-    }
-    .dynamic-content h1, .dynamic-content h2, .dynamic-content h3, .dynamic-content h4 {
-        color: #111827;
-        margin-top: 3rem;
-        margin-bottom: 1.25rem;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-    }
-    .dynamic-content h1:first-child, .dynamic-content h2:first-child { margin-top: 0; }
-    .dynamic-content h2 { font-size: 1.875rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
-    .dynamic-content h3 { font-size: 1.5rem; }
-    .dynamic-content p { margin-bottom: 1.5rem; }
-    .dynamic-content ul, .dynamic-content ol { margin-bottom: 2rem; padding-left: 1.5rem; }
-    .dynamic-content li { margin-bottom: 0.75rem; padding-left: 0.5rem; }
-    .dynamic-content li::marker { color: var(--primary-color, #F85606); font-weight: 600; }
-    .dynamic-content a { color: var(--primary-color, #F85606); text-decoration: none; font-weight: 600; transition: all 0.2s ease; border-bottom: 2px solid transparent; }
-    .dynamic-content a:hover { color: #d94a05; border-bottom-color: currentColor; }
-    .dynamic-content strong, .dynamic-content b { color: #111827; font-weight: 700; }
-    .dynamic-content blockquote {
-        border-left: 4px solid var(--primary-color, #F85606);
-        padding: 1.5rem 1.5rem 1.5rem 2rem;
-        margin: 2.5rem 0;
-        color: #4b5563;
-        font-style: italic;
-        background: #f3f4f6;
-        border-radius: 0 8px 8px 0;
-        font-size: 1.25rem;
+
+    /* Sandboxed preview iframe: contains any CSS/JS pasted into the page content
+       so it can't affect this admin page's layout, scroll, or event handling. */
+    .preview-content-frame {
+        width: 100%;
+        min-height: 200px;
+        border: 0;
+        display: block;
     }
 </style>
 {% endblock %}

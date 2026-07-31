@@ -22,15 +22,73 @@
     <div class="container pb-5 mb-5">
         <div class="row justify-content-center">
             <div class="col-lg-10 col-xl-8">
-                <div class="page-content-card">
-                    <div class="dynamic-content">
-                        {{ page.content|safe }}
-                    </div>
+                <div class="page-content-card p-0">
+                    <iframe id="dynamicPageFrame" class="dynamic-content-frame" title="{{ page.title }}" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
                 </div>
             </div>
         </div>
     </div>
 </div>
+{{ page.content|json_script:"dynamic-page-content-data" }}
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // The page content is rendered inside a sandboxed iframe rather than
+        // inline in this document. Admins have full control over the HTML/CSS/JS
+        // they paste for a page (including plain selectors like `body{}` or `*{}`
+        // straight from a ChatGPT-generated template) - rendered inline, those
+        // rules would apply to the whole storefront (navbar, search bar, footer),
+        // not just the page content. The iframe boundary contains them so pasted
+        // content can never again break the surrounding site chrome.
+        var dataEl = document.getElementById('dynamic-page-content-data');
+        var frame = document.getElementById('dynamicPageFrame');
+        var rawContent = dataEl ? JSON.parse(dataEl.textContent) : '';
+
+        var frameDoc = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+            '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+            '<style>' +
+            'body{margin:0;padding:4rem;box-sizing:border-box;white-space:pre-wrap;' +
+            'font-family:\'Inter\',system-ui,-apple-system,sans-serif;font-size:1.125rem;' +
+            'line-height:1.85;color:#374151;}' +
+            'h1,h2,h3,h4{color:#111827;margin-top:3rem;margin-bottom:1.25rem;font-weight:700;letter-spacing:-0.02em;}' +
+            'h1:first-child,h2:first-child{margin-top:0;}' +
+            'h2{font-size:1.875rem;border-bottom:1px solid #e5e7eb;padding-bottom:0.5rem;}' +
+            'h3{font-size:1.5rem;}' +
+            'p{margin-bottom:1.5rem;}' +
+            'ul,ol{margin-bottom:2rem;padding-left:1.5rem;}' +
+            'li{margin-bottom:0.75rem;padding-left:0.5rem;}' +
+            'a{color:#F85606;text-decoration:none;font-weight:600;border-bottom:2px solid transparent;}' +
+            'a:hover{color:#d94a05;border-bottom-color:currentColor;}' +
+            'strong,b{color:#111827;font-weight:700;}' +
+            'blockquote{border-left:4px solid #F85606;padding:1.5rem 1.5rem 1.5rem 2rem;margin:2.5rem 0;' +
+            'color:#4b5563;font-style:italic;background:#f3f4f6;border-radius:0 8px 8px 0;font-size:1.25rem;}' +
+            '</style></head><body>' +
+            (rawContent || '<p style="color:#6b7280;text-align:center;padding:3rem 0;">This page has no content yet.</p>') +
+            '</body></html>';
+
+        frame.setAttribute('srcdoc', frameDoc);
+
+        function resizeFrame() {
+            try {
+                var h = frame.contentWindow.document.documentElement.scrollHeight;
+                frame.style.height = Math.max(h, 200) + 'px';
+            } catch (e) {
+                frame.style.height = '600px';
+            }
+        }
+
+        frame.addEventListener('load', function () {
+            resizeFrame();
+            // Content can change its own height after load (animations, images,
+            // dynamically shown/hidden sections) - keep the iframe sized to fit.
+            try {
+                new ResizeObserver(resizeFrame).observe(frame.contentWindow.document.body);
+            } catch (e) {
+                // ResizeObserver unsupported or blocked - the initial size still stands.
+            }
+        });
+    });
+</script>
 
 <style>
     /* Header Styles */
@@ -73,13 +131,12 @@
         background: #ffffff;
         border-radius: 16px;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
-        padding: 4rem;
         border: 1px solid rgba(229, 231, 235, 0.5);
+        overflow: hidden;
     }
-    
+
     @media (max-width: 768px) {
         .page-content-card {
-            padding: 2rem;
             border-radius: 12px;
         }
         .page-title {
@@ -87,70 +144,14 @@
         }
     }
 
-    /* Typography & Content Formatting */
-    .dynamic-content {
-        line-height: 1.85;
-        font-size: 1.125rem;
-        color: #374151;
-        font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        white-space: pre-wrap;
-    }
-    .dynamic-content h1, .dynamic-content h2, .dynamic-content h3, .dynamic-content h4 {
-        color: #111827;
-        margin-top: 3rem;
-        margin-bottom: 1.25rem;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-    }
-    .dynamic-content h1:first-child, .dynamic-content h2:first-child {
-        margin-top: 0;
-    }
-    .dynamic-content h2 { font-size: 1.875rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
-    .dynamic-content h3 { font-size: 1.5rem; }
-    
-    .dynamic-content p {
-        margin-bottom: 1.5rem;
-    }
-    
-    .dynamic-content ul, .dynamic-content ol {
-        margin-bottom: 2rem;
-        padding-left: 1.5rem;
-    }
-    .dynamic-content li {
-        margin-bottom: 0.75rem;
-        padding-left: 0.5rem;
-    }
-    .dynamic-content li::marker {
-        color: var(--primary-color, #F85606);
-        font-weight: 600;
-    }
-    
-    .dynamic-content a {
-        color: var(--primary-color, #F85606);
-        text-decoration: none;
-        font-weight: 600;
-        transition: all 0.2s ease;
-        border-bottom: 2px solid transparent;
-    }
-    .dynamic-content a:hover {
-        color: #d94a05;
-        border-bottom-color: currentColor;
-    }
-    
-    .dynamic-content strong, .dynamic-content b {
-        color: #111827;
-        font-weight: 700;
-    }
-    
-    .dynamic-content blockquote {
-        border-left: 4px solid var(--primary-color, #F85606);
-        padding: 1.5rem 1.5rem 1.5rem 2rem;
-        margin: 2.5rem 0;
-        color: #4b5563;
-        font-style: italic;
-        background: #f3f4f6;
-        border-radius: 0 8px 8px 0;
-        font-size: 1.25rem;
+    /* Sandboxed content iframe: contains any CSS/JS the page author pasted
+       (including a full ChatGPT-generated stylesheet with `body{}`/`*{}` resets)
+       so it can only style its own content, never the surrounding storefront. */
+    .dynamic-content-frame {
+        width: 100%;
+        min-height: 200px;
+        border: 0;
+        display: block;
     }
 </style>
 {% endblock %}
