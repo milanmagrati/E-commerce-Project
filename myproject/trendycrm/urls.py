@@ -16,7 +16,9 @@ urlpatterns = [
     path('conversations/<int:conv_id>/add-label/', views.crm_add_label, name='add_label'),
     path('conversations/<int:conv_id>/remove-label/', views.crm_remove_label, name='remove_label'),
     path('conversations/<int:conv_id>/add-note/', views.crm_add_note, name='add_note'),
-    
+    path('conversations/<int:conv_id>/assign/', views.crm_assign_conversation, name='assign_conversation'),
+    path('conversations/<int:conv_id>/resolve/', views.crm_resolve_conversation, name='resolve_conversation'),
+
     path('labels/create/', views.crm_create_label_global, name='create_label_global'),
 
     path('social/', views.crm_social_posts, name='social_posts'),

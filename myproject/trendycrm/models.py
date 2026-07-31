@@ -97,11 +97,19 @@ class CRMMessage(models.Model):
         ('read', 'Read'),
         ('failed', 'Failed'),
     ]
+    ATTACHMENT_TYPE_CHOICES = [
+        ('image', 'Image'),
+        ('audio', 'Audio'),
+        ('document', 'Document'),
+    ]
     conversation = models.ForeignKey(CRMConversation, on_delete=models.CASCADE, related_name='messages')
     sender = models.CharField(max_length=100)
-    body = models.TextField()
+    body = models.TextField(blank=True)
     is_outbound = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='sent')
+    attachment = models.FileField(upload_to='crm_attachments/%Y/%m/', blank=True, null=True)
+    attachment_type = models.CharField(max_length=20, choices=ATTACHMENT_TYPE_CHOICES, blank=True, default='')
+    attachment_name = models.CharField(max_length=255, blank=True, default='')
     created_at = models.DateTimeField(default=timezone.now)
 
     @property

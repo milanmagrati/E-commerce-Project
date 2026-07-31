@@ -66,6 +66,16 @@ from .models import (
 )
 
 
+def _employee_display_name(user):
+    """Best-effort human name for a CustomUser, preferring their linked HRM Employee record."""
+    if not user:
+        return None
+    try:
+        return user.employee_profile.full_name
+    except Exception:
+        return user.get_full_name() or user.username
+
+
 # ─── Home ────────────────────────────────────────────────────────────────────
 @login_required
 def crm_home(request):
@@ -211,6 +221,11 @@ def crm_conversations(request):
 
     contacts = CRMContact.objects.all()
 
+    from hrm.models import Employee
+    employees = Employee.objects.filter(
+        employee_status='active', user__isnull=False
+    ).select_related('user', 'designation').order_by('full_name')
+
     context = {
         'conversations': conversations,
         'active_conv': active_conv,
@@ -218,6 +233,8 @@ def crm_conversations(request):
         'contacts': contacts,
         'connected_integrations': connected_integrations,
         'all_labels': all_labels,
+        'employees': employees,
+        'assigned_employee_name': _employee_display_name(active_conv.assigned_to) if active_conv else None,
         'page_filter': int(page_filter) if page_filter and page_filter.isdigit() else None,
         'read_status': read_status,
         'search_query': search_query,
@@ -266,43 +283,69 @@ def crm_conversations_ajax(request):
     return render(request, 'trendycrm/partials/messages_list.html', context)
 
 
+ATTACHMENT_PREVIEW_TEXT = {
+    'image': '📷 Photo',
+    'audio': '🎤 Voice message',
+    'document': '📎 Document',
+}
+
+
 @login_required
 @require_POST
 def crm_send_message(request, conv_id):
     conv = get_object_or_404(CRMConversation, pk=conv_id)
     body = request.POST.get('body', '').strip()
-    if body:
+
+    attachment_file = None
+    attachment_type = ''
+    for field_name, a_type in (('image_file', 'image'), ('audio_file', 'audio'), ('doc_file', 'document')):
+        f = request.FILES.get(field_name)
+        if f:
+            attachment_file = f
+            attachment_type = a_type
+            break
+
+    if body or attachment_file:
         msg = CRMMessage.objects.create(
             conversation=conv,
             sender=request.user.get_full_name() or request.user.username,
             body=body,
             is_outbound=True,
+            attachment=attachment_file,
+            attachment_type=attachment_type,
+            attachment_name=attachment_file.name if attachment_file else '',
         )
-        conv.last_message = body
+        conv.last_message = body or ATTACHMENT_PREVIEW_TEXT.get(attachment_type, '📎 Attachment')
         conv.updated_at = msg.created_at
         conv.is_read = True
         conv.save(update_fields=['last_message', 'updated_at', 'is_read'])
-        
+
         # Send to the channel's messaging API if applicable
         if conv.channel in ['facebook', 'instagram', 'whatsapp'] and conv.contact and conv.contact.meta_id:
             from .models import CRMIntegration
             from .meta_sync import send_meta_message, send_whatsapp_message
             send_fn = send_whatsapp_message if conv.channel == 'whatsapp' else send_meta_message
+            send_kwargs = {}
+            if msg.attachment:
+                send_kwargs = {
+                    'attachment_url': request.build_absolute_uri(msg.attachment.url),
+                    'attachment_type': attachment_type,
+                }
             success = False
             if conv.integration:
-                success = send_fn(conv.integration, conv.contact.meta_id, body)
+                success = send_fn(conv.integration, conv.contact.meta_id, body, **send_kwargs)
             else:
                 integrations = CRMIntegration.objects.filter(channel_type=conv.channel, status='connected')
                 for integration in integrations:
-                    if send_fn(integration, conv.contact.meta_id, body):
+                    if send_fn(integration, conv.contact.meta_id, body, **send_kwargs):
                         success = True
                         break
-            
+
             if not success:
                 msg.status = 'failed'
                 msg.save(update_fields=['status'])
                 messages.error(request, "Failed to send message to Meta. Please check your page connection and permissions.")
-                
+
     from django.urls import reverse
     return redirect(f"{reverse('trendycrm:conversations')}?id={conv_id}")
 
@@ -507,6 +550,52 @@ def crm_add_note(request, conv_id):
             'author_name': note.author.first_name or note.author.username,
             'created_at': note.created_at.strftime("%b %d, %Y, %I:%M %p")
         }
+    })
+
+
+@login_required
+@require_POST
+def crm_assign_conversation(request, conv_id):
+    """Assign a conversation to an HRM employee (their linked login account)
+    — the assignable roster is sourced from hrm.Employee, not raw CustomUsers."""
+    conv = get_object_or_404(CRMConversation, pk=conv_id)
+    employee_id = request.POST.get('employee_id', '').strip()
+
+    if not employee_id:
+        conv.assigned_to = None
+        conv.save(update_fields=['assigned_to'])
+        return JsonResponse({'status': 'ok', 'assigned': None})
+
+    if not employee_id.isdigit():
+        return JsonResponse({'status': 'error', 'message': 'Invalid employee id'}, status=400)
+
+    from hrm.models import Employee
+    employee = get_object_or_404(Employee, pk=employee_id, user__isnull=False)
+    conv.assigned_to = employee.user
+    conv.save(update_fields=['assigned_to'])
+
+    return JsonResponse({
+        'status': 'ok',
+        'assigned': {
+            'employee_id': employee.pk,
+            'name': employee.full_name,
+            'designation': employee.designation.name if employee.designation_id else '',
+        }
+    })
+
+
+@login_required
+@require_POST
+def crm_resolve_conversation(request, conv_id):
+    """Toggle a conversation between 'resolved' and 'open'."""
+    conv = get_object_or_404(CRMConversation, pk=conv_id)
+    conv.status = 'open' if conv.status == 'resolved' else 'resolved'
+    conv.save(update_fields=['status'])
+
+    return JsonResponse({
+        'status': 'ok',
+        'conv_status': conv.status,
+        'conv_status_display': conv.get_status_display(),
     })
 
 

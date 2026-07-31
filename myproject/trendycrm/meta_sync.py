@@ -208,12 +208,24 @@ def _process_meta_conversation(integration, conv_data):
                 except Exception:
                     logger.exception("process_incoming_webhook_message failed during conversation sync")
 
-def send_meta_message(integration, recipient_id, message_text):
+def send_meta_message(integration, recipient_id, message_text=None, attachment_url=None, attachment_type=None):
     """
-    Sends a message via the Meta Graph API to the recipient PSID.
+    Sends a message via the Meta Graph API to the recipient PSID. Sends an
+    attachment (image/audio/file) when attachment_url is given, otherwise
+    plain text. Messenger's attachment payload has no caption slot, so when
+    both are present the attachment takes priority and the text is dropped
+    from this API call (it is still saved locally on the message).
     """
     if not integration.access_token:
         logger.error(f"Cannot send Meta message for {integration.channel_type}: No access token.")
+        return False
+
+    if attachment_url:
+        meta_attachment_type = {'image': 'image', 'audio': 'audio', 'document': 'file'}.get(attachment_type, 'file')
+        message_payload = {'attachment': {'type': meta_attachment_type, 'payload': {'url': attachment_url, 'is_reusable': True}}}
+    elif message_text:
+        message_payload = {'text': message_text}
+    else:
         return False
 
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/messages"
@@ -221,9 +233,9 @@ def send_meta_message(integration, recipient_id, message_text):
     payload = {
         'recipient': {'id': recipient_id},
         'messaging_type': 'RESPONSE',
-        'message': {'text': message_text}
+        'message': message_payload,
     }
-    
+
     try:
         response = requests.post(url, params=params, json=payload, timeout=10)
         response.raise_for_status()
@@ -232,9 +244,12 @@ def send_meta_message(integration, recipient_id, message_text):
         logger.error(f"Failed to send Meta message: {e} - Response: {getattr(e.response, 'text', '')}")
         return False
 
-def send_whatsapp_message(integration, recipient_wa_id, message_text):
+def send_whatsapp_message(integration, recipient_wa_id, message_text=None, attachment_url=None, attachment_type=None):
     """
-    Sends a text message via the WhatsApp Cloud API from the connected phone number.
+    Sends a message via the WhatsApp Cloud API from the connected phone number.
+    Sends an attachment (image/audio/document) when attachment_url is given,
+    otherwise plain text. Image/document attachments carry message_text as a
+    caption; WhatsApp audio messages don't support captions.
     """
     if not integration.access_token:
         logger.error("Cannot send WhatsApp message: No access token.")
@@ -245,14 +260,29 @@ def send_whatsapp_message(integration, recipient_wa_id, message_text):
         logger.error("Cannot send WhatsApp message: integration has no phone_number_id.")
         return False
 
+    if attachment_url:
+        wa_type = {'image': 'image', 'audio': 'audio', 'document': 'document'}.get(attachment_type, 'document')
+        media_payload = {'link': attachment_url}
+        if message_text and wa_type in ('image', 'document'):
+            media_payload['caption'] = message_text
+        payload = {
+            'messaging_product': 'whatsapp',
+            'to': recipient_wa_id,
+            'type': wa_type,
+            wa_type: media_payload,
+        }
+    elif message_text:
+        payload = {
+            'messaging_product': 'whatsapp',
+            'to': recipient_wa_id,
+            'type': 'text',
+            'text': {'body': message_text},
+        }
+    else:
+        return False
+
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{phone_number_id}/messages"
     headers = {'Authorization': f'Bearer {integration.access_token}'}
-    payload = {
-        'messaging_product': 'whatsapp',
-        'to': recipient_wa_id,
-        'type': 'text',
-        'text': {'body': message_text},
-    }
 
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=10)
