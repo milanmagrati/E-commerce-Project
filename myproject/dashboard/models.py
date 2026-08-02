@@ -1626,6 +1626,168 @@ class CompanySetup(models.Model):
         cache.delete('ctx_company_setup')
 
 
+class LandingPageSettings(models.Model):
+    """Singleton model holding all editable copy/config for the public marketing
+    landing page (templates/landing.html). Repeatable content (stat rows, brand
+    logos, feature/integration cards) lives in related models below."""
+
+    # Hero
+    hero_pill_text = models.CharField(max_length=100, blank=True, default='The commerce OS for Nepal')
+    hero_headline = models.CharField(max_length=200, blank=True, default='Run your entire shop from one system')
+    hero_subtext = models.TextField(
+        blank=True,
+        default='Online and offline selling, inventory, courier logistics, customer messaging '
+                'and your team — one connected infrastructure instead of six disconnected tools.'
+    )
+    hero_cta_primary_text = models.CharField(max_length=50, blank=True, default='Start selling')
+    hero_cta_primary_link = models.CharField(max_length=200, blank=True, default='')
+    hero_cta_secondary_text = models.CharField(max_length=50, blank=True, default='Explore platform')
+    hero_cta_secondary_link = models.CharField(max_length=200, blank=True, default='#platform')
+    hero_note_text = models.CharField(
+        max_length=200, blank=True,
+        default='Nepali time zone, rupee amounts and local courier networks out of the box'
+    )
+
+    # Trusted-by brands
+    trusted_label = models.CharField(max_length=150, blank=True, default='Trusted by growing Nepali brands')
+
+    # Solutions section (two fixed split cards)
+    solutions_eyebrow = models.CharField(max_length=50, blank=True, default='Solutions')
+    solutions_heading = models.CharField(max_length=200, blank=True, default='Choose how you want to sell')
+    solutions_subtext = models.TextField(
+        blank=True,
+        default='Whether you sell through Instagram DMs, a storefront, or a counter in Kathmandu '
+                '— it runs on the same stock and the same orders.'
+    )
+    solution_card1_title = models.CharField(max_length=100, blank=True, default='Online sellers')
+    solution_card1_text = models.TextField(
+        blank=True,
+        default='Storefront, Instagram and Facebook messaging, two-way Google Sheets sync, '
+                'courier handoff and COD tracking — all against one set of stock.'
+    )
+    solution_card2_title = models.CharField(max_length=100, blank=True, default='Physical stores')
+    solution_card2_text = models.TextField(
+        blank=True,
+        default='POS counter billing, barcode-driven product lookup and per-branch order tracking '
+                '— sharing the same inventory as everything you sell online.'
+    )
+
+    # Platform section header (cards are LandingFeatureCard, section='platform')
+    platform_eyebrow = models.CharField(max_length=50, blank=True, default='Platform')
+    platform_heading = models.CharField(max_length=200, blank=True, default='A full selling infrastructure')
+    platform_subtext = models.CharField(max_length=250, blank=True, default='Every part of the operation — not just a storefront.')
+
+    # Integrations section header (cards are LandingFeatureCard, section='integration')
+    integrations_eyebrow = models.CharField(max_length=50, blank=True, default='Integrations')
+    integrations_heading = models.CharField(max_length=200, blank=True, default='Connected to the tools you already use')
+
+    # CTA band
+    cta_heading = models.CharField(max_length=200, blank=True, default='Ready to run it all from one place?')
+    cta_subtext = models.CharField(max_length=250, blank=True, default='Sign in to your dashboard, or browse the storefront to see it in action.')
+    cta_primary_text = models.CharField(max_length=50, blank=True, default='Get started')
+    cta_secondary_text = models.CharField(max_length=50, blank=True, default='Visit the store')
+
+    # Footer / verified business details
+    business_address = models.CharField(max_length=255, blank=True, default='')
+    business_pan = models.CharField(max_length=100, blank=True, default='')
+    business_contact = models.CharField(max_length=150, blank=True, default='')
+
+    # Footer social links
+    social_instagram = models.URLField(max_length=300, blank=True, default='')
+    social_facebook = models.URLField(max_length=300, blank=True, default='')
+    social_tiktok = models.URLField(max_length=300, blank=True, default='')
+    social_whatsapp = models.URLField(max_length=300, blank=True, default='')
+    social_email = models.EmailField(max_length=150, blank=True, default='')
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Landing Page Setup'
+        verbose_name_plural = 'Landing Page Setup'
+
+    def __str__(self):
+        return 'Landing Page Settings'
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('landing_page_settings')
+
+
+class LandingStatItem(models.Model):
+    """A row in the hero's mock stats panel."""
+
+    GROUP_CHOICES = [
+        ('primary', 'Top row (dot + right-aligned value)'),
+        ('secondary', 'Stock row (below divider)'),
+    ]
+    DOT_CHOICES = [
+        ('amber', 'Amber'),
+        ('green', 'Green'),
+        ('blue', 'Blue'),
+        ('', 'None'),
+    ]
+
+    settings = models.ForeignKey(LandingPageSettings, on_delete=models.CASCADE, related_name='stat_items')
+    label = models.CharField(max_length=100)
+    value = models.CharField(max_length=100, blank=True, default='')
+    dot_color = models.CharField(max_length=10, choices=DOT_CHOICES, blank=True, default='')
+    group = models.CharField(max_length=10, choices=GROUP_CHOICES, default='primary')
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['group', 'order', 'id']
+        verbose_name = 'Landing Stat Item'
+
+    def __str__(self):
+        return self.label
+
+
+class LandingBrandLogo(models.Model):
+    """A logo/name shown in the 'Trusted by growing Nepali brands' row."""
+
+    settings = models.ForeignKey(LandingPageSettings, on_delete=models.CASCADE, related_name='brand_logos')
+    name = models.CharField(max_length=100)
+    logo = models.ImageField(upload_to='landing/brands/', blank=True, null=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order', 'id']
+        verbose_name = 'Landing Brand Logo'
+
+    def __str__(self):
+        return self.name
+
+
+class LandingFeatureCard(models.Model):
+    """A card in either the Platform features grid or the Integrations grid."""
+
+    SECTION_CHOICES = [
+        ('platform', 'Platform feature'),
+        ('integration', 'Integration'),
+    ]
+
+    settings = models.ForeignKey(LandingPageSettings, on_delete=models.CASCADE, related_name='feature_cards')
+    section = models.CharField(max_length=15, choices=SECTION_CHOICES, default='platform')
+    icon = models.CharField(max_length=60, default='fas fa-star', help_text='Font Awesome class, e.g. "fas fa-box"')
+    title = models.CharField(max_length=100)
+    description = models.CharField(max_length=255, blank=True, default='')
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['section', 'order', 'id']
+        verbose_name = 'Landing Feature Card'
+
+    def __str__(self):
+        return self.title
+
+
 # ==================== API Sync Settings ====================
 class APISettings(models.Model):
     """Singleton model to store configurable API calling intervals and times."""

@@ -245,6 +245,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 .trusted-row span { font-family: 'DM Serif Display', Georgia, serif; font-size: 1.3rem; color: var(--text); }
+.trusted-logo { height: 32px; max-width: 140px; width: auto; object-fit: contain; filter: grayscale(1); }
 
 /* ----------------------------------------------------- Light section */
 .light-section {

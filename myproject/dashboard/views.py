@@ -267,21 +267,40 @@ def login_view(request):
 
 def logout_view(request):
     logout(request)
-    return redirect('login')
+    return redirect('dashboard')  # 'dashboard' is home_view ('/'), which shows the landing page to anonymous users
 
 
 def landing_view(request):
     """Public marketing site. Standalone template — no dashboard chrome.
 
     Footer legal links are driven by the store's published CMS pages so the
-    landing page never links to a page that doesn't exist yet.
+    landing page never links to a page that doesn't exist yet. All other copy
+    (hero, stats panel, brands, feature/integration cards, footer business
+    details) is admin-editable via LandingPageSettings ("Landing Page Setup"
+    in the sidebar).
     """
     try:
         from store.models import Page
         legal_pages = list(Page.objects.filter(is_published=True).only('title', 'slug')[:6])
     except Exception:
         legal_pages = []
-    return render(request, 'landing.html', {'legal_pages': legal_pages})
+
+    from django.urls import reverse
+    from .models import LandingPageSettings
+    landing = LandingPageSettings.get_settings()
+
+    context = {
+        'legal_pages': legal_pages,
+        'landing': landing,
+        'primary_stats': landing.stat_items.filter(group='primary'),
+        'secondary_stats': landing.stat_items.filter(group='secondary'),
+        'brand_logos': landing.brand_logos.all(),
+        'platform_cards': landing.feature_cards.filter(section='platform'),
+        'integration_cards': landing.feature_cards.filter(section='integration'),
+        'hero_primary_url': landing.hero_cta_primary_link or reverse('login'),
+        'hero_secondary_url': landing.hero_cta_secondary_link or '#platform',
+    }
+    return render(request, 'landing.html', context)
 
 
 def home_view(request):
@@ -20079,6 +20098,172 @@ def company_setup(request):
         return redirect('company_setup')
 
     return render(request, 'company_setup.html', {'company': company})
+
+
+# ==================== LANDING PAGE SETUP ====================
+
+@login_required
+def landing_page_setup(request):
+    """Full editor for the public marketing landing page (admin only)."""
+    import re
+    from .models import LandingPageSettings, LandingStatItem, LandingBrandLogo, LandingFeatureCard
+
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, 'You do not have permission to access Landing Page Setup.', extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    landing = LandingPageSettings.get_settings()
+    allowed_image_types = ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp']
+    max_logo_size = 2 * 1024 * 1024  # 2 MB, matches CompanySetup logo limit
+    upload_warnings = []
+
+    def validate_logo(f):
+        if f.content_type not in allowed_image_types:
+            return False, f'"{f.name}" was skipped — must be PNG, JPG, GIF, SVG or WebP.'
+        if f.size > max_logo_size:
+            return False, f'"{f.name}" was skipped — file size must be under 2 MB.'
+        return True, ''
+
+    if request.method == 'POST':
+        text_fields = [
+            'hero_pill_text', 'hero_headline', 'hero_subtext',
+            'hero_cta_primary_text', 'hero_cta_primary_link',
+            'hero_cta_secondary_text', 'hero_cta_secondary_link', 'hero_note_text',
+            'trusted_label',
+            'solutions_eyebrow', 'solutions_heading', 'solutions_subtext',
+            'solution_card1_title', 'solution_card1_text',
+            'solution_card2_title', 'solution_card2_text',
+            'platform_eyebrow', 'platform_heading', 'platform_subtext',
+            'integrations_eyebrow', 'integrations_heading',
+            'cta_heading', 'cta_subtext', 'cta_primary_text', 'cta_secondary_text',
+            'business_address', 'business_pan', 'business_contact',
+            'social_instagram', 'social_facebook', 'social_tiktok', 'social_whatsapp', 'social_email',
+        ]
+        for field in text_fields:
+            if field in request.POST:
+                setattr(landing, field, request.POST.get(field, '').strip())
+
+        # Bare domains (e.g. "instagram.com/x") would otherwise render as a broken
+        # relative link, so normalize to a full URL — but leave the email field alone.
+        for url_field in ('social_instagram', 'social_facebook', 'social_tiktok', 'social_whatsapp'):
+            value = getattr(landing, url_field)
+            if value and not re.match(r'^https?://', value, re.IGNORECASE):
+                setattr(landing, url_field, f'https://{value}')
+
+        # ---- Stat panel rows (delete & recreate — text only, no files) ----
+        stat_labels = request.POST.getlist('stat_label[]')
+        stat_values = request.POST.getlist('stat_value[]')
+        stat_colors = request.POST.getlist('stat_color[]')
+        stat_groups = request.POST.getlist('stat_group[]')
+        valid_groups = {c[0] for c in LandingStatItem.GROUP_CHOICES}
+        valid_dots = {c[0] for c in LandingStatItem.DOT_CHOICES}
+        new_stats = []
+        for i, label in enumerate(stat_labels):
+            label = label.strip()
+            if not label:
+                continue
+            group = stat_groups[i] if i < len(stat_groups) and stat_groups[i] in valid_groups else 'primary'
+            dot = stat_colors[i] if i < len(stat_colors) and stat_colors[i] in valid_dots else ''
+            new_stats.append(LandingStatItem(
+                settings=landing, label=label,
+                value=(stat_values[i].strip() if i < len(stat_values) else ''),
+                dot_color=dot, group=group, order=i,
+            ))
+        landing.stat_items.all().delete()
+        LandingStatItem.objects.bulk_create(new_stats)
+
+        # ---- Feature / integration cards (delete & recreate — text only) ----
+        card_sections = request.POST.getlist('card_section[]')
+        card_icons = request.POST.getlist('card_icon[]')
+        card_titles = request.POST.getlist('card_title[]')
+        card_descriptions = request.POST.getlist('card_description[]')
+        valid_sections = {c[0] for c in LandingFeatureCard.SECTION_CHOICES}
+        new_cards = []
+        for i, title in enumerate(card_titles):
+            title = title.strip()
+            if not title:
+                continue
+            section = card_sections[i] if i < len(card_sections) and card_sections[i] in valid_sections else 'platform'
+            new_cards.append(LandingFeatureCard(
+                settings=landing, section=section,
+                icon=(card_icons[i].strip() if i < len(card_icons) and card_icons[i].strip() else 'fas fa-star'),
+                title=title,
+                description=(card_descriptions[i].strip() if i < len(card_descriptions) else ''),
+                order=i,
+            ))
+        landing.feature_cards.all().delete()
+        LandingFeatureCard.objects.bulk_create(new_cards)
+
+        # ---- Brand logos (id-based update/delete so uploaded images survive resubmits) ----
+        for key in list(request.POST.keys()):
+            m = re.match(r'^brand_name_(\d+)$', key)
+            if not m:
+                continue
+            pk = int(m.group(1))
+            try:
+                brand = landing.brand_logos.get(pk=pk)
+            except LandingBrandLogo.DoesNotExist:
+                continue
+            if request.POST.get(f'brand_delete_{pk}') == '1':
+                if brand.logo:
+                    brand.logo.delete(save=False)
+                brand.delete()
+                continue
+            name = request.POST.get(key, '').strip()
+            if name:
+                brand.name = name
+            order_val = request.POST.get(f'brand_order_{pk}')
+            if order_val and order_val.isdigit():
+                brand.order = int(order_val)
+            file_key = f'brand_logo_{pk}'
+            if file_key in request.FILES:
+                logo_file = request.FILES[file_key]
+                ok, reason = validate_logo(logo_file)
+                if ok:
+                    if brand.logo:
+                        brand.logo.delete(save=False)
+                    brand.logo = logo_file
+                else:
+                    upload_warnings.append(reason)
+            brand.save()
+
+        # New brand rows: brand_name_new_<tempid>
+        for key in list(request.POST.keys()):
+            m = re.match(r'^brand_name_new_(\w+)$', key)
+            if not m:
+                continue
+            tempid = m.group(1)
+            name = request.POST.get(key, '').strip()
+            if not name:
+                continue
+            order_val = request.POST.get(f'brand_order_new_{tempid}')
+            order = int(order_val) if order_val and order_val.isdigit() else 0
+            new_brand = LandingBrandLogo(settings=landing, name=name, order=order)
+            file_key = f'brand_logo_new_{tempid}'
+            if file_key in request.FILES:
+                logo_file = request.FILES[file_key]
+                ok, reason = validate_logo(logo_file)
+                if ok:
+                    new_brand.logo = logo_file
+                else:
+                    upload_warnings.append(reason)
+            new_brand.save()
+
+        landing.save()
+        for warning in upload_warnings:
+            messages.warning(request, warning)
+        messages.success(request, 'Landing page updated successfully!')
+        return redirect('landing_page_setup')
+
+    context = {
+        'landing': landing,
+        'primary_stats': landing.stat_items.filter(group='primary'),
+        'secondary_stats': landing.stat_items.filter(group='secondary'),
+        'brand_logos': landing.brand_logos.all(),
+        'platform_cards': landing.feature_cards.filter(section='platform'),
+        'integration_cards': landing.feature_cards.filter(section='integration'),
+    }
+    return render(request, 'landing_page_setup.html', context)
 
 
 # ===================== RTV STATUS MANAGEMENT =====================

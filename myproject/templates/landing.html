@@ -47,77 +47,81 @@
 <header class="hero">
     <div class="wrap hero-grid">
         <div>
-            <span class="pill">The commerce OS for Nepal</span>
-            <h1 class="serif">Run your entire shop from one system</h1>
-            <p class="hero-sub">
-                Online and offline selling, inventory, courier logistics, customer messaging
-                and your team — one connected infrastructure instead of six disconnected tools.
-            </p>
+            {% if landing.hero_pill_text %}<span class="pill">{{ landing.hero_pill_text }}</span>{% endif %}
+            <h1 class="serif">{{ landing.hero_headline }}</h1>
+            <p class="hero-sub">{{ landing.hero_subtext|linebreaksbr }}</p>
             <div class="hero-actions">
-                <a href="{% url 'login' %}" class="btn btn-accent btn-lg">Start selling <i class="fas fa-arrow-right"></i></a>
-                <a href="#platform" class="btn btn-outline btn-lg">Explore platform</a>
+                {% if landing.hero_cta_primary_text %}
+                <a href="{{ hero_primary_url }}" class="btn btn-accent btn-lg">{{ landing.hero_cta_primary_text }} <i class="fas fa-arrow-right"></i></a>
+                {% endif %}
+                {% if landing.hero_cta_secondary_text %}
+                <a href="{{ hero_secondary_url }}" class="btn btn-outline btn-lg">{{ landing.hero_cta_secondary_text }}</a>
+                {% endif %}
             </div>
+            {% if landing.hero_note_text %}
             <p class="hero-note">
                 <i class="fas fa-location-dot"></i>
-                Nepali time zone, rupee amounts and local courier networks out of the box
+                {{ landing.hero_note_text }}
             </p>
+            {% endif %}
         </div>
 
         <!-- Hero visual -->
+        {% if primary_stats or secondary_stats %}
         <div class="panel" aria-hidden="true">
+            {% for stat in primary_stats %}
             <div class="panel-row">
-                <span class="panel-label"><span class="dot amber"></span> Kathmandu POS</span>
-                <span class="panel-value">Rs 18,400</span>
+                <span class="panel-label">{% if stat.dot_color %}<span class="dot {{ stat.dot_color }}"></span> {% endif %}{{ stat.label }}</span>
+                <span class="panel-value">{{ stat.value }}</span>
             </div>
-            <div class="panel-row">
-                <span class="panel-label"><span class="dot green"></span> Online store</span>
-                <span class="panel-value">Order #1042</span>
-            </div>
-            <div class="panel-row">
-                <span class="panel-label"><span class="dot blue"></span> NCM dispatch</span>
-                <span class="panel-value muted">In transit</span>
-            </div>
+            {% endfor %}
 
-            <div class="panel-divider"></div>
+            {% if primary_stats and secondary_stats %}<div class="panel-divider"></div>{% endif %}
 
-            <div class="panel-stock"><span>Denim Jacket</span><span>47 in stock</span></div>
-            <div class="panel-stock"><span>Wool Sweater</span><span>28 in stock</span></div>
-            <div class="panel-stock"><span>Cotton Kurta</span><span>12 in stock</span></div>
+            {% for stat in secondary_stats %}
+            <div class="panel-stock"><span>{{ stat.label }}</span><span>{{ stat.value }}</span></div>
+            {% endfor %}
         </div>
+        {% endif %}
     </div>
 </header>
 
 <!-- ============================ TRUSTED ============================ -->
+{% if brand_logos %}
 <section class="trusted">
     <div class="wrap">
-        <p class="trusted-label">Trusted by growing Nepali brands</p>
+        {% if landing.trusted_label %}<p class="trusted-label">{{ landing.trusted_label }}</p>{% endif %}
         <div class="trusted-row">
-            <span>Brand A</span>
-            <span>Brand B</span>
-            <span>Brand C</span>
-            <span>Brand D</span>
+            {% for brand in brand_logos %}
+            {% if brand.logo %}
+                <img src="{{ brand.logo.url }}" alt="{{ brand.name }}" class="trusted-logo">
+            {% else %}
+                <span>{{ brand.name }}</span>
+            {% endif %}
+            {% endfor %}
         </div>
     </div>
 </section>
+{% endif %}
 
 <!-- =========================== SOLUTIONS =========================== -->
 <section class="light-section" id="solutions">
     <div class="wrap">
         <div class="section-head">
-            <p class="eyebrow">Solutions</p>
-            <h2 class="serif">Choose how you want to sell</h2>
-            <p>Whether you sell through Instagram DMs, a storefront, or a counter in Kathmandu — it runs on the same stock and the same orders.</p>
+            <p class="eyebrow">{{ landing.solutions_eyebrow }}</p>
+            <h2 class="serif">{{ landing.solutions_heading }}</h2>
+            <p>{{ landing.solutions_subtext }}</p>
         </div>
 
         <div class="split">
             <div class="split-card dark">
-                <h3>Online sellers</h3>
-                <p>Storefront, Instagram and Facebook messaging, two-way Google Sheets sync, courier handoff and COD tracking — all against one set of stock.</p>
+                <h3>{{ landing.solution_card1_title }}</h3>
+                <p>{{ landing.solution_card1_text }}</p>
                 <a href="#platform" class="learn">Learn more &rarr;</a>
             </div>
             <div class="split-card light">
-                <h3>Physical stores</h3>
-                <p>POS counter billing, barcode-driven product lookup and per-branch order tracking — sharing the same inventory as everything you sell online.</p>
+                <h3>{{ landing.solution_card2_title }}</h3>
+                <p>{{ landing.solution_card2_text }}</p>
                 <a href="#platform" class="learn">Learn more &rarr;</a>
             </div>
         </div>
@@ -125,106 +129,59 @@
 </section>
 
 <!-- ============================ PLATFORM ============================ -->
+{% if platform_cards %}
 <section class="platform" id="platform">
     <div class="wrap">
         <div class="section-head">
-            <p class="eyebrow">Platform</p>
-            <h2 class="serif">A full selling infrastructure</h2>
-            <p>Every part of the operation — not just a storefront.</p>
+            <p class="eyebrow">{{ landing.platform_eyebrow }}</p>
+            <h2 class="serif">{{ landing.platform_heading }}</h2>
+            <p>{{ landing.platform_subtext }}</p>
         </div>
 
         <div class="feature-grid">
+            {% for card in platform_cards %}
             <div class="feature">
-                <div class="feature-icon"><i class="fas fa-box"></i></div>
-                <h4>Orders &amp; dispatch</h4>
-                <p>Full order lifecycle with follow-ups, returns, exchanges and return-to-vendor tracking.</p>
+                <div class="feature-icon"><i class="{{ card.icon }}"></i></div>
+                <h4>{{ card.title }}</h4>
+                <p>{{ card.description }}</p>
             </div>
-            <div class="feature">
-                <div class="feature-icon"><i class="fas fa-boxes-stacked"></i></div>
-                <h4>Inventory &amp; backorders</h4>
-                <p>Atomic stock allocation, backorder queues, low-stock and expiry alerts.</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon"><i class="fas fa-truck-fast"></i></div>
-                <h4>Courier sync</h4>
-                <p>NCM webhooks and Pick &amp; Drop status sync keep every shipment up to date.</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon"><i class="fas fa-comments"></i></div>
-                <h4>AI customer CRM</h4>
-                <p>Facebook and Instagram conversations routed, classified and answered with AI assistance.</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon"><i class="fas fa-receipt"></i></div>
-                <h4>Bill rewards</h4>
-                <p>OCR reads uploaded receipts, matches them to orders and issues loyalty points.</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon"><i class="fas fa-user-clock"></i></div>
-                <h4>HR &amp; payroll</h4>
-                <p>Biometric attendance, leave, advances, payroll runs and payslips for your staff.</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon"><i class="fas fa-chart-line"></i></div>
-                <h4>Reports &amp; forecasting</h4>
-                <p>Sales reporting, staff performance and demand forecasting in one place.</p>
-            </div>
-            <div class="feature">
-                <div class="feature-icon"><i class="fas fa-user-shield"></i></div>
-                <h4>Role-based access</h4>
-                <p>Granular per-user permissions across every module, so staff see only their work.</p>
-            </div>
+            {% endfor %}
         </div>
     </div>
 </section>
+{% endif %}
 
 <!-- ========================== INTEGRATIONS ========================== -->
+{% if integration_cards %}
 <section class="integrations" id="integrations">
     <div class="wrap">
         <div class="integration-box">
             <div class="section-head" style="margin-bottom: 0;">
-                <p class="eyebrow">Integrations</p>
-                <h2 class="serif">Connected to the tools you already use</h2>
+                <p class="eyebrow">{{ landing.integrations_eyebrow }}</p>
+                <h2 class="serif">{{ landing.integrations_heading }}</h2>
             </div>
 
             <div class="integration-grid">
+                {% for card in integration_cards %}
                 <div class="integration">
-                    <i class="fas fa-truck"></i>
-                    <div><strong>Nepal Can Move</strong><small>Courier &amp; COD sync</small></div>
+                    <i class="{{ card.icon }}"></i>
+                    <div><strong>{{ card.title }}</strong><small>{{ card.description }}</small></div>
                 </div>
-                <div class="integration">
-                    <i class="fas fa-dolly"></i>
-                    <div><strong>Pick and Drop</strong><small>Second courier network</small></div>
-                </div>
-                <div class="integration">
-                    <i class="fab fa-facebook"></i>
-                    <div><strong>Facebook &amp; Instagram</strong><small>Meta message sync</small></div>
-                </div>
-                <div class="integration">
-                    <i class="fas fa-table"></i>
-                    <div><strong>Google Sheets</strong><small>Two-way order &amp; product sync</small></div>
-                </div>
-                <div class="integration">
-                    <i class="fas fa-fingerprint"></i>
-                    <div><strong>ZKTeco devices</strong><small>Biometric attendance</small></div>
-                </div>
-                <div class="integration">
-                    <i class="fas fa-comment-sms"></i>
-                    <div><strong>SMS gateways</strong><small>Sparrow, Atuha, Twilio</small></div>
-                </div>
+                {% endfor %}
             </div>
         </div>
     </div>
 </section>
+{% endif %}
 
 <!-- ============================ CTA BAND ============================ -->
 <section class="cta-band">
     <div class="cta-inner">
-        <h2 class="serif">Ready to run it all from one place?</h2>
-        <p>Sign in to your dashboard, or browse the storefront to see it in action.</p>
+        <h2 class="serif">{{ landing.cta_heading }}</h2>
+        <p>{{ landing.cta_subtext }}</p>
         <div class="cta-actions">
-            <a href="{% url 'login' %}" class="btn btn-accent btn-lg">Get started <i class="fas fa-arrow-right"></i></a>
-            <a href="{% url 'store:landing' %}" class="btn btn-outline btn-lg">Visit the store</a>
+            <a href="{% url 'login' %}" class="btn btn-accent btn-lg">{{ landing.cta_primary_text }} <i class="fas fa-arrow-right"></i></a>
+            <a href="{% url 'store:landing' %}" class="btn btn-outline btn-lg">{{ landing.cta_secondary_text }}</a>
         </div>
     </div>
 </section>
@@ -246,11 +203,11 @@
                 </a>
                 <p>{{ COMPANY_TAGLINE|default:'The operating system for selling in Nepal — online and offline commerce infrastructure.' }}</p>
                 <div class="social">
-                    <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
-                    <a href="#" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>
-                    <a href="#" aria-label="TikTok"><i class="fab fa-tiktok"></i></a>
-                    <a href="#" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
-                    <a href="#" aria-label="Email"><i class="fas fa-envelope"></i></a>
+                    {% if landing.social_instagram %}<a href="{{ landing.social_instagram }}" target="_blank" rel="noopener" aria-label="Instagram"><i class="fab fa-instagram"></i></a>{% endif %}
+                    {% if landing.social_facebook %}<a href="{{ landing.social_facebook }}" target="_blank" rel="noopener" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>{% endif %}
+                    {% if landing.social_tiktok %}<a href="{{ landing.social_tiktok }}" target="_blank" rel="noopener" aria-label="TikTok"><i class="fab fa-tiktok"></i></a>{% endif %}
+                    {% if landing.social_whatsapp %}<a href="{{ landing.social_whatsapp }}" target="_blank" rel="noopener" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>{% endif %}
+                    {% if landing.social_email %}<a href="mailto:{{ landing.social_email }}" aria-label="Email"><i class="fas fa-envelope"></i></a>{% endif %}
                 </div>
             </div>
 
@@ -282,11 +239,6 @@
             </div>
         </div>
 
-        <!--
-            BUSINESS DETAILS — replace the placeholder values below with your real
-            registration data. These are intentionally left blank rather than filled
-            with example numbers, so nothing incorrect is ever published.
-        -->
         <div class="business">
             <p class="business-title"><i class="fas fa-shield-halved"></i> Verified business details</p>
             <div class="business-grid">
@@ -296,15 +248,15 @@
                 </div>
                 <div class="business-item">
                     <dt>Company address</dt>
-                    <dd>Add your address</dd>
+                    <dd>{{ landing.business_address|default:'Add your address' }}</dd>
                 </div>
                 <div class="business-item">
                     <dt>PAN / VAT</dt>
-                    <dd>Add your PAN</dd>
+                    <dd>{{ landing.business_pan|default:'Add your PAN' }}</dd>
                 </div>
                 <div class="business-item">
                     <dt>Contact</dt>
-                    <dd>Add your email</dd>
+                    <dd>{{ landing.business_contact|default:'Add your email' }}</dd>
                 </div>
             </div>
         </div>

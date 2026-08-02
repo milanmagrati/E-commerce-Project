@@ -234,6 +234,8 @@ urlpatterns = [
 
     # Company Setup (branding & themes)
     path('settings/company/', views.company_setup, name='company_setup'),
+    # Landing Page Setup (public marketing page content)
+    path('settings/landing-page/', views.landing_page_setup, name='landing_page_setup'),
     # Settings Hub (two-panel layout)
     path('settings/', views.settings_hub, name='settings_hub'),
 

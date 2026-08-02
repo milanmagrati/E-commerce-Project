@@ -1674,6 +1674,9 @@
                             <a href="{% url 'api_integration_list' %}"><i class="fas fa-plug me-1"></i> API
                                 Integration</a>
                         </li>
+                        <li class="{% if request.resolver_match.url_name == 'landing_page_setup' %}active{% endif %}">
+                            <a href="{% url 'landing_page_setup' %}"><i class="fas fa-globe me-1"></i> Landing Page Setup</a>
+                        </li>
                         {% endif %}
                     </ul>
                 </li>

@@ -189,7 +189,7 @@ MEDIA_URL = '/media/'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'
-LOGOUT_REDIRECT_URL = 'login'
+LOGOUT_REDIRECT_URL = 'dashboard'  # 'dashboard' ('/') shows the public landing page to logged-out visitors
 
 # ========== SESSION CONFIGURATION ==========
 # Session settings for 12-hour persistent login
