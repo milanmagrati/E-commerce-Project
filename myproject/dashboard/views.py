@@ -5091,6 +5091,29 @@ def _product_matches(rtv_desc_raw, order_items):
     return False
 
 
+def _iter_matching_orders(match_sources, branch_orders, exclude_ids=frozenset()):
+    """Yield confirmed orders in the RTV's branch whose items match its products.
+
+    Shared by possible_redirection_list's two passes — the pre-filter that
+    decides which RTVs are listed at all, and the per-entry build that renders
+    the suggestions. They used to be separate copies of the same comparison and
+    drifted apart; keep them on this one generator so they can't disagree.
+
+    Lazy on purpose: the pre-filter only needs to know whether a first match
+    exists, so it stops after one instead of scoring every candidate order.
+
+    An empty match_sources yields nothing — branch alone is never sufficient,
+    since redirecting on branch without a product check ships the wrong item.
+    """
+    if not match_sources:
+        return
+    for order in branch_orders:
+        if order.id in exclude_ids:
+            continue
+        if any(_product_matches(src, order.items.all()) for src in match_sources):
+            yield order
+
+
 @login_required
 @permission_required('can_view_orders')
 def possible_redirection_list(request):
@@ -5144,7 +5167,7 @@ def possible_redirection_list(request):
     rtvs = rtvs.exclude(order_id__in=_delivered_ncm_ids)
 
     rtvs = rtvs.order_by(
-        db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
+        db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at', '-id'
     )
 
     # GET FILTER PARAMETERS
@@ -5278,14 +5301,10 @@ def possible_redirection_list(request):
             _desc = (_pdesc or '').strip()
             # Build match sources: prefer RTV product_description, fallback to local order names
             _match_srcs = [_desc] if _desc else _rtv_local_item_names.get(_oid, [])
-            if not _match_srcs:
-                # No product info anywhere — branch-only match is NOT sufficient.
-                # Both branch AND product must match for redirection to make sense.
-                continue
-            for _o in _branch_orders:
-                if any(_product_matches(src, _o.items.all()) for src in _match_srcs):
-                    _has_match_ids.add(_oid)
-                    break
+            # No product info anywhere — branch-only match is NOT sufficient.
+            # Both branch AND product must match for redirection to make sense.
+            if next(_iter_matching_orders(_match_srcs, _branch_orders), None) is not None:
+                _has_match_ids.add(_oid)
         rtvs = rtvs.filter(order_id__in=_has_match_ids) if _has_match_ids else rtvs.none()
     else:
         # No RTVs have to_branch set — nothing can match.
@@ -5371,6 +5390,10 @@ def possible_redirection_list(request):
         rtv_entries.append(entry)
 
     # ── Per-entry matching_orders: reuse _confirmed_branch_map (no extra DB query) ──
+    # Track orders already claimed by an earlier (more recent) RTV entry on
+    # this page so the same local order isn't suggested under multiple RTV
+    # blocks at once.
+    _already_suggested_order_ids = set()
     for entry in rtv_entries:
         _bk = (entry['rtv'].to_branch or '').upper()
         _branch_candidates = _confirmed_branch_map.get(_bk, [])
@@ -5397,18 +5420,18 @@ def possible_redirection_list(request):
             entry['rtv_product_ref_display'] = _local_names
             entry['rtv_ref_source_is_local'] = True
 
-        if not _match_sources:
-            # No product info anywhere — branch-only match is NOT sufficient.
-            # Both branch AND product must match, so no matching orders.
-            _matched = []
-        else:
-            _matched = []
-            for _o in _branch_candidates:
-                if any(_product_matches(src, _o.items.all()) for src in _match_sources):
-                    _matched.append(_o)
-        entry['is_branch_only_match'] = False
+        # No product info anywhere — branch-only match is NOT sufficient, and
+        # _iter_matching_orders yields nothing for empty sources.
+        _all_matched = list(_iter_matching_orders(_match_sources, _branch_candidates))
+        _matched = [_o for _o in _all_matched if _o.id not in _already_suggested_order_ids]
+        _already_suggested_order_ids.update(_o.id for _o in _matched)
+
         entry['matching_orders'] = _matched
         entry['matching_count'] = len(_matched)
+        # Surfaced in the template so an RTV whose only candidate was claimed by
+        # a more recent RTV above doesn't just render as a blank row on a page
+        # whose whole purpose is showing redirect candidates.
+        entry['claimed_elsewhere_count'] = len(_all_matched) - len(_matched)
 
     ncm_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
     branches = Branch.objects.filter(is_active=True).order_by('name')
@@ -20632,7 +20655,7 @@ def ncm_rtvs_list(request):
             api_config_id = ''
 
     qs = RTVOrder.objects.select_related('vendor', 'api_config', 'rtv_status').order_by(
-        models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
+        models.F('rtv_marked_at').desc(nulls_last=True), '-created_at', '-id'
     )
 
     if api_config_id:
@@ -20729,13 +20752,22 @@ def ncm_rtvs_list(request):
         page = int(page)
     except (ValueError, TypeError):
         page = 1
-    total_count = qs.count()
+    # Snapshot the ordered id list once so total_count/page_objs can't see
+    # different states if a background sync mutates rtv_marked_at (the sort
+    # key) between a separate count() and slice() call.
+    ordered_ids = list(qs.values_list('id', flat=True))
+    total_count = len(ordered_ids)
     total_pages = max(1, (total_count + page_size - 1) // page_size)
     page = max(1, min(page, total_pages))
     start = (page - 1) * page_size
     end = start + page_size
+    page_ids = ordered_ids[start:end]
 
-    page_objs = list(qs[start:end])
+    _objs_by_id = {
+        rtv.id: rtv for rtv in
+        RTVOrder.objects.select_related('vendor', 'api_config', 'rtv_status').filter(id__in=page_ids)
+    }
+    page_objs = [_objs_by_id[i] for i in page_ids if i in _objs_by_id]
     rtv_ids_page = [rtv.id for rtv in page_objs]
 
     # Auto-assign unassigned RTVs on this page to the primary NCM config

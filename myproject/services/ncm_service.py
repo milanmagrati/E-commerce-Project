@@ -6,6 +6,16 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger('ncm')
 
+
+def _same_instant(a, b):
+    """True if two datetimes represent the same point in time, ignoring
+    sub-second precision (repeat NCM comment polls can re-parse the same
+    comment to microsecond-jittered values)."""
+    if a is None or b is None:
+        return a is b
+    return a.replace(microsecond=0) == b.replace(microsecond=0)
+
+
 class NCMService:
     """Service for NCM (Nepal Can Move) API Integration"""
     
@@ -728,9 +738,14 @@ class NCMService:
             # Newest wins. Entries whose added_time didn't parse sort last, so
             # they're only chosen when nothing else parsed at all — better than
             # discarding the only evidence we have.
+            #
+            # The comment text is a deliberate secondary key: NCM's endpoint has
+            # no documented ordering, so two RTV comments sharing an added_time
+            # would otherwise be resolved by list position and flip between
+            # polls, rewriting rtv.comment and making the page reload forever.
             from datetime import datetime, timezone as _dt_timezone
             _floor = datetime.min.replace(tzinfo=_dt_timezone.utc)
-            text, dt = max(rtv_entries, key=lambda pair: pair[1] or _floor)
+            text, dt = max(rtv_entries, key=lambda pair: (pair[1] or _floor, pair[0]))
 
             if text.startswith(NCMService.RTV_REMOVED_PREFIX):
                 result['vendor_return'] = False
@@ -750,8 +765,12 @@ class NCMService:
             if added_by == 'NCM Staff' and (text or dt)
         ]
         if staff:
+            # Same tie-break reasoning as above — never let list position decide.
             dated = [(text, dt) for text, dt in staff if dt is not None]
-            text, dt = max(dated, key=lambda pair: pair[1]) if dated else (staff[0][0], None)
+            if dated:
+                text, dt = max(dated, key=lambda pair: (pair[1], pair[0]))
+            else:
+                text, dt = min(staff, key=lambda pair: pair[0])[0], None
             result['comment'] = text
             if dt is not None:
                 result['marked_at'] = dt
@@ -840,8 +859,18 @@ class NCMService:
         current_rank = RTVOrder.SOURCE_RANK.get(rtv.rtv_marked_at_source, 0)
 
         # Equal rank overwrites on purpose: a fresh "RTV marked" comment after
-        # an unmark/re-mark is newer information than the old one.
-        should_write = parsed is not None and incoming_rank >= current_rank
+        # an unmark/re-mark is newer information than the old one. But an
+        # equal-rank re-derivation that lands on the *same* instant (NCM's
+        # comment endpoint has no stable ordering, so repeat polls can just
+        # re-pick the same comment) must not count as a write — otherwise the
+        # repair queue in ncm_rtvs_sync flags it as a change every poll and
+        # the frontend reloads the page for nothing. Compared at second
+        # resolution to tolerate any legacy rows without DATETIME(6).
+        should_write = (
+            parsed is not None
+            and incoming_rank >= current_rank
+            and (incoming_rank > current_rank or not _same_instant(parsed, rtv.rtv_marked_at))
+        )
 
         if should_write:
             rtv.rtv_marked_at = parsed
