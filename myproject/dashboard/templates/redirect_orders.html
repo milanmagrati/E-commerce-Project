@@ -229,6 +229,53 @@
     .od-field-value {
         font-size: 1rem;
         color: #2c3e50;
+        /* Break only when a word genuinely cannot fit — never mid-word per character */
+        overflow-wrap: break-word;
+        word-break: normal;
+    }
+
+    /* Old-customer snapshot inside each redirection history entry */
+    .min-w-0 {
+        min-width: 0;
+    }
+
+    .od-history-old {
+        background: #fffbeb;
+        border-left: 3px solid #f59e0b;
+        border-radius: 6px;
+        padding: 0.6rem 0.75rem;
+    }
+
+    .od-history-old-title {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #b45309;
+        margin-bottom: 0.4rem;
+    }
+
+    .od-history-old-grid {
+        display: grid;
+        /* Label column hugs its text; the value column absorbs the rest, so a
+           narrow container shortens lines instead of breaking words per letter */
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 0.3rem 0.75rem;
+        font-size: 0.85rem;
+    }
+
+    .od-history-old-grid dt {
+        font-weight: 600;
+        color: #7c2d12;
+        margin: 0;
+        white-space: nowrap;
+    }
+
+    .od-history-old-grid dd {
+        margin: 0;
+        color: #4b5563;
+        overflow-wrap: break-word;
+        word-break: normal;
     }
 
     .od-section {
@@ -686,6 +733,22 @@
                                     <div class="od-field-label">Items Count</div>
                                     <div class="od-field-value" id="od_items_count">—</div>
                                 </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Payment Status</div>
+                                    <div class="od-field-value text-capitalize" id="od_payment_status">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Delivery Type</div>
+                                    <div class="od-field-value" id="od_delivery_type">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">In / Out</div>
+                                    <div class="od-field-value" id="od_in_out">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Tracking Number</div>
+                                    <div class="od-field-value" id="od_tracking_number">—</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -695,7 +758,7 @@
                         <div class="od-section-header"><i class="fas fa-user text-secondary me-2"></i>Original Customer
                             Details</div>
                         <div class="od-section-body">
-                            <div class="info-box">
+                            <div class="info-box" id="od_old_customer_box">
                                 <div class="row g-3">
                                     <div class="col-6 col-md-4">
                                         <div class="od-field-label">Name</div>
@@ -718,6 +781,10 @@
                                         <div class="od-field-value" id="od_old_shipping_address">—</div>
                                     </div>
                                 </div>
+                            </div>
+                            <div class="alert alert-secondary mb-0 d-none" id="od_old_customer_empty">
+                                <i class="fas fa-info-circle me-2"></i>The original customer details were not
+                                recorded for this redirection.
                             </div>
                         </div>
                     </div>
@@ -745,6 +812,10 @@
                                     <div class="col-6 col-md-4">
                                         <div class="od-field-label">Branch / City</div>
                                         <div class="od-field-value" id="od_new_branch_city">—</div>
+                                    </div>
+                                    <div class="col-6 col-md-4">
+                                        <div class="od-field-label">Landmark</div>
+                                        <div class="od-field-value" id="od_new_landmark">—</div>
                                     </div>
                                     <div class="col-md-8">
                                         <div class="od-field-label">Shipping Address</div>
@@ -811,6 +882,14 @@
                                     <div class="od-field-value" id="od_tax_percent">—</div>
                                 </div>
                                 <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Delivery Charge</div>
+                                    <div class="od-field-value" id="od_delivery_charge">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">COD Collected</div>
+                                    <div class="od-field-value" id="od_cod_collected">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
                                     <div class="od-field-label">Total Amount</div>
                                     <div class="od-field-value fw-bold text-success" id="od_total_amount_2">—</div>
                                 </div>
@@ -841,112 +920,211 @@
         document.getElementById('filterForm').submit();
     }
 
-    function openOrderDetailModal(orderId) {
-        const modal = new bootstrap.Modal(document.getElementById('orderDetailModal'));
-        const odLoading = document.getElementById('odLoading');
-        const odContent = document.getElementById('odContent');
+    // Identifies the newest in-flight request, so a slow response for a
+    // previously clicked order can't overwrite the one the user is looking at.
+    let odRequestToken = 0;
 
-        // Show loading state
+    const OD_LOADING_HTML =
+        '<div class="spinner-border text-primary" style="width:3rem;height:3rem;">' +
+        '<span class="visually-hidden">Loading...</span></div>' +
+        '<p class="mt-3 text-muted">Fetching order details…</p>';
+
+    function odShowLoading(odLoading, odContent) {
+        // Rebuilt every time — the error branch replaces this markup, and without
+        // restoring it a single failure would leave the spinner gone for good.
+        odLoading.innerHTML = OD_LOADING_HTML;
         odLoading.style.display = 'block';
         odContent.style.display = 'none';
-        modal.show();
+    }
 
-        // Fetch order details
-        fetch(`/api/orders/${orderId}/get-redirect-details/`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok: ' + response.status);
-                }
-                return response.json();
-            })
+    function odShowError(odLoading, message) {
+        odLoading.innerHTML =
+            '<div class="text-center py-5">' +
+            '<i class="fas fa-exclamation-triangle fa-2x text-danger mb-3"></i>' +
+            '<p class="text-danger mb-0">' + odEscape(message) + '</p></div>';
+        odLoading.style.display = 'block';
+    }
+
+    function openOrderDetailModal(orderId) {
+        const modalEl = document.getElementById('orderDetailModal');
+        const odLoading = document.getElementById('odLoading');
+        const odContent = document.getElementById('odContent');
+        const token = ++odRequestToken;
+
+        odShowLoading(odLoading, odContent);
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+        // Read the body even on 4xx/5xx — the API puts a useful message in it.
+        fetch(`/api/orders/${orderId}/get-redirect-details/`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        })
+            .then(response => response.json().catch(() => ({
+                success: false,
+                // Non-JSON body: either an error page, or a redirect to the login
+                // page after the session expired.
+                error: response.ok
+                    ? 'Your session may have expired — please reload the page and sign in again.'
+                    : `Server returned ${response.status} ${response.statusText}`.trim(),
+            })))
             .then(data => {
-                if (data.success) {
+                if (token !== odRequestToken) return;  // superseded by a newer click
+                if (data && data.success) {
                     populateOrderDetails(data.order);
                     odLoading.style.display = 'none';
                     odContent.style.display = 'block';
                 } else {
-                    odLoading.innerHTML = '<div class="text-center py-5"><i class="fas fa-exclamation-triangle fa-2x text-danger mb-3"></i><p class="text-danger">Error loading order details: ' + (data.error || 'Unknown error') + '</p></div>';
+                    const reason = (data && (data.error || data.detail || data.message)) || 'Unknown error';
+                    odShowError(odLoading, 'Error loading order details: ' + reason);
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                odLoading.innerHTML = '<div class="text-center py-5"><i class="fas fa-exclamation-triangle fa-2x text-danger mb-3"></i><p class="text-danger">Failed to load order details. Please try again.</p></div>';
+                if (token !== odRequestToken) return;
+                odShowError(odLoading, 'Failed to load order details. Please try again.');
             });
     }
 
+    // Write a plain-text value into a field, falling back to an em dash when empty.
+    function odSetText(elementId, value) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        const text = (value === null || value === undefined) ? '' : String(value).trim();
+        el.textContent = text || '—';
+    }
+
+    // Escape user/API supplied text before it goes into an innerHTML template.
+    function odEscape(value) {
+        if (value === null || value === undefined) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     function populateOrderDetails(order) {
+        order = order || {};
+        const items = order.items || [];
+        const history = order.redirect_history || [];
+
         // Overview
-        document.getElementById('od_order_number').textContent = order.order_number || '—';
-        document.getElementById('od_ncm_order_id').textContent = order.ncm_order_id ? '#' + order.ncm_order_id : '—';
-        document.getElementById('od_order_status').textContent = order.order_status || '—';
-        document.getElementById('od_total_amount').textContent = 'Rs.' + (order.total_amount || '0');
-        document.getElementById('od_total_amount_2').textContent = 'Rs.' + (order.total_amount || '0');
-        document.getElementById('od_created_at').textContent = order.created_at || '—';
-        document.getElementById('od_updated_at').textContent = order.updated_at || '—';
-        document.getElementById('od_items_count').textContent = (order.items || []).length + ' items';
-        document.getElementById('od_items_count_badge').textContent = (order.items || []).length;
+        odSetText('od_order_number', order.order_number);
+        odSetText('od_ncm_order_id', order.ncm_order_id ? '#' + order.ncm_order_id : '');
+        odSetText('od_order_status', order.order_status);
+        odSetText('od_total_amount', 'Rs.' + (order.total_amount || '0'));
+        odSetText('od_total_amount_2', 'Rs.' + (order.total_amount || '0'));
+        odSetText('od_created_at', order.created_at);
+        odSetText('od_updated_at', order.updated_at);
+        odSetText('od_items_count', items.length + ' items');
+        odSetText('od_payment_status', order.payment_status);
+        odSetText('od_delivery_type', order.delivery_type);
+        odSetText('od_in_out', order.in_out);
+        odSetText('od_tracking_number', order.tracking_number);
+        document.getElementById('od_items_count_badge').textContent = items.length;
 
-        // Badges
-        document.getElementById('od_order_badge').textContent = 'Order #' + order.order_number;
-        document.getElementById('od_status_badge').textContent = order.ncm_status || 'Processing';
-        document.getElementById('od_redirected_badge').textContent = 'Redirected';
+        // Badges — this page also lists orders that haven't been redirected yet,
+        // so don't claim "Redirected" unconditionally.
+        const isRedirected = history.length > 0
+            || (order.order_status || '').toLowerCase() === 'redirected'
+            || (order.ncm_status || '').toLowerCase() === 'redirected';
+        document.getElementById('od_order_badge').textContent = 'Order #' + (order.order_number || '');
+        document.getElementById('od_status_badge').textContent = order.ncm_status || order.order_status || 'Processing';
+        const redirectedBadge = document.getElementById('od_redirected_badge');
+        redirectedBadge.textContent = isRedirected ? 'Redirected' : 'Not Redirected Yet';
+        redirectedBadge.className = 'badge ' + (isRedirected ? 'bg-warning text-dark' : 'bg-secondary');
 
-        // Old Customer (from metadata — keys are old_customer_name, old_customer_phone, etc.)
+        // Old Customer — the API normalizes every historical metadata key style
+        // down to name/phone/email/branch/address, so read those directly.
         const oldCustomer = order.old_customer_info || {};
-        document.getElementById('od_old_customer_name').textContent = oldCustomer.old_customer_name || oldCustomer.name || '—';
-        document.getElementById('od_old_customer_phone').textContent = oldCustomer.old_customer_phone || oldCustomer.phone || '—';
-        document.getElementById('od_old_customer_email').textContent = oldCustomer.old_customer_email || oldCustomer.email || '—';
-        document.getElementById('od_old_branch_city').textContent = oldCustomer.old_branch_city || oldCustomer.branch || '—';
-        document.getElementById('od_old_shipping_address').textContent = oldCustomer.old_shipping_address || oldCustomer.address || '—';
+        const hasOldCustomer = ['name', 'phone', 'email', 'branch', 'address']
+            .some(key => (oldCustomer[key] || '').toString().trim());
+
+        odSetText('od_old_customer_name', oldCustomer.name);
+        odSetText('od_old_customer_phone', oldCustomer.phone);
+        odSetText('od_old_customer_email', oldCustomer.email);
+        odSetText('od_old_branch_city', oldCustomer.branch);
+        odSetText('od_old_shipping_address', oldCustomer.address);
+        document.getElementById('od_old_customer_box').classList.toggle('d-none', !hasOldCustomer);
+        const oldEmpty = document.getElementById('od_old_customer_empty');
+        oldEmpty.classList.toggle('d-none', hasOldCustomer);
+        oldEmpty.innerHTML = '<i class="fas fa-info-circle me-2"></i>' + (isRedirected
+            ? 'The original customer details were not recorded for this redirection.'
+            : 'This order has not been redirected yet, so there are no original customer details to compare.');
 
         // New Customer (current)
-        document.getElementById('od_new_customer_name').textContent = order.customer_name || '—';
-        document.getElementById('od_new_customer_phone').textContent = order.customer_phone || '—';
-        document.getElementById('od_new_customer_email').textContent = order.customer_email || '—';
-        document.getElementById('od_new_branch_city').textContent = order.branch_city || '—';
-        document.getElementById('od_new_shipping_address').textContent = order.shipping_address || '—';
+        odSetText('od_new_customer_name', order.customer_name);
+        odSetText('od_new_customer_phone', order.customer_phone);
+        odSetText('od_new_customer_email', order.customer_email);
+        odSetText('od_new_branch_city', order.branch_city || order.branch_name);
+        odSetText('od_new_landmark', order.landmark);
+        odSetText('od_new_shipping_address', order.shipping_address);
 
         // Redirection History
         const historyContainer = document.getElementById('od_redirect_history');
-        if (order.redirect_history && order.redirect_history.length > 0) {
-            const historyHTML = order.redirect_history.map(log => `
+        if (history.length > 0) {
+            historyContainer.innerHTML = history.map(log => {
+                const oldInfo = log.old_customer || {};
+                const oldRows = [
+                    ['Name', oldInfo.name],
+                    ['Phone', oldInfo.phone],
+                    ['Email', oldInfo.email],
+                    ['Branch', oldInfo.branch],
+                    ['Address', oldInfo.address],
+                ].filter(([, value]) => (value || '').toString().trim());
+
+                const oldBlock = oldRows.length ? `
+                    <div class="od-history-old mt-2">
+                        <div class="od-history-old-title">
+                            <i class="fas fa-history me-1"></i>Details before this redirection
+                        </div>
+                        <dl class="od-history-old-grid mb-0">
+                            ${oldRows.map(([label, value]) => `
+                                <dt>${odEscape(label)}</dt>
+                                <dd>${odEscape(value)}</dd>
+                            `).join('')}
+                        </dl>
+                    </div>` : '';
+
+                return `
             <div class="alert alert-light border mb-2">
                 <div class="d-flex align-items-start gap-3">
                     <i class="fas fa-arrow-right text-success mt-1"></i>
-                    <div class="flex-grow-1">
-                        <div class="fw-bold">Redirected by <strong>${log.redirect_user || 'Unknown'}</strong></div>
-                        <div class="small text-muted">${formatDateTime(log.redirect_timestamp) || '—'}</div>
-                        ${log.redirect_reason ? `<div class="mt-2 text-dark"><strong>Reason:</strong> ${log.redirect_reason}</div>` : ''}
+                    <div class="flex-grow-1 min-w-0">
+                        <div class="fw-bold">Redirected by <strong>${odEscape(log.redirect_user || 'Unknown')}</strong></div>
+                        <div class="small text-muted">${odEscape(log.redirect_timestamp_display || formatDateTime(log.redirect_timestamp))}</div>
+                        ${log.redirect_reason ? `<div class="mt-2 text-dark">${odEscape(log.redirect_reason)}</div>` : ''}
+                        ${oldBlock}
                     </div>
                 </div>
-            </div>
-        `).join('');
-            historyContainer.innerHTML = historyHTML;
+            </div>`;
+            }).join('');
         } else {
             historyContainer.innerHTML = '<div class="alert alert-secondary mb-0"><i class="fas fa-info-circle me-2"></i>No redirection history found for this order.</div>';
         }
 
         // Items
-        const items = order.items || [];
         if (items.length > 0) {
-            const itemsHTML = items.map((item, idx) => `
+            document.getElementById('odItemsBody').innerHTML = items.map((item, idx) => `
             <tr>
                 <td class="ps-3">${idx + 1}</td>
-                <td>${item.product_name || '—'}</td>
+                <td>${odEscape(item.product_name) || '—'}</td>
                 <td class="text-center">${item.quantity || 0}</td>
                 <td class="text-end">Rs.${parseFloat(item.price || 0).toFixed(2)}</td>
                 <td class="text-end pe-3">Rs.${parseFloat(item.total || 0).toFixed(2)}</td>
             </tr>
         `).join('');
-            document.getElementById('odItemsBody').innerHTML = itemsHTML;
         } else {
             document.getElementById('odItemsBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No items found</td></tr>';
         }
 
         // Financial Details
-        document.getElementById('od_discount_amount').textContent = 'Rs.' + (order.discount_amount || '0');
-        document.getElementById('od_shipping_charge').textContent = 'Rs.' + (order.shipping_charge || '0');
-        document.getElementById('od_tax_percent').textContent = (order.tax_percent || '0') + '%';
+        odSetText('od_discount_amount', 'Rs.' + (order.discount_amount || '0'));
+        odSetText('od_shipping_charge', 'Rs.' + (order.shipping_charge || '0'));
+        odSetText('od_tax_percent', (order.tax_percent || '0') + '%');
+        odSetText('od_delivery_charge', 'Rs.' + (order.delivery_charge || '0'));
+        odSetText('od_cod_collected', 'Rs.' + (order.cod_collected || '0'));
 
         // Links
         document.getElementById('od_full_order_link').href = `/orders/${order.id}/`;

@@ -3735,6 +3735,52 @@ def order_create(request):
             "follow_up_data": follow_up_data,
         },
     )
+
+
+def _redirect_meta_as_dict(metadata):
+    """OrderActivityLog.metadata is a JSONField, but old rows may hold a JSON string or None."""
+    if isinstance(metadata, dict):
+        return metadata
+    if isinstance(metadata, str) and metadata.strip():
+        try:
+            parsed = json.loads(metadata)
+            return parsed if isinstance(parsed, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+    return {}
+
+
+def _redirect_old_customer(metadata):
+    """
+    Normalize the old-customer snapshot stored on a 'redirected' activity log.
+
+    The redirect code paths have written this metadata under two key styles over
+    time — customer_name/customer_phone/shipping_address/branch_city (current)
+    and old_customer_name/old_customer_phone/... (older) — so read both and
+    return a single predictable shape. Returns empty strings when nothing was
+    captured; callers decide whether to render the block at all.
+    """
+    meta = _redirect_meta_as_dict(metadata)
+
+    def pick(*keys):
+        for key in keys:
+            value = meta.get(key)
+            if value is None:
+                continue
+            value = str(value).strip()
+            if value and value != '—':
+                return value
+        return ''
+
+    return {
+        'name': pick('customer_name', 'old_customer_name', 'name', 'old_name'),
+        'phone': pick('customer_phone', 'old_customer_phone', 'phone', 'old_phone'),
+        'email': pick('customer_email', 'old_customer_email', 'email', 'old_email'),
+        'branch': pick('branch_city', 'old_branch_city', 'branch', 'old_branch', 'city'),
+        'address': pick('shipping_address', 'old_shipping_address', 'address', 'old_address'),
+    }
+
+
 @login_required
 @permission_required('can_view_orders')
 def order_detail(request, order_id):
@@ -4062,11 +4108,20 @@ def order_detail(request, order_id):
     # not when we recorded it — a webhook that arrives days late would
     # otherwise jump to the top of the timeline.
     from django.db.models.functions import Coalesce as _Coalesce
-    activity_logs = (
+    activity_logs = list(
         order.activity_logs.select_related('user')
         .annotate(_at=_Coalesce('event_at', 'created_at'))
         .order_by('-_at')[:20]
     )
+
+    # Attach the normalized old-customer snapshot so the timeline template doesn't
+    # have to know about the two historical metadata key styles.
+    for _log in activity_logs:
+        if _log.action_type == 'redirected':
+            _snapshot = _redirect_old_customer(_log.metadata)
+            _log.old_customer_snapshot = _snapshot if any(_snapshot.values()) else None
+        else:
+            _log.old_customer_snapshot = None
 
     # Get Setup options for dropdowns
     status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
@@ -5605,14 +5660,19 @@ def redirect_orders_list(request):
             redirect_user = log.user.username if log.user else 'System'
             redirect_reason = log.description or ''
 
-            # Extract old customer info from metadata (supports both new and old metadata keys)
-            if log.metadata:
-                old_customer_info = {
-                    'name': log.metadata.get('customer_name') or log.metadata.get('old_customer_name') or '—',
-                    'phone': log.metadata.get('customer_phone') or log.metadata.get('old_customer_phone') or '—',
-                    'address': log.metadata.get('shipping_address') or log.metadata.get('old_shipping_address') or '—',
-                    'branch': log.metadata.get('branch_city') or log.metadata.get('old_branch_city') or '—',
-                }
+            # Walk the logs newest-first so an empty-metadata log doesn't hide the
+            # snapshot an earlier redirect captured. Key styles vary — see
+            # _redirect_old_customer().
+            for _log in prefetched_logs:
+                _snapshot = _redirect_old_customer(_log.metadata)
+                if any(_snapshot.values()):
+                    old_customer_info = {
+                        'name': _snapshot['name'] or '—',
+                        'phone': _snapshot['phone'] or '—',
+                        'address': _snapshot['address'] or '—',
+                        'branch': _snapshot['branch'] or '—',
+                    }
+                    break
 
         entry = {
             'order': order,
@@ -21864,29 +21924,48 @@ def get_redirect_order_details(request, order_id):
         all_activity_logs = list(order.activity_logs.all())
         redirection_logs = [lg for lg in all_activity_logs if lg.action_type == 'redirected']
 
-        # Get the latest redirection activity log
-        redirection_log = redirection_logs[0] if redirection_logs else None
+        nepal_tz = pytz.timezone('Asia/Kathmandu')
 
         old_customer_info = {}
         redirect_history = []
 
-        if redirection_log:
-            raw_meta = redirection_log.metadata or {}
-            # Normalize: ensure both prefixed keys (old_customer_name) and short keys (name) exist
-            old_customer_info = dict(raw_meta)  # copy
-            old_customer_info.setdefault('name', raw_meta.get('old_customer_name', ''))
-            old_customer_info.setdefault('phone', raw_meta.get('old_customer_phone', ''))
-            old_customer_info.setdefault('email', raw_meta.get('old_customer_email', ''))
-            old_customer_info.setdefault('branch', raw_meta.get('old_branch_city', ''))
-            old_customer_info.setdefault('address', raw_meta.get('old_shipping_address', ''))
+        # Walk every redirect log (newest first) so a later log written with empty
+        # metadata doesn't hide the snapshot captured by an earlier one.
+        for log in redirection_logs:
+            snapshot = _redirect_old_customer(log.metadata)
 
-            # Build redirect history from in-memory list (no extra DB query)
-            for log in redirection_logs:
-                redirect_history.append({
-                    'redirect_user': log.user.username if log.user else 'System',
-                    'redirect_timestamp': log.created_at.isoformat(),
-                    'redirect_reason': log.description or '',
-                })
+            redirect_history.append({
+                'redirect_user': (log.user.get_full_name() or log.user.username) if log.user else 'System',
+                'redirect_timestamp': log.created_at.isoformat(),
+                'redirect_timestamp_display': log.effective_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
+                'redirect_reason': log.description or '',
+                'old_customer': snapshot,
+            })
+
+            if not old_customer_info and any(snapshot.values()):
+                old_customer_info = dict(snapshot)
+
+        if old_customer_info:
+            # Email is never captured in redirect metadata — recover it from the
+            # customer record matching the old phone number, when one exists.
+            if not old_customer_info['email'] and old_customer_info['phone']:
+                try:
+                    _old_cust = Customer.objects.filter(
+                        phone=old_customer_info['phone']
+                    ).exclude(email__isnull=True).exclude(email='').only('email').first()
+                    if _old_cust:
+                        old_customer_info['email'] = _old_cust.email
+                except Exception:
+                    pass
+
+            # Keep the legacy prefixed keys in the payload for any older consumer.
+            old_customer_info.update({
+                'old_customer_name': old_customer_info['name'],
+                'old_customer_phone': old_customer_info['phone'],
+                'old_customer_email': old_customer_info['email'],
+                'old_branch_city': old_customer_info['branch'],
+                'old_shipping_address': old_customer_info['address'],
+            })
 
         # Get all order items
         items = []
@@ -21897,10 +21976,6 @@ def get_redirect_order_details(request, order_id):
                 'price': str(item.price or '0'),
                 'total': str(item.total or '0'),
             })
-
-        # Format dates
-        import pytz
-        nepal_tz = pytz.timezone('Asia/Kathmandu')
 
         data = {
             'success': True,
@@ -21920,8 +21995,13 @@ def get_redirect_order_details(request, order_id):
                 'branch_city': order.branch_city or '',
                 'shipping_address': order.shipping_address or '',
                 'landmark': order.landmark or '',
-                'in_out': order.in_out or '',
+                'in_out': order.get_in_out_display() if order.in_out else '',
                 'delivery_type': order.ncm_delivery_type or '',
+                'payment_status': order.payment_status or '',
+                'tracking_number': order.tracking_number or '',
+                'delivery_charge': str(order.delivery_charge or '0'),
+                'cod_collected': str(order.cod_collected or '0'),
+                'branch_name': order.branch.name if order.branch else '',
                 'created_at': order.created_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
                 'updated_at': order.updated_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
                 'old_customer_info': old_customer_info,
