@@ -8,7 +8,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db.models import F
+from django.db.models import F, Q
 from dashboard.timezone_utils import format_nepali_datetime
 import json
 import requests
@@ -61,6 +61,7 @@ from .meta_sync import (
     sync_meta_conversations, _process_meta_conversation,
     sync_meta_posts, sync_meta_comments, reply_to_meta_comment, hide_meta_comment, delete_meta_comment,
     _resolve_integration_by_page, process_whatsapp_message_webhook,
+    handle_messenger_event,
     LIVE_INTEGRATION_STATUSES,
 )
 from .models import (
@@ -159,6 +160,57 @@ def crm_home(request):
 
 
 # ─── Conversations ────────────────────────────────────────────────────────────
+def _filtered_conversations(request):
+    """
+    Applies the inbox filters (page, read state, search, label) from the query
+    string. Shared by the full page render and the sidebar refresh endpoint so
+    a live update can never disagree with the filters currently on screen.
+
+    Returns (queryset, filter_context_dict).
+    """
+    conversations = CRMConversation.objects.select_related(
+        'contact', 'assigned_to', 'integration'
+    ).all().order_by('-updated_at')
+
+    page_filter_raw = request.GET.getlist('page_filter')
+    page_filters = sorted({int(pf) for pf in page_filter_raw if pf.isdigit()})
+    if page_filters:
+        conversations = conversations.filter(integration_id__in=page_filters)
+
+    read_status = request.GET.get('read_status')
+    if read_status == 'unread':
+        conversations = conversations.filter(is_read=False)
+    elif read_status == 'read':
+        conversations = conversations.filter(is_read=True)
+
+    search_query = request.GET.get('q', '').strip()
+    search_type = request.GET.get('search_type', 'chats')
+
+    if search_query:
+        if search_type == 'messages':
+            conversations = conversations.filter(
+                Q(messages__body__icontains=search_query)
+            ).distinct()
+        else:
+            conversations = conversations.filter(
+                Q(contact__name__icontains=search_query) |
+                Q(contact__phone__icontains=search_query) |
+                Q(contact__email__icontains=search_query)
+            ).distinct()
+
+    label_filter = request.GET.get('label_filter')
+    if label_filter:
+        conversations = conversations.filter(labels__id=label_filter)
+
+    return conversations, {
+        'page_filters': page_filters,
+        'read_status': read_status,
+        'search_query': search_query,
+        'search_type': search_type,
+        'label_filter': label_filter,
+    }
+
+
 @login_required
 def crm_conversations(request):
     # Try to auto-sync connected meta channels when opening the inbox. Pages
@@ -173,39 +225,13 @@ def crm_conversations(request):
     except Exception as e:
         logger.exception("Failed auto-sync on inbox load")
 
-    conversations = CRMConversation.objects.select_related('contact', 'assigned_to', 'integration').all().order_by('-updated_at')
+    conversations, filter_ctx = _filtered_conversations(request)
+    page_filters = filter_ctx['page_filters']
+    read_status = filter_ctx['read_status']
+    search_query = filter_ctx['search_query']
+    search_type = filter_ctx['search_type']
+    label_filter = filter_ctx['label_filter']
 
-    page_filter_raw = request.GET.getlist('page_filter')
-    page_filters = sorted({int(pf) for pf in page_filter_raw if pf.isdigit()})
-    if page_filters:
-        conversations = conversations.filter(integration_id__in=page_filters)
-
-    read_status = request.GET.get('read_status')
-    if read_status == 'unread':
-        conversations = conversations.filter(is_read=False)
-    elif read_status == 'read':
-        conversations = conversations.filter(is_read=True)
-        
-    search_query = request.GET.get('q', '').strip()
-    search_type = request.GET.get('search_type', 'chats')
-    
-    if search_query:
-        from django.db.models import Q
-        if search_type == 'messages':
-            conversations = conversations.filter(
-                Q(messages__body__icontains=search_query)
-            ).distinct()
-        else:
-            conversations = conversations.filter(
-                Q(contact__name__icontains=search_query) | 
-                Q(contact__phone__icontains=search_query) |
-                Q(contact__email__icontains=search_query)
-            ).distinct()
-
-    label_filter = request.GET.get('label_filter')
-    if label_filter:
-        conversations = conversations.filter(labels__id=label_filter)
-        
     connected_integrations = CRMIntegration.objects.filter(status='connected')
     all_labels = CRMLabel.objects.all().order_by('name')
 
@@ -249,6 +275,7 @@ def crm_conversations(request):
         'all_labels': all_labels,
         'employees': employees,
         'assigned_employee_name': _employee_display_name(active_conv.assigned_to) if active_conv else None,
+        'ai_state': active_conv.ai_status() if active_conv else None,
         'page_filters': page_filters,
         'single_filter_integration': single_filter_integration,
         'read_status': read_status,
@@ -258,6 +285,51 @@ def crm_conversations(request):
         'crm_section': 'conversations',
     }
     return render(request, 'trendycrm/conversations.html', context)
+
+@login_required
+def crm_conversations_list_ajax(request):
+    """
+    Returns the inbox sidebar rows so the preview text, timestamp and unread dot
+    stay live.
+
+    The message poll only ever replaced the open thread, so a message that had
+    already been rendered into the chat still showed the previous preview in the
+    sidebar until a full page reload.
+    """
+    # Keep the inbox live even when no thread is selected. Throttled per session
+    # so a 3-second poll doesn't turn into a 3-second Graph call.
+    import time
+    last_sync = request.session.get('last_sync_inbox', 0)
+    if time.time() - last_sync > 15:
+        request.session['last_sync_inbox'] = time.time()
+        try:
+            for integ in CRMIntegration.objects.filter(
+                channel_type__in=['facebook', 'instagram'],
+                status__in=LIVE_INTEGRATION_STATUSES,
+            ):
+                run_async(sync_meta_conversations, integ)
+        except Exception:
+            logger.exception("Inbox list auto-sync failed")
+
+    conversations, filter_ctx = _filtered_conversations(request)
+
+    active_conv = None
+    conv_id = request.GET.get('id')
+    if conv_id:
+        active_conv = CRMConversation.objects.filter(pk=conv_id).first()
+
+    label_filter = filter_ctx['label_filter']
+    context = {
+        'conversations': conversations,
+        'active_conv': active_conv,
+        'page_filters': filter_ctx['page_filters'],
+        'read_status': filter_ctx['read_status'],
+        'search_query': filter_ctx['search_query'],
+        'search_type': filter_ctx['search_type'],
+        'label_filter': int(label_filter) if label_filter and label_filter.isdigit() else None,
+    }
+    return render(request, 'trendycrm/partials/conversation_list.html', context)
+
 
 @login_required
 def crm_conversations_ajax(request):
@@ -291,9 +363,13 @@ def crm_conversations_ajax(request):
         active_conv.save(update_fields=['is_read'])
 
     messages = active_conv.messages.all()
-    
+
     context = {
         'chat_messages': messages,
+        # Carried in the polled fragment so the header badge tracks the live AI
+        # state — including the takeover pause expiring on its own, which no
+        # user action would otherwise tell the page about.
+        'ai_state': active_conv.ai_status(),
     }
     return render(request, 'trendycrm/partials/messages_list.html', context)
 
@@ -339,6 +415,10 @@ def crm_send_message(request, conv_id):
             attachment_type = a_type
             break
 
+    # Read before the send stamps the takeover timer: 'on' here means the agent is
+    # interrupting a live bot, which is the only case worth announcing in the thread.
+    ai_was_live = conv.ai_status()['state'] == 'on'
+
     if body or attachment_file:
         msg = CRMMessage.objects.create(
             conversation=conv,
@@ -352,7 +432,21 @@ def crm_send_message(request, conv_id):
         conv.last_message = body or ATTACHMENT_PREVIEW_TEXT.get(attachment_type, '📎 Attachment')
         conv.updated_at = msg.created_at
         conv.is_read = True
-        conv.save(update_fields=['last_message', 'updated_at', 'is_read'])
+        # Arms the human-takeover pause: the AI stays quiet on this conversation
+        # for HUMAN_TAKEOVER_MINUTES so it can't talk over the agent.
+        conv.last_human_reply_at = timezone.now()
+        conv.save(update_fields=['last_message', 'updated_at', 'is_read', 'last_human_reply_at'])
+
+        # Announce the handover once per pause window — ai_was_live is only true
+        # when the bot wasn't already stood down, so a burst of agent replies
+        # doesn't stack up chips.
+        if ai_was_live:
+            from .models import HUMAN_TAKEOVER_MINUTES
+            CRMMessage.log_event(
+                conv,
+                f"{msg.sender} replied — the AI is paused on this chat for "
+                f"{HUMAN_TAKEOVER_MINUTES} minutes so it can't talk over you.",
+            )
 
         # Send to the channel's messaging API if applicable
         if conv.channel in ['facebook', 'instagram', 'whatsapp'] and conv.contact and conv.contact.meta_id:
@@ -643,6 +737,73 @@ def crm_resolve_conversation(request, conv_id):
     })
 
 
+@login_required
+@require_POST
+def crm_toggle_conversation_ai(request, conv_id):
+    """
+    Toggle the AI auto-reply on a single conversation, or resume it immediately.
+
+    Either way the human-takeover timer is cleared, so the operator's intent is
+    unambiguous: off means off until they turn it back on, and on means the bot
+    may reply to the next inbound message right away.
+
+    `action=resume` is what the badge sends while the chat is in the takeover
+    pause. Plain toggling there would read as "AI On → click → AI Off", which is
+    the opposite of what an agent wants when they're handing the chat back.
+    """
+    conv = get_object_or_404(CRMConversation, pk=conv_id)
+    resuming = request.POST.get('action') == 'resume'
+
+    conv.ai_enabled = True if resuming else not conv.ai_enabled
+    conv.last_human_reply_at = None
+    fields = ['ai_enabled', 'last_human_reply_at']
+    if conv.ai_enabled and conv.assigned_to_id:
+        # Handing the chat back to the bot has to release the agent's claim too,
+        # or ai_status would keep reporting 'paused' and the badge would flip
+        # straight back — the assignment outranks the toggle.
+        conv.assigned_to = None
+        fields.append('assigned_to')
+    conv.save(update_fields=fields)
+
+    CRMMessage.log_event(
+        conv,
+        "The AI was handed the conversation back and will answer the next message."
+        if conv.ai_enabled else
+        "The AI was switched off for this conversation — replies are manual from here.",
+    )
+
+    return JsonResponse({
+        'status': 'ok',
+        'ai_enabled': conv.ai_enabled,
+        'ai': conv.ai_status(),
+    })
+
+
+@login_required
+@require_POST
+def crm_take_over_conversation(request, conv_id):
+    """
+    Hands a bot-run conversation to the agent who clicked Take over.
+
+    The composer stays view-only while the AI owns the chat, so this is the one
+    door into it. Claiming the conversation (rather than only arming the takeover
+    timer) is what keeps it human-held past the timer's few minutes.
+    """
+    conv = get_object_or_404(CRMConversation, pk=conv_id)
+    conv.assigned_to = request.user
+    conv.last_human_reply_at = timezone.now()
+    conv.save(update_fields=['assigned_to', 'last_human_reply_at'])
+
+    agent = request.user.get_full_name() or request.user.username
+    CRMMessage.log_event(conv, f"{agent} took over from the AI — replies are manual from here.")
+
+    return JsonResponse({
+        'status': 'ok',
+        'assigned_to': agent,
+        'ai': conv.ai_status(),
+    })
+
+
 # ─── Chatbot ─────────────────────────────────────────────────────────────────
 @login_required
 def crm_chatbot_list(request):
@@ -731,7 +892,10 @@ def crm_chatbot(request, bot_id):
         if not integs:
             continue
 
-        is_connected = any(i.status == 'connected' for i in integs)
+        # 'error' counts as live here: the rest of the app still routes inbound
+        # traffic through those accounts (LIVE_INTEGRATION_STATUSES), so hiding
+        # them left an errored page auto-replying with no way to switch it off.
+        is_connected = any(i.status in LIVE_INTEGRATION_STATUSES for i in integs)
 
         channel_groups.append({
             'channel_type': ct,
@@ -757,6 +921,11 @@ def crm_chatbot(request, bot_id):
         'other_businesses': other_businesses,
         'openai_available': providers_available['openai'],
         'gemini_available': providers_available['gemini'],
+        # Pages the Test console can impersonate, so a test run loads the same
+        # Page Profile a real customer on that page would hit.
+        'connected_accounts': [
+            i for i in integrations if i.status in LIVE_INTEGRATION_STATUSES and i.account_name
+        ],
         # Seeds the hidden field behind the Cities Served tag input, so the list
         # survives a submit even if the tag JS never runs.
         'cities_served_json': json.dumps(chatbot.cities_served or []),
@@ -825,7 +994,16 @@ def crm_chatbot_save_knowledge(request, bot_id):
     """
     chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
 
-    chatbot.business_name = request.POST.get('business_name', '').strip() or chatbot.business_name
+    # Business name is required by the form, but an empty submission must not
+    # silently restore the previous value — that made the field look un-editable.
+    business_name = request.POST.get('business_name', '').strip()
+    if not business_name:
+        msg = 'Business name is required.'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'status': 'error', 'message': msg}, status=400)
+        messages.error(request, msg)
+        return redirect('trendycrm:chatbot', bot_id=bot_id)
+    chatbot.business_name = business_name
 
     # Email/phone are optional, so an empty submission means "clear it" — the old
     # `or <existing>` fallback made them impossible to remove once set.
@@ -901,10 +1079,19 @@ def crm_chatbot_save_agent(request, bot_id):
     
     triggers_json = request.POST.get('handoff_triggers')
     if triggers_json:
+        # Report a bad payload instead of swallowing it — the UI used to toast
+        # "auto-saved" while the triggers were silently discarded.
         try:
-            chatbot.handoff_triggers = json.loads(triggers_json)
+            triggers = json.loads(triggers_json)
         except json.JSONDecodeError:
-            pass
+            triggers = None
+        if not isinstance(triggers, list):
+            msg = 'Handoff triggers could not be saved (unexpected format).'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'status': 'error', 'message': msg}, status=400)
+            messages.error(request, msg)
+            return redirect('trendycrm:chatbot', bot_id=bot_id)
+        chatbot.handoff_triggers = [str(t).strip() for t in triggers if str(t).strip()]
     chatbot.save()
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -917,8 +1104,8 @@ def crm_chatbot_save_agent(request, bot_id):
 @require_POST
 def crm_chatbot_toggle_channel(request, bot_id):
     """
-    AJAX: Toggle auto-reply for a specific channel on/off.
-    POST body: { channel_type: 'facebook', enabled: 'true'/'false' }
+    AJAX: Toggle auto-reply for one connected channel account on/off.
+    POST body: { integration_id: '35', enabled: 'true'/'false' }
     """
     chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
     integration_id = request.POST.get('integration_id')
@@ -926,8 +1113,14 @@ def crm_chatbot_toggle_channel(request, bot_id):
 
     if integration_id:
         integration = get_object_or_404(CRMIntegration, pk=integration_id)
-        channels = chatbot.auto_reply_channels or {}
-        
+        # Keys are integration ids. Older builds wrote channel-type names here
+        # ('facebook'), which no runtime gate can ever match — so the toggle read
+        # as On while auto-reply stayed off. Drop anything that isn't an id.
+        channels = {
+            k: v for k, v in (chatbot.auto_reply_channels or {}).items()
+            if str(k).isdigit()
+        }
+
         if enabled:
             # If the integration was connected to another chatbot, remove it from that bot's config
             if integration.chatbot_config and integration.chatbot_config_id != chatbot.id:
@@ -1005,7 +1198,11 @@ def crm_quick_replies(request):
     category = request.GET.get('category', '').strip()
     replies = CRMQuickReply.objects.all()
     if q:
-        replies = replies.filter(name__icontains=q) | replies.filter(shortcut__icontains=q) | replies.filter(content__icontains=q)
+        # A single OR'd Q beats chaining three querysets with `|`, which joined
+        # the table repeatedly and could return the same reply more than once.
+        replies = replies.filter(
+            Q(name__icontains=q) | Q(shortcut__icontains=q) | Q(content__icontains=q)
+        )
     if category:
         replies = replies.filter(category__iexact=category)
     categories = CRMQuickReply.objects.exclude(category__isnull=True).exclude(category='').values_list('category', flat=True).distinct()
@@ -1098,6 +1295,7 @@ def crm_quick_reply_edit(request, pk):
 
 
 @login_required
+@require_POST
 def crm_quick_reply_delete(request, pk):
     reply = get_object_or_404(CRMQuickReply, pk=pk)
     name = reply.name
@@ -1112,11 +1310,14 @@ def crm_quick_reply_delete(request, pk):
 def crm_quick_replies_search(request):
     """AJAX: Search quick replies by shortcut prefix for autocomplete in conversations."""
     q = request.GET.get('q', '').strip().lstrip('/')
-    if not q:
-        return JsonResponse({'results': []})
-    replies = CRMQuickReply.objects.filter(
-        shortcut__istartswith=q
-    ).values('pk', 'name', 'shortcut', 'content', 'category')[:10]
+    replies = CRMQuickReply.objects.all()
+    if q:
+        # Match the shortcut first, but also let the operator find a reply by its
+        # name when they can't remember the shortcut.
+        replies = replies.filter(Q(shortcut__istartswith=q) | Q(name__icontains=q))
+    # An empty query means the composer just has "/" in it — show everything so
+    # the list is browsable rather than blank.
+    replies = replies.values('pk', 'name', 'shortcut', 'content', 'category')[:10]
     return JsonResponse({'results': list(replies)})
 
 
@@ -1720,6 +1921,16 @@ def meta_webhook(request):
                                         status='sent'
                                     ).update(status='delivered')
 
+                            # ── The actual inbound message ────────────────────
+                            # Handled straight off the payload so a reply goes out
+                            # in seconds. The Graph re-sync below stays as a safety
+                            # net; `external_id` keeps the two from double-posting.
+                            if event.get('message'):
+                                run_async(
+                                    handle_messenger_event,
+                                    page_id, sender_id, event,
+                                )
+
             # Only sync the page(s) this webhook payload actually referenced,
             # instead of every connected FB/IG integration on every event.
             if messaging_page_ids:
@@ -2130,6 +2341,9 @@ def crm_ai_test(request):
             image_data=image_data,
             image_mime=image_mime,
         )
+        # Keep the "last auto-reply failed" banner honest: a successful test
+        # clears it, a failing one records why.
+        from .meta_sync import _record_bot_status
         if result.get('success') and not result.get('error'):
             charge_ai_credits(
                 chatbot,
@@ -2137,8 +2351,11 @@ def crm_ai_test(request):
                 model_used=result.get('model_used', ''),
                 description=(message_text or '[image only]'),
             )
+            _record_bot_status(chatbot, error=None)
             chatbot.refresh_from_db(fields=['ai_credits'])
             result['credits_remaining'] = chatbot.ai_credits
+        elif result.get('error'):
+            _record_bot_status(chatbot, error=result['error'])
         return JsonResponse(result)
     except Exception as e:
         logger.exception("AI test failed")

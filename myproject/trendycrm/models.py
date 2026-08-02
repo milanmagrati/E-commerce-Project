@@ -1,6 +1,17 @@
+from datetime import timedelta
+
+from decouple import config as env_config
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
+
+# How long the AI stays quiet on a conversation after a staff member replies to
+# it. Prevents the bot from talking over a human who has taken the chat over.
+# Kept short by default: an operator who types one line and walks away shouldn't
+# find the bot mute for half an hour. Use the per-chat AI toggle for a hard stop.
+# Lives here rather than in meta_sync because both the auto-reply gate and the
+# inbox UI read it — they must agree on when the bot resumes.
+HUMAN_TAKEOVER_MINUTES = env_config('CRM_HUMAN_TAKEOVER_MINUTES', default=5, cast=int)
 
 
 class CRMContact(models.Model):
@@ -69,9 +80,88 @@ class CRMConversation(models.Model):
     updated_at = models.DateTimeField(default=timezone.now)
     last_message = models.TextField(blank=True, null=True)
     is_read = models.BooleanField(default=True)
+    # Per-chat kill switch for the AI. Lets an operator silence the bot on one
+    # conversation without pausing it for the whole page.
+    ai_enabled = models.BooleanField(default=True)
+    # Stamped whenever a staff member sends from the composer. The auto-reply
+    # gate uses it to stay quiet while a human is actively handling the chat.
+    last_human_reply_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"Conversation #{self.pk}"
+
+    def ai_status(self, integration=None):
+        """
+        Single source of truth for "will the AI answer the next inbound message?".
+
+        `integration` overrides the conversation's own FK — the webhook path knows
+        which account actually received the message and holds a freshly-loaded
+        object, where self.integration may be stale or unset.
+
+        Both the auto-reply gate (meta_sync.process_incoming_webhook_message) and
+        the inbox header read this, so the badge can never claim "AI On" while the
+        bot is actually sitting out — which it did before, because the takeover
+        pause and the toggle were separate pieces of state with no shared read.
+
+        Returns a dict:
+            state      — 'on' | 'paused' | 'off' | 'unavailable'
+            label      — short text for the badge
+            reason     — full sentence explaining the state (tooltip / log line)
+            resumes_in — seconds until the bot resumes by itself, else None
+            resumable  — True when the operator can lift this state from the chat
+        """
+        def status(state, label, reason, resumes_at=None, resumable=False):
+            # resumes_at is an absolute instant, not a countdown: it has to stay
+            # byte-identical across polls or the message fragment would differ on
+            # every fetch and the inbox would rebuild the thread every 3 seconds.
+            return {
+                'state': state, 'label': label, 'reason': reason,
+                'resumes_at': resumes_at.isoformat() if resumes_at else None,
+                'resumes_in': (
+                    max(0, int((resumes_at - timezone.now()).total_seconds()))
+                    if resumes_at else None
+                ),
+                'resumable': resumable,
+            }
+
+        if not self.ai_enabled:
+            return status('off', 'AI Off',
+                          'The AI is switched off for this conversation.', resumable=True)
+
+        integration = integration or (self.integration if self.integration_id else None)
+        chatbot = integration.chatbot_config if integration else None
+        if not chatbot:
+            return status('unavailable', 'No AI',
+                          'No chatbot is assigned to the channel this chat came from.')
+        if not chatbot.is_active:
+            return status('unavailable', 'AI Paused',
+                          f"The '{chatbot.name}' chatbot is inactive.")
+        if not (chatbot.auto_reply_channels or {}).get(str(integration.pk), False):
+            return status('unavailable', 'AI Off',
+                          'Auto-reply is not enabled for this channel on the Chatbot page.')
+        if chatbot.ai_credits is not None and chatbot.ai_credits <= 0:
+            return status('unavailable', 'No Credits',
+                          'This business has no AI credits left.')
+
+        if self.status == 'resolved':
+            return status('paused', 'AI Idle',
+                          'This conversation is resolved — the AI stays quiet until it is reopened.')
+        if self.assigned_to_id:
+            name = self.assigned_to.get_full_name() or self.assigned_to.username
+            # Resumable: handing the chat back to the bot releases the claim too,
+            # which is the only way out of a takeover that never expires.
+            return status('paused', 'Human',
+                          f'{name} is handling this conversation, so the AI stays quiet.',
+                          resumable=True)
+
+        if self.last_human_reply_at:
+            resumes_at = self.last_human_reply_at + timedelta(minutes=HUMAN_TAKEOVER_MINUTES)
+            if timezone.now() < resumes_at:
+                return status('paused', 'Human',
+                              'A team member just replied — the AI is paused so it cannot talk '
+                              'over them.', resumes_at=resumes_at, resumable=True)
+
+        return status('on', 'AI On', 'The AI will reply to the next customer message.')
 
     class Meta:
         ordering = ['-updated_at']
@@ -111,6 +201,49 @@ class CRMMessage(models.Model):
     attachment_type = models.CharField(max_length=20, choices=ATTACHMENT_TYPE_CHOICES, blank=True, default='')
     attachment_name = models.CharField(max_length=255, blank=True, default='')
     created_at = models.DateTimeField(default=timezone.now)
+    # Provider-side message id (Graph `id` / webhook `mid`). The old dedupe
+    # matched on body + a ±1 minute window, which both missed repeats and
+    # collided on short repeated messages ("ok"). Empty for locally-composed
+    # messages that have no provider id yet.
+    external_id = models.CharField(max_length=255, blank=True, default='', db_index=True)
+    # True when the AI router generated this reply, as opposed to a staff member.
+    is_ai = models.BooleanField(default=False)
+    # Internal timeline events — "agent took over", "the AI couldn't reply". Shown
+    # as a centered chip in the thread and NEVER sent to the customer, so that a
+    # silent bot has a visible reason instead of looking like nothing happened.
+    is_system = models.BooleanField(default=False)
+    SYSTEM_LEVEL_CHOICES = [('info', 'Info'), ('warning', 'Warning')]
+    system_level = models.CharField(max_length=10, choices=SYSTEM_LEVEL_CHOICES,
+                                    blank=True, default='')
+    # What the router classified the customer's message as, kept on the reply it
+    # produced so the thread can show *why* the bot answered the way it did.
+    ai_intent = models.CharField(max_length=40, blank=True, default='')
+
+    # Intent → (chip label, priority). Priority is derived rather than stored:
+    # it's a presentation of the intent, and two columns that must agree would
+    # eventually disagree.
+    INTENT_DISPLAY = {
+        'purchase_intent': ('Purchase', 'high'),
+        'product_issue': ('Issue', 'high'),
+        'general_query': ('Query', 'low'),
+        'spam_noise': ('Spam', 'low'),
+    }
+
+    @property
+    def intent_label(self):
+        return self.INTENT_DISPLAY.get(self.ai_intent, (self.ai_intent.replace('_', ' ').title(), 'low'))[0]
+
+    @property
+    def intent_priority(self):
+        return self.INTENT_DISPLAY.get(self.ai_intent, ('', 'low'))[1]
+
+    @classmethod
+    def log_event(cls, conversation, text, level='info'):
+        """Drops an internal event chip into a conversation's timeline."""
+        return cls.objects.create(
+            conversation=conversation, sender='System', body=text,
+            is_outbound=False, is_system=True, system_level=level, status='sent',
+        )
 
     @property
     def display_date(self):
@@ -262,6 +395,12 @@ class CRMChatbotConfig(models.Model):
     )
 
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Why the last auto-reply attempt produced nothing (rate limit, missing key,
+    # provider error). Without this the bot just goes quiet and there's no way to
+    # tell a configuration problem from "nobody has messaged us".
+    last_error = models.TextField(blank=True, default='')
+    last_error_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.name

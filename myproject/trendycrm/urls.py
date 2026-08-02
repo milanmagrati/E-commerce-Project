@@ -7,6 +7,7 @@ urlpatterns = [
     path('', views.crm_home, name='home'),
     path('conversations/', views.crm_conversations, name='conversations'),
     path('conversations/ajax/', views.crm_conversations_ajax, name='conversations_ajax'),
+    path('conversations/list-ajax/', views.crm_conversations_list_ajax, name='conversations_list_ajax'),
     path('conversations/create/', views.crm_create_conversation, name='create_conversation'),
     path('conversations/<int:conv_id>/delete/', views.crm_delete_conversation, name='delete_conversation'),
     path('conversations/<int:conv_id>/send/', views.crm_send_message, name='send_message'),
@@ -18,6 +19,8 @@ urlpatterns = [
     path('conversations/<int:conv_id>/add-note/', views.crm_add_note, name='add_note'),
     path('conversations/<int:conv_id>/assign/', views.crm_assign_conversation, name='assign_conversation'),
     path('conversations/<int:conv_id>/resolve/', views.crm_resolve_conversation, name='resolve_conversation'),
+    path('conversations/<int:conv_id>/toggle-ai/', views.crm_toggle_conversation_ai, name='toggle_conversation_ai'),
+    path('conversations/<int:conv_id>/take-over/', views.crm_take_over_conversation, name='take_over_conversation'),
 
     path('labels/create/', views.crm_create_label_global, name='create_label_global'),
 

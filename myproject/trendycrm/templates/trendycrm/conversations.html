@@ -232,12 +232,263 @@
 
 .status-badge.unassigned { background: #fee2e2; color: #991b1b; }
 .status-badge.assigned { background: #ede9fe; color: #6d28d9; }
-.assign-badge-btn, .resolve-badge-btn {
+.assign-badge-btn, .resolve-badge-btn, .ai-badge-btn {
     border: none;
     cursor: pointer;
     font-family: 'Inter', sans-serif;
     text-transform: none;
     letter-spacing: normal;
+}
+.status-badge.on { background: #dcfce7; color: #166534; }
+.status-badge.off { background: #f1f5f9; color: #64748b; }
+
+/* Marks replies written by the AI rather than a staff member. */
+.ai-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #6d28d9;
+    background: #ede9fe;
+    border-radius: 4px;
+    padding: 0 0.3rem;
+    margin-right: 0.3rem;
+    vertical-align: middle;
+}
+
+/* Names the agent who sent an outbound message, so an AI reply and a human reply
+   are never mistaken for each other in a shared inbox. */
+.agent-tag {
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: var(--crm-text-muted);
+    margin-right: 0.3rem;
+    vertical-align: middle;
+}
+
+/* AI replies keep the outbound position but carry a violet edge, so a glance down
+   the thread separates what the bot said from what the team said. */
+.msg-bubble.msg-ai {
+    background: #f5f3ff;
+    color: #312e81;
+    border-right: 3px solid #7c3aed;
+}
+
+/* Internal timeline events (takeover, AI failures). Never sent to the customer. */
+.sys-event {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.85rem auto;
+    max-width: 82%;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    background: #f8fafc;
+    border: 1px solid var(--crm-border);
+    color: var(--crm-text-muted);
+    font-size: 0.7rem;
+    line-height: 1.35;
+    text-align: center;
+}
+.sys-event i { font-size: 0.72rem; opacity: 0.85; }
+.sys-event.sys-warning {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+.sys-event-time { opacity: 0.7; font-size: 0.65rem; }
+
+/* Paused = the toggle is on but something (a human, an assignment) is holding the
+   bot back. Visually distinct from both On and Off, because reading it as "On"
+   was exactly the confusion this state fixes. */
+.status-badge.paused { background: #fef3c7; color: #92400e; }
+.status-badge.unavailable { background: #f1f5f9; color: #64748b; }
+
+/* These three are display:flex, which outranks the browser's [hidden] rule — without
+   this the "hidden" composer would stay on screen next to the lock bar. */
+.conv-input-bar[hidden], .ai-handoff-bar[hidden], .composer-handback[hidden] { display: none; }
+
+/* ── AI ownership switch in the conversation header ─────────────────────────── */
+.ai-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid var(--crm-border);
+    background: #fff;
+    border-radius: 999px;
+    padding: 0.25rem 0.4rem 0.25rem 0.6rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--crm-text);
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+}
+.ai-switch:disabled { cursor: not-allowed; opacity: 0.65; }
+.ai-switch i { font-size: 0.72rem; color: var(--crm-primary); }
+.ai-switch-track {
+    width: 30px;
+    height: 17px;
+    border-radius: 999px;
+    background: #cbd5e1;
+    position: relative;
+    transition: background 0.18s ease;
+    flex-shrink: 0;
+}
+.ai-switch-knob {
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.3);
+    transition: transform 0.18s ease;
+}
+/* On = bot owns the chat. Paused = a human holds it but the bot resumes later.
+   Off/unavailable = the bot is not coming back on its own. */
+.ai-switch.on .ai-switch-track { background: var(--crm-primary); }
+.ai-switch.on .ai-switch-knob { transform: translateX(13px); }
+.ai-switch.paused .ai-switch-track { background: #f59e0b; }
+.ai-switch.paused .ai-switch-knob { transform: translateX(6px); }
+.ai-switch.paused i { color: #b45309; }
+.ai-switch.off i, .ai-switch.unavailable i { color: var(--crm-text-muted); }
+
+/* ── AI reply presentation ──────────────────────────────────────────────────── */
+/* The row must pack its contents to the right rather than rely on align-self: a
+   long reply's max-content width exceeds the pane, so the row always resolves to
+   full width and align-self:flex-end becomes a no-op — which left AI replies
+   stranded on the inbound side. */
+.msg-ai-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: 0.45rem;
+    width: 100%;
+}
+.ai-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px; height: 26px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #ede9fe;
+    color: #6d28d9;
+    font-size: 0.72rem;
+}
+.ai-avatar.sm { width: 20px; height: 20px; font-size: 0.6rem; }
+/* The avatar sits outside the bubble, so the meta lines under it need the same
+   offset or they hang past the bubble's right edge. */
+.ai-chips {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin: 0.25rem 2.15rem 0 0;
+}
+.msg-time.ai-meta { margin-right: 2.15rem; }
+.ai-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    font-size: 0.63rem;
+    font-weight: 500;
+    color: var(--crm-text-muted);
+}
+.ai-chip .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.dot-intent { background: #6366f1; }
+.dot-low { background: #22c55e; }
+.dot-high { background: #f97316; }
+
+/* ── Composer lock while the AI owns the conversation ───────────────────────── */
+.ai-handoff-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 0.85rem 1.25rem;
+    border-top: 1px solid var(--crm-border);
+    background: #faf9ff;
+    flex-shrink: 0;
+}
+.ai-handoff-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.82rem;
+    color: var(--crm-text);
+}
+.ai-handoff-sub {
+    font-size: 0.72rem;
+    color: var(--crm-text-muted);
+    margin-top: 0.15rem;
+    margin-left: 1.65rem;
+}
+.ai-handoff-actions { display: flex; gap: 0.5rem; }
+.handoff-btn {
+    border: 1px solid var(--crm-border);
+    background: #fff;
+    color: var(--crm-text);
+    border-radius: 8px;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+}
+.handoff-btn.primary { background: var(--crm-primary); border-color: var(--crm-primary); color: #fff; }
+.handoff-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Shown above the composer once a human holds the chat. */
+.composer-handback {
+    position: absolute;
+    top: -1.55rem;
+    left: 1.25rem;
+    right: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    color: var(--crm-text-muted);
+}
+.composer-handback button {
+    border: none;
+    background: none;
+    color: var(--crm-primary);
+    font-weight: 600;
+    font-size: 0.68rem;
+    cursor: pointer;
+    padding: 0;
+}
+
+/* Quick-reply autocomplete above the composer */
+.qr-autocomplete {
+    position: absolute;
+    bottom: 100%;
+    left: 1.25rem;
+    right: 1.25rem;
+    background: #fff;
+    border: 1px solid var(--crm-border);
+    border-radius: 10px;
+    box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.12);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 30;
+    margin-bottom: 0.4rem;
+    display: none;
+}
+.qr-item { padding: 0.55rem 0.8rem; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
+.qr-item:last-child { border-bottom: none; }
+.qr-item:hover, .qr-item.active { background: var(--crm-active-bg); }
+.qr-item-top { display: flex; align-items: center; gap: 0.5rem; }
+.qr-item-shortcut { font-family: monospace; font-size: 0.72rem; color: var(--crm-primary); font-weight: 700; }
+.qr-item-name { font-size: 0.78rem; font-weight: 600; color: var(--crm-text); }
+.qr-item-content {
+    font-size: 0.72rem; color: var(--crm-text-muted); margin-top: 0.15rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 .composer-round-btn {
@@ -503,72 +754,8 @@
             <a href="?read_status=read{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if read_status == 'read' %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">Read</a>
         </div>
 
-        <div class="conv-list">
-            {% if conversations %}
-                {% for conv in conversations %}
-                <div onclick="if(!event.target.closest('.dropdown') && !event.target.closest('a')){ window.location.href='?id={{ conv.pk }}{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}'; }" class="conv-item {% if active_conv and active_conv.pk == conv.pk %}active{% endif %}">
-                    <div class="conv-avatar">
-                        {{ conv.contact.name|first|upper|default:"?" }}
-                    </div>
-                    <div class="conv-meta" style="display:flex; flex-direction:column; justify-content:space-between; flex: 1;">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <div class="conv-name" style="font-size:0.85rem; {% if not conv.is_read %}font-weight:800; color:var(--crm-primary);{% endif %}">
-                                {{ conv.contact.name|default:"Unknown" }}
-                                {% if not conv.is_read %}
-                                <span style="width:8px; height:8px; background:var(--crm-primary); border-radius:50%; display:inline-block; margin-left:4px; margin-bottom:1px;"></span>
-                                {% endif %}
-                            </div>
-                            <div class="conv-time" style="font-size:0.7rem; color:var(--crm-text-muted); text-align: right;">
-                                <div style="font-size:0.6rem; margin-bottom:0.1rem;">{{ conv.updated_at|date:"M d, Y" }}</div>
-                                <div>{{ conv.updated_at|date:"h:i A" }}</div>
-                            </div>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-top:0.25rem;">
-                            <div style="display:flex; flex-direction:column; padding-right: 0.5rem; overflow: hidden;">
-                                <div class="conv-preview" style="font-size:0.8rem; {% if not conv.is_read %}font-weight:600; color:var(--crm-text);{% else %}color:var(--crm-text-muted);{% endif %} margin-bottom:0.25rem;">{{ conv.last_message|default:"No messages yet"|truncatechars:40 }}</div>
-                                <div>
-                                    {% if conv.channel == 'facebook' %}
-                                        <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:14px;height:14px;" title="Facebook Messenger">
-                                    {% elif conv.channel == 'instagram' %}
-                                        <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:14px;height:14px;" title="Instagram">
-                                    {% elif conv.channel == 'tiktok' %}
-                                        <i class="fab fa-tiktok" style="font-size:14px;" title="TikTok"></i>
-                                    {% elif conv.channel == 'whatsapp' %}
-                                        <i class="fab fa-whatsapp" style="color:#25D366;font-size:14px;" title="WhatsApp"></i>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.1rem; flex-shrink: 0;">
-                                <i class="far fa-circle text-danger" style="font-size:0.6rem;opacity:0.6;"></i>
-                                <div class="dropdown">
-                                    <button class="btn btn-sm no-caret" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="padding: 0; background: none; border: none; color: var(--crm-text-muted);">
-                                        <i class="fas fa-ellipsis-v" style="padding: 0.3rem 0.5rem; cursor: pointer;"></i>
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end shadow" style="border: none; border-radius: 8px; font-size: 0.85rem; z-index: 1050;">
-                                        <li>
-                                            <form action="{% url 'trendycrm:delete_conversation' conv.pk %}" method="post" onsubmit="return confirm('Are you sure you want to delete this entire conversation? This action cannot be undone.');" style="margin: 0;">
-                                                {% csrf_token %}
-                                                <button type="submit" class="dropdown-item text-danger d-flex align-items-center gap-2">
-                                                    <i class="fas fa-trash-alt"></i> Delete
-                                                </button>
-                                            </form>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                {% endfor %}
-            {% else %}
-                <div class="crm-empty-state">
-                    <div class="crm-empty-icon" style="width:64px;height:64px;font-size:1.4rem;">
-                        <i class="fas fa-comment-slash"></i>
-                    </div>
-                    <div class="crm-empty-title" style="font-size:0.9rem;">No conversations found</div>
-                    <div class="crm-empty-desc" style="font-size:0.78rem;">Your inbox looks empty. You will get notifications here when you have new messages.</div>
-                </div>
-            {% endif %}
+        <div class="conv-list" id="convList">
+            {% include "trendycrm/partials/conversation_list.html" %}
         </div>
     </div>
 
@@ -615,6 +802,16 @@
                 </div>
             </div>
             <div class="d-flex align-items-center gap-2">
+                <button type="button" id="aiToggleBtn"
+                        class="ai-switch {{ ai_state.state }}"
+                        data-state="{{ ai_state.state }}"
+                        data-resumable="{{ ai_state.resumable|yesno:'1,0' }}"
+                        onclick="toggleConversationAi()"
+                        title="{{ ai_state.reason }}">
+                    <i class="fas fa-robot"></i>
+                    <span id="aiToggleLabel">{{ ai_state.label }}</span>
+                    <span class="ai-switch-track"><span class="ai-switch-knob"></span></span>
+                </button>
                 <span id="assignBadge" class="status-badge assign-badge-btn {% if active_conv.assigned_to %}assigned{% else %}unassigned{% endif %}" style="font-size:0.68rem;" onclick="new bootstrap.Modal(document.getElementById('assignConvModal')).show();" title="Click to assign this conversation">
                     {% if active_conv.assigned_to %}
                         <i class="fas fa-user-check"></i> {{ assigned_employee_name }}
@@ -652,8 +849,32 @@
             </button>
         </div>
 
-        <form class="conv-input-bar" id="sendMessageForm" method="post" action="{% url 'trendycrm:send_message' active_conv.pk %}" enctype="multipart/form-data">
+        {% comment %}
+        While the AI owns the chat the composer is view-only, so an agent can't
+        half-answer over the top of a reply already on its way to the customer.
+        Take over is the deliberate door into the conversation.
+        {% endcomment %}
+        <div class="ai-handoff-bar" id="aiHandoffBar" {% if ai_state.state != 'on' %}hidden{% endif %}>
+            <div class="ai-handoff-text">
+                <div class="ai-handoff-title">
+                    <span class="ai-avatar sm"><i class="fas fa-robot"></i></span>
+                    Handled by <strong>{{ active_conv.integration.chatbot_config.name|default:"Trendy AI" }}</strong>
+                </div>
+                <div class="ai-handoff-sub">View-only — the AI is replying to this customer</div>
+            </div>
+            <div class="ai-handoff-actions">
+                <button type="button" class="handoff-btn primary" onclick="takeOverConversation()">Take over</button>
+                <button type="button" class="handoff-btn" onclick="new bootstrap.Modal(document.getElementById('assignConvModal')).show();">Assign to member</button>
+            </div>
+        </div>
+
+        <form class="conv-input-bar" id="sendMessageForm" method="post" action="{% url 'trendycrm:send_message' active_conv.pk %}" enctype="multipart/form-data" style="position:relative;" {% if ai_state.state == 'on' %}hidden{% endif %}>
             {% csrf_token %}
+            <div class="composer-handback" id="composerHandback" {% if not ai_state.resumable or ai_state.state == 'off' %}hidden{% endif %}>
+                <span><i class="fas fa-user-check"></i> You're handling this chat</span>
+                <button type="button" onclick="toggleConversationAi()">Hand back to AI</button>
+            </div>
+            <div id="qrAutocomplete" class="qr-autocomplete" role="listbox" aria-label="Quick replies"></div>
             <input type="file" id="imageFileInput" name="image_file" accept="image/*" style="display:none;" onchange="handleFileSelect(this, 'image')">
             <input type="file" id="docFileInput" name="doc_file" style="display:none;" onchange="handleFileSelect(this, 'document')">
             <input type="file" id="audioFileInput" name="audio_file" style="display:none;">
@@ -674,7 +895,7 @@
                 <i class="fas fa-paperclip"></i>
             </button>
 
-            <textarea name="body" id="messageBodyInput" class="conv-input" placeholder="Write your message…" rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.closest('form').requestSubmit();}"></textarea>
+            <textarea name="body" id="messageBodyInput" class="conv-input" placeholder="Write your message…  (type / for quick replies)" rows="1" onkeydown="handleComposerKeydown(event, this)"></textarea>
 
             <button type="button" class="composer-round-btn" onclick="new bootstrap.Modal(document.getElementById('assignConvModal')).show();" title="Assign conversation">
                 <i class="fas fa-user-plus"></i>
@@ -820,29 +1041,329 @@
 
 {% block extra_script %}
 <script>
+    // ── Inbox sidebar live refresh ────────────────────────────────────────────
+    // Runs whether or not a chat is open. The message poll only ever replaced the
+    // open thread, so the sidebar preview and timestamp stayed stale until reload.
+    (function pollConversationList() {
+        const list = document.getElementById('convList');
+        if (!list) return;
+
+        // Carry the current filters through so the refresh can't disagree with
+        // what the user has selected.
+        const params = new URLSearchParams(window.location.search);
+        const url = "{% url 'trendycrm:conversations_list_ajax' %}" +
+                    (params.toString() ? '?' + params.toString() : '');
+
+        setInterval(function () {
+            // Don't yank the list out from under an open row menu.
+            if (list.querySelector('.dropdown-menu.show')) return;
+
+            fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(r => r.text())
+                .then(html => {
+                    if (!html.trim() || list.innerHTML === html) return;
+                    const scroll = list.scrollTop;
+                    list.innerHTML = html;
+                    list.scrollTop = scroll;
+                })
+                .catch(err => console.error('Failed to refresh the inbox list:', err));
+        }, 3000);
+    })();
+
     {% if active_conv %}
+    // Counts rendered bubbles. The old check compared innerHTML *length*, which
+    // fired the toast on any status-icon change and missed a short new message
+    // that arrived alongside one.
+    function countBubbles(container) {
+        return container.querySelectorAll('.msg-bubble').length;
+    }
+
     // Auto-fetcher for Real-Time UI updates
     setInterval(function() {
         fetch("{% url 'trendycrm:conversations_ajax' %}?id={{ active_conv.pk }}")
         .then(response => response.text())
         .then(html => {
             const msgArea = document.getElementById('msgArea');
-            if(html.trim() !== "" && msgArea.innerHTML !== html) {
-                const isFirstLoad = (msgArea.innerHTML.trim() === "");
-                const oldLength = msgArea.innerHTML.length;
-                msgArea.innerHTML = html;
-                
-                // Show a toast if new messages arrived (not first load)
-                if (!isFirstLoad && html.length > oldLength && typeof showTrendyToast === 'function') {
-                    showTrendyToast("New message received in this conversation", "info", "New Message");
-                }
-                
-                // Optional: Scroll to bottom if new messages arrived
-                // msgArea.scrollTop = msgArea.scrollHeight;
+            if (html.trim() === "" || msgArea.innerHTML === html) return;
+            // The fragment carries the AI state; repaint the header from it below.
+
+            const isFirstLoad = (msgArea.innerHTML.trim() === "");
+            const oldCount = countBubbles(msgArea);
+            // Only follow new messages if the reader is already at the bottom,
+            // so this can't yank them away while they scroll back through history.
+            const wasAtBottom =
+                msgArea.scrollHeight - msgArea.scrollTop - msgArea.clientHeight < 80;
+
+            msgArea.innerHTML = html;
+            syncAiBadgeFromFragment();
+            const newCount = countBubbles(msgArea);
+
+            if (!isFirstLoad && newCount > oldCount && typeof showTrendyToast === 'function') {
+                showTrendyToast("New message received in this conversation", "info", "New Message");
+            }
+            if (isFirstLoad || wasAtBottom || newCount > oldCount) {
+                msgArea.scrollTop = msgArea.scrollHeight;
             }
         })
         .catch(err => console.error('Failed to fetch new messages:', err));
     }, 3000); // Check every 3 seconds
+
+    // ── Quick-reply autocomplete ──────────────────────────────────────────────
+    // Typing "/" at the start of an empty composer searches saved quick replies
+    // and inserts the full text. Without this the Quick Replies page had no way
+    // to reach a conversation — pasting the raw "/shortcut" would send it verbatim.
+    var qrResults = [];
+    var qrActive = -1;
+    var qrTimer = null;
+
+    function qrBox() { return document.getElementById('qrAutocomplete'); }
+
+    function hideQuickReplies() {
+        qrResults = [];
+        qrActive = -1;
+        const box = qrBox();
+        if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+    }
+
+    function renderQuickReplies() {
+        const box = qrBox();
+        if (!box) return;
+        if (!qrResults.length) { hideQuickReplies(); return; }
+
+        box.innerHTML = qrResults.map((r, i) =>
+            '<div class="qr-item' + (i === qrActive ? ' active' : '') + '" role="option" data-index="' + i + '">' +
+                '<div class="qr-item-top">' +
+                    '<span class="qr-item-shortcut">/' + escapeHtml(r.shortcut) + '</span>' +
+                    '<span class="qr-item-name">' + escapeHtml(r.name) + '</span>' +
+                '</div>' +
+                '<div class="qr-item-content">' + escapeHtml(r.content) + '</div>' +
+            '</div>'
+        ).join('');
+        box.style.display = 'block';
+
+        box.querySelectorAll('.qr-item').forEach(el => {
+            el.addEventListener('mousedown', function (e) {
+                // mousedown, not click — the textarea's blur would close the box first.
+                e.preventDefault();
+                applyQuickReply(parseInt(this.dataset.index, 10));
+            });
+        });
+    }
+
+    function escapeHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : s;
+        return d.innerHTML;
+    }
+
+    function applyQuickReply(index) {
+        const reply = qrResults[index];
+        const input = document.getElementById('messageBodyInput');
+        if (!reply || !input) return;
+        input.value = reply.content;
+        hideQuickReplies();
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+    }
+
+    function maybeSearchQuickReplies(input) {
+        const value = input.value;
+        // Only while the whole composer is a single "/token" — never mid-message,
+        // so a customer address like "1/2 Newroad" can't trigger it.
+        if (!/^\/\S*$/.test(value)) { hideQuickReplies(); return; }
+
+        clearTimeout(qrTimer);
+        qrTimer = setTimeout(function () {
+            const q = value.slice(1);
+            const url = "{% url 'trendycrm:quick_replies_search' %}?q=" + encodeURIComponent(q || '');
+            fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(r => r.json())
+                .then(data => {
+                    qrResults = data.results || [];
+                    qrActive = qrResults.length ? 0 : -1;
+                    renderQuickReplies();
+                })
+                .catch(err => { console.error('Quick reply search failed:', err); hideQuickReplies(); });
+        }, 120);
+    }
+
+    function handleComposerKeydown(event, input) {
+        const open = qrResults.length > 0 && qrBox() && qrBox().style.display === 'block';
+
+        if (open) {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                qrActive = (qrActive + 1) % qrResults.length;
+                renderQuickReplies();
+                return;
+            }
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                qrActive = (qrActive - 1 + qrResults.length) % qrResults.length;
+                renderQuickReplies();
+                return;
+            }
+            if (event.key === 'Enter' || event.key === 'Tab') {
+                event.preventDefault();
+                applyQuickReply(qrActive >= 0 ? qrActive : 0);
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                hideQuickReplies();
+                return;
+            }
+        }
+
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            hideQuickReplies();
+            input.closest('form').requestSubmit();
+        }
+    }
+
+    (function initQuickReplies() {
+        const input = document.getElementById('messageBodyInput');
+        if (!input) return;
+        input.addEventListener('input', function () { maybeSearchQuickReplies(this); });
+        input.addEventListener('blur', function () { setTimeout(hideQuickReplies, 120); });
+    })();
+
+    const AI_STATES = ['on', 'off', 'paused', 'unavailable'];
+    let aiBadgeState = null;
+
+    // Seconds until the takeover pause lifts. Derived from the absolute instant the
+    // server sent, so the label keeps counting down between 3s polls.
+    function aiSecondsLeft(state) {
+        if (!state || !state.resumes_at) return null;
+        return Math.max(0, Math.round((new Date(state.resumes_at) - new Date()) / 1000));
+    }
+
+    // Paints the badge from a state object. Every state change goes through here —
+    // the poll, the toggle response, and the countdown all share one renderer so
+    // they can't disagree about what the badge says.
+    function renderAiBadge(state) {
+        const btn = document.getElementById('aiToggleBtn');
+        if (!btn || !state) return;
+        AI_STATES.forEach(s => btn.classList.toggle(s, s === state.state));
+        btn.dataset.state = state.state;
+        btn.dataset.resumable = state.resumable ? '1' : '0';
+
+        aiBadgeState = state;
+        let label = state.label;
+        const left = aiSecondsLeft(state);
+        if (state.state === 'paused' && left > 0) {
+            label += ` · ${Math.ceil(left / 60)}m`;
+        }
+        document.getElementById('aiToggleLabel').textContent = label;
+        btn.title = state.resumable && state.state === 'paused'
+            ? state.reason + ' Click to hand it back to the AI now.'
+            : state.reason;
+        // 'unavailable' is a Chatbot-page setting, not something this chat can fix.
+        btn.disabled = state.state === 'unavailable';
+
+        // The composer and the lock bar are two views of this one state: the bot
+        // owns the chat, or the agent does. Never both.
+        const bar = document.getElementById('aiHandoffBar');
+        const form = document.getElementById('sendMessageForm');
+        const handback = document.getElementById('composerHandback');
+        const aiOwns = state.state === 'on';
+        if (bar) bar.hidden = !aiOwns;
+        if (form) form.hidden = aiOwns;
+        if (handback) handback.hidden = aiOwns || !state.resumable || state.state === 'off';
+    }
+
+    // Reads the state the polled fragment carried in and repaints the badge, so a
+    // takeover pause visibly counts down and clears itself without a reload.
+    function syncAiBadgeFromFragment() {
+        const data = document.getElementById('aiStateData');
+        if (!data) return;
+        renderAiBadge({
+            state: data.dataset.state,
+            label: data.dataset.label,
+            reason: data.dataset.reason,
+            resumes_at: data.dataset.resumesAt || null,
+            resumable: data.dataset.resumable === '1',
+        });
+    }
+
+    // Ticks the "Human · 3m" label down between polls. The authoritative flip back
+    // to 'on' still comes from the server on the next fetch.
+    setInterval(function () {
+        if (aiBadgeState && aiBadgeState.state === 'paused') renderAiBadge(aiBadgeState);
+    }, 1000);
+
+    // Claims a bot-run conversation for the current agent and unlocks the composer.
+    function takeOverConversation() {
+        const buttons = document.querySelectorAll('#aiHandoffBar .handoff-btn');
+        buttons.forEach(b => b.disabled = true);
+        fetch("{% url 'trendycrm:take_over_conversation' active_conv.pk %}", {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'ok') throw new Error('Failed');
+            renderAiBadge(data.ai);
+            const input = document.getElementById('messageBodyInput');
+            if (input) input.focus();
+            if (typeof showTrendyToast === 'function') {
+                showTrendyToast("You're now handling this conversation. The AI won't reply.",
+                                "info", "Taken over");
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            if (typeof showTrendyToast === 'function') {
+                showTrendyToast("Could not take over this conversation.", "error", "Error");
+            }
+        })
+        .finally(() => { buttons.forEach(b => b.disabled = false); });
+    }
+
+    function toggleConversationAi() {
+        const btn = document.getElementById('aiToggleBtn');
+        // While paused by a takeover, the useful action is "give it back to the
+        // AI" — not "switch the AI off", which is what a blind toggle would do.
+        const resuming = btn.dataset.state === 'paused' && btn.dataset.resumable === '1';
+        const form = new FormData();
+        if (resuming) form.append('action', 'resume');
+        btn.disabled = true;
+        fetch("{% url 'trendycrm:toggle_conversation_ai' active_conv.pk %}", {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: form,
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'ok') throw new Error(data.message || 'Failed');
+            renderAiBadge(data.ai);
+            if (typeof showTrendyToast === 'function') {
+                showTrendyToast(
+                    data.ai_enabled
+                        ? "The AI will auto-reply to this conversation."
+                        : "The AI will stay silent on this conversation.",
+                    "info", "Auto-reply");
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            if (typeof showTrendyToast === 'function') {
+                showTrendyToast("Could not change the AI setting.", "error", "Error");
+            }
+        })
+        // renderAiBadge owns the disabled flag ('unavailable' must stay disabled),
+        // so only re-enable when the request failed before it could repaint.
+        .finally(() => {
+            if (btn.dataset.state !== 'unavailable') btn.disabled = false;
+        });
+    }
     {% endif %}
 
     // Scroll to bottom of messages initially

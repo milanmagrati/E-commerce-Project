@@ -17,6 +17,10 @@ GRAPH_API_VERSION = "v25.0"
 # AI replies onto old conversation history.
 RECENT_MESSAGE_WINDOW_MINUTES = 10
 
+# Re-exported from models, which owns it now that the inbox UI reads it too.
+# Imported from here by existing callers/scripts, so the name stays available.
+from .models import HUMAN_TAKEOVER_MINUTES  # noqa: E402,F401
+
 # Statuses that still count as "this account is ours" when routing *inbound*
 # traffic. A page flagged 'error' has a token Graph won't let us send with, but
 # Meta keeps delivering its webhooks regardless (the subscription is app-level,
@@ -60,7 +64,12 @@ def sync_meta_conversations(integration):
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{page_id}/conversations" if page_id else f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/conversations"
     params = {
         'access_token': integration.access_token,
-        'fields': 'id,updated_time,participants,messages.limit(20){id,message,created_time,from,to}',
+        # `attachments` is needed so photo-only messages aren't invisible to us —
+        # without it Graph returns an empty `message` and the customer looks silent.
+        'fields': (
+            'id,updated_time,participants,'
+            'messages.limit(20){id,message,created_time,from,to,attachments}'
+        ),
         'limit': 10
     }
     
@@ -81,6 +90,57 @@ def sync_meta_conversations(integration):
             
     except Exception as e:
         logger.exception("Exception occurred while syncing Meta conversations.")
+
+def get_or_create_contact_conversation(integration, contact_meta_id, contact_name='Unknown User'):
+    """
+    Resolves (or creates) the CRMContact + CRMConversation pair for one customer
+    on one page. Shared by the Graph poller and the live webhook.
+    """
+    # Match by Meta user ID (PSID) first — this is the stable, unique identifier.
+    # Falling back to name matching would merge different customers who share a
+    # display name into the same contact/conversation.
+    if contact_meta_id:
+        contact, created = CRMContact.objects.get_or_create(
+            meta_id=contact_meta_id,
+            defaults={'status': 'new', 'name': contact_name}
+        )
+        # Don't overwrite a real name with the placeholder the webhook uses
+        # before we've resolved the sender's profile.
+        if (not created and contact_name and contact_name != 'Unknown User'
+                and contact.name != contact_name):
+            contact.name = contact_name
+            contact.save(update_fields=['name'])
+    else:
+        # No id from Graph API (shouldn't normally happen) — last-resort name match.
+        contact, created = CRMContact.objects.get_or_create(
+            name=contact_name,
+            defaults={'status': 'new'}
+        )
+
+    # For Facebook Pages, the token is a Page Access Token. `or None` keeps the
+    # lookup key byte-identical to the previous inline parse — an empty string
+    # here would not match existing rows and would fork every conversation.
+    page_id = integration.parsed_id or None
+
+    conversation, _ = CRMConversation.objects.get_or_create(
+        contact=contact,
+        channel=integration.channel_type,
+        account_id=page_id,
+        defaults={
+            'integration': integration,
+            'status': 'open',
+            'subject': f"{integration.get_channel_type_display()} Chat"
+        }
+    )
+
+    # If this is an existing conversation but the integration was reconnected (meaning the old integration was deleted),
+    # we want to update the integration pointer to the active one so replies keep working.
+    if conversation.integration_id != integration.pk:
+        conversation.integration = integration
+        conversation.save(update_fields=['integration'])
+
+    return contact, conversation
+
 
 def _process_meta_conversation(integration, conv_data):
     """
@@ -107,118 +167,149 @@ def _process_meta_conversation(integration, conv_data):
         # Fallback to the first participant if we can't figure it out
         contact_data = participants[0]
         
-    contact_name = contact_data.get('name', 'Unknown User')
-    contact_meta_id = contact_data.get('id')
-
-    # Match by Meta user ID (PSID) first — this is the stable, unique identifier.
-    # Falling back to name matching would merge different customers who share a
-    # display name into the same contact/conversation.
-    if contact_meta_id:
-        contact, created = CRMContact.objects.get_or_create(
-            meta_id=contact_meta_id,
-            defaults={'status': 'new', 'name': contact_name}
-        )
-        if not created and contact_name and contact.name != contact_name:
-            contact.name = contact_name
-            contact.save(update_fields=['name'])
-    else:
-        # No id from Graph API (shouldn't normally happen) — last-resort name match.
-        contact, created = CRMContact.objects.get_or_create(
-            name=contact_name,
-            defaults={'status': 'new'}
-        )
-    
-    # For Facebook Pages, the token is a Page Access Token.
-    page_id = integration.account_name.split('(')[-1].strip(')') if '(' in integration.account_name else None
-    
-    # Create or get Conversation
-    conversation, conv_created = CRMConversation.objects.get_or_create(
-        contact=contact,
-        channel=integration.channel_type,
-        account_id=page_id,
-        defaults={
-            'integration': integration,
-            'status': 'open',
-            'subject': f"{integration.get_channel_type_display()} Chat"
-        }
+    contact, conversation = get_or_create_contact_conversation(
+        integration,
+        contact_meta_id=contact_data.get('id'),
+        contact_name=contact_data.get('name', 'Unknown User'),
     )
-    
-    # If this is an existing conversation but the integration was reconnected (meaning the old integration was deleted),
-    # we want to update the integration pointer to the active one so replies keep working.
-    if conversation.integration != integration:
-        conversation.integration = integration
-        conversation.save(update_fields=['integration'])
-    
+
     # Process Messages (they come ordered newest to oldest, so we reverse to save them oldest to newest)
     messages.reverse()
     for msg in messages:
-        msg_id = msg.get('id')
-        body = msg.get('message', '')
-        if not body:
-            continue
-            
-        if body.startswith("You are responding to a user comment to a post on your Page."):
-            continue
-            
         sender_name = msg.get('from', {}).get('name', 'Unknown')
         is_outbound = (sender_name == our_page_name)
-        
+
         created_time_str = msg.get('created_time')
         try:
             created_at = parse(created_time_str) if created_time_str else timezone.now()
-        except:
+        except Exception:
             created_at = timezone.now()
-            
-        from datetime import timedelta
-        # Check if message already exists to avoid duplicates.
-        # For outbound messages, the local sender name is the CRM user, but Facebook returns the Page name.
-        time_threshold_start = created_at - timedelta(minutes=1)
-        time_threshold_end = created_at + timedelta(minutes=1)
-        
-        if is_outbound:
-            exists = CRMMessage.objects.filter(
-                conversation=conversation, 
-                body=body, 
-                is_outbound=True,
-                created_at__range=(time_threshold_start, time_threshold_end)
-            ).exists()
-        else:
-            exists = CRMMessage.objects.filter(
-                conversation=conversation, 
-                body=body, 
-                sender=sender_name,
-                is_outbound=False,
-                created_at__range=(time_threshold_start, time_threshold_end)
-            ).exists()
-            
-        if not exists:
-            CRMMessage.objects.create(
-                conversation=conversation,
-                sender=sender_name,
-                body=body,
-                is_outbound=is_outbound,
-                created_at=created_at
+
+        upsert_inbound_message(
+            integration=integration,
+            contact=contact,
+            conversation=conversation,
+            body=msg.get('message', '') or '',
+            external_id=msg.get('id') or '',
+            sender_name=sender_name,
+            is_outbound=is_outbound,
+            created_at=created_at,
+            attachments=_extract_graph_attachment(msg),
+        )
+
+
+def _extract_graph_attachment(msg):
+    """
+    Pulls the first usable attachment off a Graph message node into a simple
+    {'type', 'url', 'name'} dict, or None. Graph nests these differently for
+    photos vs files, hence the several lookups.
+    """
+    data = (msg.get('attachments') or {}).get('data') or []
+    if not data:
+        return None
+    att = data[0]
+    mime = att.get('mime_type') or ''
+    url = (
+        (att.get('image_data') or {}).get('url')
+        or (att.get('image_data') or {}).get('preview_url')
+        or att.get('file_url')
+        or (att.get('video_data') or {}).get('url')
+    )
+    if not url:
+        return None
+    if mime.startswith('image/') or att.get('image_data'):
+        att_type = 'image'
+    elif mime.startswith('audio/'):
+        att_type = 'audio'
+    else:
+        att_type = 'document'
+    return {'type': att_type, 'url': url, 'name': att.get('name') or ''}
+
+
+def upsert_inbound_message(integration, contact, conversation, body, external_id,
+                           sender_name, is_outbound, created_at, attachments=None):
+    """
+    Idempotently stores one message and, when it's a genuinely new inbound one,
+    hands it to the AI auto-reply engine.
+
+    Shared by the Graph poller and the live webhook so both paths use exactly one
+    dedupe rule and one auto-reply trigger. Returns the CRMMessage when a new row
+    was created, else None.
+    """
+    from datetime import timedelta
+
+    body = body or ''
+    if body.startswith("You are responding to a user comment to a post on your Page."):
+        return None
+
+    # Nothing to store at all — no text and no attachment.
+    if not body and not attachments:
+        return None
+
+    # Prefer the provider's own message id: it's exact, and it makes the webhook
+    # and the poller safe to run against the same message.
+    if external_id:
+        if CRMMessage.objects.filter(external_id=external_id).exists():
+            return None
+    else:
+        # Locally-composed messages coming back from Graph have no id we stored,
+        # so fall back to the original body + ±1 minute heuristic for those.
+        window = (created_at - timedelta(minutes=1), created_at + timedelta(minutes=1))
+        dupe = CRMMessage.objects.filter(
+            conversation=conversation, body=body, is_system=False,
+            is_outbound=is_outbound, created_at__range=window,
+        )
+        if not is_outbound:
+            dupe = dupe.filter(sender=sender_name)
+        if dupe.exists():
+            return None
+
+    # An outbound message we already stored locally will come back from Graph
+    # with an id we've never seen. Match it on content so the operator doesn't
+    # see their own message twice, and backfill the id we just learned.
+    if is_outbound and external_id:
+        window = (created_at - timedelta(minutes=2), created_at + timedelta(minutes=2))
+        local = CRMMessage.objects.filter(
+            conversation=conversation, body=body, is_outbound=True,
+            is_system=False, external_id='', created_at__range=window,
+        ).first()
+        if local:
+            local.external_id = external_id
+            local.save(update_fields=['external_id'])
+            return None
+
+    attachment_type = (attachments or {}).get('type', '') or ''
+    message = CRMMessage.objects.create(
+        conversation=conversation,
+        sender=sender_name,
+        body=body,
+        is_outbound=is_outbound,
+        created_at=created_at,
+        external_id=external_id or '',
+        attachment_type=attachment_type,
+        attachment_name=(attachments or {}).get('name', '') or '',
+    )
+
+    conversation.last_message = body or f"[{attachment_type or 'attachment'}]"
+    if not conversation.updated_at or created_at > conversation.updated_at:
+        conversation.updated_at = created_at
+    if not is_outbound:
+        conversation.is_read = False
+    conversation.save(update_fields=['last_message', 'updated_at', 'is_read'])
+
+    # Route genuinely new inbound messages through the AI auto-reply engine.
+    # Guarded by recency so a full/backfill sync (e.g. right after OAuth connect)
+    # doesn't replay AI replies onto old history.
+    if not is_outbound and (timezone.now() - created_at) <= timedelta(minutes=RECENT_MESSAGE_WINDOW_MINUTES):
+        try:
+            process_incoming_webhook_message(
+                integration, contact, conversation, body,
+                is_outbound=False, attachment=attachments,
             )
+        except Exception:
+            logger.exception("process_incoming_webhook_message failed during message upsert")
 
-            # Update last_message
-            conversation.last_message = body
-            # Only update updated_at if the new message is newer than current updated_at or if it doesn't exist
-            if not conversation.updated_at or created_at > conversation.updated_at:
-                conversation.updated_at = created_at
-            if not is_outbound:
-                conversation.is_read = False
-            conversation.save(update_fields=['last_message', 'updated_at', 'is_read'])
-
-            # Route genuinely new inbound messages through the AI auto-reply
-            # engine. Guarded by recency so a full/backfill sync (e.g. right
-            # after OAuth connect) doesn't replay AI replies onto old history —
-            # only messages that just arrived (i.e. from a live webhook-triggered
-            # sync) qualify.
-            if not is_outbound and (timezone.now() - created_at) <= timedelta(minutes=RECENT_MESSAGE_WINDOW_MINUTES):
-                try:
-                    process_incoming_webhook_message(integration, contact, conversation, body, is_outbound=False)
-                except Exception:
-                    logger.exception("process_incoming_webhook_message failed during conversation sync")
+    return message
 
 def _open_attachment(attachment_file):
     """
@@ -484,34 +575,19 @@ def process_whatsapp_message_webhook(value):
             except (TypeError, ValueError):
                 created_at = timezone.now()
 
-            # Dedupe: WhatsApp can redeliver the same webhook event on retry.
-            time_threshold_start = created_at - timedelta(minutes=1)
-            time_threshold_end = created_at + timedelta(minutes=1)
-            exists = CRMMessage.objects.filter(
-                conversation=conversation, body=body, is_outbound=False,
-                created_at__range=(time_threshold_start, time_threshold_end)
-            ).exists()
-            if exists:
-                continue
-
-            CRMMessage.objects.create(
+            # Dedupe on WhatsApp's own message id (WhatsApp redelivers the same
+            # webhook event on retry) and route through the shared upsert, which
+            # also fires the auto-reply.
+            upsert_inbound_message(
+                integration=integration,
+                contact=contact,
                 conversation=conversation,
-                sender=contact_name,
                 body=body,
+                external_id=msg.get('id') or '',
+                sender_name=contact_name,
                 is_outbound=False,
                 created_at=created_at,
             )
-            conversation.last_message = body
-            if not conversation.updated_at or created_at > conversation.updated_at:
-                conversation.updated_at = created_at
-            conversation.is_read = False
-            conversation.save(update_fields=['last_message', 'updated_at', 'is_read'])
-
-            if (timezone.now() - created_at) <= timedelta(minutes=RECENT_MESSAGE_WINDOW_MINUTES):
-                try:
-                    process_incoming_webhook_message(integration, contact, conversation, body, is_outbound=False)
-                except Exception:
-                    logger.exception("process_incoming_webhook_message failed during WhatsApp webhook processing")
     except Exception:
         logger.exception("process_whatsapp_message_webhook failed")
 
@@ -922,10 +998,127 @@ def delete_meta_comment(integration, comment_id):
         return False
 
 
-# ─── AI Router Integration ─────────────────────────────────────────────────────
-def process_incoming_webhook_message(integration, contact, conversation, message_text, is_outbound=False):
+def handle_messenger_event(page_id, sender_id, event):
     """
-    Called when a new INBOUND message arrives via webhook.
+    Handles one inbound Facebook/Instagram Messenger event straight from the
+    webhook payload, rather than waiting for the next Graph poll to notice it.
+
+    Meta delivers the message body in the webhook; the previous implementation
+    discarded it and used the webhook only as a signal to re-poll, which cost
+    seconds of latency and silently dropped anything the poll's 10-conversation
+    page didn't cover.
+    """
+    from datetime import datetime, timezone as dt_timezone
+
+    try:
+        integration = _resolve_integration_by_page(page_id)
+        if not integration:
+            logger.warning(f"handle_messenger_event: no integration for page {page_id}")
+            return
+
+        message = event.get('message') or {}
+        # Our own sends are echoed back to us; storing them would duplicate the
+        # message the composer already wrote.
+        if message.get('is_echo'):
+            return
+
+        mid = message.get('mid') or ''
+        body = message.get('text') or ''
+
+        attachment = None
+        for att in (message.get('attachments') or []):
+            url = (att.get('payload') or {}).get('url')
+            if not url:
+                continue
+            att_type = att.get('type')
+            attachment = {
+                'type': att_type if att_type in ('image', 'audio') else 'document',
+                'url': url,
+                'name': (att.get('payload') or {}).get('title') or '',
+            }
+            break
+
+        if not body and not attachment:
+            return
+
+        timestamp = event.get('timestamp')
+        try:
+            created_at = (datetime.fromtimestamp(int(timestamp) / 1000.0, tz=dt_timezone.utc)
+                          if timestamp else timezone.now())
+        except (TypeError, ValueError):
+            created_at = timezone.now()
+
+        contact, conversation = get_or_create_contact_conversation(
+            integration, contact_meta_id=sender_id, contact_name='Unknown User',
+        )
+
+        upsert_inbound_message(
+            integration=integration,
+            contact=contact,
+            conversation=conversation,
+            body=body,
+            external_id=mid,
+            sender_name=contact.name or 'Customer',
+            is_outbound=False,
+            created_at=created_at,
+            attachments=attachment,
+        )
+    except Exception:
+        logger.exception("handle_messenger_event failed")
+
+
+def _download_image_b64(url, max_bytes=10 * 1024 * 1024):
+    """
+    Fetches an inbound image attachment and returns (base64_str, mime_type) for
+    the vision path, or (None, None) if it can't be read. Meta's CDN URLs are
+    pre-signed and short-lived, so this has to happen while handling the message.
+    """
+    if not url:
+        return None, None
+    try:
+        import base64
+        resp = requests.get(url, timeout=15, stream=True)
+        if not resp.ok:
+            logger.warning(f"Could not download inbound image ({resp.status_code})")
+            return None, None
+        content = resp.raw.read(max_bytes + 1, decode_content=True)
+        if len(content) > max_bytes:
+            logger.warning("Inbound image exceeds 10MB — skipping vision routing")
+            return None, None
+        mime = (resp.headers.get('Content-Type') or 'image/jpeg').split(';')[0].strip()
+        if not mime.startswith('image/'):
+            mime = 'image/jpeg'
+        return base64.b64encode(content).decode('utf-8'), mime
+    except Exception as e:
+        logger.error(f"Failed to download inbound image: {e}")
+        return None, None
+
+
+def _record_bot_status(chatbot, error=None):
+    """
+    Stores (or clears) the reason the last auto-reply attempt failed, so the
+    Chatbot page can explain a silent bot. Never raises — status bookkeeping must
+    not break the reply path.
+    """
+    try:
+        if error:
+            chatbot.last_error = str(error)[:1000]
+            chatbot.last_error_at = timezone.now()
+        elif not chatbot.last_error:
+            return  # already clean, skip the write
+        else:
+            chatbot.last_error = ''
+            chatbot.last_error_at = None
+        chatbot.save(update_fields=['last_error', 'last_error_at'])
+    except Exception:
+        logger.exception("Could not record chatbot status")
+
+
+# ─── AI Router Integration ─────────────────────────────────────────────────────
+def process_incoming_webhook_message(integration, contact, conversation, message_text,
+                                     is_outbound=False, attachment=None):
+    """
+    Called when a new INBOUND message arrives via webhook or Graph poll.
     If the chatbot is active and the message is inbound (from customer),
     routes the message through the Multi-Model AI Engine and sends an auto-reply.
 
@@ -935,6 +1128,7 @@ def process_incoming_webhook_message(integration, contact, conversation, message
         conversation: CRMConversation instance
         message_text: str — the customer's raw message text
         is_outbound: bool — only process inbound (customer) messages
+        attachment: optional {'type','url','name'} dict for photo messages
     """
     if is_outbound:
         return  # Never auto-reply to our own outbound messages
@@ -947,15 +1141,29 @@ def process_incoming_webhook_message(integration, contact, conversation, message
             logger.info(f"No chatbot assigned to channel account: {integration.account_name or integration.channel_type}")
             return
 
-        if not chatbot.is_active:
-            logger.info(f"Chatbot '{chatbot.name}' is inactive — skipping AI auto-reply")
+        # ── Gate: chatbot config, channel enablement, and human-takeover guards ──
+        # All of it lives on the conversation so the inbox badge shows exactly the
+        # state the bot is acting on. The bot must never talk over a staff member
+        # who is handling the chat.
+        ai_state = conversation.ai_status(integration=integration)
+        if ai_state['state'] != 'on':
+            logger.info(
+                f"Skipping auto-reply on conversation #{conversation.pk} "
+                f"[{ai_state['state']}] — {ai_state['reason']}"
+            )
             return
 
-        # Check that this channel account is enabled for auto-reply
-        enabled_channels = chatbot.auto_reply_channels or {}
-        integration_id_str = str(integration.pk)
-        if not enabled_channels.get(integration_id_str, False):
-            logger.info(f"Auto-reply disabled for channel account: {integration.account_name or integration.channel_type}")
+        # A photo-only message has no text to classify; send it down the vision
+        # path instead, which the router already supports.
+        image_data, image_mime, input_type = None, None, 'text'
+        if attachment and attachment.get('type') == 'image':
+            image_data, image_mime = _download_image_b64(attachment.get('url'))
+            if image_data:
+                input_type = 'image'
+                if not message_text:
+                    message_text = "The customer sent this image. Respond helpfully."
+        if not message_text:
+            logger.info("Inbound message has no text and no readable image — skipping auto-reply")
             return
 
         from .ai_router import route_message
@@ -963,7 +1171,9 @@ def process_incoming_webhook_message(integration, contact, conversation, message
             message_text=message_text,
             integration=integration,
             chatbot_config=chatbot,
-            input_type='text',
+            input_type=input_type,
+            image_data=image_data,
+            image_mime=image_mime,
         )
 
         if result.get('success') and result.get('reply'):
@@ -987,6 +1197,8 @@ def process_incoming_webhook_message(integration, contact, conversation, message
                 sender=f"Trendy AI ({result.get('model_used', 'ai')})",
                 body=reply_text,
                 is_outbound=True,
+                is_ai=True,
+                ai_intent=result.get('intent', '') or '',
                 status='sent' if delivered else 'failed',
             )
             conversation.last_message = reply_text
@@ -1008,8 +1220,29 @@ def process_incoming_webhook_message(integration, contact, conversation, message
                 description=f"{integration.channel_type}: {message_text}",
             )
 
-        # If the AI flagged a product issue, auto-create a support ticket
-        if result.get('open_ticket'):
+            _record_bot_status(chatbot, error=None)
+        else:
+            reason = result.get('error') or 'The AI returned an empty reply.'
+            logger.error(
+                f"AI auto-reply not generated | success={result.get('success')} | "
+                f"error={reason}"
+            )
+            # Surface it on the Chatbot page instead of failing invisibly.
+            _record_bot_status(chatbot, error=reason)
+            # ...and in the conversation itself. Without this the agent sees the
+            # customer's message sitting unanswered with no clue the bot even
+            # tried, which is exactly how a provider outage turns into a lost lead.
+            CRMMessage.log_event(
+                conversation,
+                f"The AI couldn't reply to this message — {reason} "
+                f"Reply manually, or resend once the provider recovers.",
+                level='warning',
+            )
+
+        # If the AI flagged a handoff trigger, auto-create a support ticket. Only
+        # when the routing actually succeeded — a failed API call shouldn't spawn
+        # tickets on every retry.
+        if result.get('success') and result.get('open_ticket'):
             try:
                 from .models import CRMTicket
                 CRMTicket.objects.create(

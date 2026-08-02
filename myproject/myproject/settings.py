@@ -327,6 +327,16 @@ LOGGING = {
             'backupCount': 5,
             'formatter': 'verbose',
         },
+        'trendycrm_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'filename': os.path.join(_LOG_DIR, 'trendycrm.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            # Customer messages routinely contain emoji and Devanagari.
+            'encoding': 'utf-8',
+        },
         'ncm_webhook_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
@@ -402,6 +412,14 @@ LOGGING = {
         'integrations': {
             'handlers': ['console', 'integrations_file'],
             'level': 'DEBUG',
+            'propagate': False,
+        },
+        # CRM inbox, Meta sync and the AI auto-reply engine. Without this the
+        # reason a reply was skipped ("staff replied recently", "out of credits",
+        # "rate limited") was never written anywhere.
+        'trendycrm': {
+            'handlers': ['console', 'trendycrm_file'],
+            'level': 'INFO',
             'propagate': False,
         },
     },

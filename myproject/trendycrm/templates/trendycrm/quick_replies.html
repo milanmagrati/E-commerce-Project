@@ -366,16 +366,46 @@ async function saveEdit() {
         if (data.status === 'ok') {
             showToast('✓ Quick reply updated!');
             closeModal('editReplyModal');
-            // Update the row inline
+            // Update the row inline.
+            // Built with textContent and a real listener rather than by splicing
+            // values into an onclick string — a name or category containing a
+            // quote used to break the row's Edit button until the page reloaded,
+            // and interpolating user text into HTML is an injection risk.
             const row = document.getElementById(`qr-row-${editingPk}`);
             if (row) {
+                const r = data.reply;
                 const cells = row.querySelectorAll('td');
-                cells[0].innerHTML = `<strong style="font-weight:600;">${data.reply.name}</strong>`;
-                cells[1].innerHTML = `<span class="shortcut-tag" onclick="copyShortcut('${data.reply.shortcut}', event)" title="Click to copy">/${data.reply.shortcut} <span class="copy-icon"><i class="fas fa-copy"></i></span></span>`;
-                cells[2].querySelector('span').textContent = data.reply.content;
-                cells[3].innerHTML = data.reply.category ? `<span class="cat-pill">${data.reply.category}</span>` : '&mdash;';
-                // Update edit button onclick
-                cells[4].querySelector('button').setAttribute('onclick', `openEditModal(${data.reply.pk}, '${data.reply.name.replace(/'/g,"\\'")}', '${data.reply.shortcut}', \`${data.reply.content.replace(/`/g,"\\`")}\`, '${data.reply.category}')`);
+
+                const nameEl = document.createElement('strong');
+                nameEl.style.fontWeight = '600';
+                nameEl.textContent = r.name;
+                cells[0].replaceChildren(nameEl);
+
+                const tag = document.createElement('span');
+                tag.className = 'shortcut-tag';
+                tag.title = 'Click to copy';
+                tag.textContent = '/' + r.shortcut + ' ';
+                const copyIcon = document.createElement('span');
+                copyIcon.className = 'copy-icon';
+                copyIcon.innerHTML = '<i class="fas fa-copy"></i>';
+                tag.appendChild(copyIcon);
+                tag.addEventListener('click', (ev) => copyShortcut(r.shortcut, ev));
+                cells[1].replaceChildren(tag);
+
+                cells[2].querySelector('span').textContent = r.content;
+
+                if (r.category) {
+                    const pill = document.createElement('span');
+                    pill.className = 'cat-pill';
+                    pill.textContent = r.category;
+                    cells[3].replaceChildren(pill);
+                } else {
+                    cells[3].textContent = '—';
+                }
+
+                const editBtn = cells[4].querySelector('button');
+                editBtn.removeAttribute('onclick');
+                editBtn.onclick = () => openEditModal(r.pk, r.name, r.shortcut, r.content, r.category);
             }
         } else {
             showToast(data.message || 'Error saving', true);

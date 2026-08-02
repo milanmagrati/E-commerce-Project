@@ -1,4 +1,20 @@
+{% if ai_state %}
+{% comment %}
+Carries the live AI state out with the polled fragment so the header badge can
+follow it — a takeover pause expires on a timer, with no user action to hook.
+{% endcomment %}
+<div id="aiStateData" data-state="{{ ai_state.state }}" data-label="{{ ai_state.label }}"
+     data-reason="{{ ai_state.reason }}" data-resumes-at="{{ ai_state.resumes_at|default_if_none:'' }}"
+     data-resumable="{{ ai_state.resumable|yesno:'1,0' }}" hidden></div>
+{% endif %}
 {% for msg in chat_messages %}
+    {% if msg.is_system %}
+        <div class="sys-event {% if msg.system_level == 'warning' %}sys-warning{% endif %}">
+            <i class="fas {% if msg.system_level == 'warning' %}fa-triangle-exclamation{% else %}fa-circle-info{% endif %}"></i>
+            <span>{{ msg.body }}</span>
+            <span class="sys-event-time">{{ msg.created_at|date:"h:i A" }}</span>
+        </div>
+    {% else %}
     {% ifchanged msg.created_at|date:"Y-m-d" %}
         <div style="display:flex; align-items:center; gap:0.75rem; margin: 1.25rem 0 0.75rem 0;">
             <div style="flex:1; height:1px; background:var(--crm-border);"></div>
@@ -9,7 +25,8 @@
         </div>
     {% endifchanged %}
 <div style="display:flex;flex-direction:column;align-items:{% if msg.is_outbound %}flex-end{% else %}flex-start{% endif %};">
-    <div class="msg-bubble {% if msg.is_outbound %}msg-outbound{% else %}msg-inbound{% endif %} {% if msg.attachment %}has-attachment{% endif %}">
+    {% if msg.is_ai %}<div class="msg-ai-row">{% endif %}
+    <div class="msg-bubble {% if msg.is_outbound %}msg-outbound{% else %}msg-inbound{% endif %} {% if msg.is_ai %}msg-ai{% endif %} {% if msg.attachment %}has-attachment{% endif %}">
         {% if msg.attachment_type == 'image' %}
             <a href="{{ msg.attachment.url }}" target="_blank" rel="noopener">
                 <img src="{{ msg.attachment.url }}" alt="{{ msg.attachment_name }}" style="max-width:min(220px,100%);max-height:220px;border-radius:8px;display:block;{% if msg.body %}margin-bottom:0.4rem;{% endif %}">
@@ -24,7 +41,24 @@
         {% endif %}
         {% if msg.body %}{{ msg.body }}{% endif %}
     </div>
-    <div class="msg-time" style="text-align:{% if msg.is_outbound %}right{% else %}left{% endif %};">
+    {% if msg.is_ai %}
+        <span class="ai-avatar" title="Answered automatically by {{ msg.sender }}">
+            <i class="fas fa-robot"></i>
+        </span>
+        </div>
+        {% if msg.ai_intent %}
+            <div class="ai-chips">
+                <span class="ai-chip"><span class="dot dot-intent"></span>{{ msg.intent_label }}</span>
+                <span class="ai-chip"><span class="dot dot-{{ msg.intent_priority }}"></span>{{ msg.intent_priority|title }}</span>
+            </div>
+        {% endif %}
+    {% endif %}
+    <div class="msg-time {% if msg.is_ai %}ai-meta{% endif %}" style="text-align:{% if msg.is_outbound %}right{% else %}left{% endif %};">
+        {% if msg.is_ai %}
+            <span class="ai-tag" title="Sent automatically by {{ msg.sender }}"><i class="fas fa-robot"></i> AI reply</span>
+        {% elif msg.is_outbound %}
+            <span class="agent-tag" title="Sent by {{ msg.sender }}">{{ msg.sender }}</span>
+        {% endif %}
         {{ msg.created_at|date:"h:i A" }}
         {% if msg.is_outbound %}
             <span style="margin-left: 0.25rem;">
@@ -41,6 +75,7 @@
         {% endif %}
     </div>
 </div>
+    {% endif %}
 {% empty %}
 <div class="text-center text-muted py-4" style="font-size:0.83rem;">No messages yet. Start the conversation!</div>
 {% endfor %}

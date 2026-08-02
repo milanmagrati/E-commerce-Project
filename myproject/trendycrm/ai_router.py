@@ -20,6 +20,7 @@ Models used:
 import logging
 import os
 import json
+import time
 import requests
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,28 @@ logger = logging.getLogger(__name__)
 # 0 used to mean "disable thinking" but the model behind the gemini-flash-latest
 # alias now rejects 0 with INVALID_ARGUMENT, so 1 (minimum non-zero) is used instead.
 GEMINI_THINKING_BUDGET = 1
+
+# Longest wait we'll honour from a 429's retryDelay before giving up. Auto-replies
+# run in a background thread, so a short pause costs nothing the customer sees.
+GEMINI_MAX_RETRY_WAIT = 65
+
+# Google answers 503 UNAVAILABLE ("high demand") when a shared model is momentarily
+# overloaded, and simply stops responding when the request stalls. Neither is a quota
+# cap — both clear in seconds, so retrying the same model recovers the reply, and it
+# has to be retried *here*, because cross-provider failover only helps when a second
+# provider key is configured.
+GEMINI_OVERLOAD_STATUSES = (500, 502, 503, 504)
+GEMINI_RETRY_BACKOFF = (2, 5)  # seconds to wait before each retry
+
+# (connect, read) timeouts. An unreachable host should fail fast; a model that has
+# accepted the request deserves room to finish thinking before we give up on it.
+GEMINI_TIMEOUT = (10, 45)
+GEMINI_VISION_TIMEOUT = (10, 60)
+
+# Ceiling on total time spent inside one _post_gemini call. A read timeout burns the
+# full read budget before we even start backing off, so without this the retry
+# schedule could pin an auto-reply thread for minutes.
+GEMINI_TOTAL_DEADLINE = 100
 GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 GEMINI_FLASH_MODEL = 'gemini-flash-latest'
 GEMINI_PRO_MODEL = 'gemini-pro-latest'
@@ -47,30 +70,40 @@ def _get_openai_client(api_key=None):
 
 
 def _call_gemini_rest(model_name: str, system_prompt: str, user_message: str, api_key: str,
-                       temperature: float = 0.7, max_tokens: int = 500) -> str:
+                       temperature: float = 0.7, max_tokens: int = 500,
+                       response_schema: dict = None, thinking_budget: int = None) -> str:
     """
     Calls the Gemini REST API directly instead of the google-generativeai SDK.
 
     The SDK depends on grpc, whose compiled extension (cygrpc) gets blocked by
     Windows Application Control Policy on this host — the REST API has no such
     dependency and uses the exact same backend, so this is a drop-in replacement.
+
+    `response_schema` switches the model into constrained JSON decoding, which
+    makes it structurally incapable of answering with prose. Used by the intent
+    classifier, where free-form output was leaking fragments of the prompt.
     """
     if not api_key or api_key == 'your-gemini-api-key-here':
         raise ValueError("Gemini API key not configured.")
 
     url = f"{GEMINI_API_BASE}/models/{model_name}:generateContent?key={api_key}"
+    budget = GEMINI_THINKING_BUDGET if thinking_budget is None else thinking_budget
     payload = {
         'contents': [{'parts': [{'text': user_message}]}],
         'generationConfig': {
             'temperature': temperature,
             'maxOutputTokens': max_tokens,
-            'thinkingConfig': {'thinkingBudget': GEMINI_THINKING_BUDGET},
+            'thinkingConfig': {'thinkingBudget': budget},
         },
     }
+    if response_schema:
+        payload['generationConfig']['responseMimeType'] = 'application/json'
+        payload['generationConfig']['responseSchema'] = response_schema
     if system_prompt:
         payload['systemInstruction'] = {'parts': [{'text': system_prompt}]}
 
-    response = requests.post(url, json=payload, timeout=30)
+    response = _post_gemini(url, payload)
+
     if not response.ok:
         raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
     data = response.json()
@@ -87,6 +120,100 @@ def _call_gemini_rest(model_name: str, system_prompt: str, user_message: str, ap
     if not text:
         raise ValueError(f"Gemini returned empty text (finishReason={candidates[0].get('finishReason')})")
     return text
+
+
+def _post_gemini(url, payload, timeout=None):
+    """
+    POSTs to Gemini, absorbing the failure modes that resolve on their own:
+
+      • 429 rate limit — free-tier keys throttle constantly and Google tells us
+        exactly how long to wait. Honouring that once turns a dropped customer
+        reply into a slightly slower one. Retried once, only when the wait is short.
+      • 5xx overload — the backend is momentarily out of capacity.
+      • Timeouts / dropped connections — the request never got an answer at all.
+        These surface as exceptions rather than status codes, so they have to be
+        caught here or they escape past every retry we've set up.
+
+    The last two share a short fixed backoff, bounded by GEMINI_TOTAL_DEADLINE so a
+    stalling model can't pin the thread. Auto-replies run in a background thread, so
+    these pauses cost nothing the customer sees.
+
+    Returns the final response (the caller checks .ok), or re-raises the transport
+    error if no attempt ever reached the API.
+    """
+    timeout = GEMINI_TIMEOUT if timeout is None else timeout
+    # What the next attempt could cost us in the worst case — a stalled request burns
+    # its whole read budget, so the deadline has to account for it *before* retrying,
+    # not after.
+    read_budget = timeout[1] if isinstance(timeout, (tuple, list)) else timeout
+    started = time.monotonic()
+    response = None
+    transport_error = None
+
+    for attempt in range(1 + len(GEMINI_RETRY_BACKOFF)):
+        if attempt:
+            wait = GEMINI_RETRY_BACKOFF[attempt - 1]
+            reason = transport_error or f"HTTP {response.status_code}"
+            if time.monotonic() - started + wait + read_budget > GEMINI_TOTAL_DEADLINE:
+                logger.warning(f"Gemini still failing ({reason}); retry budget exhausted")
+                break
+            logger.warning(f"Gemini unavailable ({reason}); retrying in {wait}s")
+            time.sleep(wait)
+
+        try:
+            response, transport_error = requests.post(url, json=payload, timeout=timeout), None
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            response, transport_error = None, f"{type(exc).__name__}"
+            continue
+
+        if response.status_code == 429 and not attempt:
+            wait = _gemini_retry_delay(response)
+            if wait and wait <= GEMINI_MAX_RETRY_WAIT:
+                logger.warning(f"Gemini rate limited; retrying once in {wait:.0f}s")
+                time.sleep(wait)
+                try:
+                    response = requests.post(url, json=payload, timeout=timeout)
+                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+                    response, transport_error = None, f"{type(exc).__name__}"
+                    continue
+
+        if response.status_code not in GEMINI_OVERLOAD_STATUSES:
+            return response
+
+    if response is None:
+        # Every attempt failed before reaching Google. Report it as a provider error
+        # so _is_transient_provider_error routes it to failover like any other.
+        raise ValueError(f"Gemini unreachable: {transport_error} after "
+                         f"{1 + len(GEMINI_RETRY_BACKOFF)} attempts")
+    return response
+
+
+def _gemini_retry_delay(response):
+    """
+    Pulls Google's suggested wait out of a 429 body ('retryDelay': '29s').
+    Returns seconds as a float, or None when retrying would be pointless.
+
+    A per-*minute* throttle clears on its own in under a minute, so waiting is
+    worth it. A per-*day* cap does not, and Google still sends a ~30-60s
+    retryDelay for it — sleeping on that just stalls the thread and fails again,
+    so those are reported immediately instead.
+    """
+    try:
+        error = response.json().get('error', {})
+        details = error.get('details', [])
+
+        for detail in details:
+            for violation in detail.get('violations', []):
+                if 'PerDay' in str(violation.get('quotaId', '')):
+                    return None
+
+        for detail in details:
+            delay = detail.get('retryDelay')
+            if delay:
+                return float(str(delay).rstrip('s')) + 1  # +1s of headroom
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return None
 
 
 def _extract_gemini_error(response) -> str:
@@ -128,7 +255,7 @@ def _call_gemini_vision_rest(model_name: str, system_prompt: str, prompt_text: s
     if system_prompt:
         payload['systemInstruction'] = {'parts': [{'text': system_prompt}]}
 
-    response = requests.post(url, json=payload, timeout=45)
+    response = _post_gemini(url, payload, timeout=GEMINI_VISION_TIMEOUT)
     if not response.ok:
         raise ValueError(f"Gemini vision API error {response.status_code}: {_extract_gemini_error(response)}")
     data = response.json()
@@ -247,6 +374,51 @@ def _resolve_provider(preference: str, available: dict, auto_order=None):
         if available.get(p):
             return p, False
     return None, False
+
+
+def _is_transient_provider_error(exc) -> bool:
+    """
+    True for failures that the *other* provider might not have: quota/rate limits
+    and upstream overload. Auth errors and bad requests are excluded — retrying
+    those elsewhere just produces a second failure.
+    """
+    detail = str(exc).lower()
+    return any(s in detail for s in (
+        'resource_exhausted', '429', 'rate limit', 'quota', 'overloaded',
+        'unavailable', '503', 'timed out', 'timeout',
+        'unreachable', 'connectionerror', 'connection aborted',
+    ))
+
+
+def _gen_text_with_failover(provider: str, model_name: str, user_message: str,
+                            system_prompt: str, config: dict, chatbot_config,
+                            available: dict):
+    """
+    Generates a reply, transparently switching to the other configured provider
+    when the first is rate limited or out of quota.
+
+    Free-tier keys hit daily caps, and when that happened the bot simply went
+    silent on real customers. If a second provider is configured, use it.
+
+    Returns (reply, model_label, notice).
+    """
+    try:
+        reply, label = _gen_text(provider, model_name, user_message, system_prompt,
+                                 config, chatbot_config)
+        return reply, label, None
+    except Exception as exc:
+        other = 'openai' if provider == 'gemini' else 'gemini'
+        if not (_is_transient_provider_error(exc) and available.get(other)):
+            raise
+        logger.warning(f"{provider} unavailable ({exc}); retrying on {other}")
+        other_model = (
+            (getattr(chatbot_config, 'openai_model', '') or 'gpt-4o')
+            if other == 'openai'
+            else (getattr(chatbot_config, 'gemini_model', '') or GEMINI_FLASH_MODEL)
+        )
+        reply, label = _gen_text(other, other_model, user_message, system_prompt,
+                                 config, chatbot_config)
+        return reply, label, f"{provider} was rate limited — replied using {other} instead."
 
 
 def _gen_text(provider: str, model_name: str, user_message: str, system_prompt: str,
@@ -439,30 +611,98 @@ def build_dynamic_prompt(chatbot_config, page_profile=None, intent: str = 'gener
 
 
 # ─── Step 1: Intent Classifier ────────────────────────────────────────────────
-def classify_intent(message_text: str, config: dict) -> str:
-    """
-    Classifies a message into one of:
-      - 'purchase_intent'
-      - 'general_query'
-      - 'product_issue'
-      - 'spam_noise'
+VALID_INTENTS = ('purchase_intent', 'general_query', 'product_issue', 'spam_noise')
 
-    Uses Gemini Flash if available, otherwise falls back to OpenAI GPT-4o-mini.
-    Returns 'general_query' on any error.
+# Whether to spend a second API call on LLM intent classification for messages
+# the keyword pass can't settle. Off by default: on a free-tier key it halves how
+# many customers can be answered before the quota runs out.
+LLM_INTENT_CLASSIFIER = env_config('CRM_LLM_INTENT_CLASSIFIER', default=False, cast=bool)
+
+# Constrained-decoding schema: with this set, Gemini can only emit one of these
+# four strings. Free-form output used to leak fragments of the prompt itself
+# (e.g. ',_emojis,_etc.'), which silently degraded every message to general_query.
+_INTENT_SCHEMA = {
+    'type': 'OBJECT',
+    'properties': {'intent': {'type': 'STRING', 'enum': list(VALID_INTENTS)}},
+    'required': ['intent'],
+}
+
+# Unambiguous signals in English and romanized Nepali. Checked before spending an
+# API call, and reused as the fallback when the model's answer is unusable — a
+# refund complaint must never silently land in general_query or spam_noise.
+_ISSUE_KEYWORDS = (
+    'refund', 'money back', 'broken', 'damaged', 'damage', 'defective', 'faulty',
+    'torn', 'ripped', 'stained', 'wrong item', 'wrong size', 'wrong product',
+    'wrong colour', 'wrong color', 'not working', "doesn't work", 'complaint',
+    'return it', 'want to return', 'never arrived', 'still not received',
+    'not received', 'missing', 'cancel my order', 'poor quality', 'bad quality',
+    'bigrityo', 'bigreko', 'phutyo', 'galat', 'paisa firta', 'firta', 'aayena',
+)
+_PURCHASE_KEYWORDS = (
+    'how much', 'price', 'cost', 'discount', 'order kasari', 'want to buy',
+    'i want to order', 'place an order', 'buy this', 'in stock', 'cod',
+    'cash on delivery', 'payment', 'esewa', 'khalti',
+    'kati ho', 'kati parcha', 'kati parchha', 'kina', 'kinna', 'order garna',
+)
+
+
+def _keyword_intent(message_text: str) -> str:
     """
-    if not message_text or not message_text.strip():
+    Deterministic first pass. Returns an intent, or '' when nothing is conclusive
+    and the message should go to the model.
+    """
+    text = (message_text or '').strip().lower()
+    if not text:
         return 'spam_noise'
 
+    # Product complaints outrank purchase words — "I paid for this and it broke"
+    # is an issue, not a sale.
+    for kw in _ISSUE_KEYWORDS:
+        if kw in text:
+            return 'product_issue'
+    for kw in _PURCHASE_KEYWORDS:
+        if kw in text:
+            return 'purchase_intent'
+
+    # No letters or digits at all (emoji-only, punctuation-only) is noise.
+    if not any(ch.isalnum() for ch in text):
+        return 'spam_noise'
+    return ''
+
+
+def classify_intent(message_text: str, config: dict) -> str:
+    """
+    Classifies a message into one of VALID_INTENTS.
+
+    Runs a deterministic keyword pass first, then — only if LLM_INTENT_CLASSIFIER
+    is on — asks Gemini Flash (with a constrained enum schema) or OpenAI
+    GPT-4o-mini about anything ambiguous. Falls back to the keyword verdict,
+    never blindly to 'general_query', so a model hiccup can't turn a refund
+    request into noise.
+    """
+    keyword_verdict = _keyword_intent(message_text)
+    if keyword_verdict:
+        return keyword_verdict
+
+    fallback = 'general_query'
+
+    # Classification is a *second* API call on every message that the keyword
+    # pass can't settle, which doubles quota use per customer message. On a
+    # free-tier key that is the difference between answering customers and
+    # hitting 429s, and the reply prompt already adapts to what's being asked.
+    # Turn this on when the key has real quota behind it.
+    if not LLM_INTENT_CLASSIFIER:
+        return fallback
+
     classification_prompt = f"""You are a message intent classifier for an e-commerce business.
-Classify the following customer message into EXACTLY ONE of these categories:
-- purchase_intent: The customer wants to buy, asks about price, payment, or how to order.
-- general_query: The customer asks about product details, delivery, ingredients, availability, etc.
-- product_issue: The customer has a complaint, wants a refund, or reports a damaged/wrong product.
-- spam_noise: The message is just emojis, random text, greetings only, or incomprehensible noise.
+Classify the following customer message into EXACTLY ONE category:
+- purchase_intent: wants to buy, asks about price, payment, or how to order.
+- general_query: asks about product details, delivery, availability, or the business.
+- product_issue: a complaint, refund request, or a damaged/wrong/missing product.
+- spam_noise: only emojis, random characters, or incomprehensible text.
 
 Customer message: "{message_text}"
-
-Respond with ONLY the category name, nothing else. No explanation, no punctuation."""
+"""
 
     gemini_key = config.get('gemini_api_key', '')
     openai_key = config.get('openai_api_key', '')
@@ -470,13 +710,13 @@ Respond with ONLY the category name, nothing else. No explanation, no punctuatio
     try:
         response_text = ""
         if gemini_key:
-            # Gemini spends hidden reasoning tokens out of this same budget, so the
-            # old 20-token cap left nothing for the answer — it returned a truncated
-            # fragment ('much') or empty text, and every message silently fell back
-            # to 'general_query'. 128 is still one cheap call, with room to reply.
+            # Gemini spends hidden reasoning tokens out of this same budget, so a
+            # tight cap leaves nothing for the answer. The enum schema guarantees
+            # the shape; the budget just has to be big enough to emit it.
             response_text = _call_gemini_rest(
                 GEMINI_FLASH_MODEL, None, classification_prompt, gemini_key,
-                temperature=0.1, max_tokens=128,
+                temperature=0.0, max_tokens=256, response_schema=_INTENT_SCHEMA,
+                thinking_budget=0,
             )
         elif openai_key:
             client = _get_openai_client(api_key=openai_key)
@@ -484,37 +724,41 @@ Respond with ONLY the category name, nothing else. No explanation, no punctuatio
                 model='gpt-4o-mini',
                 messages=[{'role': 'user', 'content': classification_prompt}],
                 max_tokens=32,
-                temperature=0.1
+                temperature=0.0,
             )
             response_text = response.choices[0].message.content
         else:
             logger.warning("No API keys configured for intent classification.")
-            return 'general_query'
+            return fallback
 
-        intent = response_text.strip().lower().replace(' ', '_')
-        valid_intents = ('purchase_intent', 'general_query', 'product_issue', 'spam_noise')
+        raw = (response_text or '').strip()
 
-        if intent in valid_intents:
+        # Constrained decoding gives us {"intent": "..."}; the OpenAI branch and
+        # any future non-schema path give a bare label.
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                raw = str(parsed.get('intent', ''))
+        except (ValueError, TypeError):
+            pass
+
+        intent = raw.strip().strip('"\'.').lower().replace(' ', '_').replace('-', '_')
+        if intent in VALID_INTENTS:
             return intent
-        # Models like to wrap the answer in punctuation, quotes or a short sentence
-        # ("Category: purchase_intent."), so look for the label anywhere in the text…
-        for v in valid_intents:
+        # Models sometimes wrap the label in a sentence ("Category: purchase_intent.")
+        for v in VALID_INTENTS:
             if v in intent:
                 return v
-        # …then fall back to the distinctive half of each label, which survives
-        # reformatting like "purchase intent" → "purchase-intent" or "purchase".
-        for keyword, v in (('purchase', 'purchase_intent'), ('issue', 'product_issue'),
-                           ('spam', 'spam_noise'), ('noise', 'spam_noise'),
-                           ('query', 'general_query'), ('general', 'general_query')):
-            if keyword in intent:
-                return v
 
-        logger.warning(f"Intent classifier returned unexpected value: '{intent}'. Defaulting to general_query.")
-        return 'general_query'
-        
+        logger.warning(
+            f"Intent classifier returned unexpected value: '{intent[:80]}'. "
+            f"Falling back to '{fallback}'."
+        )
+        return fallback
+
     except Exception as e:
-        logger.error(f"Intent classification failed: {e}. Defaulting to general_query.")
-        return 'general_query'
+        logger.error(f"Intent classification failed: {e}. Falling back to '{fallback}'.")
+        return fallback
 
 
 # ─── Step 2: Model Router ─────────────────────────────────────────────────────
@@ -643,46 +887,47 @@ def route_message(
                 result['model_used'] = 'unavailable'
                 return result
             model_name = openai_model if provider == 'openai' else gemini_model
-            reply, model_label = _gen_text(provider, model_name, message_text, system_prompt,
-                                           config, chatbot_config)
+            reply, model_label, notice = _gen_text_with_failover(
+                provider, model_name, message_text, system_prompt,
+                config, chatbot_config, available)
             result['reply'] = reply
             result['model_used'] = model_label
             if fell_back:
                 result['notice'] = (f"'{text_pref}' isn't configured — replied using {provider} "
                                     f"instead.")
+            elif notice:
+                result['notice'] = notice
             result['success'] = True
             return result
 
         # ── Auto (smart, intent-based) routing ────────────────────────────────
-        use_premium_model = intent in ('purchase_intent', 'product_issue')
-
+        # Pick the provider and model this intent deserves, then generate with
+        # failover so a quota-exhausted provider doesn't silence the bot.
         if intent == 'spam_noise':
-            if gemini_key:
-                result['model_used'] = 'gemini-flash'
-                result['reply'] = _call_gemini_flash(message_text, system_prompt, gemini_key, chatbot_config)
-            elif openai_key:
-                result['model_used'] = 'gpt-4o-mini'
-                result['reply'] = _call_openai_chat(message_text, system_prompt, openai_key, model='gpt-4o-mini', config=chatbot_config)
-            else:
-                result['reply'] = "Thanks for your message!"
+            # Cheapest possible model — these barely deserve a reply.
+            provider = 'gemini' if gemini_key else ('openai' if openai_key else None)
+            auto_model = GEMINI_FLASH_MODEL if provider == 'gemini' else 'gpt-4o-mini'
+        elif intent in ('purchase_intent', 'product_issue'):
+            # Highest-value conversations get the strongest available model.
+            provider = 'openai' if openai_key else ('gemini' if gemini_key else None)
+            auto_model = 'gpt-4o' if provider == 'openai' else GEMINI_PRO_MODEL
+        else:
+            provider = 'gemini' if gemini_key else ('openai' if openai_key else None)
+            auto_model = GEMINI_FLASH_MODEL if provider == 'gemini' else 'gpt-4o-mini'
+
+        if provider is None:
+            result['reply'] = "Thanks for your message!"
+            result['model_used'] = 'unavailable'
             result['success'] = True
             return result
 
-        if use_premium_model:
-            if openai_key:
-                result['model_used'] = 'gpt-4o'
-                result['reply'] = _call_openai_chat(message_text, system_prompt, openai_key, config=chatbot_config)
-            elif gemini_key:
-                result['model_used'] = 'gemini-pro'
-                result['reply'] = _call_gemini_pro(message_text, system_prompt, gemini_key, chatbot_config)
-        else:
-            if gemini_key:
-                result['model_used'] = 'gemini-flash'
-                result['reply'] = _call_gemini_flash(message_text, system_prompt, gemini_key, chatbot_config)
-            elif openai_key:
-                result['model_used'] = 'gpt-4o-mini'
-                result['reply'] = _call_openai_chat(message_text, system_prompt, openai_key, model='gpt-4o-mini', config=chatbot_config)
-
+        reply, model_label, notice = _gen_text_with_failover(
+            provider, auto_model, message_text, system_prompt,
+            config, chatbot_config, available)
+        result['reply'] = reply
+        result['model_used'] = model_label
+        if notice:
+            result['notice'] = notice
         result['success'] = True
 
     except Exception as e:
@@ -694,6 +939,15 @@ def route_message(
             result['error'] = ('AI provider rate limit reached — your API key has used its quota '
                                'for the moment. Wait a minute and try again, or upgrade the plan. '
                                f'({detail[:180]})')
+        elif any(s in detail.lower() for s in ('unavailable', '503', 'overload',
+                                               'timed out', 'timeout', 'unreachable')):
+            # Provider-side capacity or a network stall — not anything the operator
+            # did wrong. Already retried a few times by this point, so say so rather
+            # than just "try again".
+            result['error'] = ('AI provider was overloaded or unreachable and stayed that way '
+                               'through several retries. This normally clears within a minute — '
+                               'resend the reply then, or configure a second provider key so the '
+                               f'bot can fail over automatically. ({detail[:180]})')
         else:
             result['error'] = detail
         result['reply'] = "I'm sorry, I'm having trouble processing your request right now. Please try again shortly."

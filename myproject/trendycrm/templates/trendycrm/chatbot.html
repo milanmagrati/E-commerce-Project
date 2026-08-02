@@ -408,6 +408,25 @@ a.biz-switcher-item:hover { background: #f9fafb; }
     </button>
 </div>
 
+{% if chatbot.last_error %}
+<!-- ── Last auto-reply failure ─────────────────────────────── -->
+<div style="display:flex; gap:.85rem; align-items:flex-start; background:#fef2f2; border:1px solid #fecaca; border-radius:12px; padding:1rem 1.15rem; margin-bottom:1.25rem;">
+    <i class="fas fa-triangle-exclamation" style="color:#dc2626; font-size:1.15rem; margin-top:.1rem;"></i>
+    <div style="flex:1; min-width:0;">
+        <div style="font-weight:700; font-size:.88rem; color:#991b1b;">
+            The last auto-reply could not be sent
+        </div>
+        <div style="font-size:.8rem; color:#7f1d1d; margin-top:.3rem; word-break:break-word;">
+            {{ chatbot.last_error }}
+        </div>
+        <div style="font-size:.72rem; color:#b91c1c; margin-top:.45rem;">
+            <i class="far fa-clock"></i> {{ chatbot.last_error_at|date:"M d, Y — h:i A" }}
+            &nbsp;·&nbsp; Customers were not sent an error message; the bot stayed silent.
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- ── AI Test Console ─────────────────────────────────────── -->
 <div class="ai-test-card">
     <div class="ai-test-header">
@@ -429,6 +448,24 @@ a.biz-switcher-item:hover { background: #f9fafb; }
             <i class="fas fa-paper-plane"></i> Test Route
         </button>
     </div>
+
+    {% if connected_accounts %}
+    <div class="ai-test-row" style="margin-top:0.6rem;">
+        <label for="testIntegration" style="font-size:0.78rem;color:var(--crm-text-muted);white-space:nowrap;">
+            Reply as page:
+        </label>
+        <select id="testIntegration" class="cb-input" style="max-width:340px;">
+            <option value="">No page (generic knowledge base only)</option>
+            {% for acc in connected_accounts %}
+                <option value="{{ acc.pk }}">{{ acc.account_name|default:acc.get_channel_type_display }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <p class="ai-test-desc" style="margin-top:0.35rem;font-size:0.74rem;">
+        Picking a page also loads that page's Product Profile (and its checkout link),
+        so the preview matches exactly what a real customer on that page would get.
+    </p>
+    {% endif %}
 
     <div class="ai-test-preview" id="aiTestPreview">
         <img id="aiTestPreviewImg" src="" alt="preview">
@@ -654,10 +691,13 @@ a.biz-switcher-item:hover { background: #f9fafb; }
                     {% if group.is_connected %}
                     <div id="dropdown-{{ group.channel_type }}" style="display:{% if group.enabled_here %}block{% else %}none{% endif %}; padding: .5rem 0 .5rem 2.5rem; background:#fafafa; border-radius:8px; margin-top:.3rem; border: 1px solid #f3f4f6;">
                         {% for acc in group.accounts %}
-                            {% if acc.status == 'connected' %}
+                            {% if acc.status == 'connected' or acc.status == 'error' %}
                             <div style="display:flex; justify-content:space-between; align-items:center; padding: .4rem .6rem;">
                                 <div style="min-width:0;">
                                     <span style="font-size:.8rem; font-weight:500; color:#374151;">{{ acc.account_name|default:"Unnamed Account" }}</span>
+                                    {% if acc.status == 'error' %}
+                                    <div style="font-size:.68rem; color:#dc2626; margin-top:1px;"><i class="fas fa-triangle-exclamation"></i> Token problem — replies may fail until you reconnect this page</div>
+                                    {% endif %}
                                     {% if acc.chatbot_config_id and acc.chatbot_config_id != chatbot.id %}
                                     <div style="font-size:.68rem; color:#b45309; margin-top:1px;"><i class="fas fa-exclamation-triangle"></i> In use by {{ acc.chatbot_config.business_name|default:acc.chatbot_config.name }} — enabling here moves it</div>
                                     {% endif %}
@@ -1141,8 +1181,13 @@ async function autoSaveTags() {
             body: fd,
             headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
         });
-        if(resp.ok) {
+        // A 200 alone isn't success: save_agent swallows malformed
+        // handoff_triggers JSON, so check the status field it reports back.
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data.status !== 'error') {
             showToast('✓ Handoff triggers auto-saved');
+        } else {
+            showToast(data.message || 'Error saving handoff triggers', true);
         }
     } catch(e) {
         showToast('Failed to auto-save tags', true);
@@ -1272,10 +1317,11 @@ async function selectLanguage(langCode, el) {
             body: fd,
             headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
         });
-        if(resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data.status !== 'error') {
             showToast('✓ Language auto-saved');
         } else {
-            showToast('Error saving language', true);
+            showToast(data.message || 'Error saving language', true);
         }
     } catch(e) {
         showToast('Failed to auto-save language', true);
@@ -1424,6 +1470,12 @@ async function runAiTest() {
     const formData = new FormData();
     formData.append('message', msg);
     formData.append('bot_id', '{{ chatbot.id }}');
+    // Pass the selected page so the test runs against the same Page Profile (and
+    // checkout link) a real customer on that page would hit.
+    const integSelect = document.getElementById('testIntegration');
+    if (integSelect && integSelect.value) {
+        formData.append('integration_id', integSelect.value);
+    }
     if (selectedTestImage) {
         formData.append('image', selectedTestImage);
     }
