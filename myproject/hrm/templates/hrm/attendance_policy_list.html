@@ -35,6 +35,42 @@
         </div>
     </div>
 
+    {% if user.is_superuser or user.role == 'administrator' %}
+    <!-- Attendance Data Pull / Refresh Interval -->
+    <div class="card mb-3 shadow-sm border refresh-settings-card">
+        <div class="card-body py-3 px-3">
+            <div class="d-flex flex-wrap align-items-center gap-3">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="refresh-icon-circle"><i class="fas fa-arrows-rotate"></i></div>
+                    <div>
+                        <div class="fw-semibold" style="font-size:.88rem;color:#1a1a2e;">Attendance Data Pull</div>
+                        <div class="text-muted" style="font-size:.75rem;">
+                            How often biometric punches are automatically re-synced into attendance records
+                            <span id="attSyncLastAt"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+                    <select class="form-select form-select-sm" id="attRefreshPreset" style="width:160px;" onchange="onRefreshPresetChange()">
+                        <option value="360">Every 6 Hours</option>
+                        <option value="720">Every 12 Hours</option>
+                        <option value="1440">Every 24 Hours</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                    <div class="input-group input-group-sm" id="attRefreshCustomWrap" style="width:130px;display:none;">
+                        <input type="number" class="form-control" id="attRefreshCustomHours" min="1" max="24" value="12">
+                        <span class="input-group-text">hrs</span>
+                    </div>
+                    <button class="btn btn-success btn-sm px-3" onclick="saveRefreshInterval()" id="attRefreshSaveBtn">
+                        <span id="attRefreshSaveNormal"><i class="fas fa-save me-1"></i>Save</span>
+                        <span id="attRefreshSaveLoading" class="d-none"><span class="spinner-border spinner-border-sm me-1"></span>Saving...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Search & Filters -->
     <div class="card mb-3 shadow-sm border">
         <div class="card-body py-2 px-3">
@@ -432,6 +468,15 @@
    into that shared instance via IncAttAlert.openModal(). #}
 
 <style>
+    /* ── Refresh Settings Card ── */
+    .refresh-settings-card { border-left: 4px solid #0ea5e9; border-radius: 12px; }
+    .refresh-icon-circle {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: #e0f2fe; color: #0ea5e9;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1rem; flex-shrink: 0;
+    }
+
     /* ── Stat Cards ── */
     .stat-card {
         border: 1px solid #e9ecef;
@@ -938,6 +983,88 @@
 
     /* Attach draft auto-save listeners */
     attachDraftListeners();
+
+    /* ══════════════════ Attendance Data Pull Interval ══════════════════
+       Controls AttendanceSyncSettings — how often raw biometric punches are
+       automatically re-aggregated into AttendanceRecord rows. This is a real
+       data pull, separate from the gear-icon "Alert Settings" modal (which
+       only controls how often the incomplete-attendance toast re-announces
+       an already-known backlog, not when data itself is refreshed). */
+    var SYNC_SETTINGS_URL = '{% url "hrm:attendance_sync_settings" %}';
+    var REFRESH_PRESET_MINUTES = ['360', '720', '1440'];
+
+    function onRefreshPresetChange() {
+        var preset = document.getElementById('attRefreshPreset');
+        document.getElementById('attRefreshCustomWrap').style.display = preset.value === 'custom' ? 'flex' : 'none';
+    }
+
+    function loadRefreshInterval() {
+        fetch(SYNC_SETTINGS_URL)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data.success) return;
+                var hours = Math.max(1, Math.min(24, Math.round(data.interval_minutes / 60)));
+                var preset = document.getElementById('attRefreshPreset');
+                var snapped = String(hours * 60);
+                if (REFRESH_PRESET_MINUTES.indexOf(snapped) !== -1) {
+                    preset.value = snapped;
+                    document.getElementById('attRefreshCustomWrap').style.display = 'none';
+                } else {
+                    preset.value = 'custom';
+                    document.getElementById('attRefreshCustomWrap').style.display = 'flex';
+                }
+                document.getElementById('attRefreshCustomHours').value = hours;
+                var lastAtEl = document.getElementById('attSyncLastAt');
+                if (lastAtEl) {
+                    lastAtEl.textContent = data.last_synced_at ? ('— last pulled ' + data.last_synced_at) : '— not yet run';
+                }
+            })
+            .catch(function() {});
+    }
+
+    function saveRefreshInterval() {
+        var preset = document.getElementById('attRefreshPreset');
+        var hours;
+        if (preset.value === 'custom') {
+            hours = parseInt(document.getElementById('attRefreshCustomHours').value, 10);
+            if (!hours || hours < 1) hours = 1;
+            if (hours > 24) hours = 24;
+        } else {
+            hours = parseInt(preset.value, 10) / 60;
+        }
+        var minutes = hours * 60;
+        var btn = document.getElementById('attRefreshSaveBtn');
+        document.getElementById('attRefreshSaveNormal').classList.add('d-none');
+        document.getElementById('attRefreshSaveLoading').classList.remove('d-none');
+        btn.disabled = true;
+        fetch(SYNC_SETTINGS_URL, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ interval_minutes: minutes })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('attRefreshSaveNormal').classList.remove('d-none');
+            document.getElementById('attRefreshSaveLoading').classList.add('d-none');
+            btn.disabled = false;
+            if (data.success) {
+                showPageToast('success', 'Pull Interval Saved',
+                    'Attendance data will now be pulled every ' + hours + ' hour' + (hours === 1 ? '' : 's') + '.');
+            } else {
+                showPageToast('danger', 'Error', data.error || 'Failed to save pull interval.');
+            }
+        })
+        .catch(function() {
+            document.getElementById('attRefreshSaveNormal').classList.remove('d-none');
+            document.getElementById('attRefreshSaveLoading').classList.add('d-none');
+            btn.disabled = false;
+            showPageToast('danger', 'Error', 'Network error. Please try again.');
+        });
+    }
+
+    if (document.getElementById('attRefreshPreset')) {
+        loadRefreshInterval();
+    }
 </script>
 {% endblock %}
 {% endblock %}

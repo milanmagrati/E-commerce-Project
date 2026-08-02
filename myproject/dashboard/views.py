@@ -473,18 +473,21 @@ def dashboard_view(request):
 
     # ── Incomplete Attendance Alert (Dashboard widget) ──
     # Mirrors the default 7-day window used by the Attendance Policies page alert.
+    # Excludes today: a punch missing its clock-out while the workday is still
+    # in progress is expected, not a problem, so it would just be noise here.
     incomplete_attendance_items = []
     incomplete_attendance_count = 0
     if can_view_incomplete_attendance_alert:
         from hrm.models import AttendanceRecord
         from .timezone_utils import get_nepali_now, format_nepali_datetime
         today_nepal = get_nepali_now().date()
-        week_ago = today_nepal - timedelta(days=6)
+        yesterday_nepal = today_nepal - timedelta(days=1)
+        week_ago = yesterday_nepal - timedelta(days=6)
         incomplete_qs = AttendanceRecord.objects.exclude(
             status__in=['absent', 'on_leave']
         ).filter(
             Q(clock_in__isnull=True) | Q(clock_out__isnull=True),
-            date__gte=week_ago, date__lte=today_nepal,
+            date__gte=week_ago, date__lte=yesterday_nepal,
         ).select_related('employee', 'employee__department', 'last_fixed_by').annotate(
             fix_logs_count=Count('fix_logs', distinct=True)
         ).order_by('-date', 'employee__full_name')

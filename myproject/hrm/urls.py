@@ -114,6 +114,7 @@ urlpatterns = [
     path('attendance/<int:pk>/delete/', views.attendance_delete, name='attendance_delete'),
     path('attendance/incomplete/', views.incomplete_attendance_list_ajax, name='incomplete_attendance_list_ajax'),
     path('attendance/incomplete/alert-settings/', views.incomplete_attendance_alert_settings, name='incomplete_attendance_alert_settings'),
+    path('attendance/sync-settings/', views.attendance_sync_settings, name='attendance_sync_settings'),
     path('attendance/<int:pk>/fix-logs/', views.attendance_fix_logs, name='attendance_fix_logs'),
 
     # Shifts

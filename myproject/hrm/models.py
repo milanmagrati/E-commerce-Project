@@ -674,6 +674,39 @@ class AttendanceAlertSettings(models.Model):
         cache.delete('ctx_inc_att_alert_settings')
 
 
+class AttendanceSyncSettings(models.Model):
+    """Singleton controlling how often raw biometric punches (BiometricAttendance)
+    are automatically re-aggregated into AttendanceRecord rows — a real data
+    "pull", separate from AttendanceAlertSettings above, which only controls
+    how often the incomplete-attendance toast re-announces an existing backlog.
+    There's no Celery Beat in this project, so this is driven opportunistically:
+    the global 60s incomplete-attendance poll (present on every page) checks
+    this singleton and triggers a sync once the configured interval has
+    elapsed — see _maybe_auto_sync_attendance() in hrm/views.py."""
+
+    interval_minutes = models.PositiveIntegerField(
+        default=720, help_text='How often (in minutes) to automatically re-sync biometric attendance data. Default 720 = 12 hours.'
+    )
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Attendance Sync Settings'
+        verbose_name_plural = 'Attendance Sync Settings'
+
+    def __str__(self):
+        return f'Attendance Sync Settings (every {self.interval_minutes} min)'
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)
+
+
 class AttendanceRegularization(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),

@@ -341,16 +341,23 @@
         var y = d.getFullYear(), m = ('0' + (d.getMonth() + 1)).slice(-2), day = ('0' + d.getDate()).slice(-2);
         return y + '-' + m + '-' + day;
     }
+    /* Every preset except the explicit "Today" button stops at yesterday —
+       a punch still missing its clock-out while the workday is in progress
+       is expected, not a problem, so today's records would just be noise
+       until the user deliberately asks to see them via the "Today" button. */
     function rangeDates(range) {
         var today = new Date(IA_TODAY + 'T00:00:00');
         if (range === 'today') return { from: IA_TODAY, to: IA_TODAY };
+        var yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        var yesterdayStr = fmtDate(yesterday);
         if (range === '7' || range === '15') {
             var span = range === '7' ? 6 : 14;
-            var from = new Date(today);
+            var from = new Date(yesterday);
             from.setDate(from.getDate() - span);
-            return { from: fmtDate(from), to: IA_TODAY };
+            return { from: fmtDate(from), to: yesterdayStr };
         }
-        return { from: '', to: '' }; // all time
+        return { from: '', to: yesterdayStr }; // all time, excluding today
     }
     function getSavedRange() {
         var v = localStorage.getItem(IA_RANGE_KEY);

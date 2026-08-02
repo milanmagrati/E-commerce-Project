@@ -2889,6 +2889,35 @@ def _sync_biometric_to_attendance(recent_days=None):
         )
 
 
+def _maybe_auto_sync_attendance():
+    """Runs the biometric-to-attendance sync automatically once the interval
+    configured in AttendanceSyncSettings has elapsed, independent of anyone
+    opening the Attendance Records page (which already triggers a full sync
+    on every visit — see attendance_list below). There's no Celery Beat in
+    this project, so this piggybacks on the Incomplete Attendance widget's
+    existing 60s background poll (present on every page via
+    partials/incomplete_attendance_alert.html), turning that poll into the
+    heartbeat for a real periodic data pull."""
+    from .models import AttendanceSyncSettings
+    from django.core.cache import cache
+
+    settings_obj = AttendanceSyncSettings.get_settings()
+    now = timezone.now()
+    if settings_obj.last_synced_at and (now - settings_obj.last_synced_at).total_seconds() < settings_obj.interval_minutes * 60:
+        return
+
+    # Debounce concurrent requests that race past the interval check at the
+    # same moment (e.g. two staff with a page open when the interval elapses).
+    if not cache.add('attendance_auto_sync_lock', 1, timeout=120):
+        return
+    try:
+        _sync_biometric_to_attendance()
+        settings_obj.last_synced_at = now
+        settings_obj.save()
+    finally:
+        cache.delete('attendance_auto_sync_lock')
+
+
 @login_required
 def attendance_list(request):
     from .models import AttendanceRecord, Employee, Shift
@@ -3329,6 +3358,15 @@ def incomplete_attendance_list_ajax(request):
     ):
         return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
 
+    # Runs only for callers who already passed the permission check above —
+    # this endpoint is polled every 60s from every page (see the global
+    # partial), so it doubles as the heartbeat for the periodic data pull,
+    # but an unauthorized request should never have this side effect.
+    try:
+        _maybe_auto_sync_attendance()
+    except Exception:
+        adms_logger.exception('incomplete_attendance_list_ajax: auto-sync failed')
+
     qs = AttendanceRecord.objects.exclude(status__in=['absent', 'on_leave']).filter(
         Q(clock_in__isnull=True) | Q(clock_out__isnull=True)
     )
@@ -3754,6 +3792,44 @@ def incomplete_attendance_alert_settings(request):
         'success': True,
         'mode': settings_obj.mode,
         'interval_minutes': settings_obj.interval_minutes,
+    })
+
+
+@login_required
+def attendance_sync_settings(request):
+    """Admin-only: configure how often raw biometric punches are
+    automatically re-aggregated into AttendanceRecord rows — a real data
+    pull, distinct from incomplete_attendance_alert_settings above (which
+    only controls how often the incomplete-attendance toast re-announces an
+    already-known backlog, not when data is refreshed)."""
+    from .models import AttendanceSyncSettings
+    from dashboard.timezone_utils import format_nepali_datetime
+
+    user = request.user
+    if not (user.is_superuser or user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+
+    settings_obj = AttendanceSyncSettings.get_settings()
+
+    if request.method != 'POST':
+        return JsonResponse({
+            'success': True,
+            'interval_minutes': settings_obj.interval_minutes,
+            'last_synced_at': format_nepali_datetime(settings_obj.last_synced_at) if settings_obj.last_synced_at else None,
+        })
+
+    try:
+        interval_minutes = int(request.POST.get('interval_minutes', settings_obj.interval_minutes))
+    except (ValueError, TypeError):
+        return JsonResponse({'success': False, 'error': 'Interval must be a whole number of minutes.'}, status=400)
+    interval_minutes = max(60, min(interval_minutes, 1440))
+
+    settings_obj.interval_minutes = interval_minutes
+    settings_obj.save()
+    return JsonResponse({
+        'success': True,
+        'interval_minutes': settings_obj.interval_minutes,
+        'last_synced_at': format_nepali_datetime(settings_obj.last_synced_at) if settings_obj.last_synced_at else None,
     })
 
 
