@@ -692,6 +692,47 @@
             color: #ffc107;
         }
 
+        /* ==================== SIDEBAR DROPDOWN CHEVRONS ==================== */
+        /* Every collapsible sidebar item (Team Members, Setup, Sentinel Vault,
+           the nested HRM/payroll submenus, etc.) uses the same
+           data-bs-toggle="collapse" + fa-chevron-down pattern. Bootstrap keeps
+           aria-expanded in sync with the collapse state on its own, so a single
+           attribute-selector rule rotates every one of these chevrons — no JS
+           needed, and every dropdown in the sidebar gets the same open/closed
+           affordance instead of a caret that never visibly moves. */
+        .sidebar [data-bs-toggle="collapse"] .fa-chevron-down {
+            opacity: 0.6;
+            transition: transform 0.25s ease, opacity 0.25s ease;
+        }
+
+        .sidebar [data-bs-toggle="collapse"]:hover .fa-chevron-down {
+            opacity: 0.9;
+        }
+
+        .sidebar [data-bs-toggle="collapse"][aria-expanded="true"] .fa-chevron-down {
+            opacity: 1;
+            transform: rotate(180deg);
+        }
+
+        /* Clicking a "#" toggle link (no real navigation) leaves the browser's
+           default focus ring sitting on the link — most visible as a stray blue
+           outline hugging whichever child (often the floated chevron) ends up at
+           the edge of the anchor's focus rect. Swap it for one deliberate ring
+           that matches the sidebar instead of the browser default. */
+        .sidebar ul li a:focus {
+            outline: none;
+        }
+
+        .sidebar ul li a:focus-visible {
+            outline: none;
+            box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+            border-radius: 6px;
+        }
+
+        .sidebar li.sentinel-menu>a:focus-visible {
+            box-shadow: inset 0 0 0 2px rgba(16, 185, 129, 0.55);
+        }
+
         /* ==================== NCM BADGE STYLING ==================== */
         .ncm-badge {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -754,6 +795,43 @@
             font-weight: 700;
             margin-left: 5px;
             display: inline-block;
+        }
+
+        /* Sentinel Vault — security tooling reads as distinct from business menus */
+        .sidebar li.sentinel-menu>a {
+            border-left: 3px solid transparent;
+            transition: all .25s ease;
+        }
+
+        .sidebar li.sentinel-menu>a i.fa-shield-halved {
+            color: #34d399;
+        }
+
+        /* The chevron otherwise inherits the plain white sidebar-icon colour,
+           which reads oddly next to the shield icon's green and the AUDIT
+           badge's gradient. Tint it the same emerald so the whole row feels
+           like one deliberate accent instead of one green icon plus a
+           leftover white caret. */
+        .sidebar li.sentinel-menu>a .fa-chevron-down {
+            color: #34d399;
+        }
+
+        .sidebar li.sentinel-menu:hover>a,
+        .sidebar li.sentinel-menu.active>a {
+            background: linear-gradient(135deg, rgba(16, 185, 129, .16), rgba(6, 182, 212, .12));
+            border-left-color: #10b981;
+        }
+
+        .sentinel-badge {
+            background: linear-gradient(135deg, #10b981, #06b6d4);
+            color: #04231c;
+            font-size: .58rem;
+            font-weight: 800;
+            letter-spacing: .06em;
+            padding: 2px 7px;
+            border-radius: 10px;
+            margin-left: 6px;
+            vertical-align: middle;
         }
 
         .sidebar li.staff-performance-menu:hover>a {
@@ -1650,6 +1728,41 @@
                         {% endif %}
                     </a>
                 </li>
+
+                <!-- ==================== SENTINEL VAULT ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_audit_trail %}
+                <li class="sentinel-menu {% if '/sentinel/' in request.path %}active{% endif %}">
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#sentinelMenu"
+                        aria-expanded="{% if '/sentinel/' in request.path %}true{% else %}false{% endif %}">
+                        <i class="fas fa-shield-halved"></i> Sentinel Vault
+                        <span class="sentinel-badge">AUDIT</span>
+                        <i class="fas fa-chevron-down float-end mt-1"></i>
+                    </a>
+                    <ul class="collapse list-unstyled {% if '/sentinel/' in request.path %}show{% endif %}"
+                        id="sentinelMenu">
+                        <li class="{% if request.resolver_match.url_name == 'home' and '/sentinel/' in request.path %}active{% endif %}">
+                            <a href="{% url 'sentinel:home' %}">Command Centre</a>
+                        </li>
+                        <li class="{% if request.resolver_match.url_name == 'stream' %}active{% endif %}">
+                            <a href="{% url 'sentinel:stream' %}">Activity Ledger</a>
+                        </li>
+                        <li class="{% if 'session' in request.resolver_match.url_name|default:'' and '/sentinel/' in request.path %}active{% endif %}">
+                            <a href="{% url 'sentinel:sessions' %}">Live Sessions &amp; Devices</a>
+                        </li>
+                        <li class="{% if 'alert' in request.resolver_match.url_name|default:'' %}active{% endif %}">
+                            <a href="{% url 'sentinel:alerts' %}">Threat Console</a>
+                        </li>
+                        <li class="{% if request.resolver_match.url_name == 'people' or request.resolver_match.url_name == 'dossier' %}active{% endif %}">
+                            <a href="{% url 'sentinel:people' %}">People Dossiers</a>
+                        </li>
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_configure_audit %}
+                        <li class="{% if request.resolver_match.url_name == 'settings' and '/sentinel/' in request.path %}active{% endif %}">
+                            <a href="{% url 'sentinel:settings' %}">Vault Settings</a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </li>
+                {% endif %}
 
                 <!-- ==================== SETUP ==================== -->
                 <li>

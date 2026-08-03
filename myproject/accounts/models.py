@@ -184,6 +184,13 @@ class CustomUser(AbstractUser):
     can_view_resources = models.BooleanField(default=False, verbose_name="Can View Resources")
     can_create_resources = models.BooleanField(default=False, verbose_name="Can Create/Edit/Delete Resources")
 
+    # SENTINEL VAULT (AUDIT TRAIL) PERMISSIONS
+    can_view_audit_trail = models.BooleanField(default=False, verbose_name="Can Access Sentinel Vault")
+    can_view_all_users_activity = models.BooleanField(default=False, verbose_name="Can View Everyone's Activity")
+    can_export_audit_logs = models.BooleanField(default=False, verbose_name="Can Export Audit Logs")
+    can_manage_sessions = models.BooleanField(default=False, verbose_name="Can Revoke Sessions & Resolve Alerts")
+    can_configure_audit = models.BooleanField(default=False, verbose_name="Can Configure Audit Settings")
+
     groups = models.ManyToManyField('auth.Group', related_name='custom_user_set', blank=True)
     user_permissions = models.ManyToManyField('auth.Permission', related_name='custom_user_set', blank=True)
     
@@ -255,7 +262,9 @@ class CustomUser(AbstractUser):
                 'can_fix_hrm_incomplete_attendance',
                 'can_access_todo', 'can_access_follow_ups', 'can_view_follow_up_report', 'can_setup_follow_up_status',
                 'can_view_cost_price', 'can_edit_prices', 'can_give_discounts',
-                'can_view_content_management', 'can_view_resources', 'can_create_resources'
+                'can_view_content_management', 'can_view_resources', 'can_create_resources',
+                'can_view_audit_trail', 'can_view_all_users_activity', 'can_export_audit_logs',
+                'can_manage_sessions', 'can_configure_audit'
             ]:
                 setattr(self, perm, True)
             self.max_discount_percent = Decimal('100.00')

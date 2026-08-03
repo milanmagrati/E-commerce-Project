@@ -1,0 +1,324 @@
+{% extends 'sentinel/_shell.html' %}
+{% load sentinel_extras %}
+
+{% block vault_actions %}
+{% if can_export %}
+<a href="{% url 'sentinel:export' %}{% if querystring %}?{{ querystring }}{% endif %}" class="sv-btn">
+    <i class="fas fa-file-csv"></i> Export CSV
+</a>
+{% endif %}
+<button class="sv-btn sv-btn-primary" id="svToggleFilters">
+    <i class="fas fa-filter"></i> Filters
+    {% if active %}<span class="sv-chip sv-tone-emerald" style="padding:0 .4rem;">{{ active|length }}</span>{% endif %}
+</button>
+{% endblock %}
+
+{% block vault_body %}
+
+<!-- ══ Quick range presets ═══════════════════════════════════════════════ -->
+<div class="sv-tiles" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));">
+    <div class="sv-tile sv-tone-sky">
+        <div class="sv-tile-label"><i class="fas fa-list-check"></i> Matching events</div>
+        <div class="sv-tile-value" data-countup="{{ total }}">0</div>
+        <div class="sv-tile-meta">{% if active %}filtered view{% else %}entire vault{% endif %}</div>
+    </div>
+    <div class="sv-tile sv-tone-violet">
+        <div class="sv-tile-label"><i class="fas fa-pen-to-square"></i> Data changes</div>
+        <div class="sv-tile-value" data-countup="{{ summary.writes }}">0</div>
+        <div class="sv-tile-meta">create · update · delete</div>
+    </div>
+    <div class="sv-tile sv-tone-rose">
+        <div class="sv-tile-label"><i class="fas fa-fire"></i> Risky actions</div>
+        <div class="sv-tile-value" data-countup="{{ summary.risky }}">0</div>
+        <div class="sv-tile-meta">risk score 40 or above</div>
+    </div>
+    <div class="sv-tile sv-tone-emerald">
+        <div class="sv-tile-label"><i class="fas fa-users"></i> People involved</div>
+        <div class="sv-tile-value" data-countup="{{ summary.actors }}">0</div>
+        <div class="sv-tile-meta">distinct accounts in this view</div>
+    </div>
+</div>
+
+<!-- ══ Filter panel ══════════════════════════════════════════════════════ -->
+<div class="sv-panel" style="margin-bottom:1.2rem;">
+    <div class="sv-panel-body">
+        <form method="GET" id="svFilterForm">
+            <div class="sv-filters">
+                <div class="sv-filter-wide">
+                    <label class="sv-label" for="svQ">Search</label>
+                    <input class="sv-input" id="svQ" type="search" name="q" value="{{ active.q|default:'' }}"
+                           placeholder="Action, person, record, path or IP…" autocomplete="off">
+                </div>
+
+                <div>
+                    <label class="sv-label" for="svRange">Time window</label>
+                    <select class="sv-select" id="svRange" name="range">
+                        <option value="">All time</option>
+                        <option value="1h"  {% if active.range == '1h' %}selected{% endif %}>Last hour</option>
+                        <option value="24h" {% if active.range == '24h' %}selected{% endif %}>Last 24 hours</option>
+                        <option value="7d"  {% if active.range == '7d' %}selected{% endif %}>Last 7 days</option>
+                        <option value="30d" {% if active.range == '30d' %}selected{% endif %}>Last 30 days</option>
+                        <option value="90d" {% if active.range == '90d' %}selected{% endif %}>Last 90 days</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="sv-label" for="svType">Action type</label>
+                    <select class="sv-select" id="svType" name="event_type">
+                        <option value="">All actions</option>
+                        {% for value, label in choices.event_types %}
+                        <option value="{{ value }}" {% if active.event_type == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                {% if can_see_everyone %}
+                <div>
+                    <label class="sv-label" for="svActor">Person</label>
+                    <select class="sv-select" id="svActor" name="actor">
+                        <option value="">Everyone</option>
+                        {% for option in choices.actor_options %}
+                        <option value="{{ option.actor_id }}"
+                            {% if active.actor == option.actor_id|stringformat:'s' %}selected{% endif %}>
+                            {{ option.actor_username }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+
+                <div>
+                    <label class="sv-label" for="svRisk">Risk band</label>
+                    <select class="sv-select" id="svRisk" name="risk">
+                        <option value="">Any risk</option>
+                        <option value="critical" {% if active.risk == 'critical' %}selected{% endif %}>Critical (70+)</option>
+                        <option value="elevated" {% if active.risk == 'elevated' %}selected{% endif %}>Elevated (40–69)</option>
+                        <option value="low"      {% if active.risk == 'low' %}selected{% endif %}>Low (20–39)</option>
+                        <option value="minimal"  {% if active.risk == 'minimal' %}selected{% endif %}>Minimal (&lt;20)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="sv-filters" id="svAdvanced" style="margin-top:.75rem;{% if not active %}display:none;{% endif %}">
+                <div>
+                    <label class="sv-label" for="svModule">Area</label>
+                    <select class="sv-select" id="svModule" name="module">
+                        <option value="">All areas</option>
+                        {% for module in choices.modules %}
+                        <option value="{{ module }}" {% if active.module == module %}selected{% endif %}>{{ module }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="sv-label" for="svSeverity">Severity</label>
+                    <select class="sv-select" id="svSeverity" name="severity">
+                        <option value="">Any severity</option>
+                        {% for value, label in choices.severities %}
+                        <option value="{{ value }}" {% if active.severity == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="sv-label" for="svDevice">Device type</label>
+                    <select class="sv-select" id="svDevice" name="device">
+                        <option value="">Any device</option>
+                        <option value="desktop" {% if active.device == 'desktop' %}selected{% endif %}>Desktop</option>
+                        <option value="mobile"  {% if active.device == 'mobile' %}selected{% endif %}>Mobile</option>
+                        <option value="tablet"  {% if active.device == 'tablet' %}selected{% endif %}>Tablet</option>
+                        <option value="bot"     {% if active.device == 'bot' %}selected{% endif %}>Bot / script</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="sv-label" for="svIp">IP address</label>
+                    <input class="sv-input" id="svIp" type="text" name="ip" value="{{ active.ip|default:'' }}"
+                           placeholder="e.g. 103.21.x.x">
+                </div>
+                <div>
+                    <label class="sv-label" for="svFrom">From date</label>
+                    <input class="sv-input" id="svFrom" type="date" name="from" value="{{ active.from|default:'' }}">
+                </div>
+                <div>
+                    <label class="sv-label" for="svTo">To date</label>
+                    <input class="sv-input" id="svTo" type="date" name="to" value="{{ active.to|default:'' }}">
+                </div>
+            </div>
+
+            <div class="d-flex gap-2 flex-wrap align-items-center" style="margin-top:.9rem;">
+                <button type="submit" class="sv-btn sv-btn-primary"><i class="fas fa-magnifying-glass"></i> Apply</button>
+                <a href="{% url 'sentinel:stream' %}" class="sv-btn"><i class="fas fa-rotate-left"></i> Reset</a>
+                <button type="button" class="sv-btn" id="svMoreFilters">
+                    <i class="fas fa-sliders"></i> <span>More options</span>
+                </button>
+            </div>
+
+            {% if active %}
+            <div class="sv-active-filters">
+                {% for key, value in active.items %}
+                <a href="?{% query_replace request %}" data-remove="{{ key }}" title="Remove this filter">
+                    <strong>{{ key }}</strong>: {{ value }} <i class="fas fa-xmark"></i>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<!-- ══ Ledger ════════════════════════════════════════════════════════════ -->
+<div class="sv-panel">
+    <div class="sv-panel-head">
+        <div>
+            <h2><i class="fas fa-stream"></i> Activity ledger</h2>
+            <p class="sv-sub">Click any row to inspect the full record, including field-level changes</p>
+        </div>
+        <span class="sv-chip sv-tone-slate">{{ total }} record{{ total|pluralize }}</span>
+    </div>
+
+    <div class="sv-panel-body is-flush">
+        <div class="sv-table-wrap">
+            <table class="sv-table">
+                <thead>
+                    <tr>
+                        <th style="width:150px;">When</th>
+                        <th style="width:180px;">Who</th>
+                        <th>What happened</th>
+                        <th style="width:130px;">Area</th>
+                        <th style="width:150px;">Device &amp; network</th>
+                        <th style="width:100px;">Risk</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in page_obj %}
+                    <tr class="is-clickable {% if event.risk_score >= 70 %}is-flagged{% endif %}"
+                        data-sv-event="{{ event.id }}" tabindex="0">
+                        <td class="sv-nowrap">
+                            <div style="font-size:.8rem;font-weight:600;">{{ event.created_at|sentinel_ago }}</div>
+                            <div class="sv-cell-dim">{{ event.created_at|sentinel_clock }}</div>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="sv-avatar sv-avatar-sm sv-tone-{{ event.actor_username|avatar_tone }}">
+                                    {{ event.actor_username|initials }}
+                                </div>
+                                <div style="min-width:0;">
+                                    <div class="sv-truncate" style="font-size:.82rem;font-weight:600;">
+                                        {{ event.actor_username }}
+                                    </div>
+                                    <div class="sv-cell-dim sv-truncate">{{ event.actor_role|default:'—' }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-start gap-2">
+                                <div class="sv-ev-icon sv-tone-{{ event.tone }}" style="width:26px;height:26px;font-size:.7rem;">
+                                    <i class="fas {{ event.icon }}"></i>
+                                </div>
+                                <div style="min-width:0;">
+                                    <div class="sv-truncate" style="font-size:.83rem;" title="{{ event.action }}">
+                                        {{ event.action }}
+                                    </div>
+                                    <div class="sv-cell-dim">
+                                        <span class="sv-chip sv-tone-{{ event.tone }}" style="font-size:.62rem;padding:1px .45rem;">
+                                            {{ event.get_event_type_display }}
+                                        </span>
+                                        {% if event.change_count %}
+                                        <span style="margin-left:.35rem;">
+                                            <i class="fas fa-code-compare"></i> {{ event.change_count }} field{{ event.change_count|pluralize }}
+                                        </span>
+                                        {% endif %}
+                                        {% if event.object_type %}
+                                        <span style="margin-left:.35rem;">{{ event.object_type|strip_app }}</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="sv-cell-dim">{{ event.module|default:'—' }}</td>
+                        <td>
+                            <div class="sv-cell-dim sv-nowrap">
+                                <i class="fas {{ event.device_kind|device_icon }}"></i>
+                                {{ event.browser|default:'Unknown' }}
+                            </div>
+                            <div class="sv-cell-mono">{{ event.ip_address|default:'—' }}</div>
+                        </td>
+                        <td>
+                            <span class="sv-risk sv-risk-{{ event.risk_band }}">
+                                <span class="sv-risk-dot"></span>{{ event.risk_score }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6">
+                            <div class="sv-empty">
+                                <i class="fas fa-magnifying-glass"></i>
+                                <h3>No events match this view</h3>
+                                <p>{% if active %}Try widening the time window or clearing a filter.{% else %}The vault has not recorded anything yet.{% endif %}</p>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include 'sentinel/_pager.html' %}
+    </div>
+</div>
+
+{% include 'sentinel/_drawer.html' %}
+{% endblock %}
+
+{% block vault_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('svFilterForm');
+    const advanced = document.getElementById('svAdvanced');
+
+    function toggleAdvanced() {
+        advanced.style.display = advanced.style.display === 'none' ? '' : 'none';
+    }
+    document.getElementById('svMoreFilters').addEventListener('click', toggleAdvanced);
+    const headerToggle = document.getElementById('svToggleFilters');
+    if (headerToggle) {
+        headerToggle.addEventListener('click', function () {
+            toggleAdvanced();
+            document.getElementById('svQ').focus();
+        });
+    }
+
+    // Dropdowns submit immediately; free-text waits for Enter so typing isn't interrupted.
+    form.querySelectorAll('select').forEach(function (select) {
+        select.addEventListener('change', function () { form.submit(); });
+    });
+
+    // Removing one chip clears just that parameter.
+    document.querySelectorAll('.sv-active-filters a[data-remove]').forEach(function (chip) {
+        chip.addEventListener('click', function (e) {
+            e.preventDefault();
+            const params = new URLSearchParams(window.location.search);
+            params.delete(chip.dataset.remove);
+            params.delete('page');
+            window.location.search = params.toString();
+        });
+    });
+
+    // Keyboard: Enter or Space opens the focused row's drawer.
+    document.querySelectorAll('tr[data-sv-event]').forEach(function (row) {
+        row.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                Sentinel.openEvent(row.dataset.svEvent);
+            }
+        });
+    });
+
+    // "/" focuses search, the way every log tool the team already uses behaves.
+    document.addEventListener('keydown', function (e) {
+        if (e.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+            e.preventDefault();
+            document.getElementById('svQ').focus();
+        }
+    });
+});
+</script>
+{% endblock %}

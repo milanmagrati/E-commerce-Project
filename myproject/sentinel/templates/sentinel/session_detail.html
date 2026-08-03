@@ -1,0 +1,226 @@
+{% extends 'sentinel/_shell.html' %}
+{% load sentinel_extras %}
+
+{% block vault_actions %}
+<a href="{% url 'sentinel:sessions' %}" class="sv-btn"><i class="fas fa-arrow-left"></i> Back to monitor</a>
+{% if can_manage and session.is_active %}
+<button class="sv-btn sv-btn-danger" id="svRevokeThis"><i class="fas fa-power-off"></i> Revoke session</button>
+{% endif %}
+{% endblock %}
+
+{% block vault_body %}
+
+<div class="sv-panel" style="margin-bottom:1.2rem;">
+    <div class="sv-panel-body">
+        <div class="d-flex align-items-start gap-3 flex-wrap">
+            <div class="sv-avatar sv-avatar-lg sv-tone-{{ session.username_snapshot|avatar_tone }}">
+                {{ session.username_snapshot|initials }}
+            </div>
+            <div style="flex:1;min-width:220px;">
+                <h2 style="font-size:1.2rem;font-weight:800;margin:0 0 .25rem;">
+                    {{ session.username_snapshot }}
+                    {% if session.is_active %}
+                    <span class="sv-chip sv-tone-emerald"><span class="sv-live-dot"></span> Live</span>
+                    {% else %}
+                    <span class="sv-chip sv-tone-slate">{{ session.get_end_reason_display }}</span>
+                    {% endif %}
+                    {% if session.is_new_device %}
+                    <span class="sv-chip sv-tone-amber"><i class="fas fa-fingerprint"></i> New device</span>
+                    {% endif %}
+                </h2>
+                <p class="sv-muted" style="font-size:.84rem;margin:0;">
+                    {{ session.role_snapshot|default:'No role' }} ·
+                    signed in {{ session.started_at|sentinel_clock }} ·
+                    {{ session.duration_display }} {% if session.is_active %}so far{% else %}total{% endif %}
+                </p>
+                {% if session.user_id %}
+                <a href="{% url 'sentinel:dossier' session.user_id %}" class="sv-btn sv-btn-sm" style="margin-top:.6rem;">
+                    <i class="fas fa-user-secret"></i> Full dossier
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="sv-tiles">
+    <div class="sv-tile sv-tone-sky">
+        <div class="sv-tile-label"><i class="fas fa-list"></i> Actions recorded</div>
+        <div class="sv-tile-value" data-countup="{{ event_count }}">0</div>
+        <div class="sv-tile-meta">{{ session.request_count }} request{{ session.request_count|pluralize }} total</div>
+    </div>
+    <div class="sv-tile sv-tone-violet">
+        <div class="sv-tile-label"><i class="fas fa-pen-to-square"></i> Data changes</div>
+        <div class="sv-tile-value" data-countup="{{ session.write_count }}">0</div>
+        <div class="sv-tile-meta">writes during this session</div>
+    </div>
+    <div class="sv-tile sv-tone-{% if peak_risk >= 70 %}rose{% elif peak_risk >= 40 %}amber{% else %}emerald{% endif %}">
+        <div class="sv-tile-label"><i class="fas fa-gauge-high"></i> Peak risk</div>
+        <div class="sv-tile-value" data-countup="{{ peak_risk }}">0</div>
+        <div class="sv-tile-meta">highest single action score</div>
+    </div>
+    <div class="sv-tile sv-tone-{% if alerts %}amber{% else %}slate{% endif %}">
+        <div class="sv-tile-label"><i class="fas fa-triangle-exclamation"></i> Alerts raised</div>
+        <div class="sv-tile-value" data-countup="{{ alerts|length }}">0</div>
+        <div class="sv-tile-meta">from this session</div>
+    </div>
+</div>
+
+<div class="sv-split">
+    <div class="sv-panel">
+        <div class="sv-panel-head">
+            <div>
+                <h2><i class="fas fa-timeline"></i> Session replay</h2>
+                <p class="sv-sub">Everything done during this sign-in, newest first</p>
+            </div>
+        </div>
+        <div class="sv-panel-body is-flush">
+            <div class="sv-table-wrap">
+                <table class="sv-table" style="min-width:560px;">
+                    <thead>
+                        <tr>
+                            <th style="width:120px;">Time</th>
+                            <th>Action</th>
+                            <th style="width:120px;">Area</th>
+                            <th style="width:90px;">Risk</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for event in page_obj %}
+                        <tr class="is-clickable" data-sv-event="{{ event.id }}" tabindex="0">
+                            <td class="sv-cell-dim sv-nowrap">{{ event.created_at|sentinel_time }}</td>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="sv-ev-icon sv-tone-{{ event.tone }}" style="width:26px;height:26px;font-size:.7rem;">
+                                        <i class="fas {{ event.icon }}"></i>
+                                    </div>
+                                    <div class="sv-truncate" style="font-size:.82rem;">{{ event.action }}</div>
+                                </div>
+                            </td>
+                            <td class="sv-cell-dim">{{ event.module|default:'—' }}</td>
+                            <td>
+                                <span class="sv-risk sv-risk-{{ event.risk_band }}">
+                                    <span class="sv-risk-dot"></span>{{ event.risk_score }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4">
+                            <div class="sv-empty">
+                                <i class="fas fa-hourglass"></i>
+                                <h3>Nothing recorded yet</h3>
+                                <p>This session has not performed any tracked action.</p>
+                            </div>
+                        </td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% include 'sentinel/_pager.html' %}
+        </div>
+    </div>
+
+    <div style="display:grid;gap:1.1rem;align-content:start;">
+        <div class="sv-panel">
+            <div class="sv-panel-head"><h2><i class="fas fa-microchip"></i> Device forensics</h2></div>
+            <div class="sv-panel-body">
+                <dl class="sv-dl">
+                    <dt>Device type</dt><dd>
+                        <i class="fas {{ session.device_kind|device_icon }}"></i>
+                        {{ session.get_device_kind_display }}
+                    </dd>
+                    <dt>Browser</dt><dd>{{ session.browser|default:'Unknown' }} {{ session.browser_version }}</dd>
+                    <dt>Operating system</dt><dd>{{ session.operating_system|default:'Unknown' }} {{ session.os_version }}</dd>
+                    {% if session.device_brand %}<dt>Hardware</dt><dd>{{ session.device_brand }}</dd>{% endif %}
+                    <dt>IP address</dt><dd class="sv-cell-mono">{{ session.ip_address|default:'—' }}</dd>
+                    <dt>Network</dt><dd>{{ session.network_label|default:'—' }}</dd>
+                    {% if session.forwarded_chain %}
+                    <dt>Proxy chain</dt><dd class="sv-cell-mono">{{ session.forwarded_chain }}</dd>
+                    {% endif %}
+                    {% if session.language %}<dt>Language</dt><dd>{{ session.language }}</dd>{% endif %}
+                    <dt>Fingerprint</dt><dd class="sv-cell-mono">{{ session.fingerprint|slice:':32' }}…</dd>
+                    <dt>Started</dt><dd>{{ session.started_at|sentinel_clock }}</dd>
+                    <dt>Last activity</dt><dd>{{ session.last_activity|sentinel_clock }}</dd>
+                    {% if session.ended_at %}<dt>Ended</dt><dd>{{ session.ended_at|sentinel_clock }}</dd>{% endif %}
+                </dl>
+                <div class="sv-section-title">Raw user agent</div>
+                <div class="sv-code">{{ session.user_agent|default:'Not captured' }}</div>
+            </div>
+        </div>
+
+        {% if breakdown %}
+        <div class="sv-panel">
+            <div class="sv-panel-head"><h2><i class="fas fa-shapes"></i> What they did</h2></div>
+            <div class="sv-panel-body">
+                {% with top=breakdown.0.count %}
+                {% for row in breakdown %}
+                <div class="sv-bar-row sv-tone-{% cycle 'sky' 'violet' 'emerald' 'amber' 'rose' 'cyan' 'indigo' %}">
+                    <span class="sv-bar-label sv-truncate">{{ row.event_type|title }}</span>
+                    <span class="sv-bar-track">
+                        <span class="sv-bar-fill" style="width:0" data-width="{{ row.count|percent_of:top }}%"></span>
+                    </span>
+                    <span class="sv-bar-value">{{ row.count }}</span>
+                </div>
+                {% endfor %}
+                {% endwith %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if alerts %}
+        <div class="sv-panel">
+            <div class="sv-panel-head"><h2><i class="fas fa-shield-virus"></i> Alerts from this session</h2></div>
+            <div class="sv-panel-body is-flush">
+                {% for alert in alerts %}
+                <div class="sv-feed-item">
+                    <div class="sv-ev-icon sv-tone-{{ alert.tone }}"><i class="fas fa-triangle-exclamation"></i></div>
+                    <div class="sv-feed-body">
+                        <p class="sv-feed-title">{{ alert.title }}</p>
+                        <div class="sv-feed-meta">
+                            <span class="sv-chip sv-tone-{{ alert.tone }}">{{ alert.get_status_display }}</span>
+                            <span>{{ alert.created_at|sentinel_ago }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% include 'sentinel/_drawer.html' %}
+{% endblock %}
+
+{% block vault_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    requestAnimationFrame(function () {
+        document.querySelectorAll('.sv-bar-fill[data-width]').forEach(function (bar) {
+            bar.style.width = bar.dataset.width;
+        });
+    });
+
+    const revoke = document.getElementById('svRevokeThis');
+    if (revoke) {
+        revoke.addEventListener('click', function () {
+            Sentinel.confirmThen(
+                'Sign <b>{{ session.username_snapshot|escapejs }}</b> out of this device?',
+                function () {
+                    Sentinel.post('{% url "sentinel:revoke_session" session.id %}',
+                        { next: '{% url "sentinel:sessions" %}' });
+                });
+        });
+    }
+
+    document.querySelectorAll('tr[data-sv-event]').forEach(function (row) {
+        row.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                Sentinel.openEvent(row.dataset.svEvent);
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

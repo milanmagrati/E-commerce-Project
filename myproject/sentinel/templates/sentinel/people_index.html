@@ -1,0 +1,97 @@
+{% extends 'sentinel/_shell.html' %}
+{% load sentinel_extras %}
+
+{% block vault_body %}
+
+<div class="sv-panel">
+    <div class="sv-panel-head" style="flex-wrap:wrap;gap:.75rem;">
+        <div>
+            <h2><i class="fas fa-user-secret"></i> People dossiers</h2>
+            <p class="sv-sub">{{ total_people }} account{{ total_people|pluralize }} · ranked by activity over the last 30 days</p>
+        </div>
+        <form method="GET" class="d-flex gap-2" style="max-width:340px;">
+            <input class="sv-input" type="search" name="q" value="{{ search }}" placeholder="Name, username or email…">
+            <button class="sv-btn sv-btn-icon" type="submit"><i class="fas fa-magnifying-glass"></i></button>
+        </form>
+    </div>
+
+    <div class="sv-panel-body is-flush">
+        <div class="sv-table-wrap">
+            <table class="sv-table">
+                <thead>
+                    <tr>
+                        <th>Person</th>
+                        <th style="width:130px;">Role</th>
+                        <th style="width:150px;">Activity · 30d</th>
+                        <th style="width:120px;">Devices</th>
+                        <th style="width:130px;">Status</th>
+                        <th style="width:150px;">Last seen</th>
+                        <th style="width:110px;" class="text-end">Dossier</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for person in page_obj %}
+                    <tr class="{% if person.open_alerts %}is-flagged{% endif %}">
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="sv-avatar sv-tone-{{ person.username|avatar_tone }}">
+                                    {{ person.username|initials }}
+                                </div>
+                                <div style="min-width:0;">
+                                    <div class="sv-truncate" style="font-size:.84rem;font-weight:600;">
+                                        {{ person.username }}
+                                        {% if person.is_superuser %}
+                                        <i class="fas fa-crown" style="color:var(--sv-amber);font-size:.7rem;" title="Superuser"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="sv-cell-dim sv-truncate">
+                                        {{ person.get_full_name|default:person.email }}
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                        <td><span class="sv-chip sv-tone-slate">{{ person.get_role_display }}</span></td>
+                        <td>
+                            <strong style="font-size:.86rem;">{{ person.events_30d }}</strong>
+                            <span class="sv-cell-dim">action{{ person.events_30d|pluralize }}</span>
+                        </td>
+                        <td>
+                            <i class="fas fa-laptop sv-faint"></i> {{ person.device_count }}
+                        </td>
+                        <td>
+                            {% if person.live_count %}
+                            <span class="sv-chip sv-tone-emerald"><span class="sv-live-dot"></span> Online</span>
+                            {% elif not person.is_active %}
+                            <span class="sv-chip sv-tone-rose">Disabled</span>
+                            {% else %}
+                            <span class="sv-chip sv-tone-slate">Offline</span>
+                            {% endif %}
+                            {% if person.open_alerts %}
+                            <span class="sv-chip sv-tone-amber">{{ person.open_alerts }} alert{{ person.open_alerts|pluralize }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="sv-cell-dim">
+                            {% if person.last_event %}{{ person.last_event|sentinel_ago }}{% else %}Never{% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="{% url 'sentinel:dossier' person.id %}" class="sv-btn sv-btn-sm">
+                                <i class="fas fa-folder-open"></i> Open
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7">
+                        <div class="sv-empty">
+                            <i class="fas fa-user-slash"></i>
+                            <h3>No people found</h3>
+                            <p>Try a different search term.</p>
+                        </div>
+                    </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include 'sentinel/_pager.html' %}
+    </div>
+</div>
+{% endblock %}

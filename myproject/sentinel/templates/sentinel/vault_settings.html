@@ -1,0 +1,239 @@
+{% extends 'sentinel/_shell.html' %}
+{% load sentinel_extras %}
+
+{% block vault_body %}
+
+<div class="sv-tiles">
+    <div class="sv-tile sv-tone-sky">
+        <div class="sv-tile-label"><i class="fas fa-database"></i> Events stored</div>
+        <div class="sv-tile-value" data-countup="{{ storage.events }}">0</div>
+        <div class="sv-tile-meta">{{ storage.page_views }} are page views</div>
+    </div>
+    <div class="sv-tile sv-tone-violet">
+        <div class="sv-tile-label"><i class="fas fa-tower-broadcast"></i> Sessions</div>
+        <div class="sv-tile-value" data-countup="{{ storage.sessions }}">0</div>
+        <div class="sv-tile-meta">{{ storage.devices }} device fingerprint{{ storage.devices|pluralize }}</div>
+    </div>
+    <div class="sv-tile sv-tone-amber">
+        <div class="sv-tile-label"><i class="fas fa-hourglass-half"></i> Past retention</div>
+        <div class="sv-tile-value" data-countup="{{ storage.expiring }}">0</div>
+        <div class="sv-tile-meta">removed on the next prune</div>
+    </div>
+    <div class="sv-tile sv-tone-emerald">
+        <div class="sv-tile-label"><i class="fas fa-clock-rotate-left"></i> Oldest record</div>
+        <div class="sv-tile-value" style="font-size:1.05rem;padding-top:.6rem;">
+            {% if storage.oldest %}{{ storage.oldest|sentinel_clock }}{% else %}—{% endif %}
+        </div>
+        <div class="sv-tile-meta">beginning of the trail</div>
+    </div>
+</div>
+
+<form method="POST">
+    {% csrf_token %}
+
+    <div class="sv-grid sv-grid-2" style="margin-bottom:1.2rem;">
+
+        <!-- ══ Capture depth ═════════════════════════════════════════════ -->
+        <div class="sv-panel">
+            <div class="sv-panel-head">
+                <div>
+                    <h2><i class="fas fa-video"></i> What gets recorded</h2>
+                    <p class="sv-sub">More detail means a bigger table — tune to what you actually review</p>
+                </div>
+            </div>
+            <div class="sv-panel-body" style="display:grid;gap:1.1rem;">
+                <label class="sv-switch">
+                    <input type="checkbox" name="capture_page_views" {% if config.capture_page_views %}checked{% endif %}>
+                    <span class="sv-switch-track"></span>
+                    <span class="sv-switch-text">
+                        <strong>Record page visits</strong>
+                        <span>Log which screens each person opened, not just what they changed.
+                              This is the single largest source of rows.</span>
+                    </span>
+                </label>
+
+                <label class="sv-switch">
+                    <input type="checkbox" name="capture_field_diffs" {% if config.capture_field_diffs %}checked{% endif %}>
+                    <span class="sv-switch-track"></span>
+                    <span class="sv-switch-text">
+                        <strong>Record before/after values</strong>
+                        <span>Capture the old and new value of every changed field. Turning this off
+                              still records <em>which</em> fields changed, just not their contents.</span>
+                    </span>
+                </label>
+
+                <label class="sv-switch">
+                    <input type="checkbox" name="capture_anonymous" {% if config.capture_anonymous %}checked{% endif %}>
+                    <span class="sv-switch-track"></span>
+                    <span class="sv-switch-text">
+                        <strong>Record signed-out visitors</strong>
+                        <span>Includes public storefront traffic. Leave off unless you are investigating
+                              something specific — it can multiply volume many times over.</span>
+                    </span>
+                </label>
+
+                <div>
+                    <label class="sv-label" for="svExcluded">Never record these paths</label>
+                    <textarea class="sv-textarea" id="svExcluded" name="excluded_paths" rows="5"
+                              style="font-family:ui-monospace,Menlo,monospace;font-size:.78rem;"
+                              >{{ config.excluded_paths }}</textarea>
+                    <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                        One URL prefix per line. Sentinel's own polling endpoints are always excluded.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ Retention ═════════════════════════════════════════════════ -->
+        <div class="sv-panel">
+            <div class="sv-panel-head">
+                <div>
+                    <h2><i class="fas fa-box-archive"></i> How long it's kept</h2>
+                    <p class="sv-sub">Enforced by <code style="color:var(--sv-accent);">manage.py sentinel_prune</code></p>
+                </div>
+            </div>
+            <div class="sv-panel-body" style="display:grid;gap:1.1rem;">
+                <div>
+                    <label class="sv-label" for="svRetention">Event retention (days)</label>
+                    <input class="sv-input" id="svRetention" type="number" name="retention_days"
+                           min="1" max="3650" value="{{ config.retention_days }}">
+                    <p class="sv-faint" style="font-size:.72rem;margin:.35rem 0 0;">
+                        Sign-ins, data changes, deletions and exports.
+                    </p>
+                </div>
+                <div>
+                    <label class="sv-label" for="svViewRetention">Page-view retention (days)</label>
+                    <input class="sv-input" id="svViewRetention" type="number" name="page_view_retention_days"
+                           min="1" max="3650" value="{{ config.page_view_retention_days }}">
+                    <p class="sv-faint" style="font-size:.72rem;margin:.35rem 0 0;">
+                        Low-value read-only visits expire sooner to keep the table lean.
+                    </p>
+                </div>
+
+                <hr class="sv-hr">
+
+                <div>
+                    <div class="sv-label">Run the sweep</div>
+                    <div class="sv-code" style="user-select:all;">python manage.py sentinel_prune</div>
+                    <p class="sv-faint" style="font-size:.72rem;margin:.5rem 0 0;line-height:1.6;">
+                        Add <code>--dry-run</code> to preview, or
+                        <code>--archive vault.jsonl.gz</code> to write expiring events to a compressed
+                        file before deletion. Schedule it daily from cron — this project has no
+                        always-on scheduler, so nothing prunes automatically.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ Alert thresholds ══════════════════════════════════════════════ -->
+    <div class="sv-panel" style="margin-bottom:1.2rem;">
+        <div class="sv-panel-head">
+            <div>
+                <h2><i class="fas fa-bell"></i> When to raise an alert</h2>
+                <p class="sv-sub">Set these to match your team's real rhythm — an alert nobody trusts is an alert nobody reads</p>
+            </div>
+        </div>
+        <div class="sv-panel-body">
+            <div class="sv-grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));">
+                <div>
+                    <label class="sv-label" for="svFailThreshold">Failed sign-ins before alerting</label>
+                    <input class="sv-input" id="svFailThreshold" type="number" name="failed_login_threshold"
+                           min="1" max="100" value="{{ config.failed_login_threshold }}">
+                </div>
+                <div>
+                    <label class="sv-label" for="svFailWindow">…counted over (minutes)</label>
+                    <input class="sv-input" id="svFailWindow" type="number" name="failed_login_window_minutes"
+                           min="1" max="1440" value="{{ config.failed_login_window_minutes }}">
+                </div>
+                <div>
+                    <label class="sv-label" for="svBulkDelete">Deletions per hour before alerting</label>
+                    <input class="sv-input" id="svBulkDelete" type="number" name="bulk_delete_threshold"
+                           min="1" max="1000" value="{{ config.bulk_delete_threshold }}">
+                </div>
+                <div>
+                    <label class="sv-label" for="svDenials">Permission denials per hour</label>
+                    <input class="sv-input" id="svDenials" type="number" name="denial_threshold"
+                           min="1" max="1000" value="{{ config.denial_threshold }}">
+                </div>
+                <div>
+                    <label class="sv-label" for="svOfficeStart">Office hours start (Nepal)</label>
+                    <input class="sv-input" id="svOfficeStart" type="time" name="office_hours_start"
+                           value="{{ config.office_hours_start|time:'H:i' }}">
+                </div>
+                <div>
+                    <label class="sv-label" for="svOfficeEnd">Office hours end (Nepal)</label>
+                    <input class="sv-input" id="svOfficeEnd" type="time" name="office_hours_end"
+                           value="{{ config.office_hours_end|time:'H:i' }}">
+                </div>
+            </div>
+
+            <hr class="sv-hr">
+
+            <div class="sv-grid sv-grid-2">
+                <label class="sv-switch">
+                    <input type="checkbox" name="alert_on_new_device" {% if config.alert_on_new_device %}checked{% endif %}>
+                    <span class="sv-switch-track"></span>
+                    <span class="sv-switch-text">
+                        <strong>Alert on unrecognised devices</strong>
+                        <span>Raise an alert the first time an account signs in from a new
+                              browser/OS/network combination.</span>
+                    </span>
+                </label>
+                <label class="sv-switch">
+                    <input type="checkbox" name="alert_on_off_hours" {% if config.alert_on_off_hours %}checked{% endif %}>
+                    <span class="sv-switch-track"></span>
+                    <span class="sv-switch-text">
+                        <strong>Alert on off-hours access</strong>
+                        <span>Flag sign-ins outside the window above, and add risk to every action
+                              taken during those hours.</span>
+                    </span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <button type="submit" class="sv-btn sv-btn-primary"><i class="fas fa-floppy-disk"></i> Save settings</button>
+        <a href="{% url 'sentinel:home' %}" class="sv-btn">Cancel</a>
+        {% if config.updated_by %}
+        <span class="sv-faint" style="font-size:.75rem;">
+            Last changed by <strong>{{ config.updated_by.username }}</strong>, {{ config.updated_at|sentinel_ago }}
+        </span>
+        {% endif %}
+    </div>
+</form>
+
+<div class="sv-panel" style="margin-top:1.4rem;">
+    <div class="sv-panel-head"><h2><i class="fas fa-circle-info"></i> How Sentinel Vault captures</h2></div>
+    <div class="sv-panel-body">
+        <div class="sv-grid sv-grid-3" style="font-size:.82rem;line-height:1.65;">
+            <div>
+                <div class="sv-section-title" style="margin-top:0;">Sign-ins &amp; devices</div>
+                <p class="sv-muted">
+                    Hooked into Django's authentication signals, so every entry point is covered —
+                    the admin dashboard, the storefront, and anything added later. Each device is
+                    fingerprinted from its browser family, OS and network block, deliberately coarse
+                    so a browser update doesn't read as a new machine.
+                </p>
+            </div>
+            <div>
+                <div class="sv-section-title" style="margin-top:0;">Data changes</div>
+                <p class="sv-muted">
+                    Model signals snapshot each record before and after it is saved, so the trail
+                    records exactly which fields changed and to what. Passwords, tokens and API keys
+                    are replaced with <code>••••••••</code> before anything is written.
+                </p>
+            </div>
+            <div>
+                <div class="sv-section-title" style="margin-top:0;">Risk scoring</div>
+                <p class="sv-muted">
+                    Every action scores 0–100 from its type, the sensitivity of the record and fields
+                    touched, whether the device is recognised, and the time of day. The reasons behind
+                    a score are stored with the event and shown in its detail panel.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

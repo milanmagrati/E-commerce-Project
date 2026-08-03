@@ -63,6 +63,7 @@ EXTERNAL_APPS = [
     "google_sheets",
     "trendycrm",
     "resources",
+    "sentinel",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
 
@@ -85,6 +86,10 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    # Sentinel Vault must sit after AuthenticationMiddleware (needs request.user)
+    # and after MessageMiddleware (reads the 'permission_denied' message tag this
+    # project's RBAC decorators emit, to record access denials).
+    'sentinel.middleware.SentinelAuditMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
@@ -369,6 +374,18 @@ LOGGING = {
             'backupCount': 5,
             'formatter': 'verbose',
         },
+        # Sentinel Vault's *own* failures. The audit trail lives in the database;
+        # this file only records when recording itself broke, which must never be
+        # silent — a vault that quietly stopped capturing is worse than none.
+        'sentinel_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'filename': os.path.join(_LOG_DIR, 'sentinel.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
     },
     'loggers': {
         # ── NEW: Catch ALL unhandled 500 errors from Django core ─────────
@@ -419,6 +436,11 @@ LOGGING = {
         # "rate limited") was never written anywhere.
         'trendycrm': {
             'handlers': ['console', 'trendycrm_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'sentinel': {
+            'handlers': ['console', 'sentinel_file'],
             'level': 'INFO',
             'propagate': False,
         },
