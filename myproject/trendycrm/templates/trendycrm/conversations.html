@@ -300,7 +300,30 @@
     border-color: #fecaca;
     color: #b91c1c;
 }
+/* Still working on it — amber rather than red, because a retry in flight is not
+   yet something the agent has to act on. */
+.sys-event.sys-warning.sys-retrying {
+    background: #fffbeb;
+    border-color: #fde68a;
+    color: #b45309;
+}
 .sys-event-time { opacity: 0.7; font-size: 0.65rem; }
+.sys-event-actions { display: inline-flex; gap: 0.3rem; }
+.sys-event-btn {
+    border: 1px solid currentColor;
+    background: transparent;
+    color: inherit;
+    border-radius: 999px;
+    padding: 0.12rem 0.55rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1.5;
+    transition: background 0.15s ease, opacity 0.15s ease;
+}
+.sys-event-btn:hover { background: rgba(185, 28, 28, 0.08); }
+.sys-event-btn:disabled { opacity: 0.55; cursor: default; }
+.sys-event-btn-quiet { border-color: transparent; opacity: 0.75; text-decoration: underline; }
 
 /* Paused = the toggle is on but something (a human, an assignment) is holding the
    bot back. Visually distinct from both On and Off, because reading it as "On"
@@ -1078,8 +1101,14 @@
         return container.querySelectorAll('.msg-bubble').length;
     }
 
+    // Set while an alert action is waiting on the server. The 3-second repaint
+    // would otherwise swap the button out mid-request, taking its "Retrying…"
+    // state with it and leaving the agent unsure whether the click registered.
+    let alertActionInFlight = false;
+
     // Auto-fetcher for Real-Time UI updates
     setInterval(function() {
+        if (alertActionInFlight) return;
         fetch("{% url 'trendycrm:conversations_ajax' %}?id={{ active_conv.pk }}")
         .then(response => response.text())
         .then(html => {
@@ -1292,6 +1321,84 @@
     setInterval(function () {
         if (aiBadgeState && aiBadgeState.state === 'paused') renderAiBadge(aiBadgeState);
     }, 1000);
+
+    // ── AI failure alert actions ──────────────────────────────────────────────
+    // Delegated from the thread container because the poll rebuilds its contents
+    // every few seconds — handlers bound to the buttons themselves would die with
+    // the first repaint.
+    (function initAlertActions() {
+        const msgArea = document.getElementById('msgArea');
+        if (!msgArea) return;
+
+        // Built from the real routes with a placeholder id, so the CRM's mount
+        // point stays a URLconf detail rather than a string baked into this page.
+        const RETRY_URL = "{% url 'trendycrm:retry_ai_reply' 0 %}";
+        const DISMISS_URL = "{% url 'trendycrm:dismiss_ai_alert' 0 %}";
+        const alertUrl = (template, id) => template.replace(/\/0\//, '/' + id + '/');
+
+        function runAlertAction(btn, url, pending, onDone) {
+            const chip = btn.closest('.sys-event');
+            const buttons = chip ? chip.querySelectorAll('.sys-event-btn') : [btn];
+            const original = btn.innerHTML;
+            buttons.forEach(b => b.disabled = true);
+            btn.innerHTML = pending;
+            alertActionInFlight = true;
+
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            })
+            .then(r => r.json())
+            .then(data => onDone(data, chip))
+            .catch(err => {
+                console.error(err);
+                if (typeof showTrendyToast === 'function') {
+                    showTrendyToast("Couldn't reach the server. Try again.", "error", "Error");
+                }
+            })
+            .finally(() => {
+                alertActionInFlight = false;
+                btn.innerHTML = original;
+                buttons.forEach(b => b.disabled = false);
+            });
+        }
+
+        msgArea.addEventListener('click', function (e) {
+            const retryBtn = e.target.closest('[data-retry-ai]');
+            if (retryBtn) {
+                runAlertAction(
+                    retryBtn,
+                    alertUrl(RETRY_URL, retryBtn.dataset.retryAi),
+                    '<i class="fas fa-spinner fa-spin"></i> Asking the AI…',
+                    function (data, chip) {
+                        const ok = data.status === 'ok';
+                        // On success the alert is already resolved server-side;
+                        // dropping it now means the agent doesn't watch a stale
+                        // warning sit there until the next poll.
+                        if (ok && chip) chip.remove();
+                        if (typeof showTrendyToast === 'function') {
+                            showTrendyToast(data.message, ok ? 'success' : 'error',
+                                            ok ? 'AI replied' : 'Still failing');
+                        }
+                    }
+                );
+                return;
+            }
+
+            const dismissBtn = e.target.closest('[data-dismiss-alert]');
+            if (dismissBtn) {
+                runAlertAction(
+                    dismissBtn,
+                    alertUrl(DISMISS_URL, dismissBtn.dataset.dismissAlert),
+                    'Dismissing…',
+                    function (data, chip) { if (chip) chip.remove(); }
+                );
+            }
+        });
+    })();
 
     // Claims a bot-run conversation for the current agent and unlocks the composer.
     function takeOverConversation() {

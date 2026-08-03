@@ -22,6 +22,11 @@ urlpatterns = [
     path('conversations/<int:conv_id>/toggle-ai/', views.crm_toggle_conversation_ai, name='toggle_conversation_ai'),
     path('conversations/<int:conv_id>/take-over/', views.crm_take_over_conversation, name='take_over_conversation'),
 
+    # AI failure alerts inside a thread — retry the reply the bot missed, or
+    # dismiss the alert once a human has handled it.
+    path('messages/<int:msg_id>/retry-ai/', views.crm_retry_ai_reply, name='retry_ai_reply'),
+    path('messages/<int:msg_id>/dismiss-alert/', views.crm_dismiss_ai_alert, name='dismiss_ai_alert'),
+
     path('labels/create/', views.crm_create_label_global, name='create_label_global'),
 
     path('social/', views.crm_social_posts, name='social_posts'),

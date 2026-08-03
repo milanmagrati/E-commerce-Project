@@ -9,10 +9,26 @@ follow it — a takeover pause expires on a timer, with no user action to hook.
 {% endif %}
 {% for msg in chat_messages %}
     {% if msg.is_system %}
-        <div class="sys-event {% if msg.system_level == 'warning' %}sys-warning{% endif %}">
-            <i class="fas {% if msg.system_level == 'warning' %}fa-triangle-exclamation{% else %}fa-circle-info{% endif %}"></i>
+        <div class="sys-event {% if msg.system_level == 'warning' %}sys-warning{% endif %}{% if msg.event_is_retrying %} sys-retrying{% endif %}"
+             data-event-id="{{ msg.pk }}">
+            <i class="fas {% if msg.event_is_retrying %}fa-arrows-rotate fa-spin{% elif msg.system_level == 'warning' %}fa-triangle-exclamation{% else %}fa-circle-info{% endif %}"></i>
             <span>{{ msg.body }}</span>
             <span class="sys-event-time">{{ msg.created_at|date:"h:i A" }}</span>
+            {% comment %}
+            An open failure alert is an unfinished job, so it carries the two ways
+            to finish it. It disappears on its own the moment the AI or an agent
+            answers — these are for when neither has happened yet.
+            {% endcomment %}
+            {% if msg.is_open_event and not msg.event_is_retrying %}
+                <span class="sys-event-actions">
+                    <button type="button" class="sys-event-btn" data-retry-ai="{{ msg.pk }}">
+                        <i class="fas fa-rotate-right"></i> Retry AI
+                    </button>
+                    <button type="button" class="sys-event-btn sys-event-btn-quiet" data-dismiss-alert="{{ msg.pk }}">
+                        Dismiss
+                    </button>
+                </span>
+            {% endif %}
         </div>
     {% else %}
     {% ifchanged msg.created_at|date:"Y-m-d" %}

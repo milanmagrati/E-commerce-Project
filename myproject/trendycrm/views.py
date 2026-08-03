@@ -257,7 +257,7 @@ def crm_conversations(request):
         if not active_conv.is_read:
             active_conv.is_read = True
             active_conv.save(update_fields=['is_read'])
-        messages = active_conv.messages.all()
+        messages = active_conv.visible_messages()
 
     contacts = CRMContact.objects.all()
 
@@ -362,7 +362,7 @@ def crm_conversations_ajax(request):
         active_conv.is_read = True
         active_conv.save(update_fields=['is_read'])
 
-    messages = active_conv.messages.all()
+    messages = active_conv.visible_messages()
 
     context = {
         'chat_messages': messages,
@@ -436,6 +436,11 @@ def crm_send_message(request, conv_id):
         # for HUMAN_TAKEOVER_MINUTES so it can't talk over the agent.
         conv.last_human_reply_at = timezone.now()
         conv.save(update_fields=['last_message', 'updated_at', 'is_read', 'last_human_reply_at'])
+
+        # The agent just did what the failure alert was asking for, so the alert
+        # goes away. Leaving it up would keep flagging a chat that has been
+        # answered — and it is the loudest thing in the thread.
+        CRMMessage.resolve_events(conv, CRMMessage.EVENT_AI_FAILURE)
 
         # Announce the handover once per pause window — ai_was_live is only true
         # when the bot wasn't already stood down, so a burst of agent replies
@@ -802,6 +807,43 @@ def crm_take_over_conversation(request, conv_id):
         'assigned_to': agent,
         'ai': conv.ai_status(),
     })
+
+
+@login_required
+@require_POST
+def crm_retry_ai_reply(request, msg_id):
+    """
+    Re-runs the auto-reply behind an open 'the AI couldn't reply' alert.
+
+    Synchronous on purpose: the agent is watching the button and needs to know
+    whether to answer the customer themselves. A success retires the alert from
+    the thread; a failure rewrites it with the new reason.
+    """
+    event = get_object_or_404(CRMMessage, pk=msg_id, is_system=True)
+    from .meta_sync import retry_ai_reply_from_event
+
+    ok, reason = retry_ai_reply_from_event(event)
+    return JsonResponse({
+        'status': 'ok' if ok else 'failed',
+        'message': ('The AI replied — the alert has been cleared.'
+                    if ok else reason or 'The AI still could not reply.'),
+    })
+
+
+@login_required
+@require_POST
+def crm_dismiss_ai_alert(request, msg_id):
+    """
+    Hides an AI failure alert the agent has decided to handle themselves.
+
+    Resolving rather than deleting: the alert stays in the record of what the
+    bot struggled with, it just stops occupying the thread.
+    """
+    event = get_object_or_404(CRMMessage, pk=msg_id, is_system=True)
+    if event.resolved_at is None:
+        event.resolved_at = timezone.now()
+        event.save(update_fields=['resolved_at'])
+    return JsonResponse({'status': 'ok'})
 
 
 # ─── Chatbot ─────────────────────────────────────────────────────────────────

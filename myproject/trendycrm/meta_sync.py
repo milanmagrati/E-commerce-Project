@@ -1114,6 +1114,142 @@ def _record_bot_status(chatbot, error=None):
         logger.exception("Could not record chatbot status")
 
 
+# How long to wait before each automatic re-attempt of a failed auto-reply, in
+# seconds. Rate limits on a free-tier key are per-minute and provider overloads
+# clear in seconds, so a short ladder recovers most failures without a human ever
+# seeing them; anything still failing after ~6 minutes needs a person, not a
+# fourth attempt. Only failures the router marks retryable use this.
+AI_RETRY_DELAYS = [30, 90, 240]
+
+
+def _short_failure_reason(reason):
+    """
+    Trims the raw provider blob off a router error for the in-thread chip.
+
+    The full text ('... (Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded
+    your current quota, please check your plan and billing details...)') belongs
+    on the Chatbot page where an operator is debugging. In the inbox it buries
+    the one thing the agent needs to know: the bot is not answering this customer.
+    """
+    reason = (reason or '').strip()
+    head = reason.split(' (', 1)[0].strip()
+    return head or reason
+
+
+def _cancel_ai_failure_chip(conversation, note=None):
+    """
+    Retires the open failure chip because it no longer describes reality — the
+    AI answered, a human did, or the bot was stood down on this chat.
+    """
+    from .models import CRMMessage
+    try:
+        if CRMMessage.resolve_events(conversation, CRMMessage.EVENT_AI_FAILURE) and note:
+            logger.info(f"Cleared AI failure chip on conversation #{conversation.pk} — {note}")
+    except Exception:
+        logger.exception("Could not clear AI failure chip")
+
+
+def _schedule_ai_retry(integration, contact, conversation, message_text, attachment, attempt):
+    """
+    Re-runs a failed auto-reply after AI_RETRY_DELAYS[attempt] seconds.
+
+    Runs on a timer thread rather than inline: the caller may be a webhook Meta
+    is waiting on, and sleeping there risks the delivery being retried or
+    dropped. Ids are re-resolved inside the thread because the objects the
+    request built will be stale (or their connection closed) by the time it runs.
+    """
+    import threading
+    from django.db import connection
+
+    delay = AI_RETRY_DELAYS[attempt]
+
+    def _run():
+        try:
+            from .models import CRMConversation, CRMContact
+            conv = CRMConversation.objects.filter(pk=conversation.pk).first()
+            integ = CRMIntegration.objects.filter(pk=integration.pk).first()
+            if not conv or not integ:
+                return
+            cont = CRMContact.objects.filter(pk=contact.pk).first() if contact else None
+            _attempt_ai_reply(integ, cont, conv, message_text,
+                              attachment=attachment, attempt=attempt + 1)
+        except Exception:
+            logger.exception("Scheduled AI auto-reply retry failed")
+        finally:
+            connection.close()
+
+    timer = threading.Timer(delay, _run)
+    timer.daemon = True
+    timer.start()
+    logger.info(
+        f"Scheduled AI auto-reply retry {attempt + 1}/{len(AI_RETRY_DELAYS)} "
+        f"on conversation #{conversation.pk} in {delay}s"
+    )
+    return delay
+
+
+def _record_ai_failure(conversation, chatbot, reason, retryable, attempt,
+                       message_text, attachment, integration):
+    """
+    Puts (or updates) the single chip that explains a silent bot, and starts the
+    background retry ladder when the failure is one that clears by itself.
+
+    There is at most one open chip per conversation: a provider outage fails
+    every attempt the same way, and stacking a warning per attempt would bury
+    the customer's message under the explanation for why nobody answered it.
+    """
+    from .models import CRMMessage
+
+    _record_bot_status(chatbot, error=reason)
+
+    retries_left = retryable and attempt < len(AI_RETRY_DELAYS)
+    if retries_left:
+        delay = _schedule_ai_retry(integration, _conversation_contact(conversation), conversation,
+                                   message_text, attachment, attempt)
+        text = (
+            f"The AI hasn't been able to reply yet — {_short_failure_reason(reason)} "
+            f"Retrying automatically in {_humanize_seconds(delay)} "
+            f"(attempt {attempt + 2} of {len(AI_RETRY_DELAYS) + 1}). "
+            f"You can reply manually at any time — that cancels the retry."
+        )
+    else:
+        text = (
+            f"The AI couldn't reply to this message — {reason} "
+            + (f"Retried {attempt} time{'s' if attempt != 1 else ''} without success. "
+               if attempt else "")
+            + "Reply manually, or use Retry AI once the provider recovers."
+        )
+
+    CRMMessage.log_event(
+        conversation,
+        text,
+        level='warning',
+        kind=CRMMessage.EVENT_AI_FAILURE,
+        data={
+            'reason': reason,
+            'retrying': bool(retries_left),
+            'retryable': bool(retryable),
+            'message_text': message_text,
+            'attachment': attachment or None,
+            'integration_id': integration.pk if integration else None,
+        },
+        retry_count=attempt,
+    )
+
+
+def _conversation_contact(conversation):
+    """The conversation's contact, or None — retries reload it by conversation."""
+    return conversation.contact if conversation.contact_id else None
+
+
+def _humanize_seconds(seconds):
+    """'30 seconds' / '2 minutes' — chip text, so approximate is fine."""
+    if seconds < 60:
+        return f"{int(seconds)} seconds"
+    minutes = round(seconds / 60)
+    return f"{minutes} minute{'s' if minutes != 1 else ''}"
+
+
 # ─── AI Router Integration ─────────────────────────────────────────────────────
 def process_incoming_webhook_message(integration, contact, conversation, message_text,
                                      is_outbound=False, attachment=None):
@@ -1132,14 +1268,44 @@ def process_incoming_webhook_message(integration, contact, conversation, message
     """
     if is_outbound:
         return  # Never auto-reply to our own outbound messages
+    _attempt_ai_reply(integration, contact, conversation, message_text, attachment=attachment)
 
+
+def _attempt_ai_reply(integration, contact, conversation, message_text,
+                      attachment=None, attempt=0, manual=False):
+    """
+    One attempt at answering an inbound message with the AI.
+
+    Shared by the first, webhook-driven attempt and by every later one — the
+    scheduled retries and the agent's Retry AI button — so a retry re-runs the
+    exact same gates rather than a looser copy of them. In particular a retry
+    re-reads `ai_status`: if an agent took the chat over during the backoff, the
+    bot must stay out of it, and the warning it left behind is no longer the
+    agent's problem to act on.
+
+    `attempt` is 0 for the original try. Returns (ok, reason).
+    """
     try:
-        from .models import CRMChatbotConfig, CRMMessage
+        from .models import CRMMessage
+
+        # The open failure chip *is* the outstanding work item. If it's gone, the
+        # message has been dealt with — an agent replied, or someone dismissed the
+        # alert — and this retry has nothing left to do. Checking the chip rather
+        # than the takeover timer matters because the last rung of the ladder can
+        # land after a 5-minute human pause has already expired, which would let
+        # the bot answer a customer the agent has just finished answering.
+        if attempt and not CRMMessage.open_event(conversation, CRMMessage.EVENT_AI_FAILURE):
+            logger.info(
+                f"Dropping AI retry on conversation #{conversation.pk} — the alert "
+                f"was already cleared."
+            )
+            return False, 'That alert has already been cleared.'
+
         chatbot = integration.chatbot_config
 
         if not chatbot:
             logger.info(f"No chatbot assigned to channel account: {integration.account_name or integration.channel_type}")
-            return
+            return False, 'No chatbot is assigned to this channel.'
 
         # ── Gate: chatbot config, channel enablement, and human-takeover guards ──
         # All of it lives on the conversation so the inbox badge shows exactly the
@@ -1151,7 +1317,11 @@ def process_incoming_webhook_message(integration, contact, conversation, message
                 f"Skipping auto-reply on conversation #{conversation.pk} "
                 f"[{ai_state['state']}] — {ai_state['reason']}"
             )
-            return
+            if attempt:
+                # A retry that arrives after a human has stepped in has nothing
+                # left to warn about — the chat is being handled.
+                _cancel_ai_failure_chip(conversation, note=ai_state['reason'])
+            return False, ai_state['reason']
 
         # A photo-only message has no text to classify; send it down the vision
         # path instead, which the router already supports.
@@ -1164,7 +1334,7 @@ def process_incoming_webhook_message(integration, contact, conversation, message
                     message_text = "The customer sent this image. Respond helpfully."
         if not message_text:
             logger.info("Inbound message has no text and no readable image — skipping auto-reply")
-            return
+            return False, 'The message had no text and no readable image.'
 
         from .ai_router import route_message
         result = route_message(
@@ -1207,8 +1377,14 @@ def process_incoming_webhook_message(integration, contact, conversation, message
 
             logger.info(
                 f"AI auto-reply sent | intent={result.get('intent')} | "
-                f"model={result.get('model_used')} | channel={integration.channel_type}"
+                f"model={result.get('model_used')} | channel={integration.channel_type} | "
+                f"attempt={attempt + 1}"
             )
+
+            # The customer has an answer, so any warning about the bot failing to
+            # produce one is now false. Retiring it is the whole point of tracking
+            # the chip as a condition rather than a log line.
+            _cancel_ai_failure_chip(conversation, note='the AI replied')
 
             # Bill the reply against this business's AI credits so the balance and
             # credit history on the Chatbot page reflect real usage.
@@ -1221,43 +1397,90 @@ def process_incoming_webhook_message(integration, contact, conversation, message
             )
 
             _record_bot_status(chatbot, error=None)
-        else:
-            reason = result.get('error') or 'The AI returned an empty reply.'
-            logger.error(
-                f"AI auto-reply not generated | success={result.get('success')} | "
-                f"error={reason}"
-            )
-            # Surface it on the Chatbot page instead of failing invisibly.
-            _record_bot_status(chatbot, error=reason)
-            # ...and in the conversation itself. Without this the agent sees the
-            # customer's message sitting unanswered with no clue the bot even
-            # tried, which is exactly how a provider outage turns into a lost lead.
-            CRMMessage.log_event(
-                conversation,
-                f"The AI couldn't reply to this message — {reason} "
-                f"Reply manually, or resend once the provider recovers.",
-                level='warning',
-            )
 
-        # If the AI flagged a handoff trigger, auto-create a support ticket. Only
-        # when the routing actually succeeded — a failed API call shouldn't spawn
-        # tickets on every retry.
-        if result.get('success') and result.get('open_ticket'):
-            try:
-                from .models import CRMTicket
-                CRMTicket.objects.create(
-                    title=f"Product Issue from {contact.name if contact else 'Customer'}",
-                    description=f"Message: {message_text}",
-                    contact=contact,
-                    priority='medium',
-                    status='open',
-                )
-                logger.info("Auto-created support ticket for product issue")
-            except Exception as e:
-                logger.error(f"Failed to auto-create ticket: {e}")
+            # If the AI flagged a handoff trigger, auto-create a support ticket.
+            # Only on a successful route — a failed API call shouldn't spawn
+            # tickets on every retry.
+            if result.get('open_ticket'):
+                try:
+                    from .models import CRMTicket
+                    CRMTicket.objects.create(
+                        title=f"Product Issue from {contact.name if contact else 'Customer'}",
+                        description=f"Message: {message_text}",
+                        contact=contact,
+                        priority='medium',
+                        status='open',
+                    )
+                    logger.info("Auto-created support ticket for product issue")
+                except Exception as e:
+                    logger.error(f"Failed to auto-create ticket: {e}")
+
+            return True, ''
+
+        reason = result.get('error') or 'The AI returned an empty reply.'
+        logger.error(
+            f"AI auto-reply not generated | success={result.get('success')} | "
+            f"attempt={attempt + 1} | error={reason}"
+        )
+        # Surface it on the Chatbot page and in the conversation itself, and line
+        # up a retry when the failure is the kind that clears by itself. Without
+        # the chip the agent sees the customer's message sitting unanswered with
+        # no clue the bot even tried, which is how a provider outage turns into a
+        # lost lead; without the retry, a 30-second rate limit costs a reply.
+        _record_ai_failure(
+            conversation, chatbot, reason,
+            # A manual retry is the agent asking for one attempt now, not for the
+            # background ladder to start over on their behalf.
+            retryable=bool(result.get('retryable')) and not manual,
+            attempt=attempt,
+            message_text=message_text,
+            attachment=attachment,
+            integration=integration,
+        )
+        return False, reason
 
     except Exception as e:
-        logger.exception(f"process_incoming_webhook_message failed: {e}")
+        logger.exception(f"AI auto-reply attempt failed: {e}")
+        return False, str(e)
+
+
+def retry_ai_reply_from_event(event):
+    """
+    Runs the Retry AI action behind a failure chip, using the message the bot
+    originally choked on rather than whatever happens to be last in the thread.
+
+    Synchronous: the agent clicked a button and is waiting to find out whether
+    the customer got an answer. Returns (ok, reason).
+    """
+    from .models import CRMMessage
+
+    if not event.is_open_event or event.event_kind != CRMMessage.EVENT_AI_FAILURE:
+        return False, 'That alert has already been cleared.'
+
+    data = event.event_data or {}
+    conversation = event.conversation
+    integration = (
+        CRMIntegration.objects.filter(pk=data.get('integration_id')).first()
+        or conversation.integration
+    )
+    if not integration:
+        return False, 'The channel this chat came from is no longer connected.'
+
+    message_text = data.get('message_text') or ''
+    if not message_text:
+        return False, "The original message is no longer available to retry."
+
+    return _attempt_ai_reply(
+        integration,
+        _conversation_contact(conversation),
+        conversation,
+        message_text,
+        attachment=data.get('attachment'),
+        # Counts as one more attempt on the same failure, so the chip's history
+        # ("retried 3 times") stays truthful across manual and automatic tries.
+        attempt=event.retry_count + 1,
+        manual=True,
+    )
 
 
 def _resolve_integration_by_page(page_id):

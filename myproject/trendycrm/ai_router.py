@@ -781,6 +781,8 @@ def route_message(
         'open_ticket': bool,    # True if a support ticket should be opened
         'success': bool,
         'error': str | None,
+        'error_kind': str,      # '' | 'rate_limit' | 'provider_down' | 'not_configured' | 'other'
+        'retryable': bool,      # True when the same call may succeed shortly
       }
     """
     result = {
@@ -792,6 +794,11 @@ def route_message(
         'success': False,
         'error': None,
         'notice': None,   # set when a requested provider was unavailable and we fell back
+        # Callers need to tell "wait and it will work" apart from "this will fail
+        # identically forever" — one deserves an automatic retry, the other only
+        # wastes quota and leaves a warning up longer.
+        'error_kind': '',
+        'retryable': False,
     }
 
     try:
@@ -803,6 +810,7 @@ def route_message(
         if not available['openai'] and not available['gemini']:
             result['error'] = ('No AI provider is configured. Add OPENAI_API_KEY or '
                                'GEMINI_API_KEY to your .env file to activate the assistant.')
+            result['error_kind'] = 'not_configured'
             result['reply'] = ("The AI assistant isn't connected yet. Please add an OpenAI or "
                                "Gemini API key in your .env file to enable replies.")
             result['model_used'] = 'unavailable'
@@ -810,6 +818,7 @@ def route_message(
 
         if chatbot_config is None:
             result['error'] = 'Chatbot configuration is missing or inactive'
+            result['error_kind'] = 'not_configured'
             return result
 
         # Purpose-based provider preferences (fall back to sensible defaults)
@@ -830,6 +839,7 @@ def route_message(
             if provider is None:
                 result['error'] = ('Image recognition is unavailable — no AI provider key is '
                                    'configured for it.')
+                result['error_kind'] = 'not_configured'
                 result['reply'] = ("Sorry, I can't read images right now — image recognition "
                                    "hasn't been set up yet.")
                 result['model_used'] = 'unavailable'
@@ -882,6 +892,7 @@ def route_message(
             provider, fell_back = _resolve_provider(text_pref, available)
             if provider is None:
                 result['error'] = 'No AI provider is available for text replies.'
+                result['error_kind'] = 'not_configured'
                 result['reply'] = ("The AI assistant isn't connected yet. Please add an API key "
                                    "in your .env file.")
                 result['model_used'] = 'unavailable'
@@ -939,6 +950,8 @@ def route_message(
             result['error'] = ('AI provider rate limit reached — your API key has used its quota '
                                'for the moment. Wait a minute and try again, or upgrade the plan. '
                                f'({detail[:180]})')
+            result['error_kind'] = 'rate_limit'
+            result['retryable'] = True
         elif any(s in detail.lower() for s in ('unavailable', '503', 'overload',
                                                'timed out', 'timeout', 'unreachable')):
             # Provider-side capacity or a network stall — not anything the operator
@@ -948,8 +961,11 @@ def route_message(
                                'through several retries. This normally clears within a minute — '
                                'resend the reply then, or configure a second provider key so the '
                                f'bot can fail over automatically. ({detail[:180]})')
+            result['error_kind'] = 'provider_down'
+            result['retryable'] = True
         else:
             result['error'] = detail
+            result['error_kind'] = 'other'
         result['reply'] = "I'm sorry, I'm having trouble processing your request right now. Please try again shortly."
 
     return result

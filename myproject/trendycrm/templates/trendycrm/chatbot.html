@@ -409,8 +409,12 @@ a.biz-switcher-item:hover { background: #f9fafb; }
 </div>
 
 {% if chatbot.last_error %}
-<!-- ── Last auto-reply failure ─────────────────────────────── -->
-<div style="display:flex; gap:.85rem; align-items:flex-start; background:#fef2f2; border:1px solid #fecaca; border-radius:12px; padding:1rem 1.15rem; margin-bottom:1.25rem;">
+<!-- ── Last auto-reply failure ─────────────────────────────────────────────────
+     Clears itself: the next successful auto-reply — or a successful run of the
+     test console below — wipes last_error, so this banner is only ever showing a
+     problem that was still true at the last attempt. Saying so stops it reading
+     like a permanent fault when it was a 30-second rate limit. ────────────── -->
+<div id="botErrorBanner" style="display:flex; gap:.85rem; align-items:flex-start; background:#fef2f2; border:1px solid #fecaca; border-radius:12px; padding:1rem 1.15rem; margin-bottom:1.25rem;">
     <i class="fas fa-triangle-exclamation" style="color:#dc2626; font-size:1.15rem; margin-top:.1rem;"></i>
     <div style="flex:1; min-width:0;">
         <div style="font-weight:700; font-size:.88rem; color:#991b1b;">
@@ -422,6 +426,12 @@ a.biz-switcher-item:hover { background: #f9fafb; }
         <div style="font-size:.72rem; color:#b91c1c; margin-top:.45rem;">
             <i class="far fa-clock"></i> {{ chatbot.last_error_at|date:"M d, Y — h:i A" }}
             &nbsp;·&nbsp; Customers were not sent an error message; the bot stayed silent.
+        </div>
+        <div style="font-size:.72rem; color:#b91c1c; margin-top:.45rem; opacity:.9;">
+            <i class="fas fa-wand-magic-sparkles"></i>
+            Failed replies are retried automatically for a few minutes, and no AI credits
+            are charged for them. This notice disappears on the next successful reply —
+            run a test below to check now.
         </div>
     </div>
 </div>
@@ -1516,6 +1526,11 @@ async function runAiTest() {
             if (typeof data.credits_remaining === 'number') {
                 document.getElementById('creditBalance').textContent = data.credits_remaining;
             }
+            // A working test is proof the recorded failure is over; the server has
+            // already cleared it, so take the banner down with it rather than
+            // leaving a contradiction on screen until the next reload.
+            const errorBanner = document.getElementById('botErrorBanner');
+            if (errorBanner) errorBanner.remove();
         }
     } catch (err) {
         resultEl.style.display = 'block';

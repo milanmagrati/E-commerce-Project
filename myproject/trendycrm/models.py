@@ -90,6 +90,15 @@ class CRMConversation(models.Model):
     def __str__(self):
         return f"Conversation #{self.pk}"
 
+    def visible_messages(self):
+        """
+        The thread as an agent should see it. Condition chips that have since
+        been resolved ("the AI couldn't reply" — but then it did) are dropped:
+        a warning about a problem that is over is worse than no warning, because
+        it keeps pulling attention to a chat that no longer needs any.
+        """
+        return self.messages.exclude(is_system=True, resolved_at__isnull=False)
+
     def ai_status(self, integration=None):
         """
         Single source of truth for "will the AI answer the next inbound message?".
@@ -215,6 +224,23 @@ class CRMMessage(models.Model):
     SYSTEM_LEVEL_CHOICES = [('info', 'Info'), ('warning', 'Warning')]
     system_level = models.CharField(max_length=10, choices=SYSTEM_LEVEL_CHOICES,
                                     blank=True, default='')
+    # Some events describe a *condition* rather than something that happened —
+    # "the AI couldn't reply" is true only until the AI does reply. Those carry a
+    # kind so they can be found again and retired; plain events leave it blank and
+    # stay in the thread forever, which is correct for "X took over".
+    EVENT_AI_FAILURE = 'ai_failure'
+    event_kind = models.CharField(max_length=32, blank=True, default='', db_index=True)
+    # Set when the condition is over. Resolved events drop out of the thread
+    # (see CRMConversation.visible_messages) instead of being deleted, so the
+    # history of what the bot struggled with is still auditable.
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    # Everything needed to re-run the attempt that failed: the customer's text and
+    # the attachment that came with it. Retrying from the thread would have to
+    # guess which message the bot choked on; this remembers it exactly.
+    event_data = models.JSONField(default=dict, blank=True)
+    # Auto-retries already spent on this failure, so the chip can say where it is
+    # in the backoff and stop promising retries it won't make.
+    retry_count = models.PositiveIntegerField(default=0)
     # What the router classified the customer's message as, kept on the reply it
     # produced so the thread can show *why* the bot answered the way it did.
     ai_intent = models.CharField(max_length=40, blank=True, default='')
@@ -238,12 +264,70 @@ class CRMMessage(models.Model):
         return self.INTENT_DISPLAY.get(self.ai_intent, ('', 'low'))[1]
 
     @classmethod
-    def log_event(cls, conversation, text, level='info'):
-        """Drops an internal event chip into a conversation's timeline."""
+    def log_event(cls, conversation, text, level='info', kind='', data=None,
+                  retry_count=None):
+        """
+        Drops an internal event chip into a conversation's timeline.
+
+        A `kind` makes the chip updatable: an open (unresolved) chip of the same
+        kind is rewritten in place rather than a second one being appended. A
+        provider that is down answers every retry identically, and a column of
+        five identical warnings buries the conversation it is warning about.
+        """
+        if kind:
+            existing = cls.objects.filter(
+                conversation=conversation, is_system=True,
+                event_kind=kind, resolved_at__isnull=True,
+            ).order_by('-created_at').first()
+            if existing:
+                existing.body = text
+                existing.system_level = level
+                if data is not None:
+                    existing.event_data = data
+                if retry_count is not None:
+                    existing.retry_count = retry_count
+                # Bumped so the chip sits next to the attempt it describes rather
+                # than back at the first failure, which may be many minutes old.
+                existing.created_at = timezone.now()
+                existing.save(update_fields=['body', 'system_level', 'event_data',
+                                             'retry_count', 'created_at'])
+                return existing
         return cls.objects.create(
             conversation=conversation, sender='System', body=text,
-            is_outbound=False, is_system=True, system_level=level, status='sent',
+            is_outbound=False, is_system=True, system_level=level,
+            event_kind=kind, event_data=data or {}, retry_count=retry_count or 0,
+            status='sent',
         )
+
+    @classmethod
+    def open_event(cls, conversation, kind):
+        """The conversation's live chip of this kind, if it still has one."""
+        return cls.objects.filter(
+            conversation=conversation, is_system=True,
+            event_kind=kind, resolved_at__isnull=True,
+        ).order_by('-created_at').first()
+
+    @classmethod
+    def resolve_events(cls, conversation, kind):
+        """
+        Retires the conversation's open chips of `kind` because the condition
+        they describe is over — the AI answered, or a human did. Returns how
+        many were retired.
+        """
+        return cls.objects.filter(
+            conversation=conversation, is_system=True,
+            event_kind=kind, resolved_at__isnull=True,
+        ).update(resolved_at=timezone.now())
+
+    @property
+    def is_open_event(self):
+        """A condition chip that is still true, so it can still offer actions."""
+        return bool(self.is_system and self.event_kind and self.resolved_at is None)
+
+    @property
+    def event_is_retrying(self):
+        """True while a background retry of this failure is still scheduled."""
+        return bool(self.is_open_event and self.event_data.get('retrying'))
 
     @property
     def display_date(self):
