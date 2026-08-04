@@ -307,6 +307,16 @@
     border-color: #fde68a;
     color: #b45309;
 }
+.sys-event.sys-lead {
+    background: #fff7ed;
+    border-color: #fed7aa;
+    color: #c2410c;
+}
+.sys-event.sys-complaint {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #b91c1c;
+}
 .sys-event-time { opacity: 0.7; font-size: 0.65rem; }
 .sys-event-actions { display: inline-flex; gap: 0.3rem; }
 .sys-event-btn {
@@ -412,6 +422,8 @@
     margin: 0.25rem 2.15rem 0 0;
 }
 .msg-time.ai-meta { margin-right: 2.15rem; }
+/* Same chips on an inbound bubble, which sits on the left instead. */
+.ai-chips.ai-chips-inbound { justify-content: flex-start; margin: 0.25rem 0 0 0; }
 .ai-chip {
     display: inline-flex;
     align-items: center;

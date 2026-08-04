@@ -229,6 +229,11 @@ class CRMMessage(models.Model):
     # kind so they can be found again and retired; plain events leave it blank and
     # stay in the thread forever, which is correct for "X took over".
     EVENT_AI_FAILURE = 'ai_failure'
+    # Condition chips for messages that need a human's attention rather than a
+    # retry — unlike EVENT_AI_FAILURE these don't self-resolve on a successful
+    # reply, so they stay open until an agent dismisses them.
+    EVENT_LEAD_DETECTED = 'lead_detected'
+    EVENT_COMPLAINT_DETECTED = 'complaint_detected'
     event_kind = models.CharField(max_length=32, blank=True, default='', db_index=True)
     # Set when the condition is over. Resolved events drop out of the thread
     # (see CRMConversation.visible_messages) instead of being deleted, so the

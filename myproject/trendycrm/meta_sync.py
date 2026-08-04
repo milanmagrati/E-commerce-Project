@@ -17,6 +17,11 @@ GRAPH_API_VERSION = "v25.0"
 # AI replies onto old conversation history.
 RECENT_MESSAGE_WINDOW_MINUTES = 10
 
+# Auto-applied labels for messages the keyword pass flags as important, so the
+# label filter and sidebar badges (see views.py) have a stable name to key off.
+LEAD_LABEL_NAME = '🔥 Potential Lead'
+COMPLAINT_LABEL_NAME = '⚠️ Complaint'
+
 # Re-exported from models, which owns it now that the inbox UI reads it too.
 # Imported from here by existing callers/scripts, so the name stays available.
 from .models import HUMAN_TAKEOVER_MINUTES  # noqa: E402,F401
@@ -226,6 +231,37 @@ def _extract_graph_attachment(msg):
     return {'type': att_type, 'url': url, 'name': att.get('name') or ''}
 
 
+def _flag_important_message(conversation, verdict):
+    """
+    Auto-labels the conversation and raises an in-thread chip when the keyword
+    pass flags buying interest or a complaint. Kept independent of the AI-reply
+    engine so it still runs when auto-reply is off — a missed lead shouldn't
+    depend on whether the bot happened to be allowed to answer.
+
+    Unlike EVENT_AI_FAILURE, these chips don't self-resolve: a lead doesn't
+    stop being a lead once someone answers it, so they stay open until an
+    agent dismisses them.
+    """
+    from .models import CRMLabel
+
+    if verdict == 'purchase_intent':
+        label_name = LEAD_LABEL_NAME
+        kind = CRMMessage.EVENT_LEAD_DETECTED
+        color_hex = '#ea580c'
+        text = "🔥 Potential lead — this customer is showing buying interest."
+    elif verdict == 'product_issue':
+        label_name = COMPLAINT_LABEL_NAME
+        kind = CRMMessage.EVENT_COMPLAINT_DETECTED
+        color_hex = '#dc2626'
+        text = "⚠️ Possible complaint — this customer reported an issue."
+    else:
+        return
+
+    label, _ = CRMLabel.objects.get_or_create(name=label_name, defaults={'color_hex': color_hex})
+    conversation.labels.add(label)
+    CRMMessage.log_event(conversation, text, level='info', kind=kind)
+
+
 def upsert_inbound_message(integration, contact, conversation, body, external_id,
                            sender_name, is_outbound, created_at, attachments=None):
     """
@@ -296,6 +332,24 @@ def upsert_inbound_message(integration, contact, conversation, body, external_id
     if not is_outbound:
         conversation.is_read = False
     conversation.save(update_fields=['last_message', 'updated_at', 'is_read'])
+
+    # Lead/complaint detection runs on every inbound message regardless of
+    # whether AI auto-reply is enabled or in its recency window — a missed
+    # lead shouldn't depend on the bot's ability to answer. Deliberately uses
+    # only the free keyword pass (never classify_intent/route_message), so
+    # this can never spend one of the scarce Gemini free-tier calls.
+    # Skipped for attachment-only messages: the keyword pass reads an empty body
+    # as spam_noise, and a customer sending just a product photo is not spam.
+    if not is_outbound and (body or '').strip():
+        try:
+            from .ai_router import _keyword_intent
+            verdict = _keyword_intent(body)
+            if verdict:
+                message.ai_intent = verdict
+                message.save(update_fields=['ai_intent'])
+            _flag_important_message(conversation, verdict)
+        except Exception:
+            logger.exception("Lead/complaint detection failed during message upsert")
 
     # Route genuinely new inbound messages through the AI auto-reply engine.
     # Guarded by recency so a full/backfill sync (e.g. right after OAuth connect)

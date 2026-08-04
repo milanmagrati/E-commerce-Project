@@ -479,6 +479,7 @@
                    class="crm-nav-link {% if crm_section == 'conversations' %}active{% endif %}">
                     <span class="nav-icon"><i class="fas fa-comment-dots"></i></span>
                     Conversations
+                    <span id="crmAlertNavBadge" class="nav-badge d-none">0</span>
                 </a>
             </li>
             <li class="crm-nav-item">
@@ -591,6 +592,66 @@
                 setTimeout(() => { toast.remove(); }, 400); // Wait for transition
             }, 4000);
         }
+
+        // Cross-page "potential lead / complaint" poller. Runs on every CRM page
+        // (this file is base_crm.html) so staff see it even off the Conversations
+        // page.
+        //
+        // Announces per alert *id* rather than by comparing counts: a count only
+        // moves on the net change, so one alert being dismissed as another
+        // arrives in the same 5s window would have silently swallowed the new
+        // one. An id is announced once — a repeat message on an already-flagged
+        // conversation rewrites the same chip row (see CRMMessage.log_event), so
+        // it keeps its id and doesn't re-announce. The created_at floor stops an
+        // older alert scrolling into the capped list from reading as new.
+        var _seenAlertIds = null, _newestAlertSeen = '';
+        function pollImportantAlerts() {
+            fetch("{% url 'trendycrm:important_alerts_poll' %}", {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (data) {
+                    if (!data) return;
+                    var badge = document.getElementById('crmAlertNavBadge');
+                    if (badge) {
+                        badge.textContent = data.count;
+                        badge.classList.toggle('d-none', data.count === 0);
+                    }
+                    var ids = data.alerts.map(function (a) { return a.message_id; });
+                    var newest = data.alerts.reduce(function (max, a) {
+                        return a.created_at > max ? a.created_at : max;
+                    }, '');
+
+                    // The first read is the baseline: whatever is already open is
+                    // known, so a page load never re-announces it.
+                    if (_seenAlertIds === null) {
+                        _seenAlertIds = ids;
+                        _newestAlertSeen = newest;
+                        return;
+                    }
+
+                    var fresh = data.alerts.filter(function (a) {
+                        return _seenAlertIds.indexOf(a.message_id) === -1 &&
+                               a.created_at > _newestAlertSeen;
+                    });
+                    _seenAlertIds = ids;
+                    if (newest > _newestAlertSeen) _newestAlertSeen = newest;
+
+                    if (typeof alertify === 'undefined') return;
+                    fresh.slice(0, 3).forEach(function (a) {
+                        var isLead = a.kind === 'lead_detected';
+                        var url = "{% url 'trendycrm:conversations' %}?id=" + a.conversation_id;
+                        alertify.message(
+                            '<i class="fas ' + (isLead ? 'fa-fire' : 'fa-triangle-exclamation') + ' me-2"></i>' +
+                            (isLead ? 'Potential lead' : 'Possible complaint') + ' from ' +
+                            a.contact_name + '! <a href="' + url + '" style="font-weight:600;margin-left:8px;">View</a>'
+                        );
+                    });
+                })
+                .catch(function () {});
+        }
+        setInterval(pollImportantAlerts, 5000);
+        pollImportantAlerts();
 
         // Override Alertify for Django messages if any exist
         document.addEventListener('DOMContentLoaded', function() {

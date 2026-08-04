@@ -643,6 +643,13 @@ _PURCHASE_KEYWORDS = (
     'i want to order', 'place an order', 'buy this', 'in stock', 'cod',
     'cash on delivery', 'payment', 'esewa', 'khalti',
     'kati ho', 'kati parcha', 'kati parchha', 'kina', 'kinna', 'order garna',
+    # Buying-interest phrasing that doesn't ask a question first ("I need this
+    # product"). Kept to multi-word phrases only — a bare 'need'/'want'/'buy'
+    # would also match "I don't need this".
+    'i need this', 'i need it', 'i want to buy', 'i want this', 'send me',
+    'book order', 'book my order', "i'll take it", 'ill take it',
+    'reserve one', 'can i order', 'how do i order', 'malai chai',
+    'malai yo chaiyo',
 )
 
 

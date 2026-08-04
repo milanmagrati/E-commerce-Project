@@ -27,6 +27,9 @@ urlpatterns = [
     path('messages/<int:msg_id>/retry-ai/', views.crm_retry_ai_reply, name='retry_ai_reply'),
     path('messages/<int:msg_id>/dismiss-alert/', views.crm_dismiss_ai_alert, name='dismiss_ai_alert'),
 
+    # Cross-page poller for unresolved lead/complaint chips (see base_crm.html).
+    path('alerts/poll/', views.crm_important_alerts_poll, name='important_alerts_poll'),
+
     path('labels/create/', views.crm_create_label_global, name='create_label_global'),
 
     path('social/', views.crm_social_posts, name='social_posts'),

@@ -8,7 +8,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db.models import F, Q
+from django.db.models import F, Q, Exists, OuterRef
 from dashboard.timezone_utils import format_nepali_datetime
 import json
 import requests
@@ -62,7 +62,7 @@ from .meta_sync import (
     sync_meta_posts, sync_meta_comments, reply_to_meta_comment, hide_meta_comment, delete_meta_comment,
     _resolve_integration_by_page, process_whatsapp_message_webhook,
     handle_messenger_event,
-    LIVE_INTEGRATION_STATUSES,
+    LIVE_INTEGRATION_STATUSES, LEAD_LABEL_NAME, COMPLAINT_LABEL_NAME,
 )
 from .models import (
     CRMContact, CRMConversation, CRMMessage,
@@ -170,7 +170,10 @@ def _filtered_conversations(request):
     """
     conversations = CRMConversation.objects.select_related(
         'contact', 'assigned_to', 'integration'
-    ).all().order_by('-updated_at')
+    ).annotate(
+        has_lead=Exists(CRMLabel.objects.filter(conversations=OuterRef('pk'), name=LEAD_LABEL_NAME)),
+        has_complaint=Exists(CRMLabel.objects.filter(conversations=OuterRef('pk'), name=COMPLAINT_LABEL_NAME)),
+    ).order_by('-updated_at')
 
     page_filter_raw = request.GET.getlist('page_filter')
     page_filters = sorted({int(pf) for pf in page_filter_raw if pf.isdigit()})
@@ -844,6 +847,34 @@ def crm_dismiss_ai_alert(request, msg_id):
         event.resolved_at = timezone.now()
         event.save(update_fields=['resolved_at'])
     return JsonResponse({'status': 'ok'})
+
+
+@login_required
+def crm_important_alerts_poll(request):
+    """
+    Unresolved lead/complaint chips across all conversations, for the
+    cross-page Alertify poller in base_crm.html. Not scoped per-user —
+    conversations have no ownership model beyond optional assignment, which is
+    about takeover rather than visibility, so this matches how the inbox
+    itself is visible to any logged-in CRM user.
+    """
+    qs = CRMMessage.objects.filter(
+        is_system=True,
+        event_kind__in=[CRMMessage.EVENT_LEAD_DETECTED, CRMMessage.EVENT_COMPLAINT_DETECTED],
+        resolved_at__isnull=True,
+    ).select_related('conversation__contact').order_by('-created_at')
+    total = qs.count()
+    events = qs[:20]
+    return JsonResponse({
+        'count': total,
+        'alerts': [{
+            'message_id': e.pk,
+            'conversation_id': e.conversation_id,
+            'contact_name': (e.conversation.contact.name if e.conversation and e.conversation.contact else 'Unknown'),
+            'kind': e.event_kind,
+            'created_at': e.created_at.isoformat(),
+        } for e in events],
+    })
 
 
 # ─── Chatbot ─────────────────────────────────────────────────────────────────

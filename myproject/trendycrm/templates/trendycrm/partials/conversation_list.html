@@ -15,6 +15,8 @@ so a new message updates the sidebar preview/timestamp without a page reload.
                     {% if not conv.is_read %}
                     <span style="width:8px; height:8px; background:var(--crm-primary); border-radius:50%; display:inline-block; margin-left:4px; margin-bottom:1px;"></span>
                     {% endif %}
+                    {% if conv.has_lead %}<i class="fas fa-fire" style="color:#ea580c;font-size:0.7rem;margin-left:4px;" title="Potential lead"></i>{% endif %}
+                    {% if conv.has_complaint %}<i class="fas fa-triangle-exclamation" style="color:#dc2626;font-size:0.7rem;margin-left:4px;" title="Possible complaint"></i>{% endif %}
                 </div>
                 <div class="conv-time" style="font-size:0.7rem; color:var(--crm-text-muted); text-align: right;">
                     <div style="font-size:0.6rem; margin-bottom:0.1rem;">{{ conv.updated_at|date:"M d, Y" }}</div>
