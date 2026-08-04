@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'store/css/store.css' %}">
     {% block extra_css %}{% endblock %}
+    {% include 'partials/sentinel_device_probe.html' %}
 </head>
 <body>
     {% include "store/partials/navbar.html" %}

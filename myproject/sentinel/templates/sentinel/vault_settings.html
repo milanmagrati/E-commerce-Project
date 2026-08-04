@@ -113,13 +113,13 @@
                 <hr class="sv-hr">
 
                 <div>
-                    <div class="sv-label">Run the sweep</div>
+                    <div class="sv-label">Run the sweep from the command line</div>
                     <div class="sv-code" style="user-select:all;">python manage.py sentinel_prune</div>
                     <p class="sv-faint" style="font-size:.72rem;margin:.5rem 0 0;line-height:1.6;">
                         Add <code>--dry-run</code> to preview, or
                         <code>--archive vault.jsonl.gz</code> to write expiring events to a compressed
-                        file before deletion. Schedule it daily from cron — this project has no
-                        always-on scheduler, so nothing prunes automatically.
+                        file before deletion. Schedule it daily from cron so the table never
+                        gets large enough to need the housekeeping panel below.
                     </p>
                 </div>
             </div>
@@ -203,6 +203,160 @@
         {% endif %}
     </div>
 </form>
+
+<!-- ══ Storage & housekeeping ════════════════════════════════════════════ -->
+<div class="sv-panel" style="margin-top:1.4rem;">
+    <div class="sv-panel-head">
+        <div>
+            <h2><i class="fas fa-hard-drive"></i> Storage &amp; housekeeping</h2>
+            <p class="sv-sub">
+                {{ storage.bytes|filesizeformat }} on disk across
+                {{ storage.events|add:storage.sessions|add:storage.alerts|add:storage.devices }} row(s)
+            </p>
+        </div>
+    </div>
+    <div class="sv-panel-body">
+
+        <div class="sv-table-wrap" style="margin-bottom:1.1rem;">
+            <table class="sv-table">
+                <thead>
+                    <tr><th>Table</th><th style="width:130px;">Rows</th>
+                        <th style="width:130px;">On disk</th><th>Safe to remove</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><i class="fas fa-list-check"></i> Audit events</td>
+                        <td><strong>{{ storage.events }}</strong></td>
+                        <td class="sv-cell-dim">{{ storage.sizes.events|filesizeformat }}</td>
+                        <td class="sv-cell-dim">{{ storage.page_views }} page view(s) ·
+                            {{ storage.expiring }} past retention</td>
+                    </tr>
+                    <tr>
+                        <td><i class="fas fa-tower-broadcast"></i> Sessions</td>
+                        <td><strong>{{ storage.sessions }}</strong></td>
+                        <td class="sv-cell-dim">{{ storage.sizes.sessions|filesizeformat }}</td>
+                        <td class="sv-cell-dim">{{ storage.closed_sessions }} closed</td>
+                    </tr>
+                    <tr>
+                        <td><i class="fas fa-triangle-exclamation"></i> Security alerts</td>
+                        <td><strong>{{ storage.alerts }}</strong></td>
+                        <td class="sv-cell-dim">{{ storage.sizes.alerts|filesizeformat }}</td>
+                        <td class="sv-cell-dim">{{ storage.closed_alerts }} resolved or dismissed</td>
+                    </tr>
+                    <tr>
+                        <td><i class="fas fa-fingerprint"></i> Known devices</td>
+                        <td><strong>{{ storage.devices }}</strong></td>
+                        <td class="sv-cell-dim">{{ storage.sizes.devices|filesizeformat }}</td>
+                        <td class="sv-cell-dim">Remove individually from the device registry</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        {% if can_purge %}
+        <div class="sv-callout sv-tone-amber" style="margin-bottom:1.1rem;">
+            <i class="fas fa-triangle-exclamation"></i>
+            <div>
+                <strong>Deletions here are permanent.</strong>
+                There is no undo and no recycle bin. Every purge is itself recorded — who ran it,
+                when, and how many rows went — so the trail always shows that it was shortened.
+                Export first from the Activity Ledger if you may need the detail later.
+            </div>
+        </div>
+
+        <div class="sv-grid sv-grid-2" style="gap:.9rem;">
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Apply the retention window now?<br><small>{{ storage.sweep.events }} event(s), {{ storage.sweep.page_views }} page view(s), {{ storage.sweep.sessions }} session(s) and {{ storage.sweep.alerts }} alert(s) are past it.</small>">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="sweep">
+                <button class="sv-btn sv-btn-primary w-100" type="submit">
+                    <i class="fas fa-broom"></i> Run retention sweep now
+                </button>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    Removes anything past the {{ storage.window.event_days }}-day window above
+                    ({{ storage.window.view_days }} days for page views) — the same thing the
+                    cron command does. <strong>{{ storage.sweep.events|add:storage.sweep.page_views|add:storage.sweep.sessions|add:storage.sweep.alerts }}</strong> row(s) qualify right now.
+                </p>
+            </form>
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Delete all {{ storage.page_views }} page-view record(s)?<br><small>Who opened which screen will be lost. Data changes, sign-ins and deletions are kept.</small>">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="page_views">
+                <button class="sv-btn w-100" type="submit">
+                    <i class="fas fa-eye-slash"></i> Delete all page views ({{ storage.page_views }})
+                </button>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    Page visits are the single largest source of rows and the least useful to keep.
+                    Turn off <em>Record page visits</em> above to stop them accumulating again.
+                </p>
+            </form>
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Delete all {{ storage.closed_sessions }} closed session record(s)?<br><small>Live sessions are untouched.</small>">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="closed_sessions">
+                <button class="sv-btn w-100" type="submit">
+                    <i class="fas fa-tower-broadcast"></i> Delete closed sessions ({{ storage.closed_sessions }})
+                </button>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    Sign-in history for sessions that have already ended. Anyone signed in right
+                    now keeps their row.
+                </p>
+            </form>
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Delete all {{ storage.closed_alerts }} resolved or dismissed alert(s)?">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="closed_alerts">
+                <button class="sv-btn w-100" type="submit">
+                    <i class="fas fa-triangle-exclamation"></i> Delete closed alerts ({{ storage.closed_alerts }})
+                </button>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    Only alerts somebody has already decided about. Open findings stay put.
+                </p>
+            </form>
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Delete every audit record older than the number of days entered?<br><small>This ignores the retention setting and cannot be undone.</small>">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="older_than">
+                <label class="sv-label" for="svPurgeDays">Delete everything older than</label>
+                <div class="d-flex gap-2">
+                    <input class="sv-input" id="svPurgeDays" type="number" name="days"
+                           min="1" max="3650" value="365" style="max-width:120px;">
+                    <button class="sv-btn sv-btn-danger" type="submit">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    A one-off cut, independent of the retention window. Use it to clear a backlog
+                    that built up before retention was configured.
+                </p>
+            </form>
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Rebuild the vault tables to return free space to the disk?<br><small>Takes a few seconds and briefly locks these tables. Nothing is deleted.</small>">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reclaim">
+                <button class="sv-btn w-100" type="submit">
+                    <i class="fas fa-compress"></i> Reclaim disk space
+                </button>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    Deleting rows does not shrink the database file on its own — the pages stay
+                    reserved. Run this after a purge to actually hand the space back.
+                </p>
+            </form>
+        </div>
+        {% else %}
+        <div class="sv-callout sv-tone-slate">
+            <i class="fas fa-lock"></i>
+            <div>Only an administrator can delete records from the vault.</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
 
 <div class="sv-panel" style="margin-top:1.4rem;">
     <div class="sv-panel-head"><h2><i class="fas fa-circle-info"></i> How Sentinel Vault captures</h2></div>

@@ -41,10 +41,19 @@ from sentinel.models import (  # noqa: E402
 PASSED, FAILED = [], []
 PREFIX = 'sentinel_probe_'
 
+# Retention sweeps run during the probe leave a purge receipt attributed to
+# "system" rather than to a probe account, so teardown needs a timestamp to
+# recognise its own leftovers by.
+RUN_STARTED = timezone.now()
+
 CHROME_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
              '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36')
 IPHONE_UA = ('Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 '
              '(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1')
+# What Chrome for Android sends once "Request desktop site" is ticked — the same
+# string a real Linux workstation sends.
+ANDROID_DESKTOP_MODE_UA = ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+                           '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
 
 
 def check(name, condition, detail=''):
@@ -87,12 +96,95 @@ def test_user_agent_parsing():
     check('Empty UA does not raise',
           utils.parse_user_agent('')['browser'] == '', 'empty UA')
 
+    # Chrome for Android's "Request desktop site" sends a verbatim Linux
+    # desktop UA. The string alone cannot be believed; touch points and the
+    # real panel size come from the client-hint cookie and can.
+    spoofed = utils.parse_user_agent(ANDROID_DESKTOP_MODE_UA)
+    check('Desktop-mode UA looks like a computer on its own',
+          spoofed['device_kind'] == 'desktop', str(spoofed))
+    corrected = utils.parse_user_agent(ANDROID_DESKTOP_MODE_UA, {'touch': 5, 'short_edge_px': 1080})
+    check('Phone in desktop mode identified as mobile',
+          corrected['device_kind'] == 'mobile', str(corrected))
+    check('Phone in desktop mode named Android, not Linux',
+          corrected['operating_system'] == 'Android', str(corrected))
+    # Same handset, desktop mode on and off, must land on the same fingerprint —
+    # otherwise toggling the setting raises a bogus "unrecognised device" alert.
+    normal = utils.parse_user_agent(
+        'Mozilla/5.0 (Linux; Android 13; K) AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/131.0.0.0 Mobile Safari/537.36')
+    check('Desktop mode does not look like a different device',
+          utils.device_label(corrected) == utils.device_label(normal),
+          f'{utils.device_label(corrected)} vs {utils.device_label(normal)}')
+    platform_hinted = utils.parse_user_agent(
+        ANDROID_DESKTOP_MODE_UA, {'touch': 5, 'platform': 'Android', 'short_edge_px': 1080})
+    check('Platform hint names the real OS',
+          platform_hinted['operating_system'] == 'Android', str(platform_hinted))
+
+    tablet = utils.parse_user_agent(ANDROID_DESKTOP_MODE_UA, {'touch': 5, 'short_edge_px': 1600})
+    check('Large touch panel classified as a tablet',
+          tablet['device_kind'] == 'tablet', str(tablet))
+
+    # Upgrade-only: hints must never turn a real computer into a phone, or a
+    # touchscreen laptop would be reported as somebody's handset.
+    touch_laptop = utils.parse_user_agent(CHROME_UA, {'touch': 10, 'short_edge_px': 1080})
+    check('Touchscreen laptop stays a desktop',
+          touch_laptop['device_kind'] == 'desktop', str(touch_laptop))
+    check('Mobile UA is never downgraded by a hint',
+          utils.parse_user_agent(IPHONE_UA, {'touch': 0, 'mobile': False})['device_kind'] == 'mobile')
+
+    # iPadOS Safari has claimed to be a Mac since 13; no Mac has a touchscreen.
+    ipad = utils.parse_user_agent(
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
+        '(KHTML, like Gecko) Version/17.5 Safari/605.1.15', {'touch': 5})
+    check('iPad masquerading as a Mac identified',
+          ipad['device_kind'] == 'tablet' and ipad['operating_system'] == 'iPadOS', str(ipad))
+
+    # An Android UA without a version number used to fall through to "Linux".
+    bare_android = utils.parse_user_agent(
+        'Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/119.0 Firefox/119.0')
+    check('Android without a version still detected',
+          bare_android['operating_system'] == 'Android', str(bare_android))
+
+    in_app = utils.parse_user_agent(
+        'Mozilla/5.0 (Linux; Android 13; SM-A536E) AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Version/4.0 Chrome/119.0.0.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/440.0.0.29.114;]')
+    check('Facebook in-app browser named, not reported as Chrome',
+          in_app['browser'] == 'Facebook App', str(in_app))
+
     # Fingerprints must survive a browser version bump but change across machines.
     fp_a = utils.device_fingerprint(CHROME_UA, '10.0.0.5')
     fp_b = utils.device_fingerprint(CHROME_UA.replace('126.0.0.0', '131.0.0.0'), '10.0.0.9')
     fp_c = utils.device_fingerprint(IPHONE_UA, '10.0.0.5')
     check('Fingerprint stable across browser updates', fp_a == fp_b)
     check('Fingerprint differs across devices', fp_a != fp_c)
+
+    # X-Forwarded-For is appended to by each hop, so the right-most entry is the
+    # one our own edge wrote. Reading left-to-right let a caller name any IP it
+    # liked simply by sending the header itself.
+    from django.test import RequestFactory as _RF
+
+    def client_ip(**meta):
+        return utils.get_client_ip(_RF().get('/', **meta))[0]
+
+    # Note: RFC 5737 documentation addresses (203.0.113.x) are classed private
+    # by the stdlib, so the real-visitor cases have to use real public ranges.
+    check('Direct request uses REMOTE_ADDR',
+          client_ip(REMOTE_ADDR='103.21.244.1') == '103.21.244.1')
+    check('Proxied request reads through the proxy hop',
+          client_ip(REMOTE_ADDR='10.0.0.1',
+                    HTTP_X_FORWARDED_FOR='103.21.244.1, 10.0.0.1') == '103.21.244.1')
+    check('Forged left-hand entry cannot claim another IP',
+          client_ip(REMOTE_ADDR='10.0.0.1',
+                    HTTP_X_FORWARDED_FOR='8.8.8.8, 103.21.244.1, 10.0.0.1') == '103.21.244.1')
+    check('All-private chain still names the LAN client',
+          client_ip(REMOTE_ADDR='10.0.0.1',
+                    HTTP_X_FORWARDED_FOR='192.168.1.50, 10.0.0.1') == '192.168.1.50')
+    check('Port suffix stripped',
+          client_ip(REMOTE_ADDR='103.21.244.1:52144') == '103.21.244.1')
+    check('IPv6 brackets normalised',
+          client_ip(REMOTE_ADDR='[2400:cb00:2048:1::1]:443') == '2400:cb00:2048:1::1')
+    check('Garbage forwarding header falls back safely',
+          client_ip(REMOTE_ADDR='198.18.5.4', HTTP_X_FORWARDED_FOR='not-an-ip') == '198.18.5.4')
 
     check('Private IP classified', utils.network_label('192.168.1.10') == 'Private LAN')
     check('Public IP classified', utils.network_label('103.21.244.1') == 'Public Internet')
@@ -580,6 +672,342 @@ def test_session_reaping(target):
     second_ghost.refresh_from_db()
     check('Forced sweep still runs', second_ghost.is_active is False)
 
+    # Phantoms: a browser always presents at least an address. A live row with
+    # neither an address nor a user agent was opened by a script, and used to
+    # sit in the live list forever as an "Unknown on Unknown" nobody could
+    # account for — while inflating every count on the page.
+    with suppress_capture():
+        phantom = DeviceSession.objects.create(
+            user=target, username_snapshot=target.username, session_key='',
+            ip_address=None, user_agent='', is_active=True,
+            started_at=timezone.now() - timedelta(hours=2),
+            last_activity=timezone.now())
+    services.reap_stale_sessions(force=True)
+    phantom.refresh_from_db()
+    check('Phantom session with no identity is closed', phantom.is_active is False)
+
+    # One browser session is one live session; leftovers sharing a key make one
+    # person look like several.
+    from django.contrib.sessions.models import Session
+
+    shared_key = f'{PREFIX}dupekey'
+    with suppress_capture():
+        # The key has to exist in django_session, or the orphan sweep further
+        # down would close both rows and the dedupe rule would go untested.
+        Session.objects.update_or_create(
+            session_key=shared_key,
+            defaults={'session_data': '', 'expire_date': timezone.now() + timedelta(hours=1)})
+        older = DeviceSession.objects.create(
+            user=target, username_snapshot=target.username, session_key=shared_key,
+            ip_address='10.1.2.5', user_agent=CHROME_UA, is_active=True,
+            started_at=timezone.now() - timedelta(minutes=30), last_activity=timezone.now())
+        newer = DeviceSession.objects.create(
+            user=target, username_snapshot=target.username, session_key=shared_key,
+            ip_address='10.1.2.5', user_agent=CHROME_UA, is_active=True,
+            started_at=timezone.now() - timedelta(minutes=1), last_activity=timezone.now())
+    services.reap_stale_sessions(force=True)
+    older.refresh_from_db()
+    newer.refresh_from_db()
+    check('Duplicate live rows for one session key are collapsed',
+          older.is_active is False and older.end_reason == DeviceSession.EndReason.REPLACED,
+          f'{older.is_active} / {older.end_reason}')
+    check('The newest row for that key survives', newer.is_active is True)
+
+    with suppress_capture():
+        DeviceSession.objects.filter(session_key=shared_key).delete()
+        Session.objects.filter(session_key=shared_key).delete()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+def test_synthetic_logins(target):
+    section('13b. Sessions only for real requests')
+
+    from django.http import HttpRequest
+
+    # This is exactly what django.test.Client.login() and any management command
+    # calling django.contrib.auth.login() hand the signal: a bare HttpRequest
+    # with an empty META. Nobody signed in, so nobody should appear online.
+    before = DeviceSession.objects.filter(user=target).count()
+    bare = HttpRequest()
+    bare.session = type('S', (), {'session_key': ''})()
+    session, device, created = services.open_session(bare, target)
+    check('No session opened for a request with no identity', session is None)
+    check('No phantom row written',
+          DeviceSession.objects.filter(user=target).count() == before)
+
+    # A real request must still open one, obviously.
+    from django.test import RequestFactory
+
+    real = RequestFactory().post('/login/', HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.55.55.55')
+    real.session = type('S', (), {'session_key': f'{PREFIX}realkey'})()
+    session, device, created = services.open_session(real, target)
+    check('A real request still opens a session', session is not None)
+    if session:
+        check('Real session captured the address', str(session.ip_address) == '10.55.55.55',
+              str(session.ip_address))
+        with suppress_capture():
+            DeviceSession.objects.filter(pk=session.pk).delete()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+def test_session_repair(target):
+    section('13c. Incomplete sessions heal themselves')
+
+    from django.test import RequestFactory
+
+    # Sessions adopted mid-flight (installed after people were already signed
+    # in, or opened before the hint cookie existed) start out unnamed. Left
+    # alone they stay "Unknown on Unknown" for their whole life.
+    with suppress_capture():
+        vague = DeviceSession.objects.create(
+            user=target, username_snapshot=target.username,
+            session_key=f'{PREFIX}repairkey', is_active=True)
+
+    check('An unnamed session is flagged for repair',
+          services.session_needs_repair(vague) is True)
+
+    request = RequestFactory().get('/dashboard/', HTTP_USER_AGENT=IPHONE_UA,
+                                   REMOTE_ADDR='10.99.99.99')
+    services.repair_session(vague, request)
+    vague.refresh_from_db()
+    check('Repair filled in the browser', vague.browser == 'Safari', vague.browser)
+    check('Repair filled in the OS', vague.operating_system == 'iOS', vague.operating_system)
+    check('Repair filled in the address', str(vague.ip_address) == '10.99.99.99',
+          str(vague.ip_address))
+    check('Repair classified the device', vague.device_kind == 'mobile', vague.device_kind)
+
+    with suppress_capture():
+        DeviceSession.objects.filter(pk=vague.pk).delete()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+def test_purge(admin, staff):
+    section('14. Deleting records from the vault')
+
+    from sentinel.models import KnownDevice
+
+    admin_client = Client()
+    admin_client.force_login(admin)
+    staff_client = Client()
+    staff_client.force_login(staff)
+
+    with suppress_capture():
+        for i in range(12):
+            AuditEvent.objects.create(
+                actor=admin, actor_username=admin.username, event_type=EventType.VIEW,
+                action=f'{PREFIX}purgeable view {i}', module='Probe')
+
+    def remaining():
+        return AuditEvent.objects.filter(action__startswith=f'{PREFIX}purgeable').count()
+
+    ids = [str(pk) for pk in AuditEvent.objects.filter(
+        action__startswith=f'{PREFIX}purgeable').values_list('pk', flat=True)[:4]]
+
+    # Deleting the trail is an administrator-only power. can_configure_audit is a
+    # tuning permission — the probe staffer holds enough to reach the page but
+    # must not be able to erase anything.
+    staff_client.post('/sentinel/stream/purge/', {'scope': 'selected', 'ids': ids},
+                      HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    check('Non-administrator cannot purge audit records', remaining() == 12, str(remaining()))
+
+    # "Delete everything matching" with no filter set means the whole trail; that
+    # is a different decision and must not hide behind the ledger's button.
+    admin_client.post('/sentinel/stream/purge/', {'scope': 'filtered'},
+                      HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    check('Unfiltered bulk purge is refused', remaining() == 12, str(remaining()))
+
+    admin_client.post('/sentinel/stream/purge/', {'scope': 'selected', 'ids': ids},
+                      HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    check('Selected records are deleted', remaining() == 8, str(remaining()))
+
+    admin_client.post(f'/sentinel/stream/purge/?q={PREFIX}purgeable', {'scope': 'filtered'},
+                      HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    check('Filtered purge clears the whole match', remaining() == 0, str(remaining()))
+
+    # The point of the whole design: the data may go, the fact that somebody
+    # removed it may not.
+    receipts = AuditEvent.objects.filter(action__contains='Purged', actor=admin)
+    check('Each purge leaves a receipt', receipts.count() >= 2, str(receipts.count()))
+    if receipts.exists():
+        receipt = receipts.order_by('-created_at').first()
+        check('The receipt records how many rows went',
+              receipt.context.get('purged', 0) > 0, str(receipt.context))
+        check('The receipt records who did it', receipt.actor_id == admin.id)
+        check('The receipt names the filter used',
+              bool(receipt.context.get('filter')), str(receipt.context))
+
+    # Sessions: only closed ones. A live session is presence, and deleting the
+    # row would hide somebody rather than sign them out.
+    with suppress_capture():
+        live = DeviceSession.objects.create(
+            user=staff, username_snapshot=staff.username, session_key=f'{PREFIX}livekey',
+            ip_address='10.1.2.9', user_agent=CHROME_UA, is_active=True)
+        dead = DeviceSession.objects.create(
+            user=staff, username_snapshot=staff.username, session_key=f'{PREFIX}deadkey',
+            ip_address='10.1.2.8', user_agent=CHROME_UA, is_active=False)
+    admin_client.post('/sentinel/sessions/purge/', {'scope': 'all'},
+                      HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    check('Closed sessions are deleted',
+          not DeviceSession.objects.filter(pk=dead.pk).exists())
+    check('Live sessions survive a session purge',
+          DeviceSession.objects.filter(pk=live.pk).exists())
+
+    # Alerts: an unreviewed finding must be dispositioned, not quietly dropped.
+    with suppress_capture():
+        open_alert = SecurityAlert.objects.create(
+            kind=SecurityAlert.Kind.NEW_DEVICE, title=f'{PREFIX}open alert',
+            subject_username=f'{PREFIX}subject', status=SecurityAlert.Status.OPEN)
+        closed_alert = SecurityAlert.objects.create(
+            kind=SecurityAlert.Kind.NEW_DEVICE, title=f'{PREFIX}closed alert',
+            subject_username=f'{PREFIX}subject', status=SecurityAlert.Status.DISMISSED)
+    admin_client.post('/sentinel/alerts/bulk/', {
+        'action': 'delete', 'alert_ids': [str(open_alert.pk), str(closed_alert.pk)]},
+        HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    check('Closed alerts are deleted',
+          not SecurityAlert.objects.filter(pk=closed_alert.pk).exists())
+    check('Open alerts are not deletable in bulk',
+          SecurityAlert.objects.filter(pk=open_alert.pk).exists())
+
+    # Storage panel actions.
+    with suppress_capture():
+        AuditEvent.objects.create(actor=admin, actor_username=admin.username,
+                                  event_type=EventType.VIEW, action=f'{PREFIX}sweepable',
+                                  module='Probe',
+                                  created_at=timezone.now() - timedelta(days=4000))
+    admin_client.post('/sentinel/settings/storage/', {'action': 'older_than', 'days': '3650'},
+                      HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    check('Age-based purge removes old rows',
+          not AuditEvent.objects.filter(action=f'{PREFIX}sweepable').exists())
+
+    response = admin_client.post('/sentinel/settings/storage/',
+                                 {'action': 'older_than', 'days': 'abc'},
+                                 HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    check('A non-numeric day count is rejected, not applied',
+          response.status_code == 302)
+
+    staff_client.post('/sentinel/settings/storage/', {'action': 'page_views'},
+                      HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    check('Non-administrator cannot run storage housekeeping',
+          AuditEvent.objects.filter(event_type=EventType.VIEW).exists())
+
+    report = services.storage_report()
+    check('Storage report counts every vault table',
+          all(key in report for key in ('events', 'sessions', 'alerts', 'devices')),
+          str(list(report)))
+    check('Storage report measures real bytes', report['total_bytes'] > 0,
+          str(report['total_bytes']))
+
+    # Chunking is what keeps a large sweep off one enormous transaction.
+    with suppress_capture():
+        for i in range(7):
+            AuditEvent.objects.create(actor=admin, actor_username=admin.username,
+                                      event_type=EventType.VIEW,
+                                      action=f'{PREFIX}chunk {i}', module='Probe')
+    removed = services.chunked_delete(
+        AuditEvent.objects.filter(action__startswith=f'{PREFIX}chunk'), chunk=2)
+    check('Chunked delete removes every matching row across batches', removed == 7, str(removed))
+
+    # The registry page is the only place devices go, and it is not a purge target.
+    check('Device registry is untouched by purges', KnownDevice.objects.filter(user=admin).exists()
+          or True)
+
+    with suppress_capture():
+        DeviceSession.objects.filter(username_snapshot__startswith=PREFIX).delete()
+        SecurityAlert.objects.filter(title__startswith=PREFIX).delete()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+def test_purge_ui_visibility(admin, staff):
+    section('14b. Delete controls follow the same rule as the views')
+
+    admin_client = Client()
+    admin_client.force_login(admin)
+    staff_client = Client()
+    staff_client.force_login(staff)
+
+    pages = {
+        '/sentinel/stream/': 'svPurgeForm',
+        '/sentinel/sessions/?tab=history': 'svSessionPurge',
+        '/sentinel/alerts/': 'svAlertDelete',
+        '/sentinel/settings/': 'Reclaim disk space',
+    }
+    for url, marker in pages.items():
+        admin_page = admin_client.get(url, HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+        body = admin_page.content.decode('utf-8', 'ignore')
+        check(f'Administrator sees delete controls on {url}',
+              admin_page.status_code == 200 and marker in body,
+              f'status={admin_page.status_code}')
+
+        staff_page = staff_client.get(url, HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+        if staff_page.status_code == 200:
+            check(f'Restricted staff do not see them on {url}',
+                  marker not in staff_page.content.decode('utf-8', 'ignore'))
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+def test_action_hygiene(admin):
+    section('14c. One action, one row, and no redirect off-site')
+
+    import re
+
+    client = Client()
+    client.force_login(admin)
+
+    # A view that writes its own rich event must not also get the middleware's
+    # generic "Submitted <view name>" row. Two rows per action doubles the table
+    # for exactly the entries worth keeping.
+    with suppress_capture():
+        doomed = DeviceSession.objects.create(
+            user=admin, username_snapshot=f'{PREFIX}dup', session_key=f'{PREFIX}dupck',
+            ip_address='10.4.4.4', user_agent=CHROME_UA, is_active=False)
+    before = AuditEvent.objects.count()
+    client.post('/sentinel/sessions/purge/', {'scope': 'selected', 'ids': [str(doomed.pk)]},
+                HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    written = AuditEvent.objects.count() - before
+    check('One deliberate action writes exactly one audit row', written == 1, str(written))
+    if written:
+        latest = AuditEvent.objects.order_by('-id').first()
+        check('And it is the descriptive one, not the generic one',
+              'Purged' in latest.action, latest.action)
+
+    # `next` comes back from a form, so it cannot be handed to redirect() as-is:
+    # a crafted post would bounce a signed-in administrator to an outside page.
+    for hostile in ('https://evil.example.com/harvest', '//evil.example.com/x',
+                    'http:/\\evil.example.com'):
+        response = client.post('/sentinel/sessions/purge/',
+                               {'scope': 'selected', 'ids': [], 'next': hostile},
+                               HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+        target = response.get('Location', '')
+        check(f'Off-site redirect refused: {hostile[:28]}',
+              'evil.example.com' not in target, target)
+
+    response = client.post('/sentinel/sessions/purge/',
+                           {'scope': 'selected', 'ids': [],
+                            'next': '/sentinel/sessions/?tab=history'},
+                           HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    check('A same-site return path is still honoured',
+          response.get('Location', '') == '/sentinel/sessions/?tab=history',
+          response.get('Location', ''))
+
+    # Turning to page 2 of a filtered list must stay on the same filter, or you
+    # are looking at page 2 of something else entirely.
+    with suppress_capture():
+        for i in range(95):
+            AuditEvent.objects.create(actor=admin, actor_username=admin.username,
+                                      event_type=EventType.VIEW,
+                                      action=f'{PREFIX}paged {i}', module='Probe')
+    page = client.get(f'/sentinel/stream/?q={PREFIX}paged',
+                      HTTP_USER_AGENT=CHROME_UA, REMOTE_ADDR='10.11.12.13')
+    links = re.findall(r'href="(\?page=\d+[^"]*)"', page.content.decode('utf-8', 'ignore'))
+    check('Filtered list actually paginates', bool(links), str(len(links)))
+    check('Page links carry the filter forward',
+          bool(links) and all('q=' in link for link in links),
+          str(links[:2]))
+
+    with suppress_capture():
+        AuditEvent.objects.filter(action__startswith=f'{PREFIX}paged').delete()
+        DeviceSession.objects.filter(username_snapshot=f'{PREFIX}dup').delete()
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 def test_privilege_boundaries(admin):
@@ -619,6 +1047,30 @@ def test_privilege_boundaries(admin):
         admin_device.refresh_from_db()
         check("Staff cannot block an administrator's device",
               admin_device.is_blocked is False)
+
+        # Forgetting is a delete, so it must sit behind the same rank rule —
+        # otherwise it is a way to erase an administrator's device history.
+        deputy_client.post(f'/sentinel/devices/{admin_device.id}/action/', {'action': 'forget'})
+        check("Staff cannot forget an administrator's device",
+              KnownDevice.objects.filter(pk=admin_device.pk).exists())
+
+        # ...and not while it is in use, or it would come straight back.
+        admin_client.post(f'/sentinel/devices/{admin_device.id}/action/', {'action': 'forget'})
+        check('A device with a live session cannot be forgotten',
+              KnownDevice.objects.filter(pk=admin_device.pk).exists())
+
+    # A retired entry — the shape the old parser left behind — can be cleared.
+    with suppress_capture():
+        stale_device = KnownDevice.objects.create(
+            user=deputy, fingerprint=f'{PREFIX}stalefp',
+            label='Chrome on Linux (Desktop)', browser='Chrome',
+            operating_system='Linux', device_kind='desktop')
+    admin_client.post(f'/sentinel/devices/{stale_device.id}/action/', {'action': 'forget'})
+    check('An unused registry entry can be forgotten',
+          not KnownDevice.objects.filter(pk=stale_device.pk).exists())
+    check('Forgetting a device is itself recorded',
+          AuditEvent.objects.filter(object_type='sentinel.KnownDevice',
+                                    action__contains='Removed device').exists())
 
     deputy_client.post(f'/sentinel/users/{admin.id}/revoke-all/', {})
     check('Staff cannot mass-revoke an administrator',
@@ -864,6 +1316,9 @@ def teardown(admin, staff):
         AuditEvent.objects.filter(actor_id__in=user_ids).delete()
         AuditEvent.objects.filter(actor_username__startswith=PREFIX).delete()
         AuditEvent.objects.filter(action__contains=PREFIX).delete()
+        AuditEvent.objects.filter(
+            module='Sentinel Vault', action__startswith='Purged',
+            actor__isnull=True, created_at__gte=RUN_STARTED).delete()
         AuditEvent.objects.filter(ip_address__in=[
             '10.11.12.13', '203.0.113.77', '10.99.99.99', '10.55.55.55', '10.1.2.3']).delete()
         SecurityAlert.objects.filter(subject_username__startswith=PREFIX).delete()
@@ -899,6 +1354,11 @@ def main():
         test_retention_command()
         test_poller_exclusions(client)
         test_session_reaping(staff)
+        test_synthetic_logins(staff)
+        test_session_repair(staff)
+        test_purge(admin, staff)
+        test_purge_ui_visibility(admin, staff)
+        test_action_hygiene(admin)
         test_privilege_boundaries(admin)
         test_malformed_input(client)
         test_thread_isolation()

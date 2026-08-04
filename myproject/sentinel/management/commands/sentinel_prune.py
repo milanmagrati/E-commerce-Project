@@ -13,15 +13,12 @@ useful vault into a liability.
 
 import gzip
 import json
-from datetime import timedelta
 
 from django.core.management.base import BaseCommand
-from django.utils import timezone
 
-from sentinel.context import suppress_capture
-from sentinel.models import AuditEvent, DeviceSession, EventType, SecurityAlert, VaultSettings
+from sentinel import services
 
-CHUNK = 2000
+CHUNK = services.PURGE_CHUNK
 
 
 class Command(BaseCommand):
@@ -36,72 +33,32 @@ class Command(BaseCommand):
                             help='Write expiring events to this gzipped JSONL file first.')
 
     def handle(self, *args, **options):
-        config = VaultSettings.load()
-        event_days = options['days'] or config.retention_days
-        view_days = min(options['days'] or config.page_view_retention_days,
-                        config.page_view_retention_days)
-        dry_run = options['dry_run']
-        now = timezone.now()
-
-        event_cutoff = now - timedelta(days=event_days)
-        view_cutoff = now - timedelta(days=view_days)
-
-        expiring = AuditEvent.objects.filter(created_at__lt=event_cutoff)
-        expiring_views = AuditEvent.objects.filter(
-            created_at__lt=view_cutoff, event_type=EventType.VIEW)
-
-        # Closed sessions with no surviving events are dead weight.
-        session_cutoff = now - timedelta(days=event_days)
-        expiring_sessions = DeviceSession.objects.filter(
-            is_active=False, started_at__lt=session_cutoff)
-        expiring_alerts = SecurityAlert.objects.filter(
-            status__in=[SecurityAlert.Status.RESOLVED, SecurityAlert.Status.DISMISSED],
-            created_at__lt=event_cutoff)
-
-        counts = {
-            'events': expiring.count(),
-            'page_views': expiring_views.count(),
-            'sessions': expiring_sessions.count(),
-            'alerts': expiring_alerts.count(),
-        }
+        # The window definitions live in services so this command and the
+        # "Run retention sweep now" button on the settings page cannot drift
+        # into deleting different things.
+        querysets, window = services.retention_querysets(days=options['days'])
+        counts = {name: queryset.count() for name, queryset in querysets.items()}
 
         self.stdout.write(self.style.MIGRATE_HEADING('Sentinel Vault — retention sweep'))
-        self.stdout.write(f'  Event retention   : {event_days} days (before {event_cutoff:%Y-%m-%d})')
-        self.stdout.write(f'  Page-view retention: {view_days} days (before {view_cutoff:%Y-%m-%d})')
+        self.stdout.write(f'  Event retention    : {window["event_days"]} days')
+        self.stdout.write(f'  Page-view retention: {window["view_days"]} days')
         for label, value in counts.items():
             self.stdout.write(f'  {label:<18}: {value:,} row(s) expiring')
 
-        if dry_run:
+        if options['dry_run']:
             self.stdout.write(self.style.WARNING('Dry run — nothing deleted.'))
             return
 
         if options['archive'] and counts['events']:
-            written = self._archive(expiring, options['archive'])
+            written = self._archive(querysets['events'], options['archive'])
             self.stdout.write(self.style.SUCCESS(
                 f'  Archived {written:,} event(s) to {options["archive"]}'))
 
-        with suppress_capture():
-            deleted_views = self._chunked_delete(expiring_views)
-            deleted_events = self._chunked_delete(
-                AuditEvent.objects.filter(created_at__lt=event_cutoff))
-            deleted_alerts = self._chunked_delete(expiring_alerts)
-            deleted_sessions = self._chunked_delete(expiring_sessions)
+        removed = services.run_retention_sweep(days=options['days'])
 
         self.stdout.write(self.style.SUCCESS(
-            f'Removed {deleted_events + deleted_views:,} event(s), '
-            f'{deleted_sessions:,} session(s), {deleted_alerts:,} alert(s).'))
-
-    def _chunked_delete(self, queryset):
-        """Delete in batches so a large sweep doesn't hold one enormous MySQL transaction."""
-        total = 0
-        while True:
-            ids = list(queryset.values_list('pk', flat=True)[:CHUNK])
-            if not ids:
-                return total
-            deleted, _ = queryset.model.objects.filter(pk__in=ids).delete()
-            total += len(ids)
-            if deleted == 0:
-                return total
+            f'Removed {removed["events"] + removed["page_views"]:,} event(s), '
+            f'{removed["sessions"]:,} session(s), {removed["alerts"]:,} alert(s).'))
 
     def _archive(self, queryset, path):
         opener = gzip.open if path.endswith('.gz') else open

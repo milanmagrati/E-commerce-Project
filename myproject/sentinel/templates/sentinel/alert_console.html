@@ -94,8 +94,26 @@
                 <button type="submit" name="action" value="dismiss" class="sv-btn sv-btn-sm" disabled data-bulk>
                     <i class="fas fa-xmark"></i> Dismiss
                 </button>
+                {% if can_purge %}
+                <button type="button" class="sv-btn sv-btn-sm sv-btn-danger" disabled data-bulk
+                        id="svAlertDelete" title="Only resolved or dismissed alerts are deleted">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
+                {% endif %}
+            </div>
+            {% if can_purge and closed_total %}
+            <div class="sv-bulkbar" style="background:transparent;border-bottom-color:var(--sv-line);">
+                <span class="sv-faint">
+                    {{ closed_total }} resolved or dismissed alert{{ closed_total|pluralize }} stored.
+                </span>
+                <button type="button" class="sv-btn sv-btn-sm sv-btn-danger" id="svAlertDeleteClosed"
+                        style="margin-left:auto;">
+                    <i class="fas fa-broom"></i> Delete all closed alerts
+                </button>
             </div>
             {% endif %}
+            {% endif %}
+            <input type="hidden" name="scope" value="" id="svAlertScope">
 
             {% for alert in page_obj %}
             <div class="sv-feed-item" style="align-items:flex-start;padding:1.05rem 1.15rem;">
@@ -238,6 +256,40 @@ document.addEventListener('DOMContentLoaded', function () {
             syncBulk();
         });
     }
+
+    {% if can_purge %}
+    /* Deleting alerts is a POST on the same bulk form, but it never goes through
+       without its own confirmation — the other three actions are reversible and
+       this one is not. */
+    const bulkForm = document.getElementById('svBulkForm');
+    function submitDelete(scope, message) {
+        Sentinel.confirmThen(message, function () {
+            document.getElementById('svAlertScope').value = scope;
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'action';
+            hidden.value = 'delete';
+            bulkForm.appendChild(hidden);
+            bulkForm.submit();
+        });
+    }
+    const deleteBtn = document.getElementById('svAlertDelete');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function () {
+            submitDelete('', 'Delete the selected alert(s)?<br><small>Only alerts already ' +
+                             'resolved or dismissed are removed; anything still open is kept ' +
+                             'so the decision stays on record. Permanent — there is no undo.</small>');
+        });
+    }
+    const deleteClosed = document.getElementById('svAlertDeleteClosed');
+    if (deleteClosed) {
+        deleteClosed.addEventListener('click', function () {
+            submitDelete('closed', 'Delete <b>all {{ closed_total }}</b> resolved and dismissed ' +
+                                   'alert(s)?<br><small>Open findings are untouched. Permanent — ' +
+                                   'there is no undo.</small>');
+        });
+    }
+    {% endif %}
 
     document.querySelectorAll('[data-alert]').forEach(function (btn) {
         btn.addEventListener('click', function () {

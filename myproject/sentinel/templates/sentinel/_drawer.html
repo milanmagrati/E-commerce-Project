@@ -169,6 +169,9 @@ one small JSON request instead of a full page load.
     // One delegated listener covers the table, the live feed and the drawer's own
     // "same session" links — including rows injected later by polling.
     document.addEventListener('click', function (e) {
+        // A cell marked data-no-drawer holds controls of its own (the delete
+        // tickbox) — ticking one must not also open the record.
+        if (e.target.closest('[data-no-drawer]')) { return; }
         const trigger = e.target.closest('[data-sv-event]');
         if (trigger) {
             e.preventDefault();

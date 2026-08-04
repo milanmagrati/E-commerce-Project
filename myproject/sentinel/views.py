@@ -25,7 +25,7 @@ from accounts.models import CustomUser
 from dashboard.timezone_utils import convert_to_nepali, get_nepali_now
 from . import services
 from .access import (
-    can, can_see_everyone, is_admin, may_act_on, may_judge_alert,
+    can, can_see_everyone, is_admin, may_act_on, may_judge_alert, may_purge,
     scope_to_visible, vault_access,
 )
 from .context import suppress_capture
@@ -143,6 +143,17 @@ def _filter_events(request, queryset):
         active['range'] = preset
 
     return queryset, active
+
+
+def _querystring(request):
+    """Current GET parameters minus `page`, for the paginator to re-append.
+
+    Without it, turning to page 2 of a filtered or searched list silently drops
+    every filter — you end up on page 2 of something else entirely.
+    """
+    params = request.GET.copy()
+    params.pop('page', None)
+    return params.urlencode()
 
 
 def _filter_choices(user):
@@ -277,23 +288,92 @@ def activity_stream(request):
     paginator = Paginator(events, PAGE_SIZE)
     page = paginator.get_page(request.GET.get('page'))
 
-    querystring = request.GET.copy()
-    querystring.pop('page', None)
-
     context = {
         'page_obj': page,
         'total': total,
         'summary': summary,
         'active': active,
         'choices': _filter_choices(user),
-        'querystring': querystring.urlencode(),
+        'querystring': _querystring(request),
         'can_export': can(user, 'can_export_audit_logs'),
+        'can_purge': may_purge(user),
         'can_see_everyone': can_see_everyone(user),
         'vault_tab': 'stream',
         'vault_title': 'Activity Ledger',
         'vault_tagline': 'Every recorded action, searchable down to the field that changed.',
     }
     return render(request, 'sentinel/activity_stream.html', context)
+
+
+def _safe_next(request, fallback):
+    """Where to send the browser after a POST, without trusting the form.
+
+    Every action view here takes a `next` so the admin lands back on the page
+    (and filter) they acted from. Handing that straight to redirect() means a
+    crafted form can bounce a signed-in administrator to an external site that
+    looks like the vault and asks them to sign in again. Only same-site paths
+    are honoured; anything else falls back.
+    """
+    target = (request.POST.get('next') or '').strip()
+    if not target:
+        return fallback
+    # '//evil.com' and 'https://evil.com' are both absolute; '/sentinel/...' is not.
+    if target.startswith('/') and not target.startswith('//') and '\\' not in target:
+        return target
+    return fallback
+
+
+def _deny_purge(request):
+    messages.error(request, '❌ Only an administrator can delete records from the vault.',
+                   extra_tags='permission_denied')
+    return redirect(_safe_next(request, 'sentinel:home'))
+
+
+@vault_access('can_configure_audit')
+@require_POST
+def purge_events(request):
+    """Delete audit rows: the ones ticked, or everything the filter bar selects.
+
+    Deliberately operates on the *filtered* queryset rather than a date box of
+    its own — what you are about to delete is exactly the list you are looking
+    at, which is the only version of this that is safe to hand someone.
+    """
+    if not may_purge(request.user):
+        return _deny_purge(request)
+
+    back = _safe_next(request, 'sentinel:stream')
+    scope = request.POST.get('scope', 'selected')
+    events = scope_to_visible(AuditEvent.objects.all(), request.user)
+
+    if scope == 'selected':
+        ids = [value for value in request.POST.getlist('ids') if value.isdigit()][:PAGE_SIZE * 5]
+        if not ids:
+            messages.info(request, 'Nothing was selected.')
+            return redirect(back)
+        queryset = events.filter(pk__in=ids)
+        detail = f'{len(ids)} hand-picked row(s)'
+    elif scope == 'filtered':
+        queryset, active = _filter_events(request, events)
+        if not active:
+            # Without a filter this button means "delete the entire trail", which
+            # is a different decision and belongs behind the settings page where
+            # it is spelled out.
+            messages.error(request, '❌ Narrow the view with at least one filter first. '
+                                    'To clear the whole trail, use Vault Settings → Storage.')
+            return redirect(back)
+        detail = ', '.join(f'{key}={value}' for key, value in active.items())
+    else:
+        messages.error(request, 'Unknown delete scope.')
+        return redirect(back)
+
+    removed = services.purge(queryset, what='audit event(s)', actor=request.user,
+                             request=request, detail=detail)
+    if removed:
+        messages.success(request, f'Deleted {removed:,} audit record(s). '
+                                  'Reclaim the disk space from Vault Settings → Storage.')
+    else:
+        messages.info(request, 'Nothing matched — no records were deleted.')
+    return redirect(back)
 
 
 @vault_access()
@@ -377,6 +457,11 @@ def session_monitor(request):
     if not everyone:
         sessions = sessions.filter(user=user)
 
+    # Held before the search narrows things: the "delete all closed sessions"
+    # button acts on every closed row, not just the ones matching the box, so
+    # counting the filtered set would put a number on it that it does not honour.
+    closed_total = sessions.filter(is_active=False).count()
+
     tab = request.GET.get('tab', 'live')
     search = (request.GET.get('q') or '').strip()
     if search:
@@ -425,7 +510,10 @@ def session_monitor(request):
         'device_mix': list(
             active_sessions.values('device_kind').annotate(count=Count('id')).order_by('-count')),
         'can_manage': can(user, 'can_manage_sessions'),
+        'can_purge': may_purge(user),
+        'closed_total': closed_total,
         'can_see_everyone': everyone,
+        'querystring': _querystring(request),
         'vault_tab': 'sessions',
         'vault_title': 'Sessions & Devices',
         'vault_tagline': 'Who is connected right now, from which machine, and on whose network.',
@@ -445,12 +533,12 @@ def revoke_session(request, session_id):
     if not may_act_on(request.user, session.user):
         messages.error(request, '❌ Only an administrator can revoke an administrator’s session.',
                        extra_tags='permission_denied')
-        return redirect(request.POST.get('next') or 'sentinel:sessions')
+        return redirect(_safe_next(request, 'sentinel:sessions'))
 
     services.revoke_session(session, request.user, note=request.POST.get('note', ''))
     messages.success(
         request, f'Signed {session.username_snapshot} out of {session.device_display}.')
-    return redirect(request.POST.get('next') or 'sentinel:sessions')
+    return redirect(_safe_next(request, 'sentinel:sessions'))
 
 
 @vault_access('can_manage_sessions')
@@ -462,7 +550,7 @@ def revoke_all_sessions(request, user_id):
     if not may_act_on(request.user, target):
         messages.error(request, '❌ Only an administrator can sign out an administrator.',
                        extra_tags='permission_denied')
-        return redirect(request.POST.get('next') or 'sentinel:sessions')
+        return redirect(_safe_next(request, 'sentinel:sessions'))
 
     sessions = DeviceSession.objects.filter(user=target, is_active=True)
     count = 0
@@ -472,7 +560,46 @@ def revoke_all_sessions(request, user_id):
         services.revoke_session(session, request.user, note='Bulk revoke')
         count += 1
     messages.success(request, f'Revoked {count} session(s) for {target.username}.')
-    return redirect(request.POST.get('next') or 'sentinel:sessions')
+    return redirect(_safe_next(request, 'sentinel:sessions'))
+
+
+@vault_access('can_configure_audit')
+@require_POST
+def purge_sessions(request):
+    """Clear closed sessions from the history tab.
+
+    Only closed ones: a live session is presence data, and deleting the row
+    would not sign anybody out — it would just hide them. Use Revoke for that.
+    """
+    if not may_purge(request.user):
+        return _deny_purge(request)
+
+    back = _safe_next(request, 'sentinel:sessions')
+    closed = DeviceSession.objects.filter(is_active=False)
+    scope = request.POST.get('scope', 'selected')
+
+    if scope == 'selected':
+        ids = [value for value in request.POST.getlist('ids') if value.isdigit()][:PAGE_SIZE * 5]
+        if not ids:
+            messages.info(request, 'Nothing was selected.')
+            return redirect(back)
+        queryset, detail = closed.filter(pk__in=ids), f'{len(ids)} selected'
+    elif scope == 'all':
+        queryset, detail = closed, 'every closed session'
+    elif scope == 'older':
+        days = request.POST.get('days', '')
+        days = int(days) if days.isdigit() and 0 < int(days) <= 3650 else 30
+        queryset = closed.filter(started_at__lt=timezone.now() - timedelta(days=days))
+        detail = f'closed and older than {days} days'
+    else:
+        messages.error(request, 'Unknown delete scope.')
+        return redirect(back)
+
+    removed = services.purge(queryset, what='closed session(s)', actor=request.user,
+                             request=request, detail=detail)
+    messages.success(request, f'Deleted {removed:,} session record(s).' if removed
+                     else 'No closed sessions matched.')
+    return redirect(back)
 
 
 @vault_access('can_manage_sessions')
@@ -484,16 +611,20 @@ def device_action(request, device_id):
     if not may_act_on(request.user, device.user):
         messages.error(request, '❌ Only an administrator can change an administrator’s device.',
                        extra_tags='permission_denied')
-        return redirect(request.POST.get('next') or 'sentinel:sessions')
+        return redirect(_safe_next(request, 'sentinel:sessions'))
 
     # Blocking the device you are sitting at ends your own access on the next click.
-    if action == 'block' and device.user_id == request.user.id:
+    if action in ('block', 'forget') and device.user_id == request.user.id:
         current = DeviceSession.objects.filter(
             session_key=request.session.session_key, is_active=True).first()
         if current is not None and current.fingerprint == device.fingerprint:
             messages.error(request, '❌ That is the device you are using right now — '
-                                    'blocking it would lock you out.')
-            return redirect(request.POST.get('next') or 'sentinel:sessions')
+                                    f'{"blocking" if action == "block" else "forgetting"} it '
+                                    'would lock you out.')
+            return redirect(_safe_next(request, 'sentinel:sessions'))
+
+    if action == 'forget':
+        return _forget_device(request, device)
 
     with suppress_capture():
         if action == 'trust':
@@ -526,7 +657,38 @@ def device_action(request, device_id):
         messages.warning(request, f'Device blocked and {killed} live session(s) terminated.')
     else:
         messages.success(request, f'Device marked as {action}.')
-    return redirect(request.POST.get('next') or 'sentinel:sessions')
+    return redirect(_safe_next(request, 'sentinel:sessions'))
+
+
+def _forget_device(request, device):
+    """Drop a registry entry without touching the sessions that reference it.
+
+    The registry only ever grew, so entries a superseded fingerprint left behind
+    — anything recorded before a device could be identified properly — sat there
+    permanently, describing hardware nobody uses. Sessions keep their history:
+    the foreign key is SET_NULL, so the sign-in record survives the device row.
+    """
+    if DeviceSession.objects.filter(
+            user=device.user, fingerprint=device.fingerprint, is_active=True).exists():
+        messages.error(request, '❌ That device has a live session. Revoke it first, '
+                                'otherwise it will simply be registered again.')
+        return redirect(_safe_next(request, 'sentinel:sessions'))
+
+    label, owner = device.label or device.fingerprint[:12], device.user.username
+    services.log_event(
+        event_type=EventType.DELETE,
+        action=f'Removed device "{label}" from {owner}\'s registry',
+        request=request, actor=request.user, module='Sentinel Vault',
+        object_type='sentinel.KnownDevice', object_id=device.pk, object_label=label,
+        severity=Severity.NOTICE,
+        context={'fingerprint': device.fingerprint, 'sign_ins': device.login_count,
+                 'owner': owner},
+    )
+    with suppress_capture():
+        device.delete()
+    messages.success(request, f'Forgot “{label}”. It will be registered again, correctly, '
+                              f'the next time {owner} signs in from it.')
+    return redirect(_safe_next(request, 'sentinel:sessions'))
 
 
 @vault_access()
@@ -548,6 +710,7 @@ def session_detail(request, session_id):
         'peak_risk': events.aggregate(value=Max('risk_score'))['value'] or 0,
         'alerts': session.alerts.all()[:10],
         'can_manage': can(request.user, 'can_manage_sessions'),
+        'querystring': _querystring(request),
         'vault_tab': 'sessions',
         'vault_title': 'Session Replay',
         'vault_tagline': 'The complete sequence of actions taken within one sign-in.',
@@ -613,6 +776,10 @@ def alert_console(request):
         },
         'by_kind': list(open_qs.values('kind').annotate(count=Count('id')).order_by('-count')),
         'can_manage': can(user, 'can_manage_sessions') or is_admin(user),
+        'can_purge': may_purge(user),
+        'closed_total': base.filter(status__in=[SecurityAlert.Status.RESOLVED,
+                                                SecurityAlert.Status.DISMISSED]).count(),
+        'querystring': _querystring(request),
         'vault_tab': 'alerts',
         'vault_title': 'Threat Console',
         'vault_tagline': 'Anomalies the vault flagged, and what was decided about them.',
@@ -641,7 +808,7 @@ def alert_action(request, alert_id):
         messages.error(request, '❌ You cannot close an alert raised about your own account. '
                                 'An administrator must review it.',
                        extra_tags='permission_denied')
-        return redirect(request.POST.get('next') or 'sentinel:alerts')
+        return redirect(_safe_next(request, 'sentinel:alerts'))
 
     with suppress_capture():
         alert.status = mapping[action]
@@ -662,7 +829,7 @@ def alert_action(request, alert_id):
         context={'note': note}, severity=Severity.NOTICE,
     )
     messages.success(request, f'Alert {alert.get_status_display().lower()}.')
-    return redirect(request.POST.get('next') or 'sentinel:alerts')
+    return redirect(_safe_next(request, 'sentinel:alerts'))
 
 
 @vault_access('can_manage_sessions')
@@ -673,6 +840,10 @@ def bulk_alert_action(request):
     mapping = {'ack': SecurityAlert.Status.ACKNOWLEDGED,
                'resolve': SecurityAlert.Status.RESOLVED,
                'dismiss': SecurityAlert.Status.DISMISSED}
+
+    if action == 'delete':
+        return _purge_alerts(request, ids)
+
     if action not in mapping or not ids:
         messages.error(request, 'Nothing to update.')
         return redirect('sentinel:alerts')
@@ -703,6 +874,42 @@ def bulk_alert_action(request):
     if skipped:
         messages.warning(request, f'{skipped} alert(s) skipped — you cannot close alerts '
                                   'raised about your own account.')
+    return redirect('sentinel:alerts')
+
+
+def _purge_alerts(request, ids):
+    """Delete alerts — the ticked ones, or every closed one.
+
+    Open alerts are never deletable in bulk: an unreviewed finding must be
+    dispositioned, not quietly dropped. Resolve or dismiss it first, which
+    leaves a record of who decided what.
+    """
+    if not may_purge(request.user):
+        return _deny_purge(request)
+
+    closed = SecurityAlert.objects.filter(
+        status__in=[SecurityAlert.Status.RESOLVED, SecurityAlert.Status.DISMISSED])
+
+    if request.POST.get('scope') == 'closed':
+        queryset, detail = closed, 'every resolved or dismissed alert'
+    elif ids:
+        queryset, detail = closed.filter(pk__in=ids), f'{len(ids)} selected'
+    else:
+        messages.error(request, 'Nothing was selected.')
+        return redirect('sentinel:alerts')
+
+    open_count = SecurityAlert.objects.filter(pk__in=ids).exclude(
+        pk__in=closed.values('pk')).count() if ids else 0
+
+    removed = services.purge(queryset, what='security alert(s)', actor=request.user,
+                             request=request, detail=detail)
+    if removed:
+        messages.success(request, f'Deleted {removed:,} alert(s).')
+    else:
+        messages.info(request, 'No closed alerts matched.')
+    if open_count:
+        messages.warning(request, f'{open_count} still-open alert(s) were kept — resolve or '
+                                  'dismiss them first so the decision is on record.')
     return redirect('sentinel:alerts')
 
 
@@ -774,6 +981,7 @@ def user_dossier(request, user_id):
         'alerts': SecurityAlert.objects.filter(subject_user=subject)[:8],
         'can_manage': can(request.user, 'can_manage_sessions'),
         'event_type_labels': dict(EventType.choices),
+        'querystring': _querystring(request),
         'vault_tab': 'people',
         'vault_title': 'Dossier',
         'vault_tagline': 'One person’s complete footprint: devices, hours, records touched.',
@@ -836,6 +1044,7 @@ def people_index(request):
         'page_obj': paginator.get_page(request.GET.get('page')),
         'search': search,
         'total_people': total_people,
+        'querystring': _querystring(request),
         'vault_tab': 'people',
         'vault_title': 'People Dossiers',
         'vault_tagline': 'Everyone with an account, ranked by how much they have been doing.',
@@ -884,23 +1093,114 @@ def vault_settings(request):
         return redirect('sentinel:settings')
 
     now = timezone.now()
+    report = services.storage_report()
+    expiring, window = services.retention_querysets(config)
     storage = {
-        'events': AuditEvent.objects.count(),
-        'sessions': DeviceSession.objects.count(),
-        'alerts': SecurityAlert.objects.count(),
-        'devices': KnownDevice.objects.count(),
+        'events': report['events']['rows'],
+        'sessions': report['sessions']['rows'],
+        'alerts': report['alerts']['rows'],
+        'devices': report['devices']['rows'],
         'oldest': AuditEvent.objects.order_by('created_at')
                                     .values_list('created_at', flat=True).first(),
         'expiring': AuditEvent.objects.filter(
             created_at__lt=now - timedelta(days=config.retention_days)).count(),
         'page_views': AuditEvent.objects.filter(event_type=EventType.VIEW).count(),
+        'closed_sessions': DeviceSession.objects.filter(is_active=False).count(),
+        'closed_alerts': SecurityAlert.objects.filter(status__in=[
+            SecurityAlert.Status.RESOLVED, SecurityAlert.Status.DISMISSED]).count(),
+        'bytes': report.get('total_bytes', 0),
+        'sizes': {key: report[key]['bytes'] for key in ('events', 'sessions', 'alerts', 'devices')},
+        'sweep': {key: queryset.count() for key, queryset in expiring.items()},
+        'window': window,
     }
     return render(request, 'sentinel/vault_settings.html', {
         'config': config, 'storage': storage,
+        'can_purge': may_purge(request.user),
         'vault_tab': 'settings',
         'vault_title': 'Vault Settings',
         'vault_tagline': 'Capture depth, retention windows and anomaly thresholds.',
     })
+
+
+@vault_access('can_configure_audit')
+@require_POST
+def vault_storage(request):
+    """The housekeeping actions on the settings page.
+
+    `sentinel_prune` already existed for this, but it needs a scheduler and this
+    project has none — so the table grew until somebody noticed. These are the
+    same operations, reachable by the person who actually sees the problem.
+    """
+    if not may_purge(request.user):
+        return _deny_purge(request)
+
+    action = request.POST.get('action')
+
+    if action == 'sweep':
+        removed = services.run_retention_sweep(actor=request.user, request=request)
+        total = sum(removed.values())
+        if total:
+            messages.success(request, 'Retention sweep removed {:,} row(s): {}.'.format(
+                total, ', '.join(f'{count:,} {name.replace("_", " ")}'
+                                 for name, count in removed.items() if count)))
+        else:
+            messages.info(request, 'Nothing is past its retention window yet.')
+
+    elif action == 'page_views':
+        removed = services.purge(
+            AuditEvent.objects.filter(event_type=EventType.VIEW), what='page-view record(s)',
+            actor=request.user, request=request, detail='all page views')
+        messages.success(request, f'Deleted {removed:,} page-view record(s). Turn off '
+                                  '“Record page visits” above to stop them coming back.'
+                         if removed else 'There were no page-view records to delete.')
+
+    elif action == 'closed_sessions':
+        removed = services.purge(
+            DeviceSession.objects.filter(is_active=False), what='closed session(s)',
+            actor=request.user, request=request, detail='every closed session')
+        messages.success(request, f'Deleted {removed:,} closed session record(s).' if removed
+                         else 'There were no closed sessions to delete.')
+
+    elif action == 'closed_alerts':
+        removed = services.purge(
+            SecurityAlert.objects.filter(status__in=[SecurityAlert.Status.RESOLVED,
+                                                     SecurityAlert.Status.DISMISSED]),
+            what='closed alert(s)', actor=request.user, request=request,
+            detail='every resolved or dismissed alert')
+        messages.success(request, f'Deleted {removed:,} closed alert(s).' if removed
+                         else 'There were no closed alerts to delete.')
+
+    elif action == 'older_than':
+        raw = request.POST.get('days', '')
+        if not raw.isdigit() or not 0 < int(raw) <= 3650:
+            messages.error(request, 'Enter a number of days between 1 and 3650.')
+            return redirect('sentinel:settings')
+        days = int(raw)
+        cutoff = timezone.now() - timedelta(days=days)
+        removed = services.purge(
+            AuditEvent.objects.filter(created_at__lt=cutoff), what='audit event(s)',
+            actor=request.user, request=request, detail=f'older than {days} days')
+        messages.success(request, f'Deleted {removed:,} record(s) older than {days} days.'
+                         if removed else f'Nothing is older than {days} days.')
+
+    elif action == 'reclaim':
+        result = services.reclaim_space(actor=request.user, request=request)
+        if result is None:
+            messages.warning(request, 'This database backend cannot reclaim space on demand.')
+        elif result['freed'] > 0:
+            messages.success(request, f'Returned {_filesizeformat(result["freed"])} to the disk.')
+        else:
+            messages.info(request, 'Tables rebuilt — there was no unused space to return.')
+
+    else:
+        messages.error(request, 'Unknown storage action.')
+
+    return redirect('sentinel:settings')
+
+
+def _filesizeformat(value):
+    from django.template.defaultfilters import filesizeformat
+    return filesizeformat(value)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1003,23 +1303,39 @@ def api_pulse(request):
 @vault_access()
 def api_live_sessions(request):
     """Powers the auto-refreshing presence list on the session monitor."""
+    # Sweep first. Without this the poll keeps reporting sessions that ended
+    # minutes ago, so the live tile drifts away from the tab badge the page was
+    # rendered with and neither number can be trusted.
+    services.reap_stale_sessions()
+
     sessions = DeviceSession.objects.filter(is_active=True).select_related('user')
     if not can_see_everyone(request.user):
         sessions = sessions.filter(user=request.user)
 
-    return JsonResponse({'sessions': [
-        {
-            'id': s.id,
-            'user': s.username_snapshot,
-            'role': s.role_snapshot,
-            'ip': s.ip_address,
-            'device': s.device_display,
-            'kind': s.device_kind,
-            'duration': s.duration_display,
-            'idle': s.is_idle,
-            'requests': s.request_count,
-            'writes': s.write_count,
-            'last_activity': convert_to_nepali(s.last_activity).strftime('%I:%M:%S %p'),
-        }
-        for s in sessions.order_by('-last_activity')[:50]
-    ]})
+    idle_cutoff = timezone.now() - timedelta(seconds=900)
+    rows = list(sessions.order_by('-last_activity')[:50])
+
+    return JsonResponse({
+        # Counted, not len(rows): the row list is capped for payload size and
+        # reporting the cap as the headline figure would silently understate a
+        # busy morning.
+        'count': sessions.count(),
+        'people': sessions.values('user_id').distinct().count(),
+        'idle': sessions.filter(last_activity__lt=idle_cutoff).count(),
+        'sessions': [
+            {
+                'id': s.id,
+                'user': s.username_snapshot,
+                'role': s.role_snapshot,
+                'ip': s.ip_address,
+                'device': s.device_display,
+                'kind': s.device_kind,
+                'duration': s.duration_display,
+                'idle': s.is_idle,
+                'requests': s.request_count,
+                'writes': s.write_count,
+                'last_activity': convert_to_nepali(s.last_activity).strftime('%I:%M:%S %p'),
+            }
+            for s in rows
+        ],
+    })

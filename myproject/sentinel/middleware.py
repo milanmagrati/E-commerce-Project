@@ -27,6 +27,11 @@ HARD_EXCLUDED = ('/sentinel/api/', '/static/', '/media/', '/favicon.ico', '/iclo
 
 WRITE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
 
+# Asking Chrome to send the device model and OS version alongside every request.
+# Without this the only client hints we get are the low-entropy ones, which name
+# the platform but never the handset.
+ACCEPT_CH = 'Sec-CH-UA-Platform, Sec-CH-UA-Platform-Version, Sec-CH-UA-Mobile, Sec-CH-UA-Model'
+
 
 class SentinelAuditMiddleware(MiddlewareMixin):
 
@@ -36,6 +41,10 @@ class SentinelAuditMiddleware(MiddlewareMixin):
         return None
 
     def process_response(self, request, response):
+        try:
+            self._advertise_client_hints(response)
+        except Exception:
+            logger.debug('Sentinel could not advertise client hints', exc_info=True)
         try:
             self._record(request, response)
         except Exception:
@@ -64,6 +73,19 @@ class SentinelAuditMiddleware(MiddlewareMixin):
         return None
 
     # ── internals ────────────────────────────────────────────────────────────
+
+    def _advertise_client_hints(self, response):
+        """Opt in to the extra Sec-CH-UA-* headers, on HTML replies only.
+
+        Browsers that don't implement client hints ignore the header entirely,
+        so this is inert everywhere it isn't useful.
+        """
+        if not hasattr(response, 'headers'):
+            return
+        content_type = (response.get('Content-Type', '') or '').lower()
+        if 'text/html' not in content_type:
+            return
+        response['Accept-CH'] = ACCEPT_CH
 
     def _skip(self, request):
         path = request.path or ''
@@ -125,7 +147,8 @@ class SentinelAuditMiddleware(MiddlewareMixin):
                 **payload,
             )
 
-        # 2. Record the request itself when it isn't already described by a model change.
+        # 2. Record the request itself when it isn't already described by a model
+        #    change or by the view's own explicit event.
         if captured:
             return
 
@@ -137,6 +160,12 @@ class SentinelAuditMiddleware(MiddlewareMixin):
                 status_code=status, duration_ms=duration_ms,
                 severity=Severity.WARNING,
             )
+            return
+
+        # 3. The view already wrote its own event (a revoke, a purge, a settings
+        #    change, a sign-in). The generic row below would say the same thing
+        #    with less detail, so it is pure duplication — skip it.
+        if getattr(request, '_sentinel_explicit', False):
             return
 
         if is_write:

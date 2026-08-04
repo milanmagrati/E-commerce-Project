@@ -80,6 +80,18 @@ def may_act_on(actor, subject):
     return not is_admin(subject)
 
 
+def may_purge(actor):
+    """Who may delete records from the vault?
+
+    Administrators only — not `can_configure_audit`, which is a tuning
+    permission granted to supervisors. Erasing the trail is the one action a
+    person under investigation would most want, so it stays with the rank that
+    can already grant and revoke every other permission. Everything a purge
+    removes is gone for good; there is no undo to fall back on.
+    """
+    return is_admin(actor)
+
+
 def may_judge_alert(actor, alert):
     """Can `actor` close/dismiss this alert?
 

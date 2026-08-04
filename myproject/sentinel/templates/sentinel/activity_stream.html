@@ -175,10 +175,38 @@
     </div>
 
     <div class="sv-panel-body is-flush">
+    {% if can_purge %}
+    <form method="POST" id="svPurgeForm"
+          action="{% url 'sentinel:purge_events' %}{% if querystring %}?{{ querystring }}{% endif %}"
+          data-confirm data-message="Delete the selected audit record(s)?<br><small>Permanent — there is no undo.</small>">
+        {% csrf_token %}
+        <input type="hidden" name="scope" value="selected" id="svPurgeScope">
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <div class="sv-bulkbar" id="svPurgeBar" hidden>
+            <span><strong id="svPurgeCount">0</strong> selected</span>
+            <button type="submit" class="sv-btn sv-btn-sm sv-btn-danger">
+                <i class="fas fa-trash"></i> Delete selected
+            </button>
+            <button type="button" class="sv-btn sv-btn-sm" id="svPurgeClear">Clear</button>
+            {% if active %}
+            <span class="sv-faint" style="margin-left:auto;font-size:.75rem;">
+                or delete every record matching these filters —
+                <button type="button" class="sv-btn sv-btn-sm sv-btn-danger" id="svPurgeFiltered">
+                    all {{ total }}
+                </button>
+            </span>
+            {% endif %}
+        </div>
+    {% endif %}
         <div class="sv-table-wrap">
             <table class="sv-table">
                 <thead>
                     <tr>
+                        {% if can_purge %}
+                        <th style="width:38px;">
+                            <input type="checkbox" id="svPurgeAll" title="Select every row on this page">
+                        </th>
+                        {% endif %}
                         <th style="width:150px;">When</th>
                         <th style="width:180px;">Who</th>
                         <th>What happened</th>
@@ -191,6 +219,13 @@
                     {% for event in page_obj %}
                     <tr class="is-clickable {% if event.risk_score >= 70 %}is-flagged{% endif %}"
                         data-sv-event="{{ event.id }}" tabindex="0">
+                        {% if can_purge %}
+                        <td data-no-drawer>
+                            <input type="checkbox" form="svPurgeForm" name="ids"
+                                   value="{{ event.id }}" class="sv-purge-tick"
+                                   aria-label="Select this record for deletion">
+                        </td>
+                        {% endif %}
                         <td class="sv-nowrap">
                             <div style="font-size:.8rem;font-weight:600;">{{ event.created_at|sentinel_ago }}</div>
                             <div class="sv-cell-dim">{{ event.created_at|sentinel_clock }}</div>
@@ -249,7 +284,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="6">
+                        <td colspan="{% if can_purge %}7{% else %}6{% endif %}">
                             <div class="sv-empty">
                                 <i class="fas fa-magnifying-glass"></i>
                                 <h3>No events match this view</h3>
@@ -261,6 +296,7 @@
                 </tbody>
             </table>
         </div>
+    {% if can_purge %}</form>{% endif %}
         {% include 'sentinel/_pager.html' %}
     </div>
 </div>
@@ -311,6 +347,56 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     });
+
+    {% if can_purge %}
+    /* Row selection for deletion. The bar only appears once something is
+       ticked, so the ledger reads as a log first and a management screen second. */
+    const purgeForm = document.getElementById('svPurgeForm');
+    const bar = document.getElementById('svPurgeBar');
+    const counter = document.getElementById('svPurgeCount');
+    const selectAll = document.getElementById('svPurgeAll');
+    const ticks = function () { return document.querySelectorAll('.sv-purge-tick'); };
+
+    function sync() {
+        const chosen = document.querySelectorAll('.sv-purge-tick:checked').length;
+        counter.textContent = chosen;
+        bar.hidden = chosen === 0;
+        if (selectAll) {
+            selectAll.checked = chosen > 0 && chosen === ticks().length;
+            selectAll.indeterminate = chosen > 0 && chosen < ticks().length;
+        }
+    }
+
+    ticks().forEach(function (tick) { tick.addEventListener('change', sync); });
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            ticks().forEach(function (tick) { tick.checked = selectAll.checked; });
+            sync();
+        });
+    }
+    document.getElementById('svPurgeClear').addEventListener('click', function () {
+        ticks().forEach(function (tick) { tick.checked = false; });
+        if (selectAll) { selectAll.checked = false; }
+        sync();
+    });
+
+    /* "Delete all N matching these filters" reaches past the current page, so it
+       asks for its own confirmation with the real total in it. */
+    const filtered = document.getElementById('svPurgeFiltered');
+    if (filtered) {
+        filtered.addEventListener('click', function () {
+            Sentinel.confirmThen(
+                'Delete <b>all {{ total }}</b> record(s) matching the current filters?' +
+                '<br><small>This is not limited to the rows shown on this page. Permanent — there is no undo.</small>',
+                function () {
+                    document.getElementById('svPurgeScope').value = 'filtered';
+                    purgeForm.dataset.confirmed = '1';
+                    purgeForm.submit();
+                });
+        });
+    }
+    sync();
+    {% endif %}
 
     // "/" focuses search, the way every log tool the team already uses behaves.
     document.addEventListener('keydown', function (e) {

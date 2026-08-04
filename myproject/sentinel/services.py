@@ -191,7 +191,7 @@ def log_event(*, event_type, action, request=None, actor=None, module='', object
         if request is not None:
             ip, _chain = utils.get_client_ip(request)
             user_agent = request.META.get('HTTP_USER_AGENT', '')[:600]
-            facts = utils.parse_user_agent(user_agent)
+            facts = utils.parse_user_agent(user_agent, utils.read_client_hints(request))
             path = request.get_full_path()[:512]
             method = request.method or ''
             match = getattr(request, 'resolver_match', None)
@@ -246,6 +246,16 @@ def log_event(*, event_type, action, request=None, actor=None, module='', object
             created_at=when,
         )
 
+        # Tell the middleware this request has already described itself. Without
+        # it every deliberate action writes two rows — the rich one from here
+        # plus a generic "Submitted Revoke session" from the catch-all write
+        # branch — which doubles the table for exactly the actions worth keeping.
+        if request is not None:
+            try:
+                request._sentinel_explicit = True
+            except Exception:
+                pass
+
         if raise_alerts:
             _evaluate_alerts(event, config)
         return event
@@ -279,21 +289,63 @@ def log_job(name, *, status='completed', detail='', actor=None, context=None, se
 # Sessions & devices
 # ─────────────────────────────────────────────────────────────────────────────
 
+def inspect_request(request):
+    """Everything we know about the machine behind one request.
+
+    Shared by session opening and session repair so both always agree on how a
+    device is described.
+    """
+    meta = getattr(request, 'META', None) or {}
+    ip, chain = utils.get_client_ip(request)
+    user_agent = (meta.get('HTTP_USER_AGENT') or '')[:600]
+    hints = utils.read_client_hints(request)
+    facts = utils.parse_user_agent(user_agent, hints)
+    return {
+        'ip': ip,
+        'forwarded_chain': chain,
+        'user_agent': user_agent,
+        'facts': facts,
+        'hints': hints,
+        'fingerprint': utils.device_fingerprint(user_agent, ip, facts),
+    }
+
+
+def _is_real_browser_request(probe):
+    """False for the synthetic requests scripts and test clients build.
+
+    `django.test.Client.login()` and any management command that calls
+    `django.contrib.auth.login()` hand the signal a bare `HttpRequest` with an
+    empty META. A real request always carries REMOTE_ADDR from the WSGI server
+    and almost always a user agent, so "neither" means nobody actually signed
+    in — and letting those through is what filled the live list with phantom
+    'Unknown on Unknown' rows that no human could be asked about.
+    """
+    return bool(probe['user_agent'] or probe['ip'])
+
+
+def _device_facts_for(facts):
+    return {
+        'label': utils.device_label(facts),
+        'browser': (facts.get('browser') or '')[:60],
+        'operating_system': (facts.get('operating_system') or '')[:60],
+        'device_kind': facts.get('device_kind', DeviceKind.UNKNOWN),
+    }
+
+
 @suppress_capture()
 def open_session(request, user):
     """Create the DeviceSession for a fresh login and remember the device."""
     try:
-        ip, chain = utils.get_client_ip(request)
-        user_agent = request.META.get('HTTP_USER_AGENT', '')[:600]
-        facts = utils.parse_user_agent(user_agent)
-        fingerprint = utils.device_fingerprint(user_agent, ip, facts)
+        probe = inspect_request(request)
+        if not _is_real_browser_request(probe):
+            logger.debug('Sentinel ignored a login for %s with no request identity', user)
+            return None, None, False
 
-        device_defaults = {
-            'label': utils.device_label(facts),
-            'browser': facts.get('browser', ''),
-            'operating_system': facts.get('operating_system', ''),
-            'device_kind': facts.get('device_kind', DeviceKind.UNKNOWN),
-        }
+        facts, fingerprint = probe['facts'], probe['fingerprint']
+        hints = probe['hints']
+        session_key = getattr(getattr(request, 'session', None), 'session_key', '') or ''
+
+        device_defaults = _device_facts_for(facts)
         try:
             device, created = KnownDevice.objects.get_or_create(
                 user=user, fingerprint=fingerprint, defaults=device_defaults)
@@ -306,32 +358,46 @@ def open_session(request, user):
             created = False
 
         if device is not None:
+            update = {'last_seen': timezone.now(), 'login_count': F('login_count') + 1}
+            if not created and _is_vague(device.operating_system, device.device_kind):
+                # An earlier sign-in was recorded before the hints arrived. Now
+                # that we can actually name the machine, correct the registry
+                # entry instead of leaving 'Unknown browser on Unknown OS'
+                # against it forever.
+                update.update(device_defaults)
             # F() rather than device.login_count + 1: concurrent logins on the same
             # device must not each write the same stale count back.
-            KnownDevice.objects.filter(pk=device.pk).update(
-                last_seen=timezone.now(), login_count=F('login_count') + 1)
+            KnownDevice.objects.filter(pk=device.pk).update(**update)
             device.login_count += 1
+
+        # Django cycles the session key on login, but a re-login without a
+        # logout (or a login that reuses the key) would otherwise leave the old
+        # row flagged live forever, so one person shows up as several.
+        if session_key:
+            DeviceSession.objects.filter(session_key=session_key, is_active=True).update(
+                is_active=False, ended_at=timezone.now(),
+                end_reason=DeviceSession.EndReason.REPLACED)
 
         session = DeviceSession.objects.create(
             user=user,
             username_snapshot=user.username[:150],
             role_snapshot=(getattr(user, 'role', '') or '')[:50],
-            session_key=request.session.session_key or '',
+            session_key=session_key,
             device=device,
             fingerprint=fingerprint,
-            ip_address=ip,
-            forwarded_chain=chain,
-            network_label=utils.network_label(ip),
-            user_agent=user_agent,
-            browser=facts.get('browser', '')[:60],
-            browser_version=facts.get('browser_version', '')[:30],
-            operating_system=facts.get('operating_system', '')[:60],
-            os_version=facts.get('os_version', '')[:30],
+            ip_address=probe['ip'],
+            forwarded_chain=probe['forwarded_chain'],
+            network_label=utils.network_label(probe['ip']),
+            user_agent=probe['user_agent'],
+            browser=(facts.get('browser') or '')[:60],
+            browser_version=(facts.get('browser_version') or '')[:30],
+            operating_system=(facts.get('operating_system') or '')[:60],
+            os_version=(facts.get('os_version') or '')[:30],
             device_kind=facts.get('device_kind', DeviceKind.UNKNOWN),
-            device_brand=facts.get('device_brand', '')[:40],
-            timezone_name=request.POST.get('client_timezone', '')[:64],
-            screen=request.POST.get('client_screen', '')[:24],
-            language=request.META.get('HTTP_ACCEPT_LANGUAGE', '')[:32],
+            device_brand=(facts.get('device_brand') or '')[:40],
+            timezone_name=(hints.get('timezone') or '')[:64],
+            screen=(hints.get('screen') or '')[:24],
+            language=(hints.get('language') or '')[:32],
             is_new_device=created,
         )
         set_session_record(session)
@@ -339,6 +405,80 @@ def open_session(request, user):
     except Exception:
         logger.exception('Sentinel could not open a session record for %s', user)
         return None, None, False
+
+
+def _is_vague(operating_system, device_kind):
+    return (not operating_system or operating_system == 'Unknown'
+            or device_kind == DeviceKind.UNKNOWN)
+
+
+def session_needs_repair(session):
+    """Cheap in-memory test — no query — for a session we could describe better."""
+    if session is None:
+        return False
+    return (not session.user_agent or session.ip_address is None
+            or _is_vague(session.operating_system, session.device_kind)
+            or not session.screen)
+
+
+@suppress_capture()
+def repair_session(session, request):
+    """Fill in what a session is missing from the request in hand.
+
+    A session's identity is captured once, at login — but the hints that make it
+    readable can arrive later (the cookie our snippet writes is not there yet on
+    a first-ever visit, and sessions adopted by `resolve_session` never had a
+    login request at all). Rather than leave those rows permanently unnamed,
+    top them up the next time the same session makes a request.
+    """
+    if session is None or request is None:
+        return session
+    try:
+        probe = inspect_request(request)
+        facts = probe['facts']
+        updates = {}
+
+        if not session.user_agent and probe['user_agent']:
+            updates['user_agent'] = probe['user_agent']
+        if session.ip_address is None and probe['ip']:
+            updates['ip_address'] = probe['ip']
+            updates['forwarded_chain'] = probe['forwarded_chain']
+            updates['network_label'] = utils.network_label(probe['ip'])
+        if _is_vague(session.operating_system, session.device_kind) and not _is_vague(
+                facts.get('operating_system'), facts.get('device_kind')):
+            updates.update({
+                'browser': (facts.get('browser') or '')[:60],
+                'browser_version': (facts.get('browser_version') or '')[:30],
+                'operating_system': (facts.get('operating_system') or '')[:60],
+                'os_version': (facts.get('os_version') or '')[:30],
+                'device_kind': facts.get('device_kind', DeviceKind.UNKNOWN),
+                'device_brand': (facts.get('device_brand') or '')[:40],
+            })
+        hints = probe['hints']
+        if not session.screen and hints.get('screen'):
+            updates['screen'] = hints['screen'][:24]
+        if not session.timezone_name and hints.get('timezone'):
+            updates['timezone_name'] = hints['timezone'][:64]
+        if not session.language and hints.get('language'):
+            updates['language'] = hints['language'][:32]
+
+        if not updates:
+            return session
+
+        DeviceSession.objects.filter(pk=session.pk).update(**updates)
+        for field, value in updates.items():
+            setattr(session, field, value)
+
+        # Keep the registry entry in step, otherwise the device list keeps
+        # showing the vague label while the session row shows the real one.
+        if session.device_id and 'device_kind' in updates:
+            KnownDevice.objects.filter(pk=session.device_id).update(
+                **_device_facts_for(facts))
+        return session
+    except Exception:
+        logger.debug('Sentinel could not repair session %s',
+                     getattr(session, 'pk', '?'), exc_info=True)
+        return session
 
 
 @suppress_capture()
@@ -376,14 +516,26 @@ def resolve_session(request):
     user = getattr(request, 'user', None)
     if user is None or not getattr(user, 'is_authenticated', False):
         return None
-    session_key = request.session.session_key
+    session_key = getattr(getattr(request, 'session', None), 'session_key', '') or ''
     if not session_key:
         return None
     try:
-        record = DeviceSession.objects.filter(
-            session_key=session_key, user=user, is_active=True).first()
-        if record is None:
+        matches = list(DeviceSession.objects.filter(
+            session_key=session_key, user=user, is_active=True).order_by('-started_at')[:5])
+        if not matches:
             record, _device, _created = open_session(request, user)
+            return record
+
+        record = matches[0]
+        if len(matches) > 1:
+            # One browser session can only be one live session. Anything older
+            # sharing this key is a leftover that would otherwise be counted as
+            # another person online.
+            DeviceSession.objects.filter(pk__in=[s.pk for s in matches[1:]]).update(
+                is_active=False, ended_at=timezone.now(),
+                end_reason=DeviceSession.EndReason.REPLACED)
+        if session_needs_repair(record):
+            record = repair_session(record, request)
         return record
     except Exception:
         logger.debug('Sentinel could not resolve a session record', exc_info=True)
@@ -447,6 +599,32 @@ def reap_stale_sessions(idle_minutes=None, force=False):
             is_active=False, ended_at=timezone.now(),
             end_reason=DeviceSession.EndReason.EXPIRED)
 
+        # Phantoms: a browser always presents at least an address, so a live
+        # session with neither an address nor a user agent was opened by a
+        # script or a test client, not a person. Left alone these sit in the
+        # live list forever as 'Unknown on Unknown' and inflate every count on
+        # the page. Give them a moment first, in case a real request is on its
+        # way to repair one.
+        phantom_cutoff = timezone.now() - timedelta(minutes=5)
+        expired_count += DeviceSession.objects.filter(
+            is_active=True, user_agent='', ip_address__isnull=True,
+            started_at__lt=phantom_cutoff,
+        ).update(is_active=False, ended_at=timezone.now(),
+                 end_reason=DeviceSession.EndReason.EXPIRED)
+
+        # Duplicates: several live rows sharing one session key means one
+        # person is being counted several times. Keep the newest of each.
+        duplicated = (DeviceSession.objects.filter(is_active=True).exclude(session_key='')
+                      .values('session_key').annotate(n=Count('id')).filter(n__gt=1)
+                      .values_list('session_key', flat=True))
+        for key in list(duplicated)[:200]:
+            keep = (DeviceSession.objects.filter(session_key=key, is_active=True)
+                    .order_by('-started_at').values_list('pk', flat=True).first())
+            expired_count += DeviceSession.objects.filter(
+                session_key=key, is_active=True).exclude(pk=keep).update(
+                    is_active=False, ended_at=timezone.now(),
+                    end_reason=DeviceSession.EndReason.REPLACED)
+
         # Also catch sessions whose cookie was destroyed out from under us.
         live_keys = set(
             Session.objects.filter(expire_date__gt=timezone.now())
@@ -463,6 +641,204 @@ def reap_stale_sessions(idle_minutes=None, force=False):
     except Exception:
         logger.debug('Sentinel session reaping failed', exc_info=True)
         return 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deletion and storage reclamation
+#
+# A vault you cannot empty eventually fills the disk, and this project has no
+# scheduler to run `sentinel_prune` for it — so the trail has to be prunable
+# from the UI. What keeps that compatible with an audit trail is the rule
+# enforced in `purge()`: the data may go, but the fact that somebody removed it
+# may not. Every deletion writes its own receipt, after the fact, so no sweep
+# can ever take out the record of itself.
+# ─────────────────────────────────────────────────────────────────────────────
+
+PURGE_CHUNK = 2000
+
+# What each purge target means, in one place, so the views, the settings page
+# and the management command cannot drift apart on the definitions.
+PURGE_TARGETS = ('events', 'page_views', 'sessions', 'alerts', 'devices')
+
+
+def chunked_delete(queryset, chunk=PURGE_CHUNK, limit=None):
+    """Delete a queryset in batches. Returns the number of rows removed.
+
+    Batched because a single DELETE over a year of audit rows is one enormous
+    MySQL transaction — long enough to lock out the writes the rest of the shop
+    is trying to make while it runs.
+    """
+    model = queryset.model
+    total = 0
+    while True:
+        if limit is not None and total >= limit:
+            return total
+        size = chunk if limit is None else min(chunk, limit - total)
+        ids = list(queryset.values_list('pk', flat=True)[:size])
+        if not ids:
+            return total
+        model.objects.filter(pk__in=ids).delete()
+        total += len(ids)
+
+
+@suppress_capture()
+def purge(queryset, *, what, actor=None, request=None, detail='', context=None, limit=None):
+    """Delete vault rows and record that it happened. Returns rows removed."""
+    try:
+        removed = chunked_delete(queryset, limit=limit)
+    except Exception:
+        logger.exception('Sentinel purge failed for %s', what)
+        return 0
+
+    if not removed:
+        return 0
+
+    # Written after the delete on purpose: a receipt created first would be
+    # inside its own sweep's range and delete itself.
+    log_event(
+        event_type=EventType.DELETE,
+        action=f'Purged {removed:,} {what} from the vault'
+               + (f' ({detail})' if detail else ''),
+        request=request, actor=actor, module='Sentinel Vault',
+        # No object_type: a receipt covers N rows across a table, not one record,
+        # and filing it against sentinel.AuditEvent would break the rule that the
+        # vault never records itself — the rule that stops it logging its own
+        # logging. `context['target']` carries what was swept.
+        severity=Severity.WARNING,
+        context={'purged': removed, 'target': what, 'filter': detail, **(context or {})},
+        force=True,
+        raise_alerts=False,     # a deliberate purge is not a bulk-delete anomaly
+    )
+    logger.info('Sentinel purge: %s removed %s %s (%s)',
+                getattr(actor, 'username', 'system'), removed, what, detail or 'no filter')
+    return removed
+
+
+def retention_querysets(config=None, days=None):
+    """The rows the configured retention window says are past their life.
+
+    Shared by the settings page and `manage.py sentinel_prune` so "what the
+    button does" and "what the cron job does" are the same thing by construction.
+    """
+    config = config or get_settings()
+    event_days = days or config.retention_days
+    view_days = min(days or config.page_view_retention_days, config.page_view_retention_days)
+    now = timezone.now()
+    event_cutoff = now - timedelta(days=event_days)
+    view_cutoff = now - timedelta(days=view_days)
+
+    return {
+        'page_views': AuditEvent.objects.filter(
+            created_at__lt=view_cutoff, event_type=EventType.VIEW),
+        'events': AuditEvent.objects.filter(created_at__lt=event_cutoff),
+        'alerts': SecurityAlert.objects.filter(
+            status__in=[SecurityAlert.Status.RESOLVED, SecurityAlert.Status.DISMISSED],
+            created_at__lt=event_cutoff),
+        'sessions': DeviceSession.objects.filter(
+            is_active=False, started_at__lt=event_cutoff),
+    }, {'event_days': event_days, 'view_days': view_days}
+
+
+def run_retention_sweep(actor=None, request=None, days=None):
+    """Apply the configured retention window now. Returns {target: removed}."""
+    querysets, window = retention_querysets(days=days)
+    removed = {}
+    # Page views first: they are the cheapest rows to lose and by far the most
+    # numerous, so on a big table this is where the space actually comes back.
+    for target in ('page_views', 'events', 'alerts', 'sessions'):
+        removed[target] = purge(
+            querysets[target], what=target.replace('_', ' '),
+            actor=actor, request=request,
+            detail=f'retention sweep, {window["event_days"]}-day window')
+    return removed
+
+
+def storage_report():
+    """Row counts and on-disk size per vault table.
+
+    Sizes come from the database itself rather than an estimate — "you will get
+    140 MB back" is the only form of this number worth showing someone who is
+    trying to free space.
+    """
+    from django.db import connection
+
+    models = {
+        'events': AuditEvent, 'sessions': DeviceSession,
+        'alerts': SecurityAlert, 'devices': KnownDevice,
+    }
+    report = {}
+    for key, model in models.items():
+        report[key] = {'rows': model.objects.count(),
+                       'table': model._meta.db_table, 'bytes': 0}
+
+    try:
+        tables = [entry['table'] for entry in report.values()]
+        with connection.cursor() as cursor:
+            if connection.vendor == 'mysql':
+                cursor.execute(
+                    'SELECT table_name, data_length + index_length '
+                    'FROM information_schema.TABLES '
+                    'WHERE table_schema = DATABASE() AND table_name IN %s',
+                    [tuple(tables)])
+            elif connection.vendor == 'sqlite':
+                cursor.execute(
+                    "SELECT name, pgsize FROM dbstat WHERE name IN (%s)"
+                    % ','.join(['%s'] * len(tables)), tables)
+            else:
+                cursor = None
+            if cursor is not None:
+                sizes = {name: int(size or 0) for name, size in cursor.fetchall()}
+                for entry in report.values():
+                    entry['bytes'] = sizes.get(entry['table'], 0)
+    except Exception:
+        # Size reporting is a nicety; never let a permissions quirk on
+        # information_schema take down the settings page.
+        logger.debug('Sentinel could not measure table sizes', exc_info=True)
+
+    report['total_bytes'] = sum(entry['bytes'] for entry in report.values()
+                                if isinstance(entry, dict))
+    return report
+
+
+def reclaim_space(actor=None, request=None):
+    """Return freed pages to the filesystem after a purge.
+
+    Deleting rows does not shrink the file on either backend this project runs:
+    InnoDB keeps the pages in the tablespace and SQLite keeps them on its free
+    list. Without this step someone who just deleted a million rows to free a
+    disk sees no change at all and reasonably concludes the delete did nothing.
+    """
+    from django.db import connection
+
+    tables = [AuditEvent._meta.db_table, DeviceSession._meta.db_table,
+              SecurityAlert._meta.db_table, KnownDevice._meta.db_table]
+    before = storage_report().get('total_bytes', 0)
+    try:
+        with connection.cursor() as cursor:
+            if connection.vendor == 'mysql':
+                for table in tables:
+                    # Table names are our own model metadata, never user input.
+                    cursor.execute(f'OPTIMIZE TABLE `{table}`')
+                    cursor.fetchall()
+            elif connection.vendor == 'sqlite':
+                cursor.execute('VACUUM')
+            else:
+                return None
+    except Exception:
+        logger.exception('Sentinel could not reclaim table space')
+        return None
+
+    after = storage_report().get('total_bytes', 0)
+    log_event(
+        event_type=EventType.SYSTEM,
+        action='Reclaimed unused space in the vault tables',
+        request=request, actor=actor, module='Sentinel Vault',
+        severity=Severity.NOTICE,
+        context={'before_bytes': before, 'after_bytes': after,
+                 'freed_bytes': max(0, before - after)},
+        force=True, raise_alerts=False,
+    )
+    return {'before': before, 'after': after, 'freed': max(0, before - after)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

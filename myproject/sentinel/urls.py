@@ -8,8 +8,10 @@ urlpatterns = [
     path('', views.command_center, name='home'),
     path('stream/', views.activity_stream, name='stream'),
     path('stream/export/', views.export_events, name='export'),
+    path('stream/purge/', views.purge_events, name='purge_events'),
 
     path('sessions/', views.session_monitor, name='sessions'),
+    path('sessions/purge/', views.purge_sessions, name='purge_sessions'),
     path('sessions/<int:session_id>/', views.session_detail, name='session_detail'),
     path('sessions/<int:session_id>/revoke/', views.revoke_session, name='revoke_session'),
     path('users/<int:user_id>/revoke-all/', views.revoke_all_sessions, name='revoke_all'),
@@ -23,6 +25,7 @@ urlpatterns = [
     path('people/<int:user_id>/', views.user_dossier, name='dossier'),
 
     path('settings/', views.vault_settings, name='settings'),
+    path('settings/storage/', views.vault_storage, name='storage'),
 
     # Polled by the UI — the middleware never records these (see HARD_EXCLUDED).
     path('api/event/<int:event_id>/', views.event_detail, name='api_event'),

@@ -226,6 +226,32 @@ re-pointed from one place without touching any page.
 .sv-trend.up { color: var(--sv-emerald); }
 .sv-trend.down { color: var(--sv-rose); }
 
+/* ── Bulk action bar ────────────────────────────────────────────────────── */
+/* Appears only once rows are ticked, so a read-only screen stays read-only
+   until the moment somebody actually selects something. */
+.sv-bulkbar {
+    display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+    padding: .6rem 1.15rem;
+    background: color-mix(in srgb, var(--sv-rose) 8%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--sv-rose) 22%, transparent);
+    font-size: .8rem;
+}
+.sv-bulkbar[hidden] { display: none; }
+
+/* ── Callout ────────────────────────────────────────────────────────────── */
+/* Used where an action is irreversible and the consequence has to be read
+   before the button is pressed, not after. */
+.sv-callout {
+    display: flex; gap: .75rem; align-items: flex-start;
+    padding: .85rem 1rem; border-radius: 12px;
+    font-size: .8rem; line-height: 1.6;
+    background: color-mix(in srgb, var(--tone, var(--sv-slate)) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tone, var(--sv-slate)) 30%, transparent);
+    color: var(--sv-text);
+}
+.sv-callout > i { color: var(--tone, var(--sv-slate)); font-size: 1rem; margin-top: .15rem; flex: none; }
+.sv-callout strong { color: var(--tone, var(--sv-text)); }
+
 /* ── Badges & chips ─────────────────────────────────────────────────────── */
 .sv-chip {
     display: inline-flex; align-items: center; gap: .35rem;
@@ -735,14 +761,33 @@ window.Sentinel = Object.assign(window.Sentinel || {}, (function () {
         setInterval(tick, 1000);
     }
 
+    /* Any form marked data-confirm asks before it submits. Declaring it on the
+       form rather than wiring each button keeps every destructive action in the
+       vault behind the same dialog, including ones added later. */
+    function armConfirmForms(root) {
+        (root || document).querySelectorAll('form[data-confirm]').forEach(function (form) {
+            if (form.dataset.confirmArmed) { return; }
+            form.dataset.confirmArmed = '1';
+            form.addEventListener('submit', function (event) {
+                if (form.dataset.confirmed === '1') { return; }
+                event.preventDefault();
+                confirmThen(form.dataset.message || 'Are you sure?', function () {
+                    form.dataset.confirmed = '1';
+                    form.submit();
+                });
+            });
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         chartTheme();
         initCounters();
         startClock();
+        armConfirmForms();
     });
 
     return { num, animateValue, initCounters, chartTheme, gridColor, palette,
-             post, confirmThen, csrf, esc };
+             post, confirmThen, csrf, esc, armConfirmForms };
 })());
 </script>
 {% csrf_token %}

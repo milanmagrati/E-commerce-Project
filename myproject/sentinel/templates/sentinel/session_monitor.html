@@ -7,7 +7,7 @@
     <div class="sv-tile sv-tone-emerald">
         <div class="sv-tile-label"><i class="fas fa-signal"></i> Live sessions</div>
         <div class="sv-tile-value" data-countup="{{ stats.live }}" id="svStatLive">0</div>
-        <div class="sv-tile-meta">{{ stats.users_online }} {{ stats.users_online|pluralize:"person,people" }} · {{ stats.idle }} idle</div>
+        <div class="sv-tile-meta" id="svStatLiveMeta">{{ stats.users_online }} {{ stats.users_online|pluralize:"person,people" }} · {{ stats.idle }} idle</div>
     </div>
     <div class="sv-tile sv-tone-sky">
         <div class="sv-tile-label"><i class="fas fa-clock-rotate-left"></i> Sign-ins · 24h</div>
@@ -31,7 +31,8 @@
         <div class="sv-tabs" style="margin:0;border:none;background:transparent;padding:0;">
             <a class="sv-tab {% if tab == 'live' %}is-active{% endif %}" href="?tab=live">
                 <i class="fas fa-circle-nodes"></i> Live now
-                {% if stats.live %}<span class="sv-tab-count">{{ stats.live }}</span>{% endif %}
+                <span class="sv-tab-count" id="svLiveBadge"
+                      {% if not stats.live %}hidden{% endif %}>{{ stats.live }}</span>
             </a>
             <a class="sv-tab {% if tab == 'history' %}is-active{% endif %}" href="?tab=history">
                 <i class="fas fa-clock-rotate-left"></i> Session history
@@ -121,6 +122,11 @@
                                     <i class="fas fa-ban"></i> Block
                                 </button>
                                 {% endif %}
+                                <button class="sv-btn sv-btn-sm" data-device-action="forget"
+                                        data-device="{{ device.id }}" data-name="{{ device.label }}"
+                                        title="Remove this entry from the registry">
+                                    <i class="fas fa-eraser"></i> Forget
+                                </button>
                             </div>
                         </td>
                         {% endif %}
@@ -138,9 +144,38 @@
             </table>
         {% else %}
             <!-- ══ Sessions ══════════════════════════════════════════════ -->
+            {% if can_purge and tab == 'history' %}
+            <form method="POST" id="svSessionPurge" action="{% url 'sentinel:purge_sessions' %}"
+                  data-confirm data-message="Delete the selected session record(s)?<br><small>Permanent — there is no undo.</small>">
+                {% csrf_token %}
+                <input type="hidden" name="scope" value="selected" id="svSessionScope">
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <div class="sv-bulkbar" id="svSessionBar" hidden>
+                    <span><strong id="svSessionCount">0</strong> selected</span>
+                    <button type="submit" class="sv-btn sv-btn-sm sv-btn-danger">
+                        <i class="fas fa-trash"></i> Delete selected
+                    </button>
+                    <button type="button" class="sv-btn sv-btn-sm" id="svSessionClear">Clear</button>
+                </div>
+                <div class="sv-bulkbar" style="background:transparent;border-bottom-color:var(--sv-line);">
+                    <span class="sv-faint">
+                        {{ closed_total }} closed session record{{ closed_total|pluralize }} stored.
+                    </span>
+                    <button type="button" class="sv-btn sv-btn-sm sv-btn-danger" id="svSessionAllBtn"
+                            style="margin-left:auto;">
+                        <i class="fas fa-broom"></i> Delete all closed sessions
+                    </button>
+                </div>
+            </form>
+            {% endif %}
             <table class="sv-table">
                 <thead>
                     <tr>
+                        {% if can_purge and tab == 'history' %}
+                        <th style="width:38px;">
+                            <input type="checkbox" id="svSessionAll" title="Select every row on this page">
+                        </th>
+                        {% endif %}
                         <th style="width:190px;">Person</th>
                         <th>Device</th>
                         <th style="width:170px;">Network</th>
@@ -152,7 +187,15 @@
                 </thead>
                 <tbody id="svSessionRows">
                     {% for session in page_obj %}
-                    <tr class="{% if session.is_new_device %}is-flagged{% endif %}">
+                    <tr class="{% if session.is_new_device %}is-flagged{% endif %}"
+                        data-session-row="{{ session.id }}">
+                        {% if can_purge and tab == 'history' %}
+                        <td>
+                            <input type="checkbox" form="svSessionPurge" name="ids"
+                                   value="{{ session.id }}" class="sv-session-tick"
+                                   aria-label="Select this session for deletion">
+                        </td>
+                        {% endif %}
                         <td>
                             <div class="d-flex align-items-center gap-2">
                                 <div class="sv-avatar sv-tone-{{ session.username_snapshot|avatar_tone }}">
@@ -188,21 +231,23 @@
                             <div class="sv-cell-dim">{{ session.network_label|default:'—' }}</div>
                         </td>
                         <td>
-                            <strong style="font-size:.83rem;">{{ session.duration_display }}</strong>
+                            <strong style="font-size:.83rem;" data-field="duration">{{ session.duration_display }}</strong>
                             <div class="sv-cell-dim">since {{ session.started_at|sentinel_time }}</div>
                         </td>
                         <td>
-                            <div style="font-size:.82rem;">{{ session.request_count }} request{{ session.request_count|pluralize }}</div>
-                            <div class="sv-cell-dim">{{ session.write_count }} change{{ session.write_count|pluralize }}</div>
+                            <div style="font-size:.82rem;" data-field="requests">{{ session.request_count }} request{{ session.request_count|pluralize }}</div>
+                            <div class="sv-cell-dim" data-field="writes">{{ session.write_count }} change{{ session.write_count|pluralize }}</div>
                         </td>
                         <td>
                             {% if tab == 'live' %}
-                                <div style="font-size:.82rem;">{{ session.last_activity|sentinel_ago }}</div>
+                                <div style="font-size:.82rem;" data-field="seen">{{ session.last_activity|sentinel_ago }}</div>
+                                <span data-field="presence">
                                 {% if session.is_idle %}
                                 <span class="sv-chip sv-tone-slate">idle</span>
                                 {% else %}
                                 <span class="sv-chip sv-tone-emerald"><span class="sv-live-dot"></span> active</span>
                                 {% endif %}
+                                </span>
                             {% else %}
                                 <div style="font-size:.82rem;">{{ session.ended_at|sentinel_ago }}</div>
                                 <div class="sv-cell-dim">{{ session.get_end_reason_display }}</div>
@@ -220,7 +265,7 @@
                         {% endif %}
                     </tr>
                     {% empty %}
-                    <tr><td colspan="{% if can_manage and tab == 'live' %}7{% else %}6{% endif %}">
+                    <tr><td colspan="{% if can_manage and tab == 'live' %}7{% elif can_purge and tab == 'history' %}7{% else %}6{% endif %}">
                         <div class="sv-empty">
                             <i class="fas fa-{% if tab == 'live' %}moon{% else %}clock-rotate-left{% endif %}"></i>
                             <h3>{% if tab == 'live' %}Nobody is signed in{% else %}No past sessions{% endif %}</h3>
@@ -232,9 +277,7 @@
             </table>
         {% endif %}
         </div>
-        {% with querystring="tab="|add:tab %}
         {% include 'sentinel/_pager.html' %}
-        {% endwith %}
     </div>
 </div>
 
@@ -282,9 +325,15 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-device-action]').forEach(function (btn) {
         btn.addEventListener('click', function () {
             const action = btn.dataset.deviceAction;
-            const verb = { trust: 'Trust', untrust: 'Stop trusting', block: 'Block', unblock: 'Unblock' }[action];
+            const verb = {
+                trust: 'Trust', untrust: 'Stop trusting', block: 'Block',
+                unblock: 'Unblock', forget: 'Forget'
+            }[action];
             const extra = action === 'block'
-                ? '<br><small>Any live sessions on this device will be terminated immediately.</small>' : '';
+                ? '<br><small>Any live sessions on this device will be terminated immediately.</small>'
+                : (action === 'forget'
+                    ? '<br><small>The entry leaves the registry; past sign-ins are kept. It reappears, ' +
+                      'correctly identified, on the next sign-in from this device.</small>' : '');
             Sentinel.confirmThen(verb + ' <b>' + Sentinel.esc(btn.dataset.name) + '</b>?' + extra, function () {
                 Sentinel.post('/sentinel/devices/' + btn.dataset.device + '/action/', {
                     action: action,
@@ -294,9 +343,85 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
+    {% if can_purge and tab == 'history' %}
+    /* Selection for the session-history purge. */
+    const sBar = document.getElementById('svSessionBar');
+    const sCount = document.getElementById('svSessionCount');
+    const sAll = document.getElementById('svSessionAll');
+    const sTicks = function () { return document.querySelectorAll('.sv-session-tick'); };
+
+    function sSync() {
+        const chosen = document.querySelectorAll('.sv-session-tick:checked').length;
+        sCount.textContent = chosen;
+        sBar.hidden = chosen === 0;
+        if (sAll) {
+            sAll.checked = chosen > 0 && chosen === sTicks().length;
+            sAll.indeterminate = chosen > 0 && chosen < sTicks().length;
+        }
+    }
+    sTicks().forEach(function (t) { t.addEventListener('change', sSync); });
+    if (sAll) {
+        sAll.addEventListener('change', function () {
+            sTicks().forEach(function (t) { t.checked = sAll.checked; });
+            sSync();
+        });
+    }
+    document.getElementById('svSessionClear').addEventListener('click', function () {
+        sTicks().forEach(function (t) { t.checked = false; });
+        if (sAll) { sAll.checked = false; }
+        sSync();
+    });
+    document.getElementById('svSessionAllBtn').addEventListener('click', function () {
+        Sentinel.confirmThen(
+            'Delete <b>all {{ closed_total }}</b> closed session record(s)?' +
+            '<br><small>Live sessions are untouched. Permanent — there is no undo.</small>',
+            function () {
+                const form = document.getElementById('svSessionPurge');
+                document.getElementById('svSessionScope').value = 'all';
+                form.dataset.confirmed = '1';
+                form.submit();
+            });
+    });
+    sSync();
+    {% endif %}
+
     {% if tab == 'live' %}
-    /* Refresh the live tab in place so the presence list doesn't go stale. */
+    /* Refresh the live tab in place so the presence list doesn't go stale.
+       Every visible number comes from the same payload — the tile, the tab
+       badge and each row previously drifted apart because only the tile was
+       ever updated, and it was updated from a list the API caps at 50. */
     let failures = 0;
+
+    function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+
+    function paintRows(sessions) {
+        const seen = Object.create(null);
+        sessions.forEach(function (s) {
+            seen[s.id] = true;
+            const row = document.querySelector('[data-session-row="' + s.id + '"]');
+            if (!row) { return; }
+            const set = function (field, text) {
+                const cell = row.querySelector('[data-field="' + field + '"]');
+                if (cell && cell.textContent.trim() !== text) { cell.textContent = text; }
+            };
+            set('duration', s.duration);
+            set('requests', plural(s.requests, 'request'));
+            set('writes', plural(s.writes, 'change'));
+            set('seen', s.last_activity);
+            const presence = row.querySelector('[data-field="presence"]');
+            if (presence) {
+                presence.innerHTML = s.idle
+                    ? '<span class="sv-chip sv-tone-slate">idle</span>'
+                    : '<span class="sv-chip sv-tone-emerald"><span class="sv-live-dot"></span> active</span>';
+            }
+        });
+        /* A session that ended is no longer somebody you can revoke — drop the
+           row rather than leaving a dead action button behind. */
+        document.querySelectorAll('[data-session-row]').forEach(function (row) {
+            if (!seen[row.dataset.sessionRow]) { row.remove(); }
+        });
+    }
+
     function refresh() {
         fetch('{% url "sentinel:api_sessions" %}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
@@ -305,11 +430,22 @@ document.addEventListener('DOMContentLoaded', function () {
                 const tile = document.getElementById('svStatLive');
                 if (tile) {
                     const current = parseInt((tile.textContent || '0').replace(/\D/g, ''), 10) || 0;
-                    if (current !== data.sessions.length) {
+                    if (current !== data.count) {
                         tile.dataset.from = current;
-                        Sentinel.animateValue(tile, data.sessions.length, 450);
+                        Sentinel.animateValue(tile, data.count, 450);
                     }
                 }
+                const meta = document.getElementById('svStatLiveMeta');
+                if (meta) {
+                    meta.textContent = plural(data.people, 'person').replace('persons', 'people')
+                        + ' · ' + data.idle + ' idle';
+                }
+                const badge = document.getElementById('svLiveBadge');
+                if (badge) {
+                    badge.textContent = data.count;
+                    badge.hidden = !data.count;
+                }
+                paintRows(data.sessions);
             })
             .catch(function () { failures += 1; })
             .finally(function () { setTimeout(refresh, failures > 3 ? 90000 : 20000); });
