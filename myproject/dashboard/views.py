@@ -5526,7 +5526,7 @@ def possible_redirection_list(request):
 def redirect_orders_list(request):
     """Display all orders that have been redirected with detailed history and old customer details"""
     # pyrefly: ignore [missing-import]
-    from django.db.models import Q, CharField, Prefetch as _Pf, Sum
+    from django.db.models import Q, CharField, Prefetch as _Pf, Sum, OuterRef, Subquery
     # pyrefly: ignore [missing-import]
     from django.db.models.functions import Cast, Coalesce
     from django.db import models as db_models
@@ -5551,7 +5551,22 @@ def redirect_orders_list(request):
         # redirections are local staff actions, so event_at is always NULL here
         # and created_at IS the event time.
         _Pf('activity_logs', queryset=OrderActivityLog.objects.filter(action_type='redirected').order_by('-created_at'))
-    ).order_by('-updated_at')
+    )
+
+    # The "Redirect Date" column (and date filtering below) must reflect when
+    # the redirect actually happened, not order.updated_at — that field drifts
+    # on every unrelated change (NCM status polling, payment updates, etc.)
+    # after the redirect, so filtering/sorting on it silently disagrees with
+    # what the table displays. Fall back to updated_at only for orders that
+    # were marked redirected without a matching activity log.
+    latest_redirect_log = OrderActivityLog.objects.filter(
+        order_id=OuterRef('pk'), action_type='redirected'
+    ).order_by('-created_at')
+    orders = orders.annotate(
+        last_redirect_at=Subquery(latest_redirect_log.values('created_at')[:1]),
+    ).annotate(
+        effective_redirect_date=Coalesce('last_redirect_at', 'updated_at'),
+    )
 
     # GET FILTER PARAMETERS
     search_query = request.GET.get('search', '')
@@ -5559,6 +5574,10 @@ def redirect_orders_list(request):
     end_date = request.GET.get('end_date', '')
     redirection_status = request.GET.get('status', '')
     branch_filter = request.GET.get('branch', '')
+    # Same param name/vocabulary as orders_list's date filter, for consistency
+    # across the admin — see dashboard/templates/orders_list.html.
+    date_filter = request.GET.get('date_range', '')
+    sort_by = request.GET.get('sort_by', 'redirect_date_desc')
 
     # Apply search filter (search by order number, NCM ID, customer name, phone)
     if search_query:
@@ -5573,23 +5592,52 @@ def redirect_orders_list(request):
         )
         orders = orders.filter(search_q)
 
-    # Apply date range filter using timezone-aware datetimes to avoid DB __date cast issues
-    from django.utils import timezone
-    from datetime import datetime, time
-    
+    # Date Range Filter — quick presets resolve to an explicit start/end date
+    # (in Nepal time) so the custom-range inputs stay in sync with whichever
+    # preset is active. 'custom' (or no preset) uses start_date/end_date as-is.
+    # NOTE: do NOT use `effective_redirect_date__date=`/`__gte=`-with-`__date`
+    # lookups here — see nepali_day_start()'s docstring for why CONVERT_TZ
+    # silently zeroes out results on this server.
+    from .timezone_utils import get_nepali_now, nepali_day_start, nepali_day_end_exclusive
+    from datetime import datetime, timedelta
+
+    nepal_today = get_nepali_now().date()
+
+    if date_filter and date_filter != 'custom':
+        if date_filter == 'today':
+            start_date = end_date = nepal_today.strftime('%Y-%m-%d')
+        elif date_filter == 'yesterday':
+            d = (nepal_today - timedelta(days=1)).strftime('%Y-%m-%d')
+            start_date = end_date = d
+        elif date_filter == 'last_7_days':
+            start_date = (nepal_today - timedelta(days=6)).strftime('%Y-%m-%d')
+            end_date = nepal_today.strftime('%Y-%m-%d')
+        elif date_filter == 'last_30_days':
+            start_date = (nepal_today - timedelta(days=29)).strftime('%Y-%m-%d')
+            end_date = nepal_today.strftime('%Y-%m-%d')
+        elif date_filter == 'this_month':
+            start_date = nepal_today.replace(day=1).strftime('%Y-%m-%d')
+            end_date = nepal_today.strftime('%Y-%m-%d')
+        elif date_filter == 'last_month':
+            first_of_this_month = nepal_today.replace(day=1)
+            last_month_end = first_of_this_month - timedelta(days=1)
+            start_date = last_month_end.replace(day=1).strftime('%Y-%m-%d')
+            end_date = last_month_end.strftime('%Y-%m-%d')
+        elif date_filter == 'this_year':
+            start_date = nepal_today.replace(month=1, day=1).strftime('%Y-%m-%d')
+            end_date = nepal_today.strftime('%Y-%m-%d')
+
     if start_date:
         try:
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
-            start_dt = timezone.make_aware(datetime.combine(start_date_obj, time.min))
-            orders = orders.filter(updated_at__gte=start_dt)
+            orders = orders.filter(effective_redirect_date__gte=nepali_day_start(start_date_obj))
         except ValueError:
             pass
 
     if end_date:
         try:
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            end_dt = timezone.make_aware(datetime.combine(end_date_obj, time.max))
-            orders = orders.filter(updated_at__lte=end_dt)
+            orders = orders.filter(effective_redirect_date__lt=nepali_day_end_exclusive(end_date_obj))
         except ValueError:
             pass
 
@@ -5612,6 +5660,20 @@ def redirect_orders_list(request):
             Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$') |
             Q(id__in=redirect_log_order_ids)
         )
+
+    # Sorting — keyed off the same effective_redirect_date used for filtering
+    # above, so what the user filtered by and what they sorted by never disagree.
+    SORT_FIELD_MAP = {
+        'redirect_date_desc': '-effective_redirect_date',
+        'redirect_date_asc': 'effective_redirect_date',
+        'amount_desc': '-total_amount',
+        'amount_asc': 'total_amount',
+        'order_number_desc': '-order_number',
+        'order_number_asc': 'order_number',
+    }
+    if sort_by not in SORT_FIELD_MAP:
+        sort_by = 'redirect_date_desc'
+    orders = orders.order_by(SORT_FIELD_MAP[sort_by])
 
     # Stats — count all confirmed redirected orders (any signal)
     total_redirected = Order.objects.filter(is_deleted=False).filter(
@@ -5718,6 +5780,8 @@ def redirect_orders_list(request):
         'branch_filter': branch_filter,
         'start_date': start_date,
         'end_date': end_date,
+        'date_filter': date_filter,
+        'sort_by': sort_by,
         'per_page': per_page,
         'branches': branches,
         'cities': cities,
@@ -21915,14 +21979,16 @@ def get_redirect_order_details(request, order_id):
     try:
         order = Order.objects.select_related(
             'customer', 'branch', 'status_setup', 'payment_status_setup', 'payment_setup'
-        ).prefetch_related(
-            'items',
-            'activity_logs__user',
-        ).get(id=order_id, is_deleted=False)
+        ).prefetch_related('items').get(id=order_id, is_deleted=False)
 
-        # Get all redirected activity logs from prefetch cache (sorted -created_at by model Meta)
-        all_activity_logs = list(order.activity_logs.all())
-        redirection_logs = [lg for lg in all_activity_logs if lg.action_type == 'redirected']
+        # Filter by action_type at the DB level rather than prefetching every
+        # activity log on the order — orders with a long NCM webhook/status
+        # history can accumulate hundreds of unrelated log rows, and pulling
+        # all of them just to discard everything but 'redirected' entries is
+        # wasted query time on exactly the orders this page cares about most.
+        redirection_logs = list(
+            order.activity_logs.filter(action_type='redirected').select_related('user')
+        )
 
         nepal_tz = pytz.timezone('Asia/Kathmandu')
 
