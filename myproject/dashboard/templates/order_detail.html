@@ -1264,11 +1264,13 @@
                                 <strong>{{ log.user.get_full_name|default:log.user.username }}</strong>
                             </div>
                             {% endif %}
-                            {# Only render the field-change block when there is an actual
-                               value to show — a bare "Field: ncm_status" chip (which is
-                               what redirect logs produce, since they store old_value='')
-                               tells the reader nothing. Each side renders independently
-                               so one-sided changes aren't dropped entirely. #}
+                            {% comment %}
+                            Only render the field-change block when there is an actual
+                            value to show — a bare "Field: ncm_status" chip (which is
+                            what redirect logs produce, since they store old_value='')
+                            tells the reader nothing. Each side renders independently
+                            so one-sided changes aren't dropped entirely.
+                            {% endcomment %}
                             {% if log.old_value or log.new_value %}
                             <div class="activity-field-change">
                                 {% if log.field_name %}

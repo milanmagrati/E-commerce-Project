@@ -462,10 +462,12 @@
     </div>
 </div>
 
-{# The Incomplete Attendance review/fix modal and fix-history modal are now
-   rendered globally in base.html (see partials/incomplete_attendance_alert.html)
-   so the alert works on every page, not just this one. The button above wires
-   into that shared instance via IncAttAlert.openModal(). #}
+{% comment %}
+The Incomplete Attendance review/fix modal and fix-history modal are now
+rendered globally in base.html (see partials/incomplete_attendance_alert.html)
+so the alert works on every page, not just this one. The button above wires
+into that shared instance via IncAttAlert.openModal().
+{% endcomment %}
 
 <style>
     /* ── Refresh Settings Card ── */
