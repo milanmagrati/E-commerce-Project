@@ -113,7 +113,34 @@ def main():
         before_labels = set(conv.labels.values_list('pk', flat=True))
         msg = send(conv, contact, "hi", "ext-routine-1")
         check("no new label was added", set(conv.labels.values_list('pk', flat=True)) == before_labels)
-        check("ai_intent is blank for a bare greeting", msg.ai_intent == '', msg.ai_intent)
+        check("a bare greeting reads as a greeting", msg.ai_intent == 'greeting', msg.ai_intent)
+        check("and carries no priority", msg.intent_priority == 'low', msg.intent_priority)
+
+        print("\n4a. Every message type gets its own label and priority")
+        matrix = [
+            ("hi there",                  'greeting',        'Greeting',     'low'),
+            ("ok thanks",                 'closing_thanks',  'Thanks',       'low'),
+            ("where is my order",         'order_status',    'Order Status', 'medium'),
+            ("do you deliver to pokhara", 'delivery_query',  'Delivery',     'medium'),
+            ("i need this product",       'purchase_intent', 'Purchase',     'high'),
+            ("it arrived broken",         'product_issue',   'Issue',        'high'),
+        ]
+        for text, intent, label, priority in matrix:
+            verdict = ai_router._keyword_intent(text)
+            probe = CRMMessage(ai_intent=verdict)
+            check(f"{text!r} -> {label} / {priority}",
+                  verdict == intent and probe.intent_label == label
+                  and probe.intent_priority == priority,
+                  f"got {verdict!r} -> {probe.intent_label} / {probe.intent_priority}")
+
+        # A greeting only counts when it is the whole message — a question
+        # attached to one must outrank the hello.
+        check("'hi, how much is this' is a purchase, not a greeting",
+              ai_router._keyword_intent("hi, how much is this") == 'purchase_intent',
+              ai_router._keyword_intent("hi, how much is this"))
+        # 'hi' inside a word must not match the whole-message greeting set.
+        check("'this fits?' is not read as a greeting",
+              ai_router._keyword_intent("this fits?") != 'greeting')
 
         print("\n4b. An attachment-only message is not mislabelled as spam")
         msg = meta_sync.upsert_inbound_message(
@@ -124,6 +151,14 @@ def main():
         )
         check("the photo message was stored", msg is not None)
         check("a bare photo is not tagged spam_noise", msg.ai_intent == '', msg.ai_intent)
+
+        print("\n4c. A medium-priority question is analysed but not escalated")
+        before_labels = set(conv.labels.values_list('pk', flat=True))
+        msg = send(conv, contact, "where is my order, any tracking id?", "ext-status-1")
+        check("it reads as an order-status question", msg.ai_intent == 'order_status', msg.ai_intent)
+        check("priority is medium", msg.intent_priority == 'medium', msg.intent_priority)
+        check("it raises no lead/complaint label",
+              set(conv.labels.values_list('pk', flat=True)) == before_labels)
 
         print("\n5. Dismissing the lead alert resolves it, and the poll count reflects it")
         client = Client()
@@ -164,13 +199,17 @@ def main():
         thread = resp.content.decode()
         check("the inbound priority chip is rendered", 'ai-chips-inbound' in thread)
         check("it reads as a Purchase signal", 'Purchase' in thread)
-        # One chip per high-priority inbound message, and none for the greeting
+        check("the medium question is chipped too", 'Order Status' in thread)
+        check("medium priority gets its own dot colour", 'dot-medium' in thread)
+        check("the chip shows the priority word, not a fixed label",
+              'dot-high"></span>High' in thread)
+        # One chip per above-routine inbound message, and none for the greeting
         # or the photo — derived from the rows rather than hardcoded.
         expected = sum(
             1 for m in conv.messages.filter(is_outbound=False, is_system=False)
-            if m.intent_priority == 'high'
+            if m.ai_intent and m.intent_priority != 'low'
         )
-        check("exactly one chip per high-priority message, none for chatter",
+        check("exactly one chip per above-routine message, none for chatter",
               thread.count('ai-chips-inbound') == expected,
               f"expected {expected}, found {thread.count('ai-chips-inbound')}")
 

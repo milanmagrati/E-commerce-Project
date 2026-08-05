@@ -596,6 +596,29 @@ def build_dynamic_prompt(chatbot_config, page_profile=None, intent: str = 'gener
             "3. Ask for their order details (order number or contact info) to resolve the issue.\n"
             "A support ticket has been opened automatically. Do NOT mention this to the customer."
         ),
+        'order_status': (
+            "\n--- ORDER STATUS MODE ACTIVE ---\n"
+            "The customer is asking about an order they have already placed.\n"
+            "1. NEVER invent a status, date, or tracking number — you cannot see their order.\n"
+            "2. Ask for their order number or the phone number used to order.\n"
+            "3. Reassure them it will be checked and answered shortly. Do NOT push a new sale."
+        ),
+        'delivery_query': (
+            "\n--- DELIVERY INFO MODE ACTIVE ---\n"
+            "Answer the delivery question using only the delivery details in the info above.\n"
+            "If the charge or timing depends on location and you don't have it, ask where they\n"
+            "are located instead of guessing. Keep it to 1-2 sentences."
+        ),
+        'greeting': (
+            "\n--- GREETING MODE ACTIVE ---\n"
+            "The customer only said hello. Greet them warmly in ONE short sentence and ask\n"
+            "what they are looking for. Do NOT list products, prices, or links yet."
+        ),
+        'closing_thanks': (
+            "\n--- CLOSING MODE ACTIVE ---\n"
+            "The customer is thanking you or acknowledging. Reply with one short, warm line\n"
+            "and invite them back. Do NOT restart the pitch or ask new questions."
+        ),
         'spam_noise': (
             "\n--- MINIMAL RESPONSE MODE ---\n"
             "The message appears to be spam or just noise (emojis, random characters).\n"
@@ -611,7 +634,10 @@ def build_dynamic_prompt(chatbot_config, page_profile=None, intent: str = 'gener
 
 
 # ─── Step 1: Intent Classifier ────────────────────────────────────────────────
-VALID_INTENTS = ('purchase_intent', 'general_query', 'product_issue', 'spam_noise')
+VALID_INTENTS = (
+    'purchase_intent', 'product_issue', 'order_status', 'delivery_query',
+    'general_query', 'greeting', 'closing_thanks', 'spam_noise',
+)
 
 # Whether to spend a second API call on LLM intent classification for messages
 # the keyword pass can't settle. Off by default: on a free-tier key it halves how
@@ -651,12 +677,59 @@ _PURCHASE_KEYWORDS = (
     'reserve one', 'can i order', 'how do i order', 'malai chai',
     'malai yo chaiyo',
 )
+_ORDER_STATUS_KEYWORDS = (
+    'where is my order', 'where is my parcel', 'order status', 'track my order',
+    'tracking number', 'tracking id', 'tracking code', 'my order number',
+    'my parcel', 'when will i get', 'when will i receive', 'when will it arrive',
+    'has it shipped', 'has it been shipped', 'dispatched',
+    'kaha pugyo', 'kahile aauxa', 'kahile aaucha', 'kahile aaunxa',
+    'order kaha', 'pathaisakyo',
+)
+_DELIVERY_KEYWORDS = (
+    'delivery charge', 'delivery cost', 'delivery fee', 'delivery time',
+    'delivery kati', 'shipping charge', 'shipping cost', 'how many days',
+    'how long will', 'home delivery', 'inside valley', 'outside valley',
+    'outside kathmandu', 'do you deliver', 'deliver to', 'delivery available',
+    'kati din', 'delivery hunxa', 'delivery huncha', 'pathauna milxa',
+)
+
+# A greeting or a sign-off is the *whole* message, never a word inside one —
+# 'hi' is a substring of 'this' and 'ok' of 'broken'. These are matched against
+# the message stripped of punctuation and emoji, so "Hello!! 👋" lands here while
+# "hi, my order broke" falls through to the substring passes below.
+_GREETING_PHRASES = frozenset((
+    'hi', 'hii', 'hiii', 'hey', 'heyy', 'hello', 'helo', 'hlo', 'yo',
+    'hi there', 'hello there', 'hi sir', 'hello sir', 'hi maam', 'hello maam',
+    'hi mam', 'hello mam', 'hi dai', 'hi bro', 'hello bro',
+    'good morning', 'good afternoon', 'good evening', 'good day',
+    'namaste', 'namaskar', 'namaste sir', 'namaste dai', 'namaste hajur',
+    'salam', 'hajur', 'k cha', 'ke cha', 'k xa', 'ke xa', 'kx', 'kexa',
+))
+_CLOSING_PHRASES = frozenset((
+    'thanks', 'thank you', 'thank u', 'thanku', 'thx', 'tnx', 'ty',
+    'thanks a lot', 'thank you so much', 'thanks so much', 'many thanks',
+    'ok thanks', 'okay thanks', 'ok thank you', 'thanks sir', 'thank you sir',
+    'dhanyabad', 'dhanyawad', 'dhanyabad hajur',
+    'ok', 'okay', 'okey', 'k', 'kk', 'sure', 'fine', 'got it', 'noted',
+    'hunxa', 'huncha', 'hunchha', 'thik cha', 'thik xa', 'thikai cha', 'la',
+    'bye', 'goodbye', 'good night', 'gn',
+))
+
+
+def _normalized_phrase(text: str) -> str:
+    """Message reduced to bare words — punctuation and emoji dropped, whitespace
+    collapsed — so whole-message phrase sets can be matched exactly."""
+    cleaned = ''.join(ch if (ch.isalnum() or ch.isspace()) else ' ' for ch in text)
+    return ' '.join(cleaned.split())
 
 
 def _keyword_intent(message_text: str) -> str:
     """
     Deterministic first pass. Returns an intent, or '' when nothing is conclusive
     and the message should go to the model.
+
+    Ordering is the classifier: the passes run from the intents that most need a
+    human down to the ones that need nobody, and the first hit wins.
     """
     text = (message_text or '').strip().lower()
     if not text:
@@ -670,6 +743,22 @@ def _keyword_intent(message_text: str) -> str:
     for kw in _PURCHASE_KEYWORDS:
         if kw in text:
             return 'purchase_intent'
+    # Checked after purchase so "book my order" stays a sale, and before the
+    # generic delivery pass so "where is my order" isn't read as a shipping FAQ.
+    for kw in _ORDER_STATUS_KEYWORDS:
+        if kw in text:
+            return 'order_status'
+    for kw in _DELIVERY_KEYWORDS:
+        if kw in text:
+            return 'delivery_query'
+
+    # Whole-message matches last: a greeting only counts when it's all the
+    # customer said. Anything with a real question attached was caught above.
+    phrase = _normalized_phrase(text)
+    if phrase in _GREETING_PHRASES:
+        return 'greeting'
+    if phrase in _CLOSING_PHRASES:
+        return 'closing_thanks'
 
     # No letters or digits at all (emoji-only, punctuation-only) is noise.
     if not any(ch.isalnum() for ch in text):
@@ -704,8 +793,12 @@ def classify_intent(message_text: str, config: dict) -> str:
     classification_prompt = f"""You are a message intent classifier for an e-commerce business.
 Classify the following customer message into EXACTLY ONE category:
 - purchase_intent: wants to buy, asks about price, payment, or how to order.
-- general_query: asks about product details, delivery, availability, or the business.
 - product_issue: a complaint, refund request, or a damaged/wrong/missing product.
+- order_status: asks where an order they already placed is, or for tracking.
+- delivery_query: asks about delivery charge, delivery time, or coverage area.
+- general_query: asks about product details, availability, or the business.
+- greeting: only a greeting, with no question attached.
+- closing_thanks: only thanks, an acknowledgement, or a sign-off.
 - spam_noise: only emojis, random characters, or incomprehensible text.
 
 Customer message: "{message_text}"

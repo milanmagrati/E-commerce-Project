@@ -85,15 +85,17 @@ follow it — a takeover pause expires on a timer, with no user action to hook.
                 <span class="ai-chip"><span class="dot dot-{{ msg.intent_priority }}"></span>{{ msg.intent_priority|title }}</span>
             </div>
         {% endif %}
-    {% elif not msg.is_outbound and msg.intent_priority == 'high' %}
+    {% elif not msg.is_outbound and msg.ai_intent and msg.intent_priority != 'low' %}
         {% comment %}
-        The customer's own message carries a chip only when it's high priority
-        (a buying signal or a complaint). Tagging every "hi" with "Query · Low"
-        would bury the two intents that actually need an agent.
+        The customer's own message carries a chip only when the analysis puts it
+        above routine chatter — a buying signal, a complaint, or a question about
+        an order already placed. Tagging every "hi" with "Greeting · Low" here
+        would bury the intents that actually need an agent; the low-priority
+        reading still shows under the AI's reply below.
         {% endcomment %}
         <div class="ai-chips ai-chips-inbound">
             <span class="ai-chip"><span class="dot dot-intent"></span>{{ msg.intent_label }}</span>
-            <span class="ai-chip"><span class="dot dot-high"></span>Priority</span>
+            <span class="ai-chip"><span class="dot dot-{{ msg.intent_priority }}"></span>{{ msg.intent_priority|title }}</span>
         </div>
     {% endif %}
     <div class="msg-time {% if msg.is_ai %}ai-meta{% endif %}" style="text-align:{% if msg.is_outbound %}right{% else %}left{% endif %};">

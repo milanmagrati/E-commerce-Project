@@ -253,10 +253,18 @@ class CRMMessage(models.Model):
     # Intent → (chip label, priority). Priority is derived rather than stored:
     # it's a presentation of the intent, and two columns that must agree would
     # eventually disagree.
+    #
+    # high   = a person should answer this (money at stake, or someone unhappy)
+    # medium = a real question about an order already placed; answer today
+    # low    = chatter the bot can carry on its own
     INTENT_DISPLAY = {
         'purchase_intent': ('Purchase', 'high'),
         'product_issue': ('Issue', 'high'),
-        'general_query': ('Query', 'low'),
+        'order_status': ('Order Status', 'medium'),
+        'delivery_query': ('Delivery', 'medium'),
+        'general_query': ('General Inquiry', 'low'),
+        'greeting': ('Greeting', 'low'),
+        'closing_thanks': ('Thanks', 'low'),
         'spam_noise': ('Spam', 'low'),
     }
 
