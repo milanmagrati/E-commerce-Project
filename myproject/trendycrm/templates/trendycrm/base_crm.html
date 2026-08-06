@@ -639,11 +639,13 @@
 
                     if (typeof alertify === 'undefined') return;
                     fresh.slice(0, 3).forEach(function (a) {
-                        var isLead = a.kind === 'lead_detected';
+                        // Wording and icon come from the server: a business can
+                        // name its own alerting message types, so the popup can't
+                        // map a fixed event kind to fixed words any more.
                         var url = "{% url 'trendycrm:conversations' %}?id=" + a.conversation_id;
                         alertify.message(
-                            '<i class="fas ' + (isLead ? 'fa-fire' : 'fa-triangle-exclamation') + ' me-2"></i>' +
-                            (isLead ? 'Potential lead' : 'Possible complaint') + ' from ' +
+                            '<i class="fas ' + (a.icon || 'fa-bell') + ' me-2"></i>' +
+                            (a.title || 'Needs attention') + ' from ' +
                             a.contact_name + '! <a href="' + url + '" style="font-weight:600;margin-left:8px;">View</a>'
                         );
                     });

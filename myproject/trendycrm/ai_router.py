@@ -23,6 +23,8 @@ import json
 import time
 import requests
 
+from . import triage
+
 logger = logging.getLogger(__name__)
 
 # Google's newer Gemini models are "thinking" models by default and will burn the
@@ -454,6 +456,34 @@ def _gen_text(provider: str, model_name: str, user_message: str, system_prompt: 
 
 
 # ─── Dynamic Prompt Assembly ──────────────────────────────────────────────────
+def _intent_instruction(chatbot_config, intent: str) -> str:
+    """
+    How the AI should answer this kind of message.
+
+    Three layers, most specific first: whatever the operator typed into the
+    rule's "AI reply" box, the built-in mode for one of the original types, and
+    — for a message type this business invented — a line generated from the
+    rule itself, so a custom bucket still steers the reply instead of silently
+    falling back to the generic FAQ mode.
+    """
+    rules = triage.rules_for(chatbot_config)
+    rule = triage.rule_by_key(rules, intent)
+
+    if rule and rule.get('instruction'):
+        return f"\n--- {rule['label'].upper()} MODE ACTIVE ---\n{rule['instruction']}"
+    if intent in triage.BUILTIN_INSTRUCTIONS:
+        return triage.BUILTIN_INSTRUCTIONS[intent]
+    if rule:
+        return (
+            f"\n--- {rule['label'].upper()} MODE ACTIVE ---\n"
+            f"This business files messages like this one under \"{rule['label']}\" "
+            f"(priority: {rule['priority']}).\n"
+            "Answer it directly and helpfully in 1-3 sentences, using the business "
+            "information above. Do not guess at anything you haven't been told."
+        )
+    return triage.BUILTIN_INSTRUCTIONS[triage.FALLBACK_KEY]
+
+
 def build_dynamic_prompt(chatbot_config, page_profile=None, intent: str = 'general_query') -> str:
     """
     Assembles the AI system prompt by injecting:
@@ -571,62 +601,10 @@ def build_dynamic_prompt(chatbot_config, page_profile=None, intent: str = 'gener
             f"\nTone Instruction: {tone_instruction}",
         ]
 
-    # Intent-based behavioral rules
-    intent_rules = {
-        'purchase_intent': (
-            "\n--- SALES MODE ACTIVE ---\n"
-            "The customer is interested in buying. Your primary goal is to close the sale.\n"
-            "1. Acknowledge their interest enthusiastically.\n"
-            "2. Highlight the key benefit of the product in 1-2 sentences.\n"
-            "3. Include the checkout link naturally at the end of your message.\n"
-            "4. Keep the message short and action-oriented. Do NOT write long paragraphs.\n"
-            "IMPORTANT: Always include the checkout link in your DM reply."
-        ),
-        'general_query': (
-            "\n--- FAQ MODE ACTIVE ---\n"
-            "Answer the customer's question accurately and concisely using the product info above.\n"
-            "Be helpful, clear, and friendly. Keep answers under 3 sentences where possible.\n"
-            "Do NOT push for a sale unless they ask about buying."
-        ),
-        'product_issue': (
-            "\n--- SUPPORT MODE ACTIVE ---\n"
-            "The customer has a product issue or complaint. NEVER push sales.\n"
-            "1. Start by sincerely apologizing for the inconvenience.\n"
-            "2. Acknowledge their specific issue with empathy.\n"
-            "3. Ask for their order details (order number or contact info) to resolve the issue.\n"
-            "A support ticket has been opened automatically. Do NOT mention this to the customer."
-        ),
-        'order_status': (
-            "\n--- ORDER STATUS MODE ACTIVE ---\n"
-            "The customer is asking about an order they have already placed.\n"
-            "1. NEVER invent a status, date, or tracking number — you cannot see their order.\n"
-            "2. Ask for their order number or the phone number used to order.\n"
-            "3. Reassure them it will be checked and answered shortly. Do NOT push a new sale."
-        ),
-        'delivery_query': (
-            "\n--- DELIVERY INFO MODE ACTIVE ---\n"
-            "Answer the delivery question using only the delivery details in the info above.\n"
-            "If the charge or timing depends on location and you don't have it, ask where they\n"
-            "are located instead of guessing. Keep it to 1-2 sentences."
-        ),
-        'greeting': (
-            "\n--- GREETING MODE ACTIVE ---\n"
-            "The customer only said hello. Greet them warmly in ONE short sentence and ask\n"
-            "what they are looking for. Do NOT list products, prices, or links yet."
-        ),
-        'closing_thanks': (
-            "\n--- CLOSING MODE ACTIVE ---\n"
-            "The customer is thanking you or acknowledging. Reply with one short, warm line\n"
-            "and invite them back. Do NOT restart the pitch or ask new questions."
-        ),
-        'spam_noise': (
-            "\n--- MINIMAL RESPONSE MODE ---\n"
-            "The message appears to be spam or just noise (emojis, random characters).\n"
-            "Respond with a brief, friendly acknowledgment only. Do not engage deeply."
-        ),
-    }
-
-    system_parts.append(intent_rules.get(intent, intent_rules['general_query']))
+    # Intent-based behavioral rules. The modes themselves are the built-in
+    # instructions in triage.py; a business can override any of them, or write
+    # one for a message type it invented, from the Message Triage Rules panel.
+    system_parts.append(_intent_instruction(chatbot_config, intent))
 
     # Length is enforced by instruction, not by truncating the model mid-sentence.
     system_parts.append(f"\nLENGTH: {_length_profile(chatbot_config)[1]}")
@@ -634,153 +612,96 @@ def build_dynamic_prompt(chatbot_config, page_profile=None, intent: str = 'gener
 
 
 # ─── Step 1: Intent Classifier ────────────────────────────────────────────────
-VALID_INTENTS = (
-    'purchase_intent', 'product_issue', 'order_status', 'delivery_query',
-    'general_query', 'greeting', 'closing_thanks', 'spam_noise',
-)
+# The buckets a message can land in — their keywords, chip labels and priorities
+# — are per business now and live in trendycrm/triage.py, where an operator
+# edits them from the Chatbot page's "Message Triage Rules" panel. Every
+# function below therefore asks for the rule list rather than closing over a
+# fixed set of names.
 
 # Whether to spend a second API call on LLM intent classification for messages
 # the keyword pass can't settle. Off by default: on a free-tier key it halves how
 # many customers can be answered before the quota runs out.
 LLM_INTENT_CLASSIFIER = env_config('CRM_LLM_INTENT_CLASSIFIER', default=False, cast=bool)
 
-# Constrained-decoding schema: with this set, Gemini can only emit one of these
-# four strings. Free-form output used to leak fragments of the prompt itself
-# (e.g. ',_emojis,_etc.'), which silently degraded every message to general_query.
-_INTENT_SCHEMA = {
-    'type': 'OBJECT',
-    'properties': {'intent': {'type': 'STRING', 'enum': list(VALID_INTENTS)}},
-    'required': ['intent'],
-}
 
-# Unambiguous signals in English and romanized Nepali. Checked before spending an
-# API call, and reused as the fallback when the model's answer is unusable — a
-# refund complaint must never silently land in general_query or spam_noise.
-_ISSUE_KEYWORDS = (
-    'refund', 'money back', 'broken', 'damaged', 'damage', 'defective', 'faulty',
-    'torn', 'ripped', 'stained', 'wrong item', 'wrong size', 'wrong product',
-    'wrong colour', 'wrong color', 'not working', "doesn't work", 'complaint',
-    'return it', 'want to return', 'never arrived', 'still not received',
-    'not received', 'missing', 'cancel my order', 'poor quality', 'bad quality',
-    'bigrityo', 'bigreko', 'phutyo', 'galat', 'paisa firta', 'firta', 'aayena',
-)
-_PURCHASE_KEYWORDS = (
-    'how much', 'price', 'cost', 'discount', 'order kasari', 'want to buy',
-    'i want to order', 'place an order', 'buy this', 'in stock', 'cod',
-    'cash on delivery', 'payment', 'esewa', 'khalti',
-    'kati ho', 'kati parcha', 'kati parchha', 'kina', 'kinna', 'order garna',
-    # Buying-interest phrasing that doesn't ask a question first ("I need this
-    # product"). Kept to multi-word phrases only — a bare 'need'/'want'/'buy'
-    # would also match "I don't need this".
-    'i need this', 'i need it', 'i want to buy', 'i want this', 'send me',
-    'book order', 'book my order', "i'll take it", 'ill take it',
-    'reserve one', 'can i order', 'how do i order', 'malai chai',
-    'malai yo chaiyo',
-)
-_ORDER_STATUS_KEYWORDS = (
-    'where is my order', 'where is my parcel', 'order status', 'track my order',
-    'tracking number', 'tracking id', 'tracking code', 'my order number',
-    'my parcel', 'when will i get', 'when will i receive', 'when will it arrive',
-    'has it shipped', 'has it been shipped', 'dispatched',
-    'kaha pugyo', 'kahile aauxa', 'kahile aaucha', 'kahile aaunxa',
-    'order kaha', 'pathaisakyo',
-)
-_DELIVERY_KEYWORDS = (
-    'delivery charge', 'delivery cost', 'delivery fee', 'delivery time',
-    'delivery kati', 'shipping charge', 'shipping cost', 'how many days',
-    'how long will', 'home delivery', 'inside valley', 'outside valley',
-    'outside kathmandu', 'do you deliver', 'deliver to', 'delivery available',
-    'kati din', 'delivery hunxa', 'delivery huncha', 'pathauna milxa',
-)
+def _intent_schema(intent_keys):
+    """
+    Constrained-decoding schema: with this set, Gemini can only emit one of the
+    business's own intent keys. Free-form output used to leak fragments of the
+    prompt itself (e.g. ',_emojis,_etc.'), which silently degraded every message
+    to general_query.
+    """
+    return {
+        'type': 'OBJECT',
+        'properties': {'intent': {'type': 'STRING', 'enum': list(intent_keys)}},
+        'required': ['intent'],
+    }
 
-# A greeting or a sign-off is the *whole* message, never a word inside one —
-# 'hi' is a substring of 'this' and 'ok' of 'broken'. These are matched against
-# the message stripped of punctuation and emoji, so "Hello!! 👋" lands here while
-# "hi, my order broke" falls through to the substring passes below.
-_GREETING_PHRASES = frozenset((
-    'hi', 'hii', 'hiii', 'hey', 'heyy', 'hello', 'helo', 'hlo', 'yo',
-    'hi there', 'hello there', 'hi sir', 'hello sir', 'hi maam', 'hello maam',
-    'hi mam', 'hello mam', 'hi dai', 'hi bro', 'hello bro',
-    'good morning', 'good afternoon', 'good evening', 'good day',
-    'namaste', 'namaskar', 'namaste sir', 'namaste dai', 'namaste hajur',
-    'salam', 'hajur', 'k cha', 'ke cha', 'k xa', 'ke xa', 'kx', 'kexa',
-))
-_CLOSING_PHRASES = frozenset((
-    'thanks', 'thank you', 'thank u', 'thanku', 'thx', 'tnx', 'ty',
-    'thanks a lot', 'thank you so much', 'thanks so much', 'many thanks',
-    'ok thanks', 'okay thanks', 'ok thank you', 'thanks sir', 'thank you sir',
-    'dhanyabad', 'dhanyawad', 'dhanyabad hajur',
-    'ok', 'okay', 'okey', 'k', 'kk', 'sure', 'fine', 'got it', 'noted',
-    'hunxa', 'huncha', 'hunchha', 'thik cha', 'thik xa', 'thikai cha', 'la',
-    'bye', 'goodbye', 'good night', 'gn',
-))
+# The keyword lists that used to live here (_ISSUE_KEYWORDS, _PURCHASE_KEYWORDS,
+# _ORDER_STATUS_KEYWORDS, _DELIVERY_KEYWORDS, _GREETING_PHRASES, _CLOSING_PHRASES)
+# are now the `keywords` of the built-in rules in trendycrm/triage.py, so an
+# operator edits them per business from the Chatbot page instead of a developer
+# editing them per deploy. Their meaning is unchanged: unambiguous signals in
+# English and romanized Nepali, checked before spending an API call, and reused
+# as the fallback when the model's answer is unusable — a refund complaint must
+# never silently land in general_query or spam_noise.
 
 
-def _normalized_phrase(text: str) -> str:
-    """Message reduced to bare words — punctuation and emoji dropped, whitespace
-    collapsed — so whole-message phrase sets can be matched exactly."""
-    cleaned = ''.join(ch if (ch.isalnum() or ch.isspace()) else ' ' for ch in text)
-    return ' '.join(cleaned.split())
-
-
-def _keyword_intent(message_text: str) -> str:
+def _keyword_intent(message_text: str, rules=None) -> str:
     """
     Deterministic first pass. Returns an intent, or '' when nothing is conclusive
     and the message should go to the model.
 
-    Ordering is the classifier: the passes run from the intents that most need a
-    human down to the ones that need nobody, and the first hit wins.
+    `rules` is the business's triage rule list; without it the built-in set is
+    used. The one-argument form is what the webhook path, the backfill command
+    and the tests call, and it must keep behaving exactly as it did.
     """
-    text = (message_text or '').strip().lower()
-    if not text:
-        return 'spam_noise'
-
-    # Product complaints outrank purchase words — "I paid for this and it broke"
-    # is an issue, not a sale.
-    for kw in _ISSUE_KEYWORDS:
-        if kw in text:
-            return 'product_issue'
-    for kw in _PURCHASE_KEYWORDS:
-        if kw in text:
-            return 'purchase_intent'
-    # Checked after purchase so "book my order" stays a sale, and before the
-    # generic delivery pass so "where is my order" isn't read as a shipping FAQ.
-    for kw in _ORDER_STATUS_KEYWORDS:
-        if kw in text:
-            return 'order_status'
-    for kw in _DELIVERY_KEYWORDS:
-        if kw in text:
-            return 'delivery_query'
-
-    # Whole-message matches last: a greeting only counts when it's all the
-    # customer said. Anything with a real question attached was caught above.
-    phrase = _normalized_phrase(text)
-    if phrase in _GREETING_PHRASES:
-        return 'greeting'
-    if phrase in _CLOSING_PHRASES:
-        return 'closing_thanks'
-
-    # No letters or digits at all (emoji-only, punctuation-only) is noise.
-    if not any(ch.isalnum() for ch in text):
-        return 'spam_noise'
-    return ''
+    return triage.classify(message_text, rules)[0]
 
 
-def classify_intent(message_text: str, config: dict) -> str:
+def _classifier_categories(rules) -> str:
     """
-    Classifies a message into one of VALID_INTENTS.
+    The category list handed to the LLM classifier, written from the business's
+    own rules so a custom type is classifiable instead of being squeezed into
+    one of the built-in eight. A rule describes itself by its keywords when the
+    operator wrote no description for it.
+    """
+    lines = []
+    for rule in rules:
+        if not rule.get('enabled', True):
+            continue
+        description = triage.BUILTIN_DESCRIPTIONS.get(rule['key'], '')
+        if not description:
+            examples = ', '.join(f'"{k}"' for k in (rule.get('keywords') or [])[:6])
+            description = (
+                f"messages the business files under \"{rule['label']}\""
+                + (f" — e.g. {examples}." if examples else ".")
+            )
+        lines.append(f"- {rule['key']}: {description}")
+    return '\n'.join(lines)
+
+
+def classify_intent(message_text: str, config: dict, chatbot_config=None) -> str:
+    """
+    Classifies a message into one of the business's triage rules.
 
     Runs a deterministic keyword pass first, then — only if LLM_INTENT_CLASSIFIER
     is on — asks Gemini Flash (with a constrained enum schema) or OpenAI
     GPT-4o-mini about anything ambiguous. Falls back to the keyword verdict,
     never blindly to 'general_query', so a model hiccup can't turn a refund
     request into noise.
+
+    `chatbot_config` selects whose rules apply; without it the built-in set is
+    used, which is what the standalone test scripts rely on.
     """
-    keyword_verdict = _keyword_intent(message_text)
+    rules = triage.rules_for(chatbot_config)
+    valid_intents = [r['key'] for r in rules]
+
+    keyword_verdict = _keyword_intent(message_text, rules)
     if keyword_verdict:
         return keyword_verdict
 
-    fallback = 'general_query'
+    fallback = triage.FALLBACK_KEY
 
     # Classification is a *second* API call on every message that the keyword
     # pass can't settle, which doubles quota use per customer message. On a
@@ -792,14 +713,7 @@ def classify_intent(message_text: str, config: dict) -> str:
 
     classification_prompt = f"""You are a message intent classifier for an e-commerce business.
 Classify the following customer message into EXACTLY ONE category:
-- purchase_intent: wants to buy, asks about price, payment, or how to order.
-- product_issue: a complaint, refund request, or a damaged/wrong/missing product.
-- order_status: asks where an order they already placed is, or for tracking.
-- delivery_query: asks about delivery charge, delivery time, or coverage area.
-- general_query: asks about product details, availability, or the business.
-- greeting: only a greeting, with no question attached.
-- closing_thanks: only thanks, an acknowledgement, or a sign-off.
-- spam_noise: only emojis, random characters, or incomprehensible text.
+{_classifier_categories(rules)}
 
 Customer message: "{message_text}"
 """
@@ -815,7 +729,7 @@ Customer message: "{message_text}"
             # the shape; the budget just has to be big enough to emit it.
             response_text = _call_gemini_rest(
                 GEMINI_FLASH_MODEL, None, classification_prompt, gemini_key,
-                temperature=0.0, max_tokens=256, response_schema=_INTENT_SCHEMA,
+                temperature=0.0, max_tokens=256, response_schema=_intent_schema(valid_intents),
                 thinking_budget=0,
             )
         elif openai_key:
@@ -843,10 +757,10 @@ Customer message: "{message_text}"
             pass
 
         intent = raw.strip().strip('"\'.').lower().replace(' ', '_').replace('-', '_')
-        if intent in VALID_INTENTS:
+        if intent in valid_intents:
             return intent
         # Models sometimes wrap the label in a sentence ("Category: purchase_intent.")
-        for v in VALID_INTENTS:
+        for v in valid_intents:
             if v in intent:
                 return v
 
@@ -973,7 +887,7 @@ def route_message(
             return result
 
         # ── Text Messages ─────────────────────────────────────────────────────
-        intent = force_intent if force_intent else classify_intent(message_text, config)
+        intent = force_intent if force_intent else classify_intent(message_text, config, chatbot_config)
         result['intent'] = intent
 
         # Human Handoff / Ticketing logic

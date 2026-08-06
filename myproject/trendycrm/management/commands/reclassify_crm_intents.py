@@ -1,38 +1,51 @@
 """
 Re-runs the message-type analysis over CRM messages already in the database.
 
-The analysis used to have four buckets, so every greeting and sign-off in the
-existing history is stored as 'general_query' and renders as "General Inquiry ·
-Low". This rewrites those to what the current classifier says, so old threads
-show the same chips new ones do.
+Every message stores the intent it was classified as at the time. Renaming a
+type or changing its priority needs no backfill — the chip is rendered from the
+rules live. Editing a rule's *keywords* does, because that changes which type a
+message belongs to, and this rewrites the stored intents to match.
 
     python manage.py reclassify_crm_intents --dry-run
     python manage.py reclassify_crm_intents
+    python manage.py reclassify_crm_intents --bot 3
 
-Uses only the free keyword pass — it never spends an LLM call, so it is safe to
-run against the whole history on a free-tier key. It does not raise lead or
-complaint chips for historical messages; it only relabels.
+Each conversation is re-analysed with the rules of the business whose page
+received it. Uses only the free keyword pass — it never spends an LLM call, so
+it is safe to run against the whole history on a free-tier key. It does not
+raise alert chips for historical messages; it only relabels.
 """
 from django.core.management.base import BaseCommand
 
+from trendycrm import triage
 from trendycrm.ai_router import _keyword_intent
 from trendycrm.models import CRMConversation
 
 
 class Command(BaseCommand):
-    help = "Re-analyse stored CRM messages so their intent/priority chips match the current classifier."
+    help = "Re-analyse stored CRM messages so their intent/priority chips match the current rules."
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--dry-run', action='store_true',
             help="Report what would change without writing anything.",
         )
+        parser.add_argument(
+            '--bot', type=int, default=None,
+            help="Only conversations belonging to this chatbot config id.",
+        )
 
     def handle(self, *args, **options):
         dry_run = options['dry_run']
+        bot_id = options['bot']
         scanned = inbound_changed = reply_changed = 0
 
-        for conv in CRMConversation.objects.all().iterator():
+        conversations = CRMConversation.objects.select_related('integration__chatbot_config')
+        if bot_id is not None:
+            conversations = conversations.filter(integration__chatbot_config_id=bot_id)
+
+        for conv in conversations.iterator():
+            rules = triage.rules_for_conversation(conv)
             # The verdict on the customer message the AI is currently answering.
             # Reset per conversation so one thread can't leak into the next.
             pending = ''
@@ -40,7 +53,7 @@ class Command(BaseCommand):
                 scanned += 1
 
                 if not msg.is_outbound:
-                    verdict = _keyword_intent(msg.body) if (msg.body or '').strip() else ''
+                    verdict = _keyword_intent(msg.body, rules) if (msg.body or '').strip() else ''
                     # An inconclusive verdict is not an improvement on whatever is
                     # stored — leave it, and let the reply below keep its intent too.
                     pending = verdict

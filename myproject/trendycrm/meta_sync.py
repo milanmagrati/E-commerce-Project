@@ -4,6 +4,7 @@ import mimetypes
 import requests
 from django.utils import timezone
 from dateutil.parser import parse
+from . import triage
 from .models import CRMIntegration, CRMContact, CRMConversation, CRMMessage, CRMSocialPost, CRMSocialComment
 
 logger = logging.getLogger(__name__)
@@ -231,12 +232,39 @@ def _extract_graph_attachment(msg):
     return {'type': att_type, 'url': url, 'name': att.get('name') or ''}
 
 
-def _flag_important_message(conversation, verdict):
+def _alert_presentation(rule):
     """
-    Auto-labels the conversation and raises an in-thread chip when the keyword
-    pass flags buying interest or a complaint. Kept independent of the AI-reply
-    engine so it still runs when auto-reply is off — a missed lead shouldn't
-    depend on whether the bot happened to be allowed to answer.
+    (label name, chip kind, colour, chip text) for a rule that wants an agent.
+
+    The two original alerting types keep their exact wording, colours, labels
+    and event kinds — everything built around them (the sidebar badges, the
+    label filter, the dismiss flow) still has to recognise them. Anything the
+    operator added announces itself by its own label.
+    """
+    key = rule['key']
+    if key == 'purchase_intent':
+        return (LEAD_LABEL_NAME, CRMMessage.EVENT_LEAD_DETECTED, '#ea580c',
+                "🔥 Potential lead — this customer is showing buying interest.")
+    if key == 'product_issue':
+        return (COMPLAINT_LABEL_NAME, CRMMessage.EVENT_COMPLAINT_DETECTED, '#dc2626',
+                "⚠️ Possible complaint — this customer reported an issue.")
+
+    color = triage.PRIORITY_COLORS.get(rule['priority'], '#6366f1')
+    return (
+        f"🔔 {rule['label']}",
+        CRMMessage.alert_kind_for(key),
+        color,
+        f"🔔 {rule['label']} — this message is set to {rule['priority']} priority.",
+    )
+
+
+def _flag_important_message(conversation, verdict, rules=None):
+    """
+    Auto-labels the conversation and raises an in-thread chip when the message
+    type the keyword pass found is one the business marked "alert an agent".
+    Kept independent of the AI-reply engine so it still runs when auto-reply is
+    off — a missed lead shouldn't depend on whether the bot happened to be
+    allowed to answer.
 
     Unlike EVENT_AI_FAILURE, these chips don't self-resolve: a lead doesn't
     stop being a lead once someone answers it, so they stay open until an
@@ -244,19 +272,11 @@ def _flag_important_message(conversation, verdict):
     """
     from .models import CRMLabel
 
-    if verdict == 'purchase_intent':
-        label_name = LEAD_LABEL_NAME
-        kind = CRMMessage.EVENT_LEAD_DETECTED
-        color_hex = '#ea580c'
-        text = "🔥 Potential lead — this customer is showing buying interest."
-    elif verdict == 'product_issue':
-        label_name = COMPLAINT_LABEL_NAME
-        kind = CRMMessage.EVENT_COMPLAINT_DETECTED
-        color_hex = '#dc2626'
-        text = "⚠️ Possible complaint — this customer reported an issue."
-    else:
+    rule = triage.rule_by_key(rules if rules is not None else triage.DEFAULT_RULES, verdict)
+    if not rule or not rule.get('alert'):
         return
 
+    label_name, kind, color_hex, text = _alert_presentation(rule)
     label, _ = CRMLabel.objects.get_or_create(name=label_name, defaults={'color_hex': color_hex})
     conversation.labels.add(label)
     CRMMessage.log_event(conversation, text, level='info', kind=kind)
@@ -343,11 +363,15 @@ def upsert_inbound_message(integration, contact, conversation, body, external_id
     if not is_outbound and (body or '').strip():
         try:
             from .ai_router import _keyword_intent
-            verdict = _keyword_intent(body)
+            # The rules of the business whose page received this message: what
+            # its types are called, which keywords identify them, and which of
+            # them are worth pulling an agent in for.
+            rules = triage.rules_for(getattr(integration, 'chatbot_config', None))
+            verdict = _keyword_intent(body, rules)
             if verdict:
                 message.ai_intent = verdict
                 message.save(update_fields=['ai_intent'])
-            _flag_important_message(conversation, verdict)
+            _flag_important_message(conversation, verdict, rules)
         except Exception:
             logger.exception("Lead/complaint detection failed during message upsert")
 

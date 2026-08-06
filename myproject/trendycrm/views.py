@@ -18,7 +18,7 @@ import hashlib
 import os
 import secrets
 import threading
-from django.db import connection
+from django.db import connection, IntegrityError, transaction
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,7 @@ import requests
 from django.views.decorators.csrf import csrf_exempt
 from urllib.parse import urlencode
 
+from . import triage
 from .meta_sync import (
     sync_meta_conversations, _process_meta_conversation,
     sync_meta_posts, sync_meta_comments, reply_to_meta_comment, hide_meta_comment, delete_meta_comment,
@@ -160,6 +161,19 @@ def crm_home(request):
 
 
 # ─── Conversations ────────────────────────────────────────────────────────────
+def _triaged_messages(conversation):
+    """
+    A thread's messages with their chips resolved against the rules of the
+    business that owns the conversation.
+
+    Labels and priorities are per-business, and asking each message for its own
+    would walk conversation → integration → chatbot_config once per row. The map
+    is the same for the whole thread, so it's resolved once here.
+    """
+    display = triage.display_map(triage.rules_for_conversation(conversation))
+    return [m.apply_triage(display) for m in conversation.visible_messages()]
+
+
 def _filtered_conversations(request):
     """
     Applies the inbox filters (page, read state, search, label) from the query
@@ -173,6 +187,15 @@ def _filtered_conversations(request):
     ).annotate(
         has_lead=Exists(CRMLabel.objects.filter(conversations=OuterRef('pk'), name=LEAD_LABEL_NAME)),
         has_complaint=Exists(CRMLabel.objects.filter(conversations=OuterRef('pk'), name=COMPLAINT_LABEL_NAME)),
+        # Message types the operator invented and marked "alert an agent" raise a
+        # chip of their own kind rather than one of the two original ones, so the
+        # row badges off the open chip instead of a known label name.
+        has_custom_alert=Exists(
+            CRMMessage.objects.filter(
+                conversation=OuterRef('pk'), is_system=True, resolved_at__isnull=True,
+                event_kind__startswith=CRMMessage.ALERT_KIND_PREFIX,
+            )
+        ),
     ).order_by('-updated_at')
 
     page_filter_raw = request.GET.getlist('page_filter')
@@ -247,7 +270,10 @@ def crm_conversations(request):
     messages = []
     
     if conv_id:
-        active_conv = CRMConversation.objects.filter(pk=conv_id).first()
+        # chatbot_config comes along because the thread's chips are rendered from
+        # that business's triage rules (see _triaged_messages).
+        active_conv = CRMConversation.objects.select_related(
+            'integration__chatbot_config').filter(pk=conv_id).first()
         if not active_conv:
             from django.shortcuts import redirect
             return redirect('trendycrm:conversations')
@@ -260,7 +286,7 @@ def crm_conversations(request):
         if not active_conv.is_read:
             active_conv.is_read = True
             active_conv.save(update_fields=['is_read'])
-        messages = active_conv.visible_messages()
+        messages = _triaged_messages(active_conv)
 
     contacts = CRMContact.objects.all()
 
@@ -358,14 +384,17 @@ def crm_conversations_ajax(request):
             except Exception as e:
                 logger.error(f"Ajax auto-sync failed: {e}")
 
-    # Re-fetch the conversation because sync_meta_conversations might have updated it
-    active_conv.refresh_from_db()
-    
+    # Re-fetch the conversation because sync_meta_conversations might have updated
+    # it. Re-read rather than refresh_from_db() so the business's triage rules come
+    # with it — refreshing drops cached relations, and the chips need them.
+    active_conv = CRMConversation.objects.select_related(
+        'integration__chatbot_config').get(pk=active_conv.pk)
+
     if not active_conv.is_read:
         active_conv.is_read = True
         active_conv.save(update_fields=['is_read'])
 
-    messages = active_conv.visible_messages()
+    messages = _triaged_messages(active_conv)
 
     context = {
         'chat_messages': messages,
@@ -408,6 +437,14 @@ def _delivery_failure_message(integration, send_error):
 def crm_send_message(request, conv_id):
     conv = get_object_or_404(CRMConversation, pk=conv_id)
     body = request.POST.get('body', '').strip()
+    back = f"{reverse('trendycrm:conversations')}?id={conv_id}"
+
+    # The composer stamps one token per message it sends. A double-clicked send
+    # button posts the same token twice, so the second POST finds the message
+    # already written and stops here — the customer is never sent it twice.
+    client_token = (request.POST.get('client_token') or '').strip()[:64] or None
+    if client_token and CRMMessage.objects.filter(client_token=client_token).exists():
+        return redirect(back)
 
     attachment_file = None
     attachment_type = ''
@@ -423,15 +460,24 @@ def crm_send_message(request, conv_id):
     ai_was_live = conv.ai_status()['state'] == 'on'
 
     if body or attachment_file:
-        msg = CRMMessage.objects.create(
-            conversation=conv,
-            sender=request.user.get_full_name() or request.user.username,
-            body=body,
-            is_outbound=True,
-            attachment=attachment_file,
-            attachment_type=attachment_type,
-            attachment_name=attachment_file.name if attachment_file else '',
-        )
+        try:
+            # Savepointed so the losing side of a double-click race can be
+            # swallowed without leaving the request's transaction broken.
+            with transaction.atomic():
+                msg = CRMMessage.objects.create(
+                    conversation=conv,
+                    sender=request.user.get_full_name() or request.user.username,
+                    body=body,
+                    is_outbound=True,
+                    attachment=attachment_file,
+                    attachment_type=attachment_type,
+                    attachment_name=attachment_file.name if attachment_file else '',
+                    client_token=client_token,
+                )
+        except IntegrityError:
+            # Both POSTs cleared the check above before either wrote. The one
+            # that got the token owns the send; this one is the duplicate.
+            return redirect(back)
         conv.last_message = body or ATTACHMENT_PREVIEW_TEXT.get(attachment_type, '📎 Attachment')
         conv.updated_at = msg.created_at
         conv.is_read = True
@@ -488,8 +534,7 @@ def crm_send_message(request, conv_id):
                 msg.save(update_fields=['status'])
                 messages.error(request, _delivery_failure_message(used_integration, send_error))
 
-    from django.urls import reverse
-    return redirect(f"{reverse('trendycrm:conversations')}?id={conv_id}")
+    return redirect(back)
 
 
 @login_required
@@ -859,12 +904,11 @@ def crm_important_alerts_poll(request):
     itself is visible to any logged-in CRM user.
     """
     qs = CRMMessage.objects.filter(
-        is_system=True,
-        event_kind__in=[CRMMessage.EVENT_LEAD_DETECTED, CRMMessage.EVENT_COMPLAINT_DETECTED],
-        resolved_at__isnull=True,
+        CRMMessage.alert_kind_q(), is_system=True, resolved_at__isnull=True,
     ).select_related('conversation__contact').order_by('-created_at')
     total = qs.count()
-    events = qs[:20]
+    events = list(qs[:20])
+    titles = _alert_titles({e.event_kind for e in events})
     return JsonResponse({
         'count': total,
         'alerts': [{
@@ -872,9 +916,48 @@ def crm_important_alerts_poll(request):
             'conversation_id': e.conversation_id,
             'contact_name': (e.conversation.contact.name if e.conversation and e.conversation.contact else 'Unknown'),
             'kind': e.event_kind,
+            # Wording and icon travel with the alert: a business can invent its
+            # own alerting message types, so the popup can't map a fixed kind to
+            # fixed words the way it used to.
+            'title': titles.get(e.event_kind, 'Needs attention'),
+            'icon': _ALERT_ICONS.get(e.event_kind, 'fa-bell'),
             'created_at': e.created_at.isoformat(),
         } for e in events],
     })
+
+
+_ALERT_TITLES = {
+    CRMMessage.EVENT_LEAD_DETECTED: 'Potential lead',
+    CRMMessage.EVENT_COMPLAINT_DETECTED: 'Possible complaint',
+}
+_ALERT_ICONS = {
+    CRMMessage.EVENT_LEAD_DETECTED: 'fa-fire',
+    CRMMessage.EVENT_COMPLAINT_DETECTED: 'fa-triangle-exclamation',
+}
+
+
+def _alert_titles(event_kinds):
+    """
+    `{event_kind: wording}` for a batch of alert chips.
+
+    The two original kinds have fixed wording. A custom one is named after the
+    rule that raised it, which is looked up across the customised businesses in
+    one pass rather than one query per alert on a 5-second poll.
+    """
+    titles = dict(_ALERT_TITLES)
+    custom = {k for k in event_kinds if k.startswith(CRMMessage.ALERT_KIND_PREFIX)}
+    if not custom:
+        return titles
+
+    wanted = {k[len(CRMMessage.ALERT_KIND_PREFIX):]: k for k in custom}
+    for config in CRMChatbotConfig.objects.exclude(triage_rules=[]).only('triage_rules'):
+        for rule in triage.rules_for(config):
+            kind = wanted.get(rule['key'])
+            if kind and kind not in titles:
+                titles[kind] = rule['label']
+    for key, kind in wanted.items():
+        titles.setdefault(kind, key.replace('_', ' ').title())
+    return titles
 
 
 # ─── Chatbot ─────────────────────────────────────────────────────────────────
@@ -1002,6 +1085,24 @@ def crm_chatbot(request, bot_id):
         # Seeds the hidden field behind the Cities Served tag input, so the list
         # survives a submit even if the tag JS never runs.
         'cities_served_json': json.dumps(chatbot.cities_served or []),
+        # Message Triage Rules: the effective rule set (its own, or the built-in
+        # one it has been inheriting) plus the default it can be reset to. Passed
+        # as objects, not JSON text — the template renders them through
+        # json_script, which escapes the operator's own labels safely.
+        'triage_rules': triage.rules_for(chatbot),
+        'triage_defaults': triage.default_rules(),
+        'triage_priorities': triage.PRIORITIES,
+        # Which pages these rules actually label, and which live pages no bot
+        # owns — a page with no chatbot keeps the built-in labels, and without
+        # this the panel looks broken rather than not-applicable.
+        'triage_pages': [
+            i for i in integrations
+            if i.chatbot_config_id == chatbot.pk and i.status in LIVE_INTEGRATION_STATUSES
+        ],
+        'triage_unlinked_pages': [
+            i for i in integrations
+            if not i.chatbot_config_id and i.status in LIVE_INTEGRATION_STATUSES and i.account_name
+        ],
     }
     return render(request, 'trendycrm/chatbot.html', context)
 
@@ -1171,6 +1272,88 @@ def crm_chatbot_save_agent(request, bot_id):
         return JsonResponse({'status': 'ok', 'message': 'Agent configuration saved!'})
     messages.success(request, 'Agent configuration saved!')
     return redirect('trendycrm:chatbot', bot_id=bot_id)
+
+
+@login_required
+@require_POST
+def crm_chatbot_save_triage(request, bot_id):
+    """
+    AJAX: Save the Message Triage Rules — the message types this business
+    recognises, what they're called, how urgent they are, which keywords
+    identify them, whether they pull an agent in, and how the AI answers them.
+
+    A rule set that half-saved would have the bot answering by rules nobody
+    chose, so a bad payload is refused with the reason rather than cleaned up
+    silently (same call as the handoff triggers above).
+    """
+    chatbot = get_object_or_404(CRMChatbotConfig, pk=bot_id)
+
+    raw = request.POST.get('triage_rules', '')
+    try:
+        parsed = json.loads(raw) if raw.strip() else []
+    except json.JSONDecodeError:
+        return _triage_error(request, bot_id, 'Triage rules could not be read (unexpected format).')
+
+    try:
+        rules = triage.normalize_rules(parsed)
+    except ValueError as e:
+        return _triage_error(request, bot_id, str(e))
+
+    chatbot.triage_rules = rules
+    chatbot.save(update_fields=['triage_rules', 'updated_at'])
+
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'status': 'ok', 'message': 'Message triage rules saved!'})
+    messages.success(request, 'Message triage rules saved!')
+    return redirect('trendycrm:chatbot', bot_id=bot_id)
+
+
+def _triage_error(request, bot_id, message):
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'status': 'error', 'message': message}, status=400)
+    messages.error(request, message)
+    return redirect('trendycrm:chatbot', bot_id=bot_id)
+
+
+@login_required
+@require_POST
+def crm_triage_preview(request, bot_id):
+    """
+    AJAX: Run one sample message through a rule set without saving it, so the
+    operator can see which type a message lands in — and which keyword put it
+    there — before committing the rules.
+
+    Keyword pass only: this is free and instant, and must stay that way. The
+    panel is exactly where someone would sit and try twenty messages in a row.
+    """
+    get_object_or_404(CRMChatbotConfig, pk=bot_id)
+
+    sample = request.POST.get('message', '')
+    raw = request.POST.get('triage_rules', '')
+    try:
+        parsed = json.loads(raw) if raw.strip() else []
+        rules = triage.normalize_rules(parsed) if parsed else triage.default_rules()
+    except (json.JSONDecodeError, ValueError) as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+    if not sample.strip():
+        return JsonResponse({'status': 'error', 'message': 'Type a message to test.'}, status=400)
+
+    key, matched = triage.classify(sample, rules)
+    rule = triage.rule_by_key(rules, key) if key else None
+    if not rule:
+        # Nothing matched — a real message would go to the fallback bucket.
+        rule = triage.rule_by_key(rules, triage.FALLBACK_KEY)
+        matched = ''
+
+    return JsonResponse({
+        'status': 'ok',
+        'key': rule['key'],
+        'label': rule['label'],
+        'priority': rule['priority'],
+        'alert': bool(rule.get('alert')),
+        'matched_keyword': matched,
+    })
 
 
 @login_required
@@ -2414,6 +2597,13 @@ def crm_ai_test(request):
             image_data=image_data,
             image_mime=image_mime,
         )
+        # Show the same chip the thread will: the test console is where an
+        # operator checks whether their triage rules actually caught a message.
+        rule = triage.rule_by_key(triage.rules_for(chatbot), result.get('intent'))
+        if rule:
+            result['intent_label'] = rule['label']
+            result['intent_priority'] = rule['priority']
+
         # Keep the "last auto-reply failed" banner honest: a successful test
         # clears it, a failing one records why.
         from .meta_sync import _record_bot_status

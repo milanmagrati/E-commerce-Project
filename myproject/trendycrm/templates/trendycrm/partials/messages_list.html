@@ -9,9 +9,15 @@ follow it — a takeover pause expires on a timer, with no user action to hook.
 {% endif %}
 {% for msg in chat_messages %}
     {% if msg.is_system %}
-        <div class="sys-event {% if msg.system_level == 'warning' %}sys-warning{% endif %}{% if msg.event_is_retrying %} sys-retrying{% endif %}{% if msg.event_kind == 'lead_detected' %} sys-lead{% elif msg.event_kind == 'complaint_detected' %} sys-complaint{% endif %}"
+        {% comment %}
+        `alert_…` kinds are the message types this business invented and marked
+        "alert an agent" — they carry the same weight as the two built-in ones,
+        so they get the same treatment rather than falling through to the plain
+        info chip.
+        {% endcomment %}
+        <div class="sys-event {% if msg.system_level == 'warning' %}sys-warning{% endif %}{% if msg.event_is_retrying %} sys-retrying{% endif %}{% if msg.event_kind == 'lead_detected' %} sys-lead{% elif msg.event_kind == 'complaint_detected' or msg.is_custom_alert %} sys-complaint{% endif %}"
              data-event-id="{{ msg.pk }}">
-            <i class="fas {% if msg.event_is_retrying %}fa-arrows-rotate fa-spin{% elif msg.event_kind == 'lead_detected' %}fa-fire{% elif msg.event_kind == 'complaint_detected' %}fa-triangle-exclamation{% elif msg.system_level == 'warning' %}fa-triangle-exclamation{% else %}fa-circle-info{% endif %}"></i>
+            <i class="fas {% if msg.event_is_retrying %}fa-arrows-rotate fa-spin{% elif msg.event_kind == 'lead_detected' %}fa-fire{% elif msg.event_kind == 'complaint_detected' %}fa-triangle-exclamation{% elif msg.is_custom_alert %}fa-bell{% elif msg.system_level == 'warning' %}fa-triangle-exclamation{% else %}fa-circle-info{% endif %}"></i>
             <span>{{ msg.body }}</span>
             <span class="sys-event-time">{{ msg.created_at|date:"h:i A" }}</span>
             {% comment %}

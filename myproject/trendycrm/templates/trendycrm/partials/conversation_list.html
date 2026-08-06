@@ -17,6 +17,12 @@ so a new message updates the sidebar preview/timestamp without a page reload.
                     {% endif %}
                     {% if conv.has_lead %}<i class="fas fa-fire" style="color:#ea580c;font-size:0.7rem;margin-left:4px;" title="Potential lead"></i>{% endif %}
                     {% if conv.has_complaint %}<i class="fas fa-triangle-exclamation" style="color:#dc2626;font-size:0.7rem;margin-left:4px;" title="Possible complaint"></i>{% endif %}
+                    {% comment %}
+                    A message type this business added and marked "alert an agent".
+                    It has no fixed label to badge off, so the row keys off the open
+                    chip itself (see has_custom_alert in views._filtered_conversations).
+                    {% endcomment %}
+                    {% if conv.has_custom_alert %}<i class="fas fa-bell" style="color:#f59e0b;font-size:0.7rem;margin-left:4px;" title="Needs attention"></i>{% endif %}
                 </div>
                 <div class="conv-time" style="font-size:0.7rem; color:var(--crm-text-muted); text-align: right;">
                     <div style="font-size:0.6rem; margin-bottom:0.1rem;">{{ conv.updated_at|date:"M d, Y" }}</div>

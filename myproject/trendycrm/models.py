@@ -2,8 +2,11 @@ from datetime import timedelta
 
 from decouple import config as env_config
 from django.db import models
+from django.db.models import Q
 from django.conf import settings
 from django.utils import timezone
+
+from . import triage
 
 # How long the AI stays quiet on a conversation after a staff member replies to
 # it. Prevents the bot from talking over a human who has taken the chat over.
@@ -215,6 +218,14 @@ class CRMMessage(models.Model):
     # collided on short repeated messages ("ok"). Empty for locally-composed
     # messages that have no provider id yet.
     external_id = models.CharField(max_length=255, blank=True, default='', db_index=True)
+    # Idempotency key for locally-composed messages. The composer stamps one per
+    # message it is about to send, so a double-clicked send button (or a retried
+    # POST) arrives twice carrying the same token and the second one is dropped
+    # instead of sending the customer the same text twice. NULL — not '' — for
+    # messages with no token (inbound, AI, system), because unique() treats
+    # every NULL as distinct but would reject a second empty string.
+    client_token = models.CharField(max_length=64, null=True, blank=True,
+                                    unique=True, default=None)
     # True when the AI router generated this reply, as opposed to a staff member.
     is_ai = models.BooleanField(default=False)
     # Internal timeline events — "agent took over", "the AI couldn't reply". Shown
@@ -250,31 +261,75 @@ class CRMMessage(models.Model):
     # produced so the thread can show *why* the bot answered the way it did.
     ai_intent = models.CharField(max_length=40, blank=True, default='')
 
-    # Intent → (chip label, priority). Priority is derived rather than stored:
-    # it's a presentation of the intent, and two columns that must agree would
+    # Intent → (chip label, priority), for a message whose business has no
+    # triage rules of its own. Priority is derived rather than stored: it's a
+    # presentation of the intent, and two columns that must agree would
     # eventually disagree.
     #
+    # urgent = drop everything
     # high   = a person should answer this (money at stake, or someone unhappy)
     # medium = a real question about an order already placed; answer today
     # low    = chatter the bot can carry on its own
-    INTENT_DISPLAY = {
-        'purchase_intent': ('Purchase', 'high'),
-        'product_issue': ('Issue', 'high'),
-        'order_status': ('Order Status', 'medium'),
-        'delivery_query': ('Delivery', 'medium'),
-        'general_query': ('General Inquiry', 'low'),
-        'greeting': ('Greeting', 'low'),
-        'closing_thanks': ('Thanks', 'low'),
-        'spam_noise': ('Spam', 'low'),
-    }
+    #
+    # Derived from the built-in rules so the fallback can't drift from what the
+    # classifier actually produces — see trendycrm/triage.py.
+    INTENT_DISPLAY = triage.display_map(triage.DEFAULT_RULES)
+
+    def apply_triage(self, display_map):
+        """
+        Render this message's chip with a specific business's labels.
+
+        Labels and priorities are per-business now, and a CRMMessage on its own
+        has no cheap way to reach the business (conversation → integration →
+        chatbot_config, once per row). The view that renders a thread resolves
+        the map once and hands it to every message in it.
+        """
+        self._triage_display = display_map or {}
+        return self
+
+    def _intent_display(self):
+        mapping = getattr(self, '_triage_display', None) or self.INTENT_DISPLAY
+        if self.ai_intent in mapping:
+            return mapping[self.ai_intent]
+        # An intent classified under a rule that has since been renamed away
+        # still has to read as something; its own key is the honest answer.
+        return (self.ai_intent.replace('_', ' ').title(), 'low')
 
     @property
     def intent_label(self):
-        return self.INTENT_DISPLAY.get(self.ai_intent, (self.ai_intent.replace('_', ' ').title(), 'low'))[0]
+        return self._intent_display()[0]
 
     @property
     def intent_priority(self):
-        return self.INTENT_DISPLAY.get(self.ai_intent, ('', 'low'))[1]
+        return self._intent_display()[1] if self.ai_intent else 'low'
+
+    # ── Agent alerts ─────────────────────────────────────────────────────────
+    # The two original alerting intents keep their own event kinds so the
+    # labels, sidebar badges, dismiss flow and history built around them keep
+    # working; every other alerting rule derives one from its key, so two
+    # different alerts in one conversation stay separately dismissible.
+    LEGACY_ALERT_KINDS = {
+        'purchase_intent': EVENT_LEAD_DETECTED,
+        'product_issue': EVENT_COMPLAINT_DETECTED,
+    }
+    ALERT_KIND_PREFIX = 'alert_'
+
+    @classmethod
+    def alert_kind_for(cls, intent_key):
+        return cls.LEGACY_ALERT_KINDS.get(intent_key) or f'{cls.ALERT_KIND_PREFIX}{intent_key}'[:32]
+
+    @property
+    def is_custom_alert(self):
+        """True for an alert chip raised by a message type this business added."""
+        return self.event_kind.startswith(self.ALERT_KIND_PREFIX)
+
+    @classmethod
+    def alert_kind_q(cls):
+        """Matches every kind of chip that means "an agent should look at this"."""
+        return (
+            Q(event_kind__in=list(cls.LEGACY_ALERT_KINDS.values()))
+            | Q(event_kind__startswith=cls.ALERT_KIND_PREFIX)
+        )
 
     @classmethod
     def log_event(cls, conversation, text, level='info', kind='', data=None,
@@ -466,6 +521,15 @@ class CRMChatbotConfig(models.Model):
     
     # Handoff keywords
     handoff_triggers = models.JSONField(default=list, blank=True)
+
+    # Message Triage Rules: what each kind of customer message is called, how
+    # urgent it is, which keywords identify it, whether it should pull an agent
+    # in, and how the AI answers it. See trendycrm/triage.py for the shape.
+    #
+    # An empty list means "never customised" and resolves to the built-in rules
+    # — so a business that never opens the panel keeps inheriting improvements
+    # to the defaults instead of being frozen at whatever shipped.
+    triage_rules = models.JSONField(default=list, blank=True)
 
     auto_reply_channels = models.JSONField(default=dict)
     ai_credits = models.IntegerField(default=100)

@@ -437,6 +437,7 @@
 .dot-low { background: #22c55e; }
 .dot-medium { background: #eab308; }
 .dot-high { background: #f97316; }
+.dot-urgent { background: #ef4444; }
 
 /* ── Composer lock while the AI owns the conversation ───────────────────────── */
 .ai-handoff-bar {
@@ -906,6 +907,11 @@
 
         <form class="conv-input-bar" id="sendMessageForm" method="post" action="{% url 'trendycrm:send_message' active_conv.pk %}" enctype="multipart/form-data" style="position:relative;" {% if ai_state.state == 'on' %}hidden{% endif %}>
             {% csrf_token %}
+            {% comment %}
+            Idempotency key for this one message — see the submit guard below and
+            client_token in CRMMessage. Rewritten after every send.
+            {% endcomment %}
+            <input type="hidden" name="client_token" id="clientMsgToken" value="">
             <div class="composer-handback" id="composerHandback" {% if not ai_state.resumable or ai_state.state == 'off' %}hidden{% endif %}>
                 <span><i class="fas fa-user-check"></i> You're handling this chat</span>
                 <button type="button" onclick="toggleConversationAi()">Hand back to AI</button>
@@ -1269,6 +1275,68 @@
         if (!input) return;
         input.addEventListener('input', function () { maybeSearchQuickReplies(this); });
         input.addEventListener('blur', function () { setTimeout(hideQuickReplies, 120); });
+    })();
+
+    // One send per click. The form navigates, so between the click and the new
+    // page there is a window in which a second click (or a second Enter, or a
+    // stab at the button while the network is slow) posts the whole composer
+    // again — which reaches the customer as two identical messages.
+    //
+    // Two layers, because neither alone is enough: this guard stops the second
+    // submit leaving the browser, and the token it stamps makes the send
+    // idempotent server-side if one gets out anyway (see crm_send_message).
+    (function initSendGuard() {
+        const form = document.getElementById('sendMessageForm');
+        if (!form) return;
+        const btn = document.getElementById('sendMsgBtn');
+        const tokenField = document.getElementById('clientMsgToken');
+        let sending = false;
+        let rearmTimer = null;
+
+        function newToken() {
+            if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+            return 'm-' + Date.now() + '-' + Math.random().toString(36).slice(2, 12);
+        }
+
+        // Same token on a retry, deliberately: if the earlier POST did land, the
+        // server recognises it and drops the repeat instead of double-sending.
+        function rearm() {
+            sending = false;
+            clearTimeout(rearmTimer);
+            if (btn) btn.disabled = false;
+        }
+
+        function composerIsEmpty() {
+            const body = (document.getElementById('messageBodyInput') || {}).value || '';
+            if (body.trim()) return false;
+            return !['imageFileInput', 'docFileInput', 'audioFileInput'].some(id => {
+                const f = document.getElementById(id);
+                return f && f.files && f.files.length;
+            });
+        }
+
+        tokenField.value = newToken();
+
+        form.addEventListener('submit', function (event) {
+            if (sending || composerIsEmpty()) {
+                event.preventDefault();
+                return;
+            }
+            sending = true;
+            if (btn) btn.disabled = true;
+            // The page normally navigates away long before this fires. It only
+            // matters when the send never completes (offline, dead server) —
+            // then the composer comes back rather than staying dead forever.
+            rearmTimer = setTimeout(rearm, 15000);
+        });
+
+        // Back-button restores from bfcache with the old disabled button.
+        window.addEventListener('pageshow', function (e) {
+            if (e.persisted) {
+                rearm();
+                tokenField.value = newToken();
+            }
+        });
     })();
 
     const AI_STATES = ['on', 'off', 'paused', 'unavailable'];
