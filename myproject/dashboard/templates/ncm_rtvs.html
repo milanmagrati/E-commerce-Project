@@ -3763,7 +3763,7 @@
     };
 
     // ==================== BACKGROUND NCM SYNC ====================
-    // Runs on page load + polls every 30 seconds for real-time updates
+    // Runs on page load + polls every 30 minutes (see the setInterval below)
     var _syncInProgress = false;
     var _manualSyncActive = false;  // Prevent background sync during manual sync
 
@@ -3828,8 +3828,20 @@
         })
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                if (data.success && data.comments_updated > 0) {
-                    showToast(data.comments_updated + ' date(s) updated', 'success');
+                if (!data.success) { return; }
+                // The backend batch is a repair queue: most of its writes are us
+                // backfilling our own missing/legacy dates, or refreshing comment
+                // text, against NCM data that never moved. Only call something a
+                // date update when an already-trusted date actually changed —
+                // otherwise this reads as "NCM changed" when nothing did.
+                var dates = data.dates_updated || 0;
+                var records = data.records_synced || 0;
+                if (dates > 0) {
+                    showToast(dates + ' date(s) updated from NCM', 'success');
+                } else if (records > 0) {
+                    showToast(records + ' record(s) synced from NCM', 'success');
+                }
+                if (dates > 0 || records > 0) {
                     setTimeout(function () { location.reload(); }, 1500);
                 }
             })

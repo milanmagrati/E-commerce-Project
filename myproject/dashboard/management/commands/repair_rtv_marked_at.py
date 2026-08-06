@@ -124,10 +124,11 @@ class Command(BaseCommand):
 
             before = rtv.rtv_marked_at
             try:
-                changed, resolved = sync_rtv_from_ncm_comments(
+                result = sync_rtv_from_ncm_comments(
                     service, rtv.order_id,
                     use_status_fallback=options['use_status_fallback'],
                 )
+                resolved = result.resolved
             except Exception as exc:  # noqa: BLE001 - one bad row must not abort the run
                 message = str(exc)
                 if '429' in message:

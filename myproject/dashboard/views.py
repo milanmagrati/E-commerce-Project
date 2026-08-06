@@ -11,6 +11,7 @@ from django.db.models.functions import TruncDate, Cast, Substr
 from django.http import JsonResponse, HttpResponse, Http404, HttpResponseRedirect
 from django.core.paginator import Paginator
 from datetime import datetime, timedelta
+from typing import NamedTuple
 import pytz
 import re
 import requests
@@ -20715,6 +20716,26 @@ def get_rtv_followups(request, rtv_id):
     return JsonResponse({'success': True, 'followups': data})
 
 
+class RTVCommentSync(NamedTuple):
+    """What one sync_rtv_from_ncm_comments call actually did.
+
+    Split out because callers used to get a single `changed` bool covering
+    three unrelated writes, and the RTV page reported all of them to the user
+    as "date(s) updated" — including comment-text refreshes and first-time
+    backfills of dates NCM had never changed. See ncm_rtvs_sync.
+    """
+
+    resolved: bool          # NCM answered at all
+    fields_changed: bool    # comment and/or vendor_return refreshed
+    date_backfilled: bool   # date was missing/untrusted, now resolved (a repair)
+    date_changed: bool      # an already-trusted date moved (real NCM-side change)
+
+    @property
+    def changed(self) -> bool:
+        """Any local write at all — the old single-bool meaning."""
+        return self.fields_changed or self.date_backfilled or self.date_changed
+
+
 def sync_rtv_from_ncm_comments(ncm_service, order_id, use_status_fallback=False):
     """Refresh one RTVOrder's date/comment/vendor_return from NCM.
 
@@ -20728,33 +20749,33 @@ def sync_rtv_from_ncm_comments(ncm_service, order_id, use_status_fallback=False)
     later real comment can still replace it.
 
     Returns:
-        (changed: bool, resolved: bool) — resolved is False when NCM couldn't
-        be reached, in which case rtv_marked_at_checked_at is left alone so the
-        row stays at the front of the repair queue.
+        RTVCommentSync — .resolved is False when NCM couldn't be reached, in
+        which case rtv_marked_at_checked_at is left alone so the row stays at
+        the front of the repair queue.
     """
     from dashboard.models import RTVOrder
     from services.ncm_service import NCMService
 
     rtv = RTVOrder.objects.filter(order_id=order_id).first()
     if not rtv:
-        return (False, False)
+        return RTVCommentSync(False, False, False, False)
 
     cresult = ncm_service.get_order_comments(order_id)
     if not cresult.get('success'):
-        return (False, False)
+        return RTVCommentSync(False, False, False, False)
 
     found = NCMService.extract_rtv_marked_at(cresult.get('data') or [])
 
-    changed = False
+    fields_changed = False
     simple_fields = []
     if found['comment'] and rtv.comment != found['comment']:
         rtv.comment = found['comment']
         simple_fields.append('comment')
-        changed = True
+        fields_changed = True
     if found['vendor_return'] is not None and rtv.vendor_return != found['vendor_return']:
         rtv.vendor_return = found['vendor_return']
         simple_fields.append('vendor_return')
-        changed = True
+        fields_changed = True
 
     marked_at, source = found['marked_at'], found['source']
     if marked_at is None and use_status_fallback:
@@ -20764,15 +20785,29 @@ def sync_rtv_from_ncm_comments(ncm_service, order_id, use_status_fallback=False)
             entries = data if isinstance(data, list) else [data]
             marked_at, source = NCMService.extract_return_step_time(entries)
 
+    # Snapshot before the write: a row whose date was missing or came from an
+    # untrusted source is being *repaired* to a value NCM has held all along,
+    # not told that NCM changed. Only a move on an already-trusted date is a
+    # genuine change worth surfacing.
+    was_trusted = (
+        rtv.rtv_marked_at is not None
+        and rtv.rtv_marked_at_source in RTVOrder.TRUSTED_SOURCES
+    )
+
     # apply_rtv_marked_at always stamps checked_at, so the row leaves the front
     # of the repair queue even when NCM had no date for us.
-    date_changed = NCMService.apply_rtv_marked_at(rtv, marked_at, source, save=False)
+    date_written = NCMService.apply_rtv_marked_at(rtv, marked_at, source, save=False)
     rtv.save(update_fields=simple_fields + [
         'rtv_marked_at_checked_at',
-        *(['rtv_marked_at', 'rtv_marked_at_source'] if date_changed else []),
+        *(['rtv_marked_at', 'rtv_marked_at_source'] if date_written else []),
     ])
 
-    return (changed or date_changed, True)
+    return RTVCommentSync(
+        resolved=True,
+        fields_changed=fields_changed,
+        date_backfilled=date_written and not was_trusted,
+        date_changed=date_written and was_trusted,
+    )
 
 
 def rtv_needs_date_verification(queryset):
@@ -20788,6 +20823,58 @@ def rtv_needs_date_verification(queryset):
         Q(rtv_marked_at__isnull=True)
         | ~Q(rtv_marked_at_source__in=RTVOrder.TRUSTED_SOURCES)
     ).order_by(F('rtv_marked_at_checked_at').asc(nulls_first=True), 'id')
+
+
+# NCM has no documented rate limit and NCMService._make_request has no 429
+# backoff, so the only thing keeping an interactive sync under it is this cap
+# plus the 1s spacing in ncm_rtvs_sync. It is a budget for the whole request,
+# not per portal — three active configs used to mean 3x this many calls.
+RTV_COMMENT_SYNC_BATCH = 6
+
+
+def select_rtv_comment_sync_batch(config_ids, limit=RTV_COMMENT_SYNC_BATCH):
+    """Pick which RTVs to re-ask NCM about this sync, neediest first.
+
+    Three tiers, in priority order:
+      1. date missing or from an untrusted source — the repair backlog
+      2. no comment stored at all
+      3. any active RTV, to notice an unmark -> re-mark
+
+    Every tier is ordered by rtv_marked_at_checked_at (nulls first) so a
+    bounded batch works through its backlog. Tier 2 used to rely on the
+    model's default ordering (-rtv_marked_at, -created_at), which meant the
+    same three rows were re-picked on every single sync forever: NCM has no
+    comment for them, so nothing ever moved them off the top, so the other
+    ~185 empty-comment rows were never checked at all and half the request's
+    rate-limit budget was spent re-fetching rows that could not change.
+
+    Returns:
+        list of (order_id, api_config_id), at most `limit` long, no repeats.
+    """
+    from dashboard.models import RTVOrder
+
+    base = RTVOrder.objects.filter(api_config_id__in=config_ids)
+    by_staleness = (F('rtv_marked_at_checked_at').asc(nulls_first=True), 'id')
+
+    tiers = (
+        rtv_needs_date_verification(base),           # already ordered by staleness
+        base.filter(comment='').order_by(*by_staleness),
+        base.filter(vendor_return=True).order_by(*by_staleness),
+    )
+
+    picked = []
+    seen = set()
+    for tier in tiers:
+        if len(picked) >= limit:
+            break
+        rows = tier.exclude(order_id__in=seen).values_list(
+            'order_id', 'api_config_id'
+        )[:limit - len(picked)]
+        for order_id, cfg_id in rows:
+            picked.append((order_id, cfg_id))
+            seen.add(order_id)
+
+    return picked
 
 
 @login_required
@@ -21108,13 +21195,15 @@ def ncm_rtvs_sync(request):
     """AJAX endpoint — sync RTVs from NCM API into local DB.
 
     Supports two modes via ?mode= param:
-      - mode=orders (default): Parallel fetch of ALL pages using threads — fast.
-      - mode=comments: Fetch missing comments from NCM for orders in DB.
+      - mode=orders (default): status-based parallel fetch of active RTVs.
+      - mode=comments: re-ask NCM about a small batch of existing RTVs to
+        repair/refresh their date, comment and vendor_return flag. This is a
+        bounded repair queue, not a change feed — see
+        select_rtv_comment_sync_batch for how the batch is chosen and
+        RTVCommentSync for what the returned counts distinguish.
 
-    Speed control via ?full= param (mode=orders only):
-      - full=0 (default): Quick incremental parallel scan — first 30 pages only,
-        catches new RTVs created today. ~1-2s.
-      - full=1: Full parallel scan — ALL pages with 300 workers. ~15s.
+    ?full= is accepted for backward compatibility but no longer changes
+    anything: the status-based fetch already covers what the old full scan did.
     """
     from services.ncm_service import NCMService
     from dashboard.models import RTVOrder, LogisticsAPIConfig
@@ -21124,7 +21213,6 @@ def ncm_rtvs_sync(request):
 
     api_config_id = request.GET.get('api_config_id', '').strip()
     mode = request.GET.get('mode', 'orders').strip()
-    full_sync = request.GET.get('full', '0').strip() == '1'
     chosen_config = None
     if api_config_id:
         try:
@@ -21139,57 +21227,47 @@ def ncm_rtvs_sync(request):
         configs = [chosen_config] if chosen_config else list(
             LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
         )
-        comments_updated = 0
-        for cfg in configs:
+        comments_updated = 0   # any local write (legacy key — see response below)
+        dates_updated = 0      # an already-trusted rtv_marked_at actually moved
+        records_synced = 0     # comment/vendor_return refresh, or a date backfill
+
+        batch = select_rtv_comment_sync_batch([c.id for c in configs])
+        services = {}
+        for i, (oid, cfg_id) in enumerate(batch):
+            if i > 0:
+                time.sleep(1.0)  # spacing between sequential NCM requests
             try:
-                ncm_service = NCMService(api_config_id=cfg.id)
-                # Priority 1: date missing or from an untrusted source
-                #   (includes rows still carrying the old created_date fallback)
-                # Priority 2: orders with no comment at all
-                # Priority 3: least-recently-checked active RTVs, to notice
-                #   unmark -> re-mark. This used to be order_by('?'), which
-                #   never guaranteed progress; checked_at ordering does.
-                # Take up to 6 total per sync call to stay within rate limits.
-                priority_ids = list(
-                    rtv_needs_date_verification(
-                        RTVOrder.objects.filter(api_config=cfg)
-                    ).values_list('order_id', flat=True)[:3]
-                )
-                fallback_ids = list(
-                    RTVOrder.objects.filter(
-                        comment='', api_config=cfg
-                    ).exclude(order_id__in=priority_ids).values_list('order_id', flat=True)[:3]
-                )
-
-                remaining = 6 - (len(priority_ids) + len(fallback_ids))
-                refresh_ids = []
-                if remaining > 0:
-                    refresh_ids = list(
-                        RTVOrder.objects.filter(
-                            vendor_return=True, api_config=cfg
-                        ).exclude(
-                            order_id__in=priority_ids + fallback_ids
-                        ).order_by(
-                            F('rtv_marked_at_checked_at').asc(nulls_first=True), 'id'
-                        ).values_list('order_id', flat=True)[:remaining]
-                    )
-
-                no_comment_ids = priority_ids + fallback_ids + refresh_ids
-                for i, oid in enumerate(no_comment_ids):
-                    if i > 0:
-                        time.sleep(1.0)  # 1-second delay between sequential requests
-                    try:
-                        changed, _resolved = sync_rtv_from_ncm_comments(ncm_service, oid)
-                        if changed:
-                            comments_updated += 1
-                    except Exception:
-                        pass
+                if cfg_id not in services:
+                    services[cfg_id] = NCMService(api_config_id=cfg_id)
+                result = sync_rtv_from_ncm_comments(services[cfg_id], oid)
             except Exception:
+                # One unreachable order must not abort the batch, but swallowing
+                # this silently is why "nothing updates" was impossible to
+                # diagnose from the outside.
+                logger.warning(
+                    "NCM RTV comment sync failed for order %s (config %s)",
+                    oid, cfg_id, exc_info=True,
+                )
                 continue
 
+            if result.changed:
+                comments_updated += 1
+            if result.date_changed:
+                dates_updated += 1
+            elif result.fields_changed or result.date_backfilled:
+                records_synced += 1
+
+        # This batch is a bounded repair queue (rtv_needs_date_verification),
+        # so most hits are the app fixing its own missing/legacy dates against
+        # NCM data that never moved. comments_updated lumps all three write
+        # kinds together and is kept only for the older possible_redirection
+        # caller; the RTV page uses the split counts so it stops telling the
+        # user "date(s) updated" when no date on NCM's side changed.
         return JsonResponse({
             'success': True,
             'comments_updated': comments_updated,
+            'dates_updated': dates_updated,
+            'records_synced': records_synced,
         })
 
     # ── MODE: ORDERS ───────────────────────────────────────────
@@ -21213,14 +21291,11 @@ def ncm_rtvs_sync(request):
             try:
                 ncm_service = NCMService(api_config_id=cfg.id)
 
-                if full_sync:
-                    # Full sync: status-based fetch + recent pages scan
-                    # Catches all active RTVs + recently marked ones in ~7 parallel API calls
-                    api_result = ncm_service.get_vendor_rtvs_by_status(include_recent=True)
-                else:
-                    # Quick incremental sync: status-based fetch only (~4-7 API calls, <2s)
-                    # Catches ALL active RTVs regardless of creation date
-                    api_result = ncm_service.get_vendor_rtvs_by_status(include_recent=True)
+                # Status-based fetch already returns ALL active RTVs plus
+                # recently marked ones in ~4-7 parallel calls, so the old
+                # full=1 "scan every page" path had nothing left to add — both
+                # branches had become the same call.
+                api_result = ncm_service.get_vendor_rtvs_by_status(include_recent=True)
 
                 if not api_result['success']:
                     logger.warning(f"NCM RTV sync: API call failed for config {cfg.id} ({cfg.api_name})")
