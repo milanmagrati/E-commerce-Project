@@ -125,7 +125,7 @@
         </div>
         <p class="text-muted mt-1 mb-0">
             NCM RTV (Return to Vendor) orders that can be redirected to a different customer/branch via NCM Redirect API instead of returning to warehouse.
-            Orders already returned to vendor or delivered are automatically excluded.
+            Orders already returned to vendor, delivered, or already redirected are automatically excluded — redirected ones move to <a href="{% url 'redirect_orders_list' %}">Redirect Orders</a>.
             {% if linked_count %}<span class="badge bg-info text-dark ms-1">{{ linked_count }} linked to local orders</span>{% endif %}
         </p>
     </div>
@@ -166,6 +166,9 @@
                     <div class="flex-grow-1">
                         <h6 class="text-muted mb-1 text-uppercase stat-label">Already Redirected</h6>
                         <h3 class="text-success mb-0 stat-value">{{ already_redirected }}</h3>
+                        <a href="{% url 'redirect_orders_list' %}" class="small text-decoration-none">
+                            Moved to Redirect Orders <i class="fas fa-arrow-right ms-1"></i>
+                        </a>
                     </div>
                     <div class="stat-icon text-success"><i class="fas fa-check-circle fa-2x"></i></div>
                 </div>
@@ -193,14 +196,6 @@
                     {% for config in ncm_api_configs %}
                         <option value="{{ config.id }}" {% if api_config_filter == config.id|stringformat:"d" %}selected{% endif %}>{{ config.api_name }}</option>
                     {% endfor %}
-                </select>
-            </div>
-            <div class="col-lg-2 col-md-3">
-                <label class="form-label small text-muted mb-1">Redirection Status</label>
-                <select name="redirection" class="form-select form-select-sm">
-                    <option value="">All</option>
-                    <option value="pending" {% if redirection_filter == 'pending' %}selected{% endif %}>Pending</option>
-                    <option value="redirected" {% if redirection_filter == 'redirected' %}selected{% endif %}>Redirected</option>
                 </select>
             </div>
             <div class="col-lg-2 col-md-3">
@@ -350,7 +345,7 @@
                             </div>
                         </td>
                     </tr>
-                    {% if entry.matching_orders %}
+                    {% if entry.matching_rows %}
                     <tr id="matches-row-{{ entry.ncm_order_id }}" class="matches-detail-row" style="display:none;">
                         <td colspan="7" class="p-0">
                             <div class="p-2 border-start border-4 border-info" style="background:#f0f8ff;">
@@ -358,7 +353,7 @@
                                     <i class="fas fa-bullseye me-1"></i>{{ entry.matching_count }} Matching New Order{{ entry.matching_count|pluralize }} — same branch
                                     <span class="text-muted fw-normal ms-1">(Branch: {{ entry.rtv.to_branch }})</span>
                                     <span class="badge bg-success ms-2">
-                                        <i class="fas fa-check me-1"></i>Product matched
+                                        <i class="fas fa-check me-1"></i>Products &amp; quantities match exactly
                                     </span>
                                     <button type="button" class="btn-close btn-sm float-end" onclick="toggleMatches({{ entry.ncm_order_id }})" style="font-size:0.6rem;"></button>
                                 </div>
@@ -386,14 +381,15 @@
                                                 <th class="hide-sm">Phone</th>
                                                 <th class="hide-md">Branch</th>
                                                 <th class="hide-sm">Order Products</th>
-                                                {% if entry.rtv_product_ref_display %}<th class="hide-md">RTV Product Ref</th>{% endif %}
+                                                <th class="hide-md">RTV Product Ref</th>
                                                 <th class="hide-sm">Status</th>
                                                 <th class="text-end">Total</th>
                                                 <th class="text-center">Use Customer</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {% for match in entry.matching_orders %}
+                                            {% for row in entry.matching_rows %}
+                                            {% with match=row.order %}
                                             <tr>
                                                 <td>
                                                     <a href="{% url 'order_detail' match.id %}" target="_blank" class="text-decoration-none fw-bold text-primary">#{{ match.order_number }}</a>
@@ -401,18 +397,18 @@
                                                 <td><strong>{{ match.customer_name }}</strong></td>
                                                 <td class="hide-sm text-muted">{{ match.customer_phone }}</td>
                                                 <td class="hide-md"><span class="badge bg-secondary">{{ match.branch_city }}</span></td>
+                                                {# Both product columns iterate row.products so each RTV reference
+                                                   prints on the same line as the order item it matched. #}
                                                 <td class="hide-sm">
-                                                    {% for item in match.items.all %}
-                                                        <div class="text-truncate" style="max-width:220px;" title="{{ item.product_name }} ×{{ item.quantity }}">{{ item.product_name }} &times;{{ item.quantity }}</div>
+                                                    {% for p in row.products %}
+                                                        <div class="text-truncate" style="max-width:220px;" title="{{ p.item.product_name }} ×{{ p.item.quantity }}">{{ p.item.product_name }} &times;{{ p.item.quantity }}</div>
                                                     {% endfor %}
                                                 </td>
-                                                {% if entry.rtv_product_ref_display %}
                                                 <td class="small hide-md" style="max-width:160px;">
-                                                    {% for pname in entry.rtv_product_ref_display %}
-                                                        <div class="text-truncate text-dark" title="{{ pname }}">{{ pname }}</div>
+                                                    {% for p in row.products %}
+                                                        <div class="text-truncate text-dark" title="{{ p.rtv_ref }}">{{ p.rtv_ref|default:"—" }}</div>
                                                     {% endfor %}
                                                 </td>
-                                                {% endif %}
                                                 <td class="hide-sm"><span class="badge bg-success">{{ match.order_status }}</span></td>
                                                 <td class="text-end fw-bold">Rs.{{ match.total_amount }}</td>
                                                 <td class="text-center">
@@ -433,6 +429,7 @@
                                                     </button>
                                                 </td>
                                             </tr>
+                                            {% endwith %}
                                             {% endfor %}
                                         </tbody>
                                     </table>
@@ -465,19 +462,19 @@
 <nav aria-label="Page navigation">
     <ul class="pagination justify-content-center">
         {% if rtvs_page.has_previous %}
-            <li class="page-item"><a class="page-link" href="?page=1&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-backward"></i></a></li>
-            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.previous_page_number }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-left"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page=1&search={{ search_query|urlencode }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-backward"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.previous_page_number }}&search={{ search_query|urlencode }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-left"></i></a></li>
         {% endif %}
         {% for num in rtvs_page.paginator.page_range %}
             {% if num == rtvs_page.number %}
                 <li class="page-item active"><span class="page-link">{{ num }}</span></li>
             {% elif num > rtvs_page.number|add:'-3' and num < rtvs_page.number|add:'3' %}
-                <li class="page-item"><a class="page-link" href="?page={{ num }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ num }}&search={{ search_query|urlencode }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a></li>
             {% endif %}
         {% endfor %}
         {% if rtvs_page.has_next %}
-            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.next_page_number }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-right"></i></a></li>
-            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.paginator.num_pages }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-forward"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.next_page_number }}&search={{ search_query|urlencode }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-right"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.paginator.num_pages }}&search={{ search_query|urlencode }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-forward"></i></a></li>
         {% endif %}
     </ul>
 </nav>

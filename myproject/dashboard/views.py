@@ -5097,57 +5097,87 @@ def _parse_rtv_description_items(raw):
     return items
 
 
-def _product_matches(rtv_desc_raw, order_items):
-    """Return True if the RTV product_description matches at least one order item
-    by normalised product name AND matching quantity.
+def _align_rtv_items_to_order(rtv_desc_raw, order_items):
+    """Pair every product in an RTV package description with a distinct order item.
 
-    A match requires the product name to align (exact or containment) AND,
-    whenever the RTV description carries explicit quantity info, the quantity
-    to be identical. A name-only match with a differing quantity is NOT
-    reported as matched — the physically-returned package's quantity would
-    not match what the candidate order needs, so redirecting it would ship
-    the wrong quantity to the new customer.
+    Returns a list the same length as ``order_items`` holding the RTV's raw
+    product token for each item (so the "Order Products" and "RTV Product Ref"
+    columns can be rendered line-for-line), or ``None`` when the two sides do
+    not correspond exactly.
+
+    "Exactly" is deliberate and is the whole point of this function: a redirected
+    package ships as-is, so the candidate order must want *every* product in it,
+    in the same quantity, and nothing besides. The previous rule — match if ANY
+    RTV product matched ANY order item — surfaced candidates whose Order Products
+    column listed one item while the RTV Product Ref column listed that item plus
+    others that were never coming, i.e. a redirect that would under-ship.
+
+    Name comparison stays tolerant (exact normalised match, else containment for
+    names of 4+ chars) because NCM's package description is free text; quantity
+    comparison is strict whenever the description carries an explicit quantity.
     """
     rtv_products = _parse_rtv_description_items(rtv_desc_raw)
     if not rtv_products:
-        return False  # empty/unparseable description → caller handles branch-only
+        return None  # empty/unparseable description → caller handles branch-only
 
-    for item in order_items:
-        if not item.product_name:
-            continue
+    # (index into order_items, normalised name, quantity) for items that carry a
+    # usable name. Indices are kept so the returned refs line up with the caller's
+    # original item list even when an unnamed item was skipped here.
+    usable = []
+    for idx, item in enumerate(order_items):
         item_norm, _item_qty_from_name = _normalize_product_name(item.product_name)
-        if not item_norm:
-            continue
-        item_qty = item.quantity or 1  # actual order item quantity
+        if item_norm:
+            usable.append((idx, item_norm, item.quantity or 1))
 
-        for rp in rtv_products:
-            rtv_norm, rtv_qty = rp['name'], rp['qty']
-            if not rtv_norm:
+    # One product on the RTV side must correspond to exactly one on the order
+    # side — differing counts mean the package and the order aren't the same set.
+    if not usable or len(usable) != len(rtv_products):
+        return None
+
+    refs = [None] * len(order_items)
+    used_items = set()
+    used_rtv = set()
+    # Exact-name pass before the containment pass so a loose match can't consume
+    # the item an exact match needed (e.g. RTV "Serum" claiming the order's
+    # "Hair Growth Serum" row and leaving RTV "Hair Growth Serum" unpaired).
+    for exact_only in (True, False):
+        for r_idx, rp in enumerate(rtv_products):
+            if r_idx in used_rtv:
                 continue
+            for i_idx, (item_pos, item_norm, item_qty) in enumerate(usable):
+                if i_idx in used_items:
+                    continue
+                # qty 0 means the description carried no quantity — nothing to
+                # contradict, so the name alone decides.
+                if rp['qty'] and rp['qty'] != item_qty:
+                    continue
+                if rp['name'] != item_norm:
+                    if exact_only:
+                        continue
+                    if not (len(rp['name']) >= 4 and len(item_norm) >= 4 and (
+                            rp['name'] in item_norm or item_norm in rp['name'])):
+                        continue
+                refs[item_pos] = rp['raw']
+                used_items.add(i_idx)
+                used_rtv.add(r_idx)
+                break
 
-            # Name comparison: exact normalised OR containment (min 4 chars to avoid false positives)
-            exact_name = (rtv_norm == item_norm)
-            contained = False
-            if len(rtv_norm) >= 4 and len(item_norm) >= 4:
-                contained = (rtv_norm in item_norm) or (item_norm in rtv_norm)
+    return refs if len(used_rtv) == len(rtv_products) else None
 
-            if not (exact_name or contained):
-                continue
 
-            # Quantity comparison (only when RTV description has explicit qty)
-            if rtv_qty > 0:
-                if rtv_qty == item_qty:
-                    return True
-                # Name matches but quantity differs — not a real match.
-                continue
-            # No qty in RTV description — name match is sufficient
-            return True
-
-    return False
+def _product_matches(rtv_desc_raw, order_items):
+    """Return True if the RTV package and the order's items correspond exactly
+    (same products, same quantities, nothing extra on either side)."""
+    return _align_rtv_items_to_order(rtv_desc_raw, order_items) is not None
 
 
 def _iter_matching_orders(match_sources, branch_orders, exclude_ids=frozenset()):
-    """Yield confirmed orders in the RTV's branch whose items match its products.
+    """Yield ``(order, rtv_refs)`` for confirmed orders in the RTV's branch whose
+    items correspond exactly to its products.
+
+    ``rtv_refs`` is the per-item alignment from _align_rtv_items_to_order(), so
+    callers can render the RTV reference beside the order item it matched
+    instead of repeating the whole package description on every row.
 
     Shared by possible_redirection_list's two passes — the pre-filter that
     decides which RTVs are listed at all, and the per-entry build that renders
@@ -5165,8 +5195,12 @@ def _iter_matching_orders(match_sources, branch_orders, exclude_ids=frozenset())
     for order in branch_orders:
         if order.id in exclude_ids:
             continue
-        if any(_product_matches(src, order.items.all()) for src in match_sources):
-            yield order
+        order_items = list(order.items.all())
+        for src in match_sources:
+            refs = _align_rtv_items_to_order(src, order_items)
+            if refs is not None:
+                yield order, refs
+                break
 
 
 @login_required
@@ -5229,7 +5263,6 @@ def possible_redirection_list(request):
     search_query = request.GET.get('search', '')
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
-    redirection_filter = request.GET.get('redirection', '')
     api_config_filter = request.GET.get('api_config', '')
 
     # Apply filters on RTVOrder
@@ -5287,6 +5320,11 @@ def possible_redirection_list(request):
     # when the RTV's product_description is empty).
     _all_ncm_ids_for_prefetch = {row[0] for row in _all_rtv_tuples}
     _rtv_local_item_names = {}  # ncm_order_id → list of product name strings
+    # ncm_order_id → local Order.id, so an RTV is never offered its OWN order as
+    # a redirect target. The returned package trivially "matches" the order it
+    # came from (same items, same branch), and if that order still reads as
+    # confirmed locally the page would suggest redirecting it to itself.
+    _rtv_own_local_order_id = {}
     if _all_ncm_ids_for_prefetch:
         for _lo in Order.objects.filter(
             is_deleted=False,
@@ -5294,6 +5332,7 @@ def possible_redirection_list(request):
         ).prefetch_related(
             _Pf('items', queryset=OrderItem.objects.only('order_id', 'product_name', 'quantity'))
         ).only('id', 'ncm_order_id'):
+            _rtv_own_local_order_id[_lo.ncm_order_id] = _lo.id
             _names = []
             for _it in _lo.items.all():
                 if _it.product_name:
@@ -5354,11 +5393,22 @@ def possible_redirection_list(request):
             if not _branch_orders:
                 continue
             _desc = (_pdesc or '').strip()
-            # Build match sources: prefer RTV product_description, fallback to local order names
-            _match_srcs = [_desc] if _desc else _rtv_local_item_names.get(_oid, [])
+            # Build match sources: prefer RTV product_description, fallback to the
+            # linked local order's item names. The fallback names are joined into
+            # ONE package string (comma-separated, exactly how NCM composes
+            # product_description) — passing them as separate sources would let a
+            # single item stand in for the whole package and re-introduce the
+            # partial matching this page is not supposed to do.
+            _local_names_for_match = _rtv_local_item_names.get(_oid, [])
+            _match_srcs = [_desc] if _desc else (
+                [', '.join(_local_names_for_match)] if _local_names_for_match else []
+            )
             # No product info anywhere — branch-only match is NOT sufficient.
             # Both branch AND product must match for redirection to make sense.
-            if next(_iter_matching_orders(_match_srcs, _branch_orders), None) is not None:
+            _own_id = _rtv_own_local_order_id.get(_oid)
+            _self_exclude = {_own_id} if _own_id else frozenset()
+            if next(_iter_matching_orders(_match_srcs, _branch_orders,
+                                          exclude_ids=_self_exclude), None) is not None:
                 _has_match_ids.add(_oid)
         rtvs = rtvs.filter(order_id__in=_has_match_ids) if _has_match_ids else rtvs.none()
     else:
@@ -5376,34 +5426,51 @@ def possible_redirection_list(request):
         ).select_related('customer', 'branch').only(
             'id', 'order_number', 'customer_name', 'customer_phone',
             'shipping_address', 'branch_city', 'total_amount',
-            'ncm_order_id', 'ncm_status', 'barcode',
+            'ncm_order_id', 'ncm_status', 'order_status', 'barcode',
             'customer_id', 'branch_id',
         ):
             linked_orders[order.ncm_order_id] = order
 
-    # Stats (before redirection filter)
+    # Stats (counted over every candidate, including the ones excluded below)
     total_redirectable = len(all_rtv_ncm_ids)  # same as rtvs.count() but avoids extra DB query
 
-    # Check redirection status from linked order OR RTVOrder comment tag
+    # Check redirection status from linked order OR RTVOrder comment tag.
+    # ncm_status alone is not enough: NCM status polling rewrites that field, so
+    # a genuinely redirected order can silently lose the marker and reappear here
+    # as a fresh candidate. order_status and the 'redirected' activity log are
+    # local and permanent — and the activity log is exactly what Redirect Orders
+    # keys off, so anything listed there is guaranteed to be absent here.
     redirected_from_local = set(
-        ncm_id for ncm_id in all_rtv_ncm_ids
-        if ncm_id in linked_orders and (linked_orders[ncm_id].ncm_status or '').lower() == 'redirected'
+        ncm_id for ncm_id, _lo in linked_orders.items()
+        if (_lo.ncm_status or '').lower() == 'redirected'
+        or (_lo.order_status or '').lower() == 'redirected'
+    )
+    _redirect_logged_order_ids = set(
+        OrderActivityLog.objects.filter(
+            action_type='redirected',
+            order_id__in=[_lo.id for _lo in linked_orders.values()],
+        ).values_list('order_id', flat=True)
+    )
+    redirected_from_activity = set(
+        ncm_id for ncm_id, _lo in linked_orders.items()
+        if _lo.id in _redirect_logged_order_ids
     )
     redirected_from_comment = set(
         rtvs.filter(comment__contains='[REDIRECTED]').values_list('order_id', flat=True)
     )
-    all_redirected_ids = redirected_from_local | redirected_from_comment
-
-    def _is_redirected(ncm_id, rtv_obj=None):
-        return ncm_id in all_redirected_ids
+    all_redirected_ids = (
+        redirected_from_local | redirected_from_activity | redirected_from_comment
+    )
 
     already_redirected = len(all_redirected_ids)
     pending_redirection = total_redirectable - already_redirected
 
-    # Redirection status filter (applied after stats)
-    if redirection_filter == 'redirected':
-        rtvs = rtvs.filter(order_id__in=all_redirected_ids)
-    elif redirection_filter == 'pending':
+    # An RTV that has already been redirected is no longer a redirection
+    # *candidate* — the package has been re-dispatched to a new customer and the
+    # order belongs to the Redirect Orders page from that point on. It used to
+    # stay listed here (only a filter could hide it), which invited redirecting
+    # the same package twice.
+    if all_redirected_ids:
         rtvs = rtvs.exclude(order_id__in=all_redirected_ids)
 
     # Pagination
@@ -5438,13 +5505,15 @@ def possible_redirection_list(request):
             'branch_city': local_order.branch_city if local_order else '',
             'order_number': local_order.order_number if local_order else '',
             'total_amount': local_order.total_amount if local_order else None,
-            'ncm_status': 'redirected' if _is_redirected(rtv.order_id, rtv) else ((local_order.ncm_status or '') if local_order else ''),
+            # Redirected RTVs are excluded above, so this only ever reflects the
+            # linked order's live NCM status.
+            'ncm_status': (local_order.ncm_status or '') if local_order else '',
             'local_order_id': local_order.id if local_order else None,
             'last_status': rtv.last_status or '',
         }
         rtv_entries.append(entry)
 
-    # ── Per-entry matching_orders: reuse _confirmed_branch_map (no extra DB query) ──
+    # ── Per-entry matching_rows: reuse _confirmed_branch_map (no extra DB query) ──
     # Track orders already claimed by an earlier (more recent) RTV entry on
     # this page so the same local order isn't suggested under multiple RTV
     # blocks at once.
@@ -5458,7 +5527,12 @@ def possible_redirection_list(request):
         _local_names = _rtv_local_item_names.get(_ncm_id, [])
         entry['local_order_product_names'] = _local_names
 
-        _match_sources = [_desc] if _desc else _local_names
+        # The local-name fallback is joined into one package string for the same
+        # reason as in the pre-filter above — the names describe a single package,
+        # not a set of independently acceptable alternatives.
+        _match_sources = [_desc] if _desc else (
+            [', '.join(_local_names)] if _local_names else []
+        )
 
         # RTV Product Ref display must reflect the SAME source used for matching
         # above (previously the template showed local_order_product_names whenever
@@ -5476,12 +5550,32 @@ def possible_redirection_list(request):
             entry['rtv_ref_source_is_local'] = True
 
         # No product info anywhere — branch-only match is NOT sufficient, and
-        # _iter_matching_orders yields nothing for empty sources.
-        _all_matched = list(_iter_matching_orders(_match_sources, _branch_candidates))
-        _matched = [_o for _o in _all_matched if _o.id not in _already_suggested_order_ids]
-        _already_suggested_order_ids.update(_o.id for _o in _matched)
+        # _iter_matching_orders yields nothing for empty sources. The RTV's own
+        # local order is excluded so it can't be suggested as its own target.
+        _own_order_id = _rtv_own_local_order_id.get(_ncm_id)
+        _all_matched = list(_iter_matching_orders(
+            _match_sources, _branch_candidates,
+            exclude_ids={_own_order_id} if _own_order_id else frozenset(),
+        ))
+        _matched = [
+            (_o, _refs) for _o, _refs in _all_matched
+            if _o.id not in _already_suggested_order_ids
+        ]
+        _already_suggested_order_ids.update(_o.id for _o, _ in _matched)
 
-        entry['matching_orders'] = _matched
+        # Rows carry the per-item pairing so the template can print each RTV
+        # product next to the order item it actually matched, instead of
+        # repeating the whole package description against every item.
+        entry['matching_rows'] = [
+            {
+                'order': _o,
+                'products': [
+                    {'item': _it, 'rtv_ref': _ref}
+                    for _it, _ref in zip(_o.items.all(), _refs)
+                ],
+            }
+            for _o, _refs in _matched
+        ]
         entry['matching_count'] = len(_matched)
         # Surfaced in the template so an RTV whose only candidate was claimed by
         # a more recent RTV above doesn't just render as a blank row on a page
@@ -5504,7 +5598,6 @@ def possible_redirection_list(request):
         'pending_redirection': pending_redirection,
         'linked_count': len(linked_orders),
         'search_query': search_query,
-        'redirection_filter': redirection_filter,
         'api_config_filter': api_config_filter,
         'start_date': start_date,
         'end_date': end_date,
@@ -6639,6 +6732,19 @@ def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, 
                 pass
 
             order.save(update_fields=update_fields)
+
+            # Tag the RTV record too, the same way redirect_ncm_order() does.
+            # order.ncm_status is not a durable marker — NCM status polling
+            # rewrites it — and the Possible Redirection page needs a permanent
+            # signal to keep this package off its candidate list.
+            try:
+                _rtv_obj = RTVOrder.objects.get(order_id=order.ncm_order_id)
+                _existing_comment = (_rtv_obj.comment or '').strip()
+                if 'redirected' not in _existing_comment.lower():
+                    _rtv_obj.comment = f'[REDIRECTED] {_existing_comment}'.strip()
+                    _rtv_obj.save(update_fields=['comment'])
+            except RTVOrder.DoesNotExist:
+                pass
 
             # Log the redirect action in the order's activity log
             try:

@@ -143,7 +143,9 @@ orders = [FakeOrder(1, 'Hair Growth Serum', 2), FakeOrder(2, 'Vitamin C', 1)]
 print("\n[TEST 10] _iter_matching_orders behaviour")
 assert list(_iter_matching_orders([], orders)) == [], "FAIL: no product info must yield no matches"
 hit = list(_iter_matching_orders(['Hair Growth Serum x2'], orders))
-assert [o.id for o in hit] == [1], f"FAIL: expected order 1 to match, got {[o.id for o in hit]}"
+assert [o.id for o, _refs in hit] == [1], f"FAIL: expected order 1 to match, got {[o.id for o, _ in hit]}"
+assert hit[0][1] == ['Hair Growth Serum x2'], \
+    f"FAIL: expected the RTV token aligned to the matched item, got {hit[0][1]}"
 excluded = list(_iter_matching_orders(['Hair Growth Serum x2'], orders, exclude_ids={1}))
 assert excluded == [], "FAIL: exclude_ids must suppress already-claimed orders"
 print("PASS")

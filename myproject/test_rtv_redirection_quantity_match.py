@@ -6,9 +6,15 @@ Verifies the RTV-redirection quantity-matching fix in dashboard/views.py:
   - _product_matches() now REQUIRES the RTV's parsed quantity to equal the
     candidate order item's quantity whenever a quantity is present, instead of
     letting an exact product-name match silently override a quantity mismatch.
+  - _align_rtv_items_to_order() requires the package and the order to correspond
+    EXACTLY — every RTV product paired with a distinct order item and no item
+    left over on either side — and returns that pairing so the "Order Products"
+    and "RTV Product Ref" columns can be rendered line-for-line. Matching a mere
+    subset used to list products in RTV Product Ref that the candidate order
+    never contained.
 
-Uses unsaved OrderItem instances (no DB writes) since _product_matches only
-reads .product_name / .quantity attributes.
+Uses unsaved OrderItem instances (no DB writes) since the matchers only read
+.product_name / .quantity attributes.
 """
 import sys, os
 sys.path.append('.')
@@ -17,7 +23,11 @@ import django
 django.setup()
 
 from dashboard.models import OrderItem
-from dashboard.views import _parse_rtv_description_items, _product_matches
+from dashboard.views import (
+    _align_rtv_items_to_order,
+    _parse_rtv_description_items,
+    _product_matches,
+)
 
 passed = 0
 failed = 0
@@ -76,18 +86,64 @@ check("matching quantity (both 1) is correctly ACCEPTED",
 
 print()
 print("=" * 70)
-print("TEST 3: Multi-product RTV vs multi-item order")
+print("TEST 3: Multi-product RTV vs multi-item order — the package and the order")
+print("  must correspond EXACTLY (every product, every quantity, nothing extra).")
 print("=" * 70)
 
 rtv_desc_multi = "2x Hair Growth Serum, 1x Vitamin C"
+
 order_items_multi = [item("Vitamin C", 1), item("Hair Growth Serum", 5)]
-check("second product (qty 1) matches Vitamin C even though first product "
-      "(qty 5 required vs 2 available) doesn't",
-      _product_matches(rtv_desc_multi, order_items_multi) is True)
+check("Vitamin C lines up but Hair Growth Serum's qty doesn't -> rejected "
+      "(a partial match would ship 2 serums to an order wanting 5)",
+      _product_matches(rtv_desc_multi, order_items_multi) is False)
+
+order_items_exact = [item("Vitamin C", 1), item("Hair Growth Serum", 2)]
+check("every product and quantity lines up -> accepted",
+      _product_matches(rtv_desc_multi, order_items_exact) is True)
 
 order_items_no_match = [item("Hair Growth Serum", 5), item("Vitamin C", 9)]
 check("no product/qty combination matches -> rejected",
       _product_matches(rtv_desc_multi, order_items_no_match) is False)
+
+print()
+print("=" * 70)
+print("TEST 3b: The bug from the screenshot — RTV Product Ref listed a product")
+print("  ('Hair Growth Serum') the candidate order never contained, because a")
+print("  single matching item was enough to surface the whole package.")
+print("=" * 70)
+
+check("2-product RTV vs order holding only one of them -> rejected",
+      _product_matches("2x Hair Growth Serum, 1x Vitamin C",
+                       [item("Vitamin C", 1)]) is False)
+check("1-product RTV vs order holding an extra product -> rejected "
+      "(the extra item would go unfulfilled by the redirected package)",
+      _product_matches("1x Vitamin C",
+                       [item("Vitamin C", 1), item("Hair Growth Serum", 2)]) is False)
+
+print()
+print("=" * 70)
+print("TEST 3c: _align_rtv_items_to_order pairs each RTV product with the order")
+print("  item it matched, in the order's own item order, so the two columns")
+print("  render line-for-line.")
+print("=" * 70)
+
+aligned = _align_rtv_items_to_order(
+    "2x Hair Growth Serum, 1x Vitamin C",
+    [item("Vitamin C", 1), item("Hair Growth Serum", 2)],
+)
+check("alignment follows the ORDER's item sequence, not the description's",
+      aligned == ['1x Vitamin C', '2x Hair Growth Serum'])
+check("non-corresponding sets align to None",
+      _align_rtv_items_to_order("1x Vitamin C", [item("Vitamin C", 9)]) is None)
+
+# Exact names must claim their own item before a looser containment match takes
+# it, or one RTV product ends up unpaired and the whole (valid) match is lost.
+aligned_ambiguous = _align_rtv_items_to_order(
+    "1x Serum, 1x Hair Growth Serum",
+    [item("Hair Growth Serum", 1), item("Serum", 1)],
+)
+check("exact-name pass runs before containment so both products pair up",
+      aligned_ambiguous == ['1x Hair Growth Serum', '1x Serum'])
 
 print()
 print("=" * 70)
