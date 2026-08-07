@@ -25,10 +25,17 @@ urlpatterns = [
          name='track_order'),
     
     # Bulk Operations
-    path('bulk-sync/', 
-         views.bulk_sync_ncm_orders, 
+    path('bulk-sync/',
+         views.bulk_sync_ncm_orders,
          name='bulk_sync'),
-    
+
+    # Same sync, started in the background and answered as JSON, so a list page
+    # can trigger it without navigating away or waiting on the NCM round-trips.
+    path('bulk-sync/start/',
+         views.bulk_sync_ncm_orders_json,
+         name='bulk_sync_json'),
+
+
     # NCM Information
     path('branches/', 
          views.ncm_branches_list, 
@@ -68,10 +75,13 @@ urlpatterns = [
          realtime_api.api_add_order_comment,
          name='api_add_comment'),
     
-    path('api/check-pending-updates/', 
-         realtime_api.api_check_pending_ncm_updates, 
-         name='api_pending_updates'),
-    
+    # Drives the background bulk sync in the absence of cron (ncm/scheduler.py).
+    # Polled by every authenticated page from base.html.
+    path('api/heartbeat/',
+         realtime_api.api_sync_heartbeat,
+         name='api_sync_heartbeat'),
+
+
     # Order Recovery & Troubleshooting
     path('orders/<int:order_id>/clear-ncm-id/', 
          order_recovery.clear_ncm_order_id, 

@@ -2710,6 +2710,88 @@
         chatPollInterval = setInterval(pollUnreadCount, 3000);
 
 
+        // --- NCM BACKGROUND SYNC HEARTBEAT ---
+        // This project has no Celery beat and no crontab, so nothing was ever
+        // refreshing NCM order status in the background - statuses only moved
+        // when someone opened an order and clicked "Sync Status". The heartbeat
+        // gives the server a regular chance to notice the sync is due and run
+        // it (see ncm/scheduler.py); the interval itself lives in
+        // Settings -> API Sync Settings, not here.
+        //
+        // Three cheap guards keep this from being a load problem, because it
+        // fires on every page for every logged-in user:
+        //   * one tab per browser does the polling (localStorage lease), so ten
+        //     open tabs cost the same as one;
+        //   * hidden tabs don't poll at all;
+        //   * a random offset stops several staff aligning on the same second.
+        // The server is the real authority regardless: an early ping just runs
+        // one indexed UPDATE that matches no rows.
+        (function () {
+            var HEARTBEAT_MS = 90000;
+            var LEASE_KEY = 'ncmHeartbeatLease';
+            var LEASE_TTL = HEARTBEAT_MS * 3;
+            var MIN_GAP_MS = 30000;
+            var tabId = String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+            var heartbeatTimer = null;
+            var lastBeatAt = 0;
+
+            function claimLease() {
+                // Best-effort leader election. localStorage is synchronous and
+                // same-origin, so the worst case for a race is two tabs pinging
+                // - which the server already handles.
+                try {
+                    var raw = localStorage.getItem(LEASE_KEY);
+                    var now = Date.now();
+                    if (raw) {
+                        var lease = JSON.parse(raw);
+                        if (lease.owner !== tabId && (now - lease.at) < LEASE_TTL) return false;
+                    }
+                    localStorage.setItem(LEASE_KEY, JSON.stringify({ owner: tabId, at: now }));
+                    return true;
+                } catch (e) {
+                    // Private mode / storage disabled: just poll.
+                    return true;
+                }
+            }
+
+            function beat() {
+                if (document.visibilityState !== 'visible') return;
+                // Alt-tabbing repeatedly shouldn't turn into a request storm.
+                if (Date.now() - lastBeatAt < MIN_GAP_MS) return;
+                if (!claimLease()) return;
+                lastBeatAt = Date.now();
+
+                fetch('/ncm/api/heartbeat/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(function (r) {
+                        if (r.status === 401 || r.status === 403 || r.redirected) {
+                            clearInterval(heartbeatTimer);
+                            return null;
+                        }
+                        return r.json();
+                    })
+                    .then(function (data) {
+                        if (!data || !data.success) return;
+                        // Let any page-level poller re-arm itself, so an admin
+                        // changing the interval in Settings takes effect in
+                        // tabs that are already open - no reload needed.
+                        window.dispatchEvent(new CustomEvent('ncm-sync-intervals', { detail: data }));
+                    })
+                    .catch(function () { });
+            }
+
+            // Stagger the first beat so freshly opened tabs don't all fire at once.
+            setTimeout(function () {
+                beat();
+                heartbeatTimer = setInterval(beat, HEARTBEAT_MS);
+            }, 2000 + Math.floor(Math.random() * 5000));
+
+            // A tab coming back to the foreground is a good moment to check in.
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') beat();
+            });
+        })();
+
+
         // --- GLOBAL NOTICE POLLER ---
         // Notice will show exactly once per page load/refresh
         var _lastShownNoticeId = null;

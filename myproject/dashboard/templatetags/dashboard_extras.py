@@ -292,3 +292,24 @@ def followup_type_icon(ftype):
         'visit': '\U0001F3EA',
     }
     return icons.get(ftype, '')
+
+
+@register.filter(name='logistics_badge_class')
+def logistics_badge_class_filter(status, logistics=None):
+    """Badge classes for an NCM/PND status.
+
+    Thin wrapper over dashboard.logistics_status so the template and the AJAX
+    endpoint that repaints these badges share one colour table - see that
+    module for why it isn't duplicated in JavaScript.
+
+    Usage: {{ order.ncm_status|logistics_badge_class:order.logistics }}
+    """
+    from dashboard.logistics_status import logistics_badge_class
+    return logistics_badge_class(status, logistics)
+
+
+@register.filter(name='logistics_status_text')
+def logistics_status_text_filter(status, logistics=None):
+    """The displayed status string, with the provider's default for a blank value."""
+    from dashboard.logistics_status import logistics_status_text
+    return logistics_status_text(status, logistics)

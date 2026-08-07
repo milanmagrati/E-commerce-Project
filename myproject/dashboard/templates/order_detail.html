@@ -3974,46 +3974,65 @@
         }
     });
 
-    // Guards against the auto-sync (on page load) and a manual button click
-    // firing two overlapping NCM API requests for the same order at once -
-    // that race was what made the first "Sync Status" click fail and the
-    // second one (after the first call finished) succeed.
-    let ncmSyncInProgress = false;
+    // Holds the in-flight sync request, so the page-load sync and a manual
+    // button click never fire two overlapping NCM requests for the same order
+    // (that race was what made the first "Sync Status" click fail and the
+    // second one succeed). A click arriving mid-sync now waits for the running
+    // request and reports its result, rather than being turned away - the page
+    // load starts a sync of its own, so "turned away" would otherwise be what
+    // a user got for clicking during the first second on the page.
+    let ncmSyncPromise = null;
 
     // ✅ AJAX NCM STATUS SYNC FUNCTION
-    // `silent=true` is used for the automatic sync on page load/refresh: no
-    // button/spinner UI. Neither path reloads the page - both patch the
+    // `silent=true` is the automatic sync that runs on page load/refresh: no
+    // button spinner, no toast. Neither path reloads the page - both patch the
     // visible status badges/history in place via applyNCMStatusPatch().
+    // Returns a promise so callers can sequence work after the sync.
     function syncNCMStatusAJAX(orderId, silent = false) {
-        if (ncmSyncInProgress) {
-            if (!silent) {
-                showNotification('success', 'A sync is already in progress, please wait...');
-            }
-            return;
-        }
-        ncmSyncInProgress = true;
-
         const syncBtn = document.getElementById('syncStatusBtn');
         const syncBtnText = document.getElementById('syncBtnText');
 
-        if (!silent && syncBtn && syncBtnText) {
-            syncBtn.disabled = true;
-            syncBtnText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+        function setButtonBusy(busy) {
+            if (silent || !syncBtn || !syncBtnText) return;
+            syncBtn.disabled = busy;
+            syncBtnText.innerHTML = busy
+                ? '<i class="fas fa-spinner fa-spin"></i> Syncing...'
+                : '<i class="fas fa-sync-alt"></i> Sync Status';
         }
 
-        function resetButton() {
-            if (syncBtn && syncBtnText) {
-                syncBtn.disabled = false;
-                syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
-            }
+        // Join the sync already running instead of starting a second one.
+        if (ncmSyncPromise) {
+            setButtonBusy(true);
+            return ncmSyncPromise.then(data => {
+                setButtonBusy(false);
+                if (!silent && data && data.success) {
+                    showNotification('success', data.message || 'Status is up to date');
+                }
+                return data;
+            });
         }
 
-        // Send AJAX request to sync status
-        fetch(`/ncm/api/order/${orderId}/sync/`, {
+        // This runs on every page load now, not just on a click, so a page
+        // without a CSRF input must fail quietly rather than throw on load.
+        const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (!csrfInput) {
+            console.warn('No CSRF token on this page; skipping NCM status sync.');
+            setButtonBusy(false);
+            return Promise.resolve(null);
+        }
+
+        setButtonBusy(true);
+
+        // ?throttle=1 on the page-load sync only: it makes a rapid series of
+        // refreshes reuse the last result instead of hitting NCM each time.
+        // A deliberate button click is never throttled.
+        const url = `/ncm/api/order/${orderId}/sync/` + (silent ? '?throttle=1' : '');
+
+        ncmSyncPromise = fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                'X-CSRFToken': csrfInput.value
             }
         })
             .then(response => {
@@ -4023,42 +4042,40 @@
                 return response.json();
             })
             .then(data => {
-                ncmSyncInProgress = false;
                 if (data.success) {
-                    if (silent) {
-                        // Throttle notification/DOM churn so a backend that somehow
-                        // keeps reporting `changed: true` (stale cache, a bug,
-                        // whatever) can't spam this tab in a tight loop - at
-                        // most one auto-sync update per order per ~20 seconds.
-                        if (data.changed) {
-                            const guardKey = `orderAutoSyncReload_${orderId}`;
-                            const lastRun = parseInt(sessionStorage.getItem(guardKey) || '0', 10);
-                            if (Date.now() - lastRun > 20000) {
-                                sessionStorage.setItem(guardKey, String(Date.now()));
-                                applyNCMStatusPatch(data);
-                            }
-                        }
-                        return;
+                    // Patch whenever the server reports a change - including on
+                    // the page-load sync, which is the whole point: opening or
+                    // refreshing an order must show NCM's current status, not
+                    // whatever was last written to the database.
+                    if (data.changed) {
+                        // On the page-load sync the history is loaded once,
+                        // afterwards, by the DOMContentLoaded handler below -
+                        // so don't also load it from here or the page opens
+                        // with two overlapping history requests (each of which
+                        // costs three NCM calls server-side).
+                        applyNCMStatusPatch(data, { skipHistory: silent });
                     }
-
-                    showNotification('success', data.message || 'Status updated successfully');
-                    applyNCMStatusPatch(data);
-                    resetButton();
-                } else {
                     if (!silent) {
-                        showNotification('error', data.message || 'Failed to update status');
-                        resetButton();
+                        showNotification('success', data.message || 'Status updated successfully');
                     }
+                } else if (!silent) {
+                    showNotification('error', data.message || 'Failed to update status');
                 }
+                return data;
             })
             .catch(error => {
-                ncmSyncInProgress = false;
                 console.error('Error syncing status:', error);
                 if (!silent) {
                     showNotification('error', 'Failed to sync status. Please try again.');
-                    resetButton();
                 }
+                return null;
+            })
+            .finally(() => {
+                ncmSyncPromise = null;
+                setButtonBusy(false);
             });
+
+        return ncmSyncPromise;
     }
 
     // ✅ LOAD NCM STATUS HISTORY DYNAMICALLY
@@ -4101,8 +4118,22 @@
     }
 
     {% if order.ncm_order_id %}
+    // Opening (or refreshing) an order syncs it from NCM first, then draws the
+    // status history from the result.
+    //
+    // Before this, the page rendered whatever was in the database and nothing
+    // ever refreshed it in the background, so the NCM Status badge could sit on
+    // a status NCM had moved past days earlier - and no amount of pressing F5
+    // would change it. The only way to see the truth was to click "Sync Status"
+    // by hand, on every order, one at a time.
+    //
+    // The history load is chained onto the sync rather than fired alongside it
+    // so the two don't race, and so the history reflects the status we just
+    // wrote.
     document.addEventListener('DOMContentLoaded', function() {
-        loadNCMStatusHistory({{ order.ncm_order_id }});
+        const ncmOrderId = {{ order.ncm_order_id }};
+        syncNCMStatusAJAX({{ order.id }}, true)
+            .finally(function() { loadNCMStatusHistory(ncmOrderId); });
     });
     {% endif %}
 
@@ -4112,7 +4143,8 @@
     // learns about a status change - whether from a live NCM call or from
     // the background cron job (sync_all_ncm_orders) writing to the DB while
     // this tab is open - ends up here instead of calling location.reload().
-    function applyNCMStatusPatch(data) {
+    function applyNCMStatusPatch(data, options) {
+        const skipHistory = !!(options && options.skipHistory);
         const statusEl = document.getElementById('orderStatusValue');
         if (statusEl && data.status_display) {
             statusEl.textContent = data.status_display;
@@ -4132,7 +4164,9 @@
         }
 
         {% if order.ncm_order_id %}
-        loadNCMStatusHistory({{ order.ncm_order_id }});
+        if (!skipHistory) {
+            loadNCMStatusHistory({{ order.ncm_order_id }});
+        }
         {% endif %}
 
         // Keep the local-DB poller's baseline in sync so it doesn't
@@ -4305,12 +4339,12 @@
      * Start auto-sync process
      */
     function startAutoSync() {
-        // No live NCM call fires here anymore - a background cron job
-        // (sync_all_ncm_orders, run via cPanel Cron every ~10 min - see
-        // Settings -> API Sync Settings for which order statuses it covers)
-        // keeps NCM status fresh in the DB independent of anyone viewing
-        // this page. This timer only polls the local DB (cheap, no NCM call)
-        // so any change the cron job made surfaces here without a reload.
+        // This timer only reads the local database - no NCM call happens here.
+        // Keeping NCM status fresh is the background sync's job
+        // (ncm/scheduler.py, cadence set in Settings -> API Sync Settings),
+        // which runs independently of whoever is looking at this page. The
+        // timer's job is just to surface what that sync wrote, without a reload.
+        stopAutoSync();
         autoSyncTimer = setInterval(() => {
             fetchOrderStatus();
         }, autoSyncInterval);
@@ -4340,6 +4374,18 @@
         window.addEventListener('beforeunload', function () {
             stopAutoSync();
         });
+    });
+
+    // An admin changing "Live Page Refresh" in Settings should reach tabs that
+    // are already open. The heartbeat in base.html reports the current value,
+    // so re-arm on it rather than waiting for someone to reload.
+    window.addEventListener('ncm-sync-intervals', function (e) {
+        const seconds = e.detail && e.detail.page_refresh_interval;
+        if (!seconds) return;
+        const ms = seconds * 1000;
+        if (ms === autoSyncInterval) return;
+        autoSyncInterval = ms;
+        if (autoSyncTimer) startAutoSync();
     });
 
     // Allow user to manually start/stop auto-sync

@@ -39,7 +39,22 @@ class NCMService:
             'Authorization': f'Token {self.api_key}',
             'Content-Type': 'application/json'
         }
-    
+        #: Resolved lazily by _resolve_timeout() and then reused for the life of
+        #: this instance. The configured timeout lives in a DB row, and a bulk
+        #: sync can issue hundreds of requests through one service object - so
+        #: re-reading it per request would mean hundreds of pointless queries.
+        self._timeout = None
+
+    def _resolve_timeout(self) -> int:
+        """The configured NCM per-request timeout, read at most once per instance."""
+        if self._timeout is None:
+            try:
+                from dashboard.models import APISettings
+                self._timeout = APISettings.get_settings().ncm_api_timeout
+            except Exception:
+                self._timeout = 30
+        return self._timeout
+
     def _make_request(self, method: str, url: str, data: Dict = None, params: Dict = None, timeout: int = None, _retry: bool = True):
         """Helper to make API requests.
 
@@ -53,11 +68,7 @@ class NCMService:
         must do so explicitly and idempotently at the call site.
         """
         if timeout is None:
-            try:
-                from dashboard.models import APISettings
-                timeout = APISettings.get_settings().ncm_api_timeout
-            except Exception:
-                timeout = 30
+            timeout = self._resolve_timeout()
 
         method = method.upper()
         can_retry = _retry and method == 'GET'
@@ -133,12 +144,7 @@ class NCMService:
                 if self.base_url_v2 == self.base_url and url == urls_to_try[1]:
                     # Skip duplicate when v2 == v1 (no second base URL configured)
                     break
-                timeout = 30
-                try:
-                    from dashboard.models import APISettings
-                    timeout = APISettings.get_settings().ncm_api_timeout
-                except Exception:
-                    pass
+                timeout = self._resolve_timeout()
                 resp = _req.get(url, headers=self.headers, params=params, timeout=timeout)
                 if resp.status_code == 404:
                     # Might be missing endpoint (v2) or no comments. Let's try fallback.

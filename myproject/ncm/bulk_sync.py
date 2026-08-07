@@ -35,8 +35,14 @@ PROTECTED_STATUSES = ('cancelled',)
 #: URIs/timeouts start biting well before that - keep requests chunked.
 CHUNK_SIZE = 100
 
+#: How many orders to process between progress_callback pings. Small enough
+#: that the scheduler's liveness window can stay short, large enough that the
+#: callback's DB write is noise next to the NCM requests around it.
+PROGRESS_EVERY = 25
 
-def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None):
+
+def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None,
+                             progress_callback=None, deadline=None):
     """
     Sync NCM status for all active NCM orders.
 
@@ -48,19 +54,42 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None):
     this feature's original hardcoded behavior.
 
     A failure on one order (or one chunk) is recorded and skipped rather than
-    aborting the run - this is driven by cron, so one malformed NCM payload
+    aborting the run - this runs unattended, so one malformed NCM payload
     must not stop every remaining order from syncing.
+
+    Stopping early is always safe: each order is resolved and committed on its
+    own, and re-syncing an order that didn't change is a no-op (see the
+    early return in _sync_one_order). A run cut short by `deadline` therefore
+    just means the remaining orders wait for the next run.
 
     Args:
         fetch_event_times: None = use the APISettings toggle (default on);
             True/False overrides it. Costs one extra NCM request per order
             whose status actually changed, in exchange for activity-log
-            timestamps that match NCM instead of the cron run's clock.
+            timestamps that match NCM instead of the run's own clock.
+        progress_callback: called with no arguments after every chunk and
+            every PROGRESS_EVERY orders. The scheduler uses it to prove the
+            run is still alive, so its lock isn't mistaken for an abandoned
+            one; a run's total duration is unbounded (a first sync after a
+            long gap can be hundreds of sequential requests), but the gap
+            between two callbacks is not.
+        deadline: a timezone-aware datetime past which no NEW chunk is
+            started. The in-flight chunk always finishes.
 
-    Returns a summary dict: {'total_orders', 'updated_count', 'errors'}.
+    Returns a summary dict:
+        {'total_orders', 'updated_count', 'errors', 'deadline_reached'}
     """
     if fetch_event_times is None:
         fetch_event_times = APISettings.get_settings().bulk_sync_fetch_event_times
+
+    def _ping():
+        """Report liveness; a broken callback must never abort the sync."""
+        if progress_callback is None:
+            return
+        try:
+            progress_callback()
+        except Exception:
+            logger.debug('Bulk sync progress callback failed', exc_info=True)
 
     ncm_orders = Order.objects.filter(
         ncm_order_id__isnull=False,
@@ -76,7 +105,7 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None):
         else:
             ncm_orders = ncm_orders.exclude(status__in=DEFAULT_TERMINAL_STATUSES)
 
-    summary = {'total_orders': 0, 'updated_count': 0, 'errors': []}
+    summary = {'total_orders': 0, 'updated_count': 0, 'errors': [], 'deadline_reached': False}
 
     # Materialize once - the loop below needs the objects anyway, so a
     # separate .exists() probe would just be an extra query.
@@ -91,12 +120,27 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None):
 
     updated_count = 0
     errors = []
+    processed = 0
+    deadline_reached = False
 
     for config_id, group_orders in orders_by_config.items():
+        if deadline_reached:
+            break
         svc = NCMService(api_config_id=config_id) if config_id else ncm_service
         config_label = config_id or 'default'
 
         for i in range(0, len(group_orders), CHUNK_SIZE):
+            # Checked before starting a chunk, never mid-chunk: abandoning a
+            # chunk half-way would leave its orders unsynced anyway, and the
+            # next run picks them up either way.
+            if deadline is not None and timezone.now() >= deadline:
+                deadline_reached = True
+                logger.warning(
+                    'Bulk sync hit its time budget after %d orders; remaining orders '
+                    'will be picked up by the next run.', processed
+                )
+                break
+
             chunk_orders = group_orders[i:i + CHUNK_SIZE]
             chunk_ids = [str(o.ncm_order_id) for o in chunk_orders]
             chunk_label = f"config {config_label} (chunk {i // CHUNK_SIZE + 1})"
@@ -130,9 +174,16 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None):
                     errors.append(f"Order {order.order_number}: {e}")
                     logger.exception(f"Bulk sync failed for order {order.order_number}")
 
+                processed += 1
+                if processed % PROGRESS_EVERY == 0:
+                    _ping()
+
+            _ping()
+
     summary['total_orders'] = len(orders)
     summary['updated_count'] = updated_count
     summary['errors'] = errors
+    summary['deadline_reached'] = deadline_reached
 
     if updated_count or errors:
         logger.info(

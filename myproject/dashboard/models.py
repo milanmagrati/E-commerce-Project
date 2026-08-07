@@ -1793,12 +1793,14 @@ class APISettings(models.Model):
     """Singleton model to store configurable API calling intervals and times."""
 
     order_sync_interval = models.PositiveIntegerField(
-        default=14400,
-        help_text="How often (in seconds) to auto-sync orders from NCM. Default: 14400 (4 hours).",
+        default=900,
+        help_text="How often (in seconds) the SERVER runs the background NCM bulk status "
+                  "sync. This is the real API cadence - it costs NCM requests. Default: 900 (15 min).",
     )
-    webhook_check_interval = models.PositiveIntegerField(
+    page_refresh_interval = models.PositiveIntegerField(
         default=30,
-        help_text="How often (in seconds) to check for pending webhook updates. Default: 30.",
+        help_text="How often (in seconds) an open page re-reads order status from the local "
+                  "database to repaint badges. Costs no NCM requests. Default: 30.",
     )
     ncm_api_timeout = models.PositiveIntegerField(
         default=30,
@@ -1815,6 +1817,36 @@ class APISettings(models.Model):
                   "status changed (one extra API request per changed order). When off, activity "
                   "log entries are timestamped with the sync run's own time instead.",
     )
+
+    # --- Background sync scheduler state (see ncm/scheduler.py) -------------
+    # This project runs on shared hosting with no Celery beat and no crontab,
+    # so the bulk sync is driven by whichever web request first notices it is
+    # due. These three columns are the cross-process lock and clock that makes
+    # that safe: they are written with queryset.update() (never .save()) so the
+    # claim is a single atomic statement and so `updated_at` keeps meaning
+    # "when an admin last edited these settings".
+    last_bulk_sync_started_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the most recent background bulk sync began. The due-check "
+                  "measures from here (start-to-start), so a run that outlasts the "
+                  "interval can't immediately retrigger itself.",
+    )
+    last_bulk_sync_finished_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the most recent background bulk sync finished. Display only.",
+    )
+    bulk_sync_running_since = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Non-null while a bulk sync holds the lock. Bumped periodically by the "
+                  "running sync so a long run isn't mistaken for a crashed one; a value "
+                  "older than the stale window is treated as abandoned and taken over.",
+    )
+    last_bulk_sync_summary = models.JSONField(
+        default=dict, blank=True,
+        help_text="Result of the most recent background bulk sync "
+                  "(total_orders / updated_count / errors).",
+    )
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

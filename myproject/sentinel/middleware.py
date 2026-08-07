@@ -11,6 +11,7 @@ must not appear in the trail.
 """
 
 import logging
+import re
 import time
 
 from django.utils.deprecation import MiddlewareMixin
@@ -23,7 +24,26 @@ logger = logging.getLogger('sentinel')
 
 # Never recorded regardless of settings: Sentinel's own polling endpoints (which
 # would generate an event per poll, forever) and asset requests.
-HARD_EXCLUDED = ('/sentinel/api/', '/static/', '/media/', '/favicon.ico', '/iclock/')
+#
+# The /ncm/api/ entries are here for the same reason: every authenticated page
+# pings the sync heartbeat, and the logistics list polls for status changes, so
+# left in they would write an audit row per poll per open tab and bury real
+# activity. This lives in code rather than in VaultSettings.excluded_paths
+# because that is a DB column - editing its default would do nothing to an
+# installation whose row already exists.
+HARD_EXCLUDED = (
+    '/sentinel/api/', '/static/', '/media/', '/favicon.ico', '/iclock/',
+    '/ncm/api/heartbeat/', '/ncm/api/orders/batch-status/',
+)
+
+# Read-only pollers whose order id sits mid-path, so a prefix can't describe
+# them. Matched for GET/HEAD only: the sibling POSTs under the same path
+# (.../sync/, .../comments/add/) are real staff actions and must stay audited.
+HARD_EXCLUDED_GET_PATTERNS = (
+    re.compile(r'^/ncm/api/order/\d+/(status|activity|comments)/$'),
+)
+
+SAFE_METHODS = {'GET', 'HEAD'}
 
 WRITE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
 
@@ -91,6 +111,10 @@ class SentinelAuditMiddleware(MiddlewareMixin):
         path = request.path or ''
         if path.startswith(HARD_EXCLUDED):
             return True
+
+        if request.method in SAFE_METHODS:
+            if any(p.match(path) for p in HARD_EXCLUDED_GET_PATTERNS):
+                return True
 
         full_path = request.get_full_path() or path
         for prefix in services.get_settings().excluded_prefixes:

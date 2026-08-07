@@ -8,6 +8,16 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h2><i class="fas fa-shipping-fast"></i> Logistics Orders</h2>
             <div class="d-flex gap-2">
+                {# NCM only: Pick & Drop has no status-sync integration, so the
+                   button is hidden rather than silently doing nothing for it.
+                   `can_sync_now` also folds in the sync permission, so nobody
+                   is offered a button that can only answer "not permitted". #}
+                {% if can_sync_now %}
+                <button type="button" class="btn btn-success btn-lg" id="syncNowBtn"
+                        title="Fetch the latest status for the orders on this page from NCM">
+                    <i class="fas fa-sync-alt" id="syncNowIcon"></i> Sync Now
+                </button>
+                {% endif %}
                 <a href="{% url 'ncm_orders_trash' %}" class="btn btn-danger btn-lg">
                     <i class="fas fa-trash-alt"></i> Trash
                     {% if trash_count > 0 %}
@@ -86,11 +96,15 @@
     <div class="col-md-3">
         <div class="stat-card bg-gradient-info text-white">
             <div class="stat-icon">
-                <i class="fas fa-shipping-fast"></i>
+                <i class="fas fa-shipping-fast" id="syncStatIcon"></i>
             </div>
             <div class="stat-content">
-                <h3>Today</h3>
-                <p>Last Updated</p>
+                {# Was a hardcoded "Today". Now the real time the background NCM
+                   sync last finished, so a stale page is visibly stale. #}
+                <h3 id="lastSyncValue" style="font-size:1.15rem;">
+                    {% if sync_running %}Syncing…{% elif last_sync_at %}{{ last_sync_at|timesince }} ago{% else %}Never{% endif %}
+                </h3>
+                <p>Status Last Synced</p>
             </div>
         </div>
     </div>
@@ -234,27 +248,14 @@
                             <strong class="text-success">Rs {{ order.total_amount|floatformat:2 }}</strong>
                         </td>
                         <td>
+                            {# Badge classes come from dashboard.logistics_status so this
+                               matches what the live status poller below assigns. #}
                             {% if order.logistics == 'ncm' %}
-                                {% with ncm_st=order.ncm_status|default:"Pickup Order Created" %}
-                                <span class="badge
-                                    {% if ncm_st == 'Delivered' or ncm_st == 'Confirmed' %}bg-success
-                                    {% elif ncm_st == 'In Transit' or ncm_st == 'Dispatched' or ncm_st == 'Arrived' or ncm_st == 'Sent for Delivery' or ncm_st == 'Out for Delivery' %}bg-primary
-                                    {% elif ncm_st == 'Returned' or ncm_st == 'Return Initiated' or ncm_st == 'Return Approved' %}bg-danger
-                                    {% elif ncm_st == 'Pickup Order Created' or ncm_st == 'Drop off Order Created' or ncm_st == 'Pickup Complete' or ncm_st == 'Drop off Order Collected' %}bg-warning text-dark
-                                    {% else %}bg-secondary
-                                    {% endif %}">{{ ncm_st }}</span>
-                                {% endwith %}
+                                <span class="badge {{ order.ncm_status|logistics_badge_class:'ncm' }}"
+                                      data-logistics-status>{{ order.ncm_status|logistics_status_text:'ncm' }}</span>
                             {% else %}
-                                {% with pnd_st=order.pnd_status|default:"Order Created" %}
-                                <span class="badge
-                                    {% if pnd_st == 'Delivered' or pnd_st == 'Confirmed' %}bg-success
-                                    {% elif pnd_st == 'In Transit' or pnd_st == 'Dispatched' or pnd_st == 'Arrived' or pnd_st == 'Sent for Delivery' or pnd_st == 'Out for Delivery' %}bg-primary
-                                    {% elif pnd_st == 'Returned' or pnd_st == 'Return Initiated' or pnd_st == 'Return Approved' %}bg-danger
-                                    {% elif pnd_st == 'Order Created' or pnd_st == 'Pickup Order Created' or pnd_st == 'Pickup Complete' %}bg-warning text-dark
-                                    {% elif pnd_st == 'Cancelled' %}bg-danger
-                                    {% else %}bg-secondary
-                                    {% endif %}">{{ pnd_st }}</span>
-                                {% endwith %}
+                                <span class="badge {{ order.pnd_status|logistics_badge_class:'pick_and_drop' }}"
+                                      data-logistics-status>{{ order.pnd_status|logistics_status_text:'pick_and_drop' }}</span>
                             {% endif %}
                         </td>
                         <td>
@@ -675,5 +676,171 @@ document.addEventListener('click', function(event) {
         });
     }
 });
+
+/* ============================================================
+   LIVE STATUS COLUMN
+   ------------------------------------------------------------
+   This page used to be a pure server-side render: the Status column showed
+   whatever was last written to the database, and nothing on the page ever
+   asked for anything newer. Since nothing refreshed those columns in the
+   background either, the only way to move a status was to open the order and
+   click "Sync Status" - one order at a time.
+
+   Now the page polls the local database on the "Live Page Refresh" interval
+   and swaps badges in place. It costs no NCM calls: the background sync
+   (ncm/scheduler.py) is what talks to NCM, and this only shows its work. The
+   badge classes come from the server so they can't drift from the ones the
+   template rendered.
+   ============================================================ */
+(function () {
+    var pollMs = {{ PAGE_REFRESH_INTERVAL|default:30 }} * 1000;
+    var pollTimer = null;
+
+    function visibleOrderIds() {
+        return Array.prototype.map.call(
+            document.querySelectorAll('tr.order-row[data-order-id]'),
+            function (row) { return row.getAttribute('data-order-id'); }
+        );
+    }
+
+    function flash(el) {
+        el.style.transition = 'box-shadow .3s ease';
+        el.style.boxShadow = '0 0 0 3px rgba(45,206,137,.55)';
+        setTimeout(function () { el.style.boxShadow = ''; }, 1600);
+    }
+
+    function markActivityLogStale(orderId) {
+        // The activity log rows are rendered server-side at page load, so once
+        // a status changes underneath them they are one entry behind. Say so
+        // rather than presenting a stale list as complete.
+        var log = document.getElementById('activity-log-' + orderId);
+        if (!log || log.querySelector('.activity-stale-note')) return;
+        var body = log.querySelector('.activity-log-container') || log.firstElementChild;
+        if (!body) return;
+        var note = document.createElement('div');
+        note.className = 'activity-stale-note';
+        note.style.cssText = 'padding:8px 14px;background:#fff8e1;border-top:1px solid #ffe0a3;' +
+                             'font-size:.75rem;color:#8a6d00;';
+        note.innerHTML = '<i class="fas fa-info-circle"></i> Status changed just now &mdash; ' +
+                         'reload the page to see the newest activity entries.';
+        body.appendChild(note);
+    }
+
+    function applyStatuses(orders) {
+        var changed = 0;
+        orders.forEach(function (o) {
+            var row = document.querySelector('tr.order-row[data-order-id="' + o.id + '"]');
+            if (!row) return;
+            var badge = row.querySelector('[data-logistics-status]');
+            if (!badge) return;
+
+            var nextText = o.logistics_status || '';
+            if (badge.textContent.trim() === nextText.trim()) return;
+
+            badge.textContent = nextText;
+            badge.className = 'badge ' + (o.logistics_status_class || 'bg-secondary');
+            flash(badge);
+            markActivityLogStale(o.id);
+            changed++;
+        });
+        return changed;
+    }
+
+    function poll() {
+        if (document.visibilityState !== 'visible') return;
+        var ids = visibleOrderIds();
+        if (!ids.length) return;
+
+        fetch('/ncm/api/orders/batch-status/?order_ids=' + ids.join(','), {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (r) {
+                if (r.status === 401 || r.status === 403 || r.redirected) {
+                    clearInterval(pollTimer);
+                    return null;
+                }
+                return r.json();
+            })
+            .then(function (data) {
+                if (!data || !data.success || !data.orders) return;
+                var n = applyStatuses(data.orders);
+                if (n && typeof alertify !== 'undefined') {
+                    alertify.success(n + ' order status' + (n === 1 ? '' : 'es') + ' updated');
+                }
+            })
+            .catch(function () { });
+    }
+
+    function startPolling() {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(poll, pollMs);
+    }
+
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') poll();
+    });
+
+    // Settings changes reach this page through the base.html heartbeat, so an
+    // open tab doesn't need reloading after an admin edits the interval.
+    window.addEventListener('ncm-sync-intervals', function (e) {
+        var d = e.detail || {};
+        if (d.page_refresh_interval && d.page_refresh_interval * 1000 !== pollMs) {
+            pollMs = d.page_refresh_interval * 1000;
+            startPolling();
+        }
+        var el = document.getElementById('lastSyncValue');
+        if (el) {
+            if (d.syncing) {
+                el.textContent = 'Syncing…';
+            } else if (d.last_sync_display) {
+                el.textContent = d.last_sync_display;
+            }
+        }
+    });
+
+    startPolling();
+
+    /* ---- "Sync Now": force a background sync of the orders on this page ---- */
+    var syncBtn = document.getElementById('syncNowBtn');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', function () {
+            var icon = document.getElementById('syncNowIcon');
+            syncBtn.disabled = true;
+            if (icon) icon.classList.add('fa-spin');
+
+            var body = new URLSearchParams();
+            body.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+            visibleOrderIds().forEach(function (id) { body.append('order_ids', id); });
+
+            fetch('{% url "ncm:bulk_sync_json" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: body.toString()
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (typeof alertify !== 'undefined') {
+                        if (data && data.success) alertify.success(data.message);
+                        else alertify.error((data && data.message) || 'Could not start sync');
+                    }
+                    var el = document.getElementById('lastSyncValue');
+                    if (el && data && data.success) el.textContent = 'Syncing…';
+                    // The sync runs in the background; poll a few times over the
+                    // next minute so results appear without waiting a full interval.
+                    [4000, 12000, 25000, 45000].forEach(function (ms) { setTimeout(poll, ms); });
+                })
+                .catch(function () {
+                    if (typeof alertify !== 'undefined') alertify.error('Could not start sync');
+                })
+                .finally(function () {
+                    syncBtn.disabled = false;
+                    if (icon) icon.classList.remove('fa-spin');
+                });
+        });
+    }
+})();
 </script>
 {% endblock %}

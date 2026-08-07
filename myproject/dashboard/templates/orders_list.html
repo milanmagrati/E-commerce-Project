@@ -2645,6 +2645,18 @@ function stopOrdersListAutoSync() {
     }
 }
 
+// Pick up a changed "Live Page Refresh" setting without needing a reload.
+// The heartbeat in base.html reports the current value on every ping.
+window.addEventListener('ncm-sync-intervals', function (e) {
+    const seconds = e.detail && e.detail.page_refresh_interval;
+    if (!seconds || seconds * 1000 === ordersListAutoSyncInterval) return;
+    ordersListAutoSyncInterval = seconds * 1000;
+    if (ordersListAutoSyncTimer) {
+        clearInterval(ordersListAutoSyncTimer);
+        ordersListAutoSyncTimer = setInterval(fetchOrdersListStatus, ordersListAutoSyncInterval);
+    }
+});
+
 // syncAllOrdersFAB is defined above (form POST to bulk_sync endpoint)
 
 // CSS for flash update effect

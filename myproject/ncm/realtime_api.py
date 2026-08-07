@@ -9,13 +9,16 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_http_methods
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.utils import timezone
 from django.core.mail import send_mail
+from dashboard.logistics_status import logistics_badge_class, logistics_status_text
 from dashboard.models import Order, OrderActivityLog
 from dashboard.timezone_utils import format_nepali_datetime, parse_ncm_datetime
 from services.ncm_service import NCMService
 import logging
 import json
+import secrets
 import threading
 from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
@@ -26,6 +29,24 @@ ncm_service = NCMService()
 # Simple in-memory cache for comments to reduce API calls
 _comment_cache = {}
 _cache_timeout = 5  # Cache for 5 seconds
+
+#: How long the order detail page's load-time sync stays quiet for one order,
+#: so repeatedly refreshing the page doesn't mean an NCM request per refresh.
+SYNC_THROTTLE_SECONDS = 20
+
+#: Any one of these is enough to poll order statuses: the endpoint backs three
+#: different pages (orders list, logistics orders list, order detail) and those
+#: pages are gated on different permissions.
+ORDER_STATUS_VIEW_PERMISSIONS = (
+    'can_view_orders', 'can_view_orders_list', 'can_view_ncm_orders',
+)
+
+
+def _may_view_order_statuses(user):
+    """Whether `user` may read order status over the polling API."""
+    if getattr(user, 'is_superuser', False) or getattr(user, 'role', None) == 'administrator':
+        return True
+    return any(getattr(user, perm, False) for perm in ORDER_STATUS_VIEW_PERMISSIONS)
 
 
 def get_cached_comments(order_id):
@@ -109,11 +130,17 @@ def send_ncm_comment_async(ncm_order_id, comment_text, order_id, user_id, api_co
 @login_required
 @require_http_methods(["GET"])
 def api_get_order_status(request, order_id):
-    """
-    Real-time API to fetch current order status from NCM and local DB
-    Used by frontend for auto-refresh
-    
-    Returns JSON with order details and status info
+    """Current order status, read from the local database.
+
+    This is the cheap poller the order detail page runs on the "live page
+    refresh" interval: it repaints whatever the background sync
+    (ncm/scheduler.py) has already written, and never talks to NCM itself.
+
+    It used to call NCM on every poll and then throw the answer away - it
+    returned the local columns regardless - so each open order page burned an
+    NCM request every interval and still showed stale data. Writing NCM's
+    answer to the database is api_sync_order_status's job; this endpoint only
+    reads.
     """
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
@@ -139,11 +166,6 @@ def api_get_order_status(request, order_id):
             local_status.update(_order_display_fields(order))
             return JsonResponse(local_status)
 
-        # Use order-specific NCM API account
-        svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
-        # Try to fetch latest status from NCM
-        ncm_status_result = svc.get_order_status(order.ncm_order_id)
-
         status_data = {
             'success': True,
             'order_id': order.id,
@@ -157,16 +179,11 @@ def api_get_order_status(request, order_id):
             'delivered_at': order.delivered_at.isoformat() if order.delivered_at else None,
             'cod_collected': float(order.cod_collected or 0),
             'total_amount': float(order.total_amount or 0),
-            'source': 'hybrid',  # local + NCM
+            'source': 'local',
             'timestamp': timezone.now().isoformat()
         }
         status_data.update(_order_display_fields(order))
-        
-        # Add NCM remote status if available
-        if ncm_status_result['success']:
-            ncm_data = ncm_status_result['data']
-            status_data['ncm_remote_status'] = ncm_data
-        
+
         return JsonResponse(status_data)
         
     except Exception as e:
@@ -181,8 +198,18 @@ def api_get_order_status(request, order_id):
 @require_http_methods(["POST"])
 def api_sync_order_status(request, order_id):
     """
-    Manually sync order status from NCM immediately
-    Called when user clicks refresh button
+    Sync one order's status from NCM and persist it.
+
+    Two callers: the "Sync Status" button, and the order detail page on load
+    (`silent=true`) so that simply opening or refreshing an order shows NCM's
+    current status instead of whatever was last written to the database.
+
+    Because the page-load path exists, a `?throttle=1` mode is honoured: a
+    reload within THROTTLE_SECONDS of the last sync for this order returns the
+    stored values instead of calling NCM, so leaning on F5 doesn't turn into a
+    request per keypress. The manual button never passes it. This is a
+    best-effort damper, not a guarantee - the cache is per-process, so each
+    Passenger worker keeps its own copy.
     """
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
@@ -192,6 +219,21 @@ def api_sync_order_status(request, order_id):
                 'success': False,
                 'message': 'Order not in NCM system yet'
             })
+
+        if request.GET.get('throttle') == '1':
+            cache_key = f'ncm_sync_throttle_{order.id}'
+            if cache.get(cache_key):
+                throttled = {
+                    'success': True,
+                    'message': 'Recently synced',
+                    'order_id': order.id,
+                    'order_number': order.order_number,
+                    'changed': False,
+                    'throttled': True,
+                }
+                throttled.update(_order_display_fields(order))
+                return JsonResponse(throttled)
+            cache.set(cache_key, True, SYNC_THROTTLE_SECONDS)
 
         if order.status == 'cancelled':
             # Don't let a sync (manual click, or the automatic sync that now
@@ -329,35 +371,54 @@ def api_sync_order_status(request, order_id):
 @require_http_methods(["GET"])
 def api_get_orders_status_batch(request):
     """
-    Fetch status for multiple orders at once
-    Used by orders list page for real-time updates
-    
+    Fetch status for multiple orders at once, from the local database only.
+
+    Polled by the orders list and the logistics orders list to repaint status
+    badges as the background sync (ncm/scheduler.py) writes changes. It makes
+    no NCM calls, so it is cheap enough to run on a short interval.
+
+    The caller passes arbitrary order IDs, so it is permission-gated - but with
+    an inline check rather than @permission_required, which answers a refusal
+    with a redirect to the dashboard AND queues a Django message. On a polled
+    endpoint that would plant a phantom "you do not have permission" toast that
+    surfaces on the user's next unrelated page load.
+
     Query params:
     - order_ids: comma-separated list of order IDs
-    - status_filter: filter by status (optional)
     """
+    if not _may_view_order_statuses(request.user):
+        return JsonResponse(
+            {'success': False, 'message': 'Not permitted'}, status=403)
+
     try:
         # Parse order IDs from query params
         order_ids_param = request.GET.get('order_ids', '')
         order_ids = [int(oid.strip()) for oid in order_ids_param.split(',') if oid.strip()]
-        
+
         if not order_ids:
             return JsonResponse({
                 'success': False,
                 'message': 'No order IDs provided'
             }, status=400)
-        
+
         orders = Order.objects.filter(
             id__in=order_ids,
             is_deleted=False
         ).values(
-            'id', 'order_number', 'status', 'order_status', 
+            'id', 'order_number', 'status', 'order_status',
             'ncm_status', 'ncm_order_id', 'payment_status',
+            'logistics', 'pnd_status',
             'delivered_at', 'cod_collected', 'created_at', 'updated_at'
         )
-        
+
         orders_data = []
         for order in orders:
+            # The badge the logistics list shows depends on the provider, and
+            # its colour comes from the same table the template uses - the
+            # browser only assigns what it's given here.
+            logistics = order['logistics']
+            provider_status = order['pnd_status'] if logistics == 'pick_and_drop' else order['ncm_status']
+
             orders_data.append({
                 'id': order['id'],
                 'order_number': order['order_number'],
@@ -365,13 +426,17 @@ def api_get_orders_status_batch(request):
                 'order_status': order['order_status'],
                 'ncm_status': order['ncm_status'],
                 'ncm_order_id': order['ncm_order_id'],
+                'pnd_status': order['pnd_status'],
+                'logistics': logistics,
+                'logistics_status': logistics_status_text(provider_status, logistics),
+                'logistics_status_class': logistics_badge_class(provider_status, logistics),
                 'payment_status': order['payment_status'],
                 'delivered_at': order['delivered_at'].isoformat() if order['delivered_at'] else None,
                 'cod_collected': float(order['cod_collected'] or 0),
                 'created_at': order['created_at'].isoformat(),
                 'updated_at': order['updated_at'].isoformat()
             })
-        
+
         return JsonResponse({
             'success': True,
             'count': len(orders_data),
@@ -657,41 +722,60 @@ def api_add_order_comment(request, order_id):
         }, status=500)
 
 
-@login_required
 @require_http_methods(["GET"])
-def api_check_pending_ncm_updates(request):
+def api_sync_heartbeat(request):
+    """Tick the background NCM sync, and tell the page how fast to poll.
+
+    This is what replaces the cron job that was never installed (see
+    ncm/scheduler.py). Every authenticated page pings this on a slow timer; the
+    first ping that finds the sync due starts it on a background thread and
+    returns immediately. Pings that arrive while a sync is running, or before
+    the interval has elapsed, cost one indexed UPDATE that matches no rows.
+
+    It also returns the two configured intervals, so a tab that has been open
+    since before an admin changed them re-arms its timers on the next ping -
+    which is what makes the Settings page's "changes take effect immediately"
+    promise true without a restart or a reload.
+
+    Auth: normally session-based like every other endpoint here. If
+    NCM_HEARTBEAT_TOKEN is configured, a matching ?token= is also accepted, so
+    an external uptime pinger can keep statuses fresh overnight when no staff
+    member has a tab open. Without a token configured, that door stays shut.
     """
-    Check for NCM orders that might have updates
-    Used for periodic polling to detect status changes
-    
-    Returns list of NCM orders that haven't been updated in last X minutes
-    """
+    from django.conf import settings as dj_settings
+    from ncm.scheduler import get_status, maybe_run_bulk_sync
+
+    token = (request.GET.get('token') or '').strip()
+    expected = (getattr(dj_settings, 'NCM_HEARTBEAT_TOKEN', '') or '').strip()
+    # compare_digest raises TypeError on non-ASCII str, so a garbage token in
+    # the query string would 500 instead of simply being rejected. Compare the
+    # UTF-8 bytes, which is defined for any input and still constant-time.
+    token_ok = bool(expected) and secrets.compare_digest(
+        token.encode('utf-8'), expected.encode('utf-8'))
+
+    if not token_ok and not request.user.is_authenticated:
+        return JsonResponse({'success': False, 'message': 'Authentication required'}, status=401)
+
     try:
-        from datetime import timedelta
-        
-        # Find NCM orders not updated in last 30 minutes
-        threshold = timezone.now() - timedelta(minutes=30)
-        
-        pending_orders = Order.objects.filter(
-            ncm_order_id__isnull=False,
-            is_deleted=False,
-            status__in=['processing', 'in_transit', 'shipped'],
-            updated_at__lt=threshold
-        ).values('id', 'order_number', 'ncm_order_id', 'status', 'ncm_status', 'updated_at')
-        
-        pending_data = list(pending_orders)
-        
+        started, _ = maybe_run_bulk_sync()
+        status = get_status()
         return JsonResponse({
             'success': True,
-            'pending_count': len(pending_data),
-            'pending_orders': pending_data,
-            'threshold_minutes': 30,
-            'timestamp': timezone.now().isoformat()
+            'started': started,
+            'syncing': status['syncing'] or started,
+            'server_sync_interval': status['server_sync_interval'],
+            'page_refresh_interval': status['page_refresh_interval'],
+            'last_sync_at': (
+                status['last_sync_finished_at'].isoformat()
+                if status['last_sync_finished_at'] else None
+            ),
+            'last_sync_display': (
+                format_nepali_datetime(status['last_sync_finished_at'])
+                if status['last_sync_finished_at'] else 'Never'
+            ),
+            'last_summary': status['last_summary'],
         })
-        
     except Exception as e:
-        logger.error(f"Error checking pending updates: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'message': str(e)
-        }, status=500)
+        # A failing heartbeat must never break page JS - report and move on.
+        logger.exception('NCM sync heartbeat failed')
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)

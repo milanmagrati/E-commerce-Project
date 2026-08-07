@@ -563,6 +563,75 @@ def bulk_sync_ncm_orders(request):
         return redirect('orders_list')
 
 
+def _may_sync_ncm(user):
+    """Permission check for the JSON sync endpoint.
+
+    Deliberately not ncm_permission_required: that answers a refusal with a
+    redirect and a queued Django message, which for an AJAX caller means an
+    unparseable HTML response now and a stray error toast on some later,
+    unrelated page.
+    """
+    if user.is_superuser or user.role == 'administrator':
+        return True
+    return bool(getattr(user, 'can_sync_ncm_orders', False))
+
+
+@login_required
+@require_http_methods(["POST"])
+def bulk_sync_ncm_orders_json(request):
+    """Kick off a bulk NCM sync and answer immediately with JSON.
+
+    This is the "Sync Now" button on the Logistics Orders page. It deliberately
+    does NOT wait for the sync: a page of 25 orders can mean fifty sequential
+    NCM requests at up to `ncm_api_timeout` each, which would sit well past any
+    reverse proxy's patience. The sync runs on the scheduler's background
+    thread and the page's status poller picks the results up as they land.
+
+    Passing `order_ids` limits the run to the orders currently on screen;
+    without it, every eligible NCM order is synced.
+    """
+    from ncm.scheduler import maybe_run_bulk_sync
+
+    if not _may_sync_ncm(request.user):
+        logger.warning(
+            'Bulk sync denied for %s - missing can_sync_ncm_orders', request.user.username
+        )
+        return JsonResponse(
+            {'success': False, 'message': 'You do not have permission to sync orders.'},
+            status=403,
+        )
+
+    try:
+        order_ids = [
+            int(oid) for oid in request.POST.getlist('order_ids')
+            if str(oid).strip().isdigit()
+        ]
+
+        started, _ = maybe_run_bulk_sync(
+            force=True, order_ids=order_ids or None, user=request.user
+        )
+
+        if not started:
+            # force=True still respects the running lock, so this means a sync
+            # is already in flight - the results are coming either way.
+            return JsonResponse({
+                'success': True,
+                'started': False,
+                'message': 'A sync is already running - results will appear shortly.',
+            })
+
+        scope = f'{len(order_ids)} order(s) on this page' if order_ids else 'all active NCM orders'
+        return JsonResponse({
+            'success': True,
+            'started': True,
+            'message': f'Syncing {scope} from NCM. Statuses will update automatically.',
+        })
+
+    except Exception as e:
+        logger.exception('Error starting bulk NCM sync')
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
 def _get_package_description(order):
     """Generate package description from order items"""
     try:

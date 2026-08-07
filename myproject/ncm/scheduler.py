@@ -1,0 +1,239 @@
+# ncm/scheduler.py
+"""
+Runs the NCM bulk status sync on a schedule, without a scheduler.
+
+This project is deployed on cPanel shared hosting: no Celery beat, no
+persistent worker, and (in practice) no crontab either. The bulk sync was
+written to be driven by `manage.py sync_all_ncm_orders` from cron - and because
+that cron entry was never installed, nothing ever refreshed NCM status in the
+background. Order status only changed when somebody clicked "Sync Status" on an
+individual order.
+
+So the trigger moves into the application: every authenticated page quietly
+pings a heartbeat endpoint, the heartbeat asks this module "is a sync due?",
+and the first request to win an atomic claim runs the sync on a background
+thread. With any staff tab open, the sync runs on the interval configured in
+Settings -> API Sync Settings. (For coverage when nobody has a tab open, the
+heartbeat also accepts a shared-secret token so an external pinger can hit it.)
+
+The whole design rests on one requirement: **no two syncs may ever run at
+once**, across threads, across Passenger worker processes, and across a real
+cron run if one is ever added. Django's default cache here is LocMemCache,
+which is per-process, so cache-based locking would be worthless. The lock is
+therefore a compare-and-swap against the APISettings row, expressed as a single
+UPDATE statement so the database - not Python - decides the winner.
+"""
+
+import logging
+import threading
+from datetime import timedelta
+
+from django.db import connections, transaction
+from django.db.models import Q
+from django.utils import timezone
+
+from dashboard.models import APISettings
+from ncm.bulk_sync import run_bulk_ncm_status_sync
+
+logger = logging.getLogger('ncm')
+
+#: A claim whose liveness hasn't been refreshed in this long is treated as
+#: abandoned and taken over. A running sync bumps `bulk_sync_running_since`
+#: every chunk and every 25 orders (see bulk_sync.PROGRESS_EVERY), so this only
+#: has to cover the gap between two pings - not the total run time, which is
+#: unbounded. That distinction matters: Passenger recycles idle workers, and a
+#: daemon thread dies with its process, leaving the claim set with nobody to
+#: release it.
+STALE_CLAIM_SECONDS = 300
+
+#: Wall-clock budget for one run. Past this no new chunk is started, so a huge
+#: backlog is worked through over several runs instead of one endless thread.
+MAX_RUN_SECONDS = 480
+
+#: Floor on the configured sync interval, enforced here rather than only in the
+#: settings form - a hand-crafted POST or a legacy row must not be able to point
+#: this at the NCM API every second.
+MIN_SYNC_SECONDS = 60
+
+
+def _now():
+    return timezone.now()
+
+
+def _claim(force=False, advance_schedule=True):
+    """Atomically take ownership of the next sync run.
+
+    Returns True only for the caller that won. Everyone else gets False and
+    does nothing.
+
+    `advance_schedule=False` takes the lock without moving the schedule clock.
+    That is for runs covering only a handful of orders - the "Sync Now" button
+    on a single page of results. Such a run isn't a substitute for a full one,
+    so letting it reset the clock would silently postpone the next real sync by
+    up to a whole interval.
+
+    The due-check and the lock are deliberately the *same* statement. Splitting
+    them ("is it due?" then "is it unlocked?") leaves a window where a worker
+    that read a stale `last_bulk_sync_started_at` can claim the instant the
+    previous run releases, producing back-to-back full syncs. As one UPDATE,
+    the row lock serialises the decision and only one caller sees rowcount 1.
+
+    The due-check measures from when the last run *started*, not when it
+    finished. Measuring from the finish would mean a run that takes longer than
+    the interval is due again the moment it ends, i.e. a permanent sync loop.
+    """
+    settings_obj = APISettings.get_settings()  # ensures pk=1 exists
+
+    interval = max(int(settings_obj.order_sync_interval or 0), MIN_SYNC_SECONDS)
+    now = _now()
+    stale_cutoff = now - timedelta(seconds=STALE_CLAIM_SECONDS)
+    due_cutoff = now - timedelta(seconds=interval)
+
+    claim = APISettings.objects.filter(pk=settings_obj.pk).filter(
+        Q(bulk_sync_running_since__isnull=True) | Q(bulk_sync_running_since__lt=stale_cutoff)
+    )
+    if not force:
+        claim = claim.filter(
+            Q(last_bulk_sync_started_at__isnull=True) | Q(last_bulk_sync_started_at__lte=due_cutoff)
+        )
+
+    # queryset.update() bypasses auto_now, so this never touches `updated_at` -
+    # which the Settings page shows as "Last updated" and should keep meaning
+    # "when an admin last saved these settings".
+    fields = {'bulk_sync_running_since': now}
+    if advance_schedule:
+        fields['last_bulk_sync_started_at'] = now
+    won = claim.update(**fields) == 1
+
+    if won:
+        logger.info(
+            'NCM bulk sync claimed (interval=%ss, force=%s, advance_schedule=%s)',
+            interval, force, advance_schedule,
+        )
+    return won
+
+
+def _touch():
+    """Prove the running sync is still alive. Passed to bulk_sync as its progress_callback."""
+    try:
+        APISettings.objects.filter(pk=1).update(bulk_sync_running_since=_now())
+    except Exception:
+        logger.debug('Could not refresh bulk sync liveness', exc_info=True)
+
+
+def _release(summary=None):
+    """Drop the claim and record the result. Must run even when the sync raised."""
+    try:
+        APISettings.objects.filter(pk=1).update(
+            bulk_sync_running_since=None,
+            last_bulk_sync_finished_at=_now(),
+            last_bulk_sync_summary=summary if summary is not None else {},
+        )
+    except Exception:
+        # Nothing left to do but log: the stale-claim window will free the lock.
+        logger.exception('Could not release the NCM bulk sync claim')
+
+
+def _run(order_ids=None, user=None):
+    """Body of a claimed run. Never raises - callers may be a bare thread."""
+    summary = {}
+    try:
+        summary = run_bulk_ncm_status_sync(
+            user=user,
+            order_ids=order_ids,
+            progress_callback=_touch,
+            deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+        )
+        # Keep the stored summary small and JSON-safe; the full error list can
+        # be long and is already in the log.
+        summary = {
+            'total_orders': summary.get('total_orders', 0),
+            'updated_count': summary.get('updated_count', 0),
+            'error_count': len(summary.get('errors') or []),
+            'errors': [str(e) for e in (summary.get('errors') or [])[:10]],
+            'deadline_reached': summary.get('deadline_reached', False),
+        }
+    except Exception as e:
+        logger.exception('NCM bulk sync run failed')
+        summary = {'total_orders': 0, 'updated_count': 0, 'error_count': 1, 'errors': [str(e)]}
+    finally:
+        _release(summary)
+    return summary
+
+
+def _run_in_thread(order_ids=None, user=None):
+    """Thread entrypoint: same as _run, plus this thread's DB connections.
+
+    Django opens a connection per thread and CONN_MAX_AGE keeps it around, so a
+    thread that exits without closing leaks one MySQL connection per run.
+    """
+    try:
+        _run(order_ids=order_ids, user=user)
+    finally:
+        connections.close_all()
+
+
+def maybe_run_bulk_sync(force=False, run_in_thread=True, order_ids=None, user=None):
+    """Run the NCM bulk status sync if it is due (or if `force`).
+
+    Args:
+        force: skip the interval check (still respects the running-lock, so a
+            forced run can't stack on top of an in-flight one).
+        run_in_thread: True for web requests, which must return immediately.
+            False for the management command, which should run inline and
+            report its result.
+        order_ids: restrict the run to specific orders (the list page's
+            "Sync Now" button). A restricted run does not count as the
+            scheduled full sync, so it leaves the schedule clock alone.
+
+    Returns:
+        (started, summary) - `started` is False when another run holds the lock
+        or the interval hasn't elapsed. `summary` is None for threaded runs,
+        which finish after this returns.
+    """
+    if not _claim(force=force, advance_schedule=not order_ids):
+        return False, None
+
+    if not run_in_thread:
+        return True, _run(order_ids=order_ids, user=user)
+
+    thread = threading.Thread(
+        target=_run_in_thread,
+        kwargs={'order_ids': order_ids, 'user': user},
+        name='ncm-bulk-sync',
+        daemon=True,
+    )
+    try:
+        # on_commit so the claim is durable before the thread can act on it.
+        # Outside a transaction Django runs this immediately, which is the
+        # normal case here (there is no ATOMIC_REQUESTS).
+        transaction.on_commit(thread.start)
+    except Exception:
+        # Shared hosting caps process/thread counts (cPanel LVE nproc), so
+        # "can't start new thread" is a real failure here, not a theoretical
+        # one. Release immediately rather than leaving the sync locked out
+        # until the stale window expires.
+        logger.exception('Could not start the NCM bulk sync thread')
+        _release({'error': 'could not start sync thread'})
+        return False, None
+
+    return True, None
+
+
+def get_status():
+    """Scheduler state for the heartbeat endpoint and the logistics list page."""
+    s = APISettings.get_settings()
+    interval = max(int(s.order_sync_interval or 0), MIN_SYNC_SECONDS)
+    running_since = s.bulk_sync_running_since
+    is_running = bool(
+        running_since
+        and running_since > _now() - timedelta(seconds=STALE_CLAIM_SECONDS)
+    )
+    return {
+        'server_sync_interval': interval,
+        'page_refresh_interval': max(int(s.page_refresh_interval or 0), 5),
+        'last_sync_started_at': s.last_bulk_sync_started_at,
+        'last_sync_finished_at': s.last_bulk_sync_finished_at,
+        'syncing': is_running,
+        'last_summary': s.last_bulk_sync_summary or {},
+    }

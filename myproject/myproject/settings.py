@@ -282,11 +282,17 @@ TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN', default=None)
 TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER', default=None)
 
 # ===================== Real-time Configuration =====================
-# Auto-sync polling interval (seconds)
-ORDER_AUTO_SYNC_INTERVAL = config('ORDER_AUTO_SYNC_INTERVAL', default=14400, cast=int)
-
-# Check for pending updates every X minutes
-WEBHOOK_PENDING_CHECK_INTERVAL = config('WEBHOOK_PENDING_CHECK_INTERVAL', default=30, cast=int)
+# Sync cadence lives in the database (dashboard.APISettings, editable at
+# Settings -> API Sync Settings), not here - the old ORDER_AUTO_SYNC_INTERVAL /
+# WEBHOOK_PENDING_CHECK_INTERVAL env vars were read by nothing and have been
+# removed rather than left to look authoritative.
+#
+# Optional shared secret for /ncm/api/heartbeat/. The heartbeat normally runs
+# off a staff session, which means the background NCM sync only ticks while
+# somebody has a tab open. Set this and point any external uptime pinger at
+# https://<site>/ncm/api/heartbeat/?token=<value> to keep it ticking overnight.
+# Left empty, the token door is closed entirely.
+NCM_HEARTBEAT_TOKEN = config('NCM_HEARTBEAT_TOKEN', default='')
 
 # ======================== Logging Configuration ========================
 # Ensure logs directory exists before configuring handlers

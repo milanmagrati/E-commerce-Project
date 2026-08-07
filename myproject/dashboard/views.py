@@ -3329,7 +3329,8 @@ def orders_list(request):
         'payment_status_bulk_options': payment_status_bulk_options,
         'ncm_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True),
         'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
-        'ORDER_AUTO_SYNC_INTERVAL': APISettings.get_settings().order_sync_interval,
+        # Local-DB repaint cadence, not the NCM call cadence - see order_detail.
+        'ORDER_AUTO_SYNC_INTERVAL': APISettings.get_settings().page_refresh_interval,
     }
 
     return render(request, 'orders_list.html', context)
@@ -4327,7 +4328,10 @@ def order_detail(request, order_id):
         # API Integration configs for logistics
         'ncm_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True),
         'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
-        'AUTO_SYNC_INTERVAL': APISettings.get_settings().order_sync_interval,
+        # How often this page re-reads status from the local DB. Deliberately
+        # NOT order_sync_interval: that one is how often the SERVER calls NCM
+        # (ncm/scheduler.py). Polling the DB is free, so it can be much faster.
+        'AUTO_SYNC_INTERVAL': APISettings.get_settings().page_refresh_interval,
     }
 
     # Exchange eligibility check
@@ -6582,14 +6586,11 @@ def redirect_rtv_save(request, ncm_order_id):
         return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
 
     try:
-        # Get API config from RTVOrder
+        # Which NCM account owns this order (Order first, then RTVOrder) - an
+        # order is invisible to any other account's key.
         api_config_id = request.POST.get('api_config_id')
         if not api_config_id:
-            try:
-                rtv_rec = RTVOrder.objects.get(order_id=ncm_order_id)
-                api_config_id = rtv_rec.api_config_id
-            except RTVOrder.DoesNotExist:
-                pass
+            api_config_id = _resolve_ncm_api_config_id(ncm_order_id)
 
         # Resolve API credentials
         base_url_v2 = ''
@@ -14402,9 +14403,11 @@ def ncm_orders_trash(request):
             Q(customer_phone__icontains=search_query)
         )
 
-    # Branch filter
+    # Branch filter. Destination branch, matching the Logistics Orders list -
+    # ncm_from_branch is the pickup branch and defaults to 'TINKUNE', so
+    # filtering on it offered one choice that matched nearly every row.
     if branch_filter:
-        orders = orders.filter(ncm_from_branch=branch_filter)
+        orders = orders.filter(ncm_destination_branch=branch_filter)
 
     # Get total count before pagination
     total_orders = orders.count()
@@ -14414,10 +14417,10 @@ def ncm_orders_trash(request):
         is_deleted=True,
         logistics='ncm'
     ).exclude(
-        ncm_from_branch__isnull=True
+        ncm_destination_branch__isnull=True
     ).exclude(
-        ncm_from_branch=''
-    ).values_list('ncm_from_branch', flat=True).distinct().order_by('ncm_from_branch')
+        ncm_destination_branch=''
+    ).values_list('ncm_destination_branch', flat=True).distinct().order_by('ncm_destination_branch')
 
     # Pagination
     paginator = Paginator(orders, 25)
@@ -19528,7 +19531,12 @@ def pnd_bulk_logs_bulk_action(request):
 
 # ==================== UNIFIED LOGISTICS VIEWS ====================
 
+# These three were login-only while the sidebar links to them were gated on the
+# permissions below, and while their sibling (ncm_orders_trash) enforced its
+# own - so any logged-in account could read every customer's name, phone and
+# address by typing the URL. Gated to match what the menu already declares.
 @login_required
+@permission_required('can_view_ncm_orders')
 def logistics_orders_list(request):
     """
     Unified Logistics Orders Page - Shows NCM and/or PND orders with a provider toggle filter
@@ -19594,15 +19602,19 @@ def logistics_orders_list(request):
                 Q(customer_phone__icontains=search_query)
             )
 
-    # Branch filter
+    # Branch filter.
+    # Filters on the DESTINATION branch, which is the one the Branch column
+    # actually displays. It used to filter NCM orders on ncm_from_branch - the
+    # pickup branch, which defaults to 'TINKUNE' for practically every order -
+    # so the dropdown offered a single value and choosing it matched everything.
     if branch_filter:
         if provider == 'ncm':
-            orders = orders.filter(ncm_from_branch=branch_filter)
+            orders = orders.filter(ncm_destination_branch=branch_filter)
         elif provider == 'pnd':
             orders = orders.filter(pnd_destination_branch=branch_filter)
         else:
             orders = orders.filter(
-                Q(ncm_from_branch=branch_filter) | Q(pnd_destination_branch=branch_filter)
+                Q(ncm_destination_branch=branch_filter) | Q(pnd_destination_branch=branch_filter)
             )
 
     # Status filter
@@ -19651,11 +19663,12 @@ def logistics_orders_list(request):
 
     # Get unique branches and statuses for filter dropdowns based on provider
     if provider == 'ncm':
+        # Destination branch, to match both the Branch column and the filter above.
         branches = list(Order.objects.filter(
             is_deleted=False, logistics='ncm'
-        ).exclude(ncm_from_branch__isnull=True).exclude(ncm_from_branch='').values_list(
-            'ncm_from_branch', flat=True
-        ).distinct().order_by('ncm_from_branch'))
+        ).exclude(ncm_destination_branch__isnull=True).exclude(ncm_destination_branch='').values_list(
+            'ncm_destination_branch', flat=True
+        ).distinct().order_by('ncm_destination_branch'))
         statuses = list(Order.objects.filter(
             is_deleted=False, logistics='ncm'
         ).exclude(ncm_status__isnull=True).exclude(ncm_status='').values_list(
@@ -19675,8 +19688,8 @@ def logistics_orders_list(request):
     else:
         ncm_branches = list(Order.objects.filter(
             is_deleted=False, logistics='ncm'
-        ).exclude(ncm_from_branch__isnull=True).exclude(ncm_from_branch='').values_list(
-            'ncm_from_branch', flat=True
+        ).exclude(ncm_destination_branch__isnull=True).exclude(ncm_destination_branch='').values_list(
+            'ncm_destination_branch', flat=True
         ).distinct())
         pnd_branches = list(Order.objects.filter(
             is_deleted=False, logistics='pick_and_drop'
@@ -19744,6 +19757,18 @@ def logistics_orders_list(request):
     # Trash count for NCM
     trash_count = Order.objects.filter(is_deleted=True, logistics='ncm').count()
 
+    # Background sync state: this page repaints its status badges live as the
+    # sync writes them, so it needs the poll cadence and something honest to
+    # show in the "Last Updated" card.
+    from ncm.scheduler import get_status as _ncm_sync_status
+    from ncm.views import _may_sync_ncm
+    _sync_status = _ncm_sync_status()
+
+    # "Sync Now" is NCM-only (Pick & Drop has no status-sync integration) and
+    # needs the sync permission, so decide once here rather than assembling the
+    # condition in the template.
+    can_sync_now = provider != 'pnd' and _may_sync_ncm(request.user)
+
     context = {
         'orders': orders_page,
         'total_orders': total_orders,
@@ -19760,12 +19785,17 @@ def logistics_orders_list(request):
         'ncm_count': ncm_count,
         'pnd_count': pnd_count,
         'trash_count': trash_count,
+        'PAGE_REFRESH_INTERVAL': _sync_status['page_refresh_interval'],
+        'last_sync_at': _sync_status['last_sync_finished_at'],
+        'sync_running': _sync_status['syncing'],
+        'can_sync_now': can_sync_now,
     }
 
     return render(request, 'logistics_orders_list.html', context)
 
 
 @login_required
+@permission_required('can_view_ncm_bulk_logs')
 def logistics_bulk_logs_list(request):
     """
     Unified Bulk Logs Page - Shows NCM and/or PND bulk logs with a provider toggle filter.
@@ -19971,6 +20001,7 @@ def logistics_bulk_logs_list(request):
 
 
 @login_required
+@permission_required('can_view_ncm_branches')
 def logistics_branches(request):
     """
     Unified Logistics Branches page - currently shows NCM branches.
@@ -20449,8 +20480,15 @@ def settings_hub(request):
             except (ValueError, TypeError):
                 return default
 
-        api_settings.order_sync_interval = _safe_int('order_sync_interval', api_settings.order_sync_interval, 60, 86400)
-        api_settings.webhook_check_interval = _safe_int('webhook_check_interval', api_settings.webhook_check_interval, 10, 3600)
+        # order_sync_interval is the real server-side NCM cadence, so its floor
+        # is enforced here as well as in the form - ncm.scheduler clamps it a
+        # second time when it actually schedules, because a hand-crafted POST
+        # or a legacy row must not be able to point the sync at NCM every second.
+        from ncm.scheduler import MIN_SYNC_SECONDS
+        api_settings.order_sync_interval = _safe_int(
+            'order_sync_interval', api_settings.order_sync_interval, MIN_SYNC_SECONDS, 86400)
+        api_settings.page_refresh_interval = _safe_int(
+            'page_refresh_interval', api_settings.page_refresh_interval, 10, 3600)
         api_settings.ncm_api_timeout = _safe_int('ncm_api_timeout', api_settings.ncm_api_timeout, 5, 120)
 
         # Only persist statuses that actually exist in Setup Management. This
@@ -20466,7 +20504,16 @@ def settings_hub(request):
             s for s in dict.fromkeys(submitted_statuses) if s in valid_status_values
         ]
         api_settings.bulk_sync_fetch_event_times = bool(request.POST.get('bulk_sync_fetch_event_times'))
-        api_settings.save()
+
+        # Write only the admin-editable columns. A plain save() would also write
+        # back the scheduler's lock/clock columns as they looked when this page
+        # was rendered - so saving settings while a sync happened to be running
+        # would clear `bulk_sync_running_since` underneath it and let a second
+        # sync start on top of the first.
+        api_settings.save(update_fields=[
+            'order_sync_interval', 'page_refresh_interval', 'ncm_api_timeout',
+            'bulk_sync_included_statuses', 'bulk_sync_fetch_event_times', 'updated_at',
+        ])
         messages.success(request, 'API settings saved successfully!')
         from django.urls import reverse
         return redirect(reverse('settings_hub') + '?section=api_settings')
@@ -20484,11 +20531,26 @@ def settings_hub(request):
         for setup in order_status_setups
     ]
 
+    # Live health of the background NCM sync, plus the order count the interval
+    # field uses to show what a given cadence costs in API calls.
+    from ncm.bulk_sync import DEFAULT_TERMINAL_STATUSES
+    from ncm.scheduler import get_status as _ncm_sync_status
+    _sync_status = _ncm_sync_status()
+    # Mirrors how the sync itself picks candidates (ncm/bulk_sync.py), so the
+    # cost estimate reflects the orders that will actually be requested.
+    _included = api_settings.bulk_sync_included_statuses or []
+    _active_qs = Order.objects.filter(ncm_order_id__isnull=False, is_deleted=False)
+    _active_qs = (_active_qs.filter(status__in=_included) if _included
+                  else _active_qs.exclude(status__in=DEFAULT_TERMINAL_STATUSES))
+    active_ncm_order_count = _active_qs.count()
+
     context = {
         'active_section': active_section,
         'company': company,
         'api_settings': api_settings,
         'bulk_sync_status_choices': bulk_sync_status_choices,
+        'bulk_sync_is_running': _sync_status['syncing'],
+        'active_ncm_order_count': active_ncm_order_count,
         'devices': device_list,
         'device_count': len(device_list),
         'maintenance': maintenance,
@@ -21842,20 +21904,47 @@ def ncm_rtv_add_comment(request, ncm_order_id):
         }, status=500)
 
 
+def _resolve_ncm_api_config_id(ncm_order_id):
+    """Which NCM account owns this NCM order id, or None for the default.
+
+    Orders can be created under any of several LogisticsAPIConfig accounts, and
+    an order is only visible to the account that created it - query it with the
+    wrong key and NCM answers with nothing.
+
+    The Order table is checked first. These endpoints started life serving the
+    RTV screens, so they looked the account up on RTVOrder alone; but the order
+    detail page uses them too, and a plain non-RTV order has no RTVOrder row.
+    Those orders silently fell back to the default account, which is why the
+    "Status History" panel could come up empty on an order whose history NCM
+    knows perfectly well.
+    """
+    from dashboard.models import Order, RTVOrder
+
+    # Note the tuple: a local order that exists but has api_config_id=None was
+    # created on the DEFAULT account, and None is the right answer for it. Only
+    # a genuinely missing order should fall through to RTVOrder - otherwise a
+    # default-account order could be handed some other account's credentials.
+    row = Order.objects.filter(
+        ncm_order_id=ncm_order_id
+    ).values_list('api_config_id', flat=True)[:1]
+    row = list(row)
+    if row:
+        return row[0]
+
+    # .filter().first() rather than .get(): RTVOrder has no uniqueness
+    # guarantee on order_id, and a duplicate must not raise here.
+    return RTVOrder.objects.filter(
+        order_id=ncm_order_id
+    ).values_list('api_config_id', flat=True).first()
+
+
 @login_required
 @permission_required('can_view_orders')
 def ncm_rtv_get_comments(request, ncm_order_id):
     """Fetch all comments for an NCM RTV order"""
     from services.ncm_service import NCMService
-    from dashboard.models import RTVOrder
 
-    # Look up RTV to find the correct API config
-    api_config_id = None
-    try:
-        rtv = RTVOrder.objects.get(order_id=ncm_order_id)
-        api_config_id = rtv.api_config_id
-    except RTVOrder.DoesNotExist:
-        pass
+    api_config_id = _resolve_ncm_api_config_id(ncm_order_id)
 
     ncm_service = NCMService(api_config_id=api_config_id)
     result = ncm_service.get_order_comments(ncm_order_id)
@@ -21881,15 +21970,9 @@ def ncm_rtv_order_detail(request, ncm_order_id):
     - Local Order data (if linked via ncm_order_id) with items, payment info, etc.
     """
     from services.ncm_service import NCMService
-    from dashboard.models import RTVOrder, Order, OrderItem
+    from dashboard.models import Order, OrderItem
 
-    # Look up RTV to find the correct API config
-    api_config_id = None
-    try:
-        rtv_rec = RTVOrder.objects.get(order_id=ncm_order_id)
-        api_config_id = rtv_rec.api_config_id
-    except RTVOrder.DoesNotExist:
-        pass
+    api_config_id = _resolve_ncm_api_config_id(ncm_order_id)
 
     ncm_service = NCMService(api_config_id=api_config_id)
     response_data = {
