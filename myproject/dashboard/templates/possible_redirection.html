@@ -265,12 +265,11 @@
                                     <button type="button" class="btn btn-outline-info py-0 px-1 matches-toggle-btn" onclick="toggleMatches({{ entry.ncm_order_id }})" title="{{ entry.matching_count }} matching new order(s) — click to expand">
                                         <i class="fas fa-bullseye me-1"></i>{{ entry.matching_count }} match{{ entry.matching_count|pluralize:"es" }}
                                     </button>
-                                </div>
-                            {% elif entry.claimed_elsewhere_count %}
-                                <div class="mt-1">
-                                    <span class="badge bg-secondary" title="This RTV's only matching new order(s) are already suggested for a more recent RTV above — using one there frees nothing for this row.">
-                                        <i class="fas fa-user-lock me-1"></i>{{ entry.claimed_elsewhere_count }} match{{ entry.claimed_elsewhere_count|pluralize:"es" }} claimed above
-                                    </span>
+                                    {% if entry.contested_count %}
+                                        <span class="badge bg-warning text-dark ms-1" title="{{ entry.contested_count }} of these order(s) also match an RTV listed above — expand to see which, then decide which package goes to that customer.">
+                                            <i class="fas fa-users me-1"></i>{{ entry.contested_count }} shared
+                                        </span>
+                                    {% endif %}
                                 </div>
                             {% endif %}
                         </td>
@@ -390,9 +389,18 @@
                                         <tbody>
                                             {% for row in entry.matching_rows %}
                                             {% with match=row.order %}
-                                            <tr>
+                                            <tr{% if row.claimed_by %} class="table-warning"{% endif %}>
                                                 <td>
                                                     <a href="{% url 'order_detail' match.id %}" target="_blank" class="text-decoration-none fw-bold text-primary">#{{ match.order_number }}</a>
+                                                    {% if row.claimed_by %}
+                                                    <div class="small text-muted mt-1">
+                                                        <i class="fas fa-users me-1 text-warning"></i>Also suggested for
+                                                        {% for other in row.claimed_by %}
+                                                            <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-decoration-none" onclick="focusRtvRow({{ other }})" title="Jump to RTV #{{ other }}">RTV #{{ other }}</button>{% if not forloop.last %}, {% endif %}
+                                                        {% endfor %}
+                                                        — only one package can go to this customer.
+                                                    </div>
+                                                    {% endif %}
                                                 </td>
                                                 <td><strong>{{ match.customer_name }}</strong></td>
                                                 <td class="hide-sm text-muted">{{ match.customer_phone }}</td>
@@ -1969,6 +1977,23 @@ function toggleMatches(ncmId) {
     const row = document.getElementById('matches-row-' + ncmId);
     if (!row) return;
     row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
+}
+
+// Jump to the RTV row that shares a matching order, expanding its match list so
+// the two candidates can be compared before deciding which package to redirect.
+function focusRtvRow(ncmId) {
+    const row = document.querySelector(`tr[data-ncm-id="${ncmId}"]`);
+    if (!row) {
+        showToast(`RTV #${ncmId} is not on this page — clear the filters or check another page.`, 'text-bg-warning');
+        return;
+    }
+    const matches = document.getElementById('matches-row-' + ncmId);
+    if (matches) matches.style.display = 'table-row';
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const previous = row.style.backgroundColor;
+    row.style.transition = 'background-color 0.4s ease';
+    row.style.backgroundColor = '#fff3cd';
+    setTimeout(() => { row.style.backgroundColor = previous; }, 2200);
 }
 
 function openRedirectWithNewCustomer(ncmId, name, phone, email, address, landmark, city, orderNum, matchedOrderId) {

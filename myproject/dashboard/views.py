@@ -3782,6 +3782,152 @@ def _redirect_old_customer(metadata):
     }
 
 
+# Every redirect code path writes the destination customer into the log
+# description, in one of three phrasings ("New customer: …", "Customer details
+# used: …", "Customer details used for redirect: …"), all followed by
+# ", Phone: …, Address: …". That sentence is the only record of the new customer
+# for orders whose denormalized fields were later blanked, so it doubles as a
+# recovery source. Name/address may contain commas, hence the non-greedy stops
+# on the literal ", Phone:" / ", Address:" separators.
+_REDIRECT_NEW_CUSTOMER_RE = re.compile(
+    r'(?:new customer|customer details used(?: for redirect)?)\s*:\s*'
+    r'(?P<name>.*?)\s*,\s*phone\s*:\s*'
+    r'(?P<phone>.*?)\s*,\s*address\s*:\s*'
+    r'(?P<address>.*?)\s*\.?\s*$',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+# Redirecting a package writes a 'redirected' log on TWO orders: the package's
+# own order (which really did change customer) and — when the destination was
+# picked off the Possible Redirection match list — the confirmed order whose
+# customer is receiving it. The second one did not change at all; its log exists
+# to record that it was fulfilled by a redirect. Telling them apart matters,
+# because a destination log's metadata is a snapshot of the order's *current*
+# customer, and reading it as an "old customer" makes Redirect Orders show the
+# same person on both sides of the arrow.
+_REDIRECT_DESTINATION_DESC_RE = re.compile(r'customer details used', re.IGNORECASE)
+
+REDIRECT_ROLE_SOURCE = 'redirected'      # this order was redirected elsewhere
+REDIRECT_ROLE_DESTINATION = 'destination'  # this order received a redirected package
+
+
+def _redirect_log_role(log, order):
+    """Return REDIRECT_ROLE_SOURCE or REDIRECT_ROLE_DESTINATION for a log."""
+    meta = _redirect_meta_as_dict(log.metadata)
+
+    role = str(meta.get('redirect_role') or '').strip().lower()
+    if role in (REDIRECT_ROLE_SOURCE, REDIRECT_ROLE_DESTINATION):
+        return role
+
+    # Rows written before redirect_role existed. The description phrasing is the
+    # strongest signal: destination logs say "Customer details used…", source
+    # logs say "New customer: …".
+    if _REDIRECT_DESTINATION_DESC_RE.search(log.description or ''):
+        return REDIRECT_ROLE_DESTINATION
+
+    # Failing that: a genuine redirect always moves the package to a different
+    # person, so a snapshot identical to the order's current customer can only
+    # be a destination log.
+    snapshot = _redirect_old_customer(meta)
+    if (snapshot['name'] and snapshot['phone']
+            and snapshot['name'] == (order.customer_name or '').strip()
+            and snapshot['phone'] == (order.customer_phone or '').strip()):
+        return REDIRECT_ROLE_DESTINATION
+
+    return REDIRECT_ROLE_SOURCE
+
+
+def _redirect_source_reference(log):
+    """The order/package a destination log received its parcel from, for display."""
+    meta = _redirect_meta_as_dict(log.metadata)
+    ncm_id = meta.get('source_ncm_order_id') or ''
+    if not ncm_id:
+        # Legacy destination logs only carry it in the description.
+        match = re.search(r'NCM Order #(\d+)', log.description or '')
+        if match:
+            ncm_id = match.group(1)
+    return {
+        'order_number': str(meta.get('source_order_number') or '').strip(),
+        'ncm_order_id': str(ncm_id).strip(),
+    }
+
+
+def _redirect_new_customer_from_description(description):
+    """Pull name/phone/address out of a 'redirected' log description, or {}."""
+    if not description:
+        return {}
+    match = _REDIRECT_NEW_CUSTOMER_RE.search(description)
+    if not match:
+        return {}
+    return {key: (value or '').strip() for key, value in match.groupdict().items()}
+
+
+def _redirect_new_customer(order, redirection_logs=()):
+    """
+    Resolve the customer an order was redirected *to*, with fallbacks.
+
+    The order's own denormalized fields are the source of truth — a redirect
+    overwrites them with the destination customer. They are not always complete
+    though: the RTV redirect path only ever wrote name/phone/address, so
+    email/branch/landmark can be stale or empty, and orders saved through a form
+    that posted blank values lost the fields entirely. So fill the gaps from the
+    linked Customer record, then the order's Branch, then the redirect log
+    description (see `_REDIRECT_NEW_CUSTOMER_RE`).
+
+    Never falls back to the *old* customer snapshot — showing the pre-redirect
+    customer under "Redirected To" would be worse than showing nothing.
+
+    `redirection_logs` must be newest-first (OrderActivityLog's default ordering).
+    """
+    info = {
+        'name': (order.customer_name or '').strip(),
+        'phone': (order.customer_phone or '').strip(),
+        'email': (order.customer_email or '').strip(),
+        'branch': (order.branch_city or '').strip(),
+        'landmark': (order.landmark or '').strip(),
+        'address': (order.shipping_address or '').strip(),
+    }
+
+    # Order.customer is not re-pointed by every redirect path, so it can still
+    # be the customer the order was redirected *away* from. Only borrow from it
+    # when it is demonstrably the same person as the order's own details — a
+    # matching phone, or an order with no phone left to contradict it.
+    customer = getattr(order, 'customer', None)
+    if customer is not None and info['phone'] and (customer.phone or '').strip() != info['phone']:
+        customer = None
+    if customer is not None:
+        for key, value in (
+            ('name', customer.name),
+            ('phone', customer.phone),
+            ('email', customer.email),
+            ('branch', customer.city),
+            ('landmark', customer.landmark),
+            ('address', customer.address),
+        ):
+            if not info[key] and value:
+                info[key] = str(value).strip()
+
+    if not info['branch'] and getattr(order, 'branch', None) is not None:
+        info['branch'] = (order.branch.name or '').strip()
+
+    recovered = False
+    if not all(info[key] for key in ('name', 'phone', 'address')):
+        for log in redirection_logs:
+            parsed = _redirect_new_customer_from_description(log.description)
+            if not parsed:
+                continue
+            for key in ('name', 'phone', 'address'):
+                if not info[key] and parsed.get(key):
+                    info[key] = parsed[key]
+                    recovered = True
+            if all(info[key] for key in ('name', 'phone', 'address')):
+                break
+
+    info['recovered_from_log'] = recovered
+    return info
+
+
 @login_required
 @permission_required('can_view_orders')
 def order_detail(request, order_id):
@@ -5515,10 +5661,11 @@ def possible_redirection_list(request):
         rtv_entries.append(entry)
 
     # ── Per-entry matching_rows: reuse _confirmed_branch_map (no extra DB query) ──
-    # Track orders already claimed by an earlier (more recent) RTV entry on
-    # this page so the same local order isn't suggested under multiple RTV
-    # blocks at once.
-    _already_suggested_order_ids = set()
+    # order id → NCM ids of the RTV rows above that also match it. One confirmed
+    # order can genuinely be the right destination for several RTVs, so instead
+    # of hiding it from all but the first row we show it everywhere and name the
+    # rows contesting it.
+    _suggested_by_order_id = {}
     for entry in rtv_entries:
         _bk = (entry['rtv'].to_branch or '').upper()
         _branch_candidates = _confirmed_branch_map.get(_bk, [])
@@ -5554,19 +5701,22 @@ def possible_redirection_list(request):
         # _iter_matching_orders yields nothing for empty sources. The RTV's own
         # local order is excluded so it can't be suggested as its own target.
         _own_order_id = _rtv_own_local_order_id.get(_ncm_id)
-        _all_matched = list(_iter_matching_orders(
+        _matched = list(_iter_matching_orders(
             _match_sources, _branch_candidates,
             exclude_ids={_own_order_id} if _own_order_id else frozenset(),
         ))
-        _matched = [
-            (_o, _refs) for _o, _refs in _all_matched
-            if _o.id not in _already_suggested_order_ids
-        ]
-        _already_suggested_order_ids.update(_o.id for _o, _ in _matched)
 
         # Rows carry the per-item pairing so the template can print each RTV
         # product next to the order item it actually matched, instead of
         # repeating the whole package description against every item.
+        #
+        # 'claimed_by' names the RTV rows above that match the same order. These
+        # used to be filtered out entirely, which left the losing row with a
+        # dead "N matches claimed above" badge the operator could not open — and
+        # denied them the perfectly valid choice of sending THIS package to that
+        # customer instead. Nothing is actually reserved by rendering a row:
+        # the claim happens on redirect, which flips the order to 'redirected'
+        # and drops it out of the confirmed-order pool on the next page load.
         entry['matching_rows'] = [
             {
                 'order': _o,
@@ -5574,14 +5724,17 @@ def possible_redirection_list(request):
                     {'item': _it, 'rtv_ref': _ref}
                     for _it, _ref in zip(_o.items.all(), _refs)
                 ],
+                'claimed_by': list(_suggested_by_order_id.get(_o.id, ())),
             }
             for _o, _refs in _matched
         ]
+        for _o, _ in _matched:
+            _suggested_by_order_id.setdefault(_o.id, []).append(_ncm_id)
+
         entry['matching_count'] = len(_matched)
-        # Surfaced in the template so an RTV whose only candidate was claimed by
-        # a more recent RTV above doesn't just render as a blank row on a page
-        # whose whole purpose is showing redirect candidates.
-        entry['claimed_elsewhere_count'] = len(_all_matched) - len(_matched)
+        entry['contested_count'] = sum(
+            1 for _row in entry['matching_rows'] if _row['claimed_by']
+        )
 
     ncm_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
     branches = Branch.objects.filter(is_active=True).order_by('name')
@@ -5810,6 +5963,14 @@ def redirect_orders_list(request):
         redirect_user = None
         redirect_reason = ''
 
+        # An order that only ever received a redirected package has no "old
+        # customer" — see _redirect_log_role(). Listing its own customer on both
+        # sides of the arrow made the row read as a redirect to nowhere.
+        is_destination = bool(prefetched_logs) and all(
+            _redirect_log_role(_log, order) == REDIRECT_ROLE_DESTINATION
+            for _log in prefetched_logs
+        )
+
         if prefetched_logs:
             log = prefetched_logs[0]  # already sorted -created_at by prefetch
             redirect_timestamp = log.created_at
@@ -5820,6 +5981,8 @@ def redirect_orders_list(request):
             # snapshot an earlier redirect captured. Key styles vary — see
             # _redirect_old_customer().
             for _log in prefetched_logs:
+                if _redirect_log_role(_log, order) == REDIRECT_ROLE_DESTINATION:
+                    continue
                 _snapshot = _redirect_old_customer(_log.metadata)
                 if any(_snapshot.values()):
                     old_customer_info = {
@@ -5830,16 +5993,24 @@ def redirect_orders_list(request):
                     }
                     break
 
+        # Same resolver the detail modal uses, so the row and the modal can't
+        # disagree about who the order went to.
+        new_customer_info = _redirect_new_customer(order, prefetched_logs)
+
         entry = {
             'order': order,
             'order_id': order.id,
             'order_number': order.order_number,
             'ncm_order_id': order.ncm_order_id,
-            'new_customer_name': order.customer_name,
-            'new_customer_phone': order.customer_phone,
-            'new_branch': order.branch_city,
-            'new_address': order.shipping_address,
+            'new_customer_name': new_customer_info['name'] or '—',
+            'new_customer_phone': new_customer_info['phone'] or '—',
+            'new_branch': new_customer_info['branch'] or '—',
+            'new_address': new_customer_info['address'] or '—',
             'old_customer_info': old_customer_info,
+            'is_destination': is_destination,
+            'redirect_source': (
+                _redirect_source_reference(prefetched_logs[0]) if is_destination else {}
+            ),
             'redirect_timestamp': redirect_timestamp,
             'redirect_user': redirect_user,
             'redirect_reason': redirect_reason,
@@ -5965,21 +6136,42 @@ def redirect_order_save(request, order_id):
 
         # Capture old customer details before any changes
         _old_customer_details = {
+            'redirect_role': REDIRECT_ROLE_SOURCE,
             'customer_name': order.customer_name,
             'customer_phone': order.customer_phone,
+            'customer_email': order.customer_email,
             'shipping_address': order.shipping_address,
             'branch_city': order.branch_city,
+            'landmark': order.landmark,
         }
 
         with transaction.atomic():
-            # Update customer/shipping fields
-            order.customer_name = request.POST.get('customer_name', order.customer_name).strip()
-            order.customer_phone = request.POST.get('customer_phone', order.customer_phone).strip()
+            # Update customer/shipping fields.
+            #
+            # request.POST.get(key, default) only returns the default when the
+            # key is ABSENT — a key posted with an empty value overwrites the
+            # field with ''. For the identity fields that is never what the
+            # caller meant, and it is destructive: the redirect wipes the very
+            # customer it just redirected to, leaving the Redirect Orders modal
+            # with nothing to show under "Redirected To". Blank means "leave it
+            # alone" here; optional fields may still be cleared deliberately.
+            def _keep_if_blank(field, posted_key):
+                value = request.POST.get(posted_key)
+                if value is None or not value.strip():
+                    return getattr(order, field) or ''
+                return value.strip()
+
+            order.customer_name = _keep_if_blank('customer_name', 'customer_name')
+            order.customer_phone = _keep_if_blank('customer_phone', 'customer_phone')
+            order.shipping_address = _keep_if_blank('shipping_address', 'shipping_address')
             order.customer_email = request.POST.get('customer_email', order.customer_email).strip()
-            order.shipping_address = request.POST.get('shipping_address', order.shipping_address).strip()
             order.landmark = request.POST.get('landmark', order.landmark or '').strip()
             order.notes = request.POST.get('notes', order.notes or '').strip()
-            order.in_out = request.POST.get('in_out', order.in_out)
+            # in_out is a choice field with no blank option — an empty post would
+            # store a value that get_in_out_display() cannot resolve.
+            _in_out = (request.POST.get('in_out') or '').strip()
+            if _in_out in dict(Order.IN_OUT_CHOICES):
+                order.in_out = _in_out
 
             new_branch_city = request.POST.get('branch_city', '').strip()
             if new_branch_city:
@@ -6077,15 +6269,21 @@ def redirect_order_save(request, order_id):
 
             order.save()
 
-            # Update customer record if exists
+            # Mirror the edit onto the customer record, but never blank a field
+            # there either — this record is shared by every order the customer
+            # placed, so an empty value would erase history well beyond this one.
             if order.customer:
                 cust = order.customer
-                cust.name = order.customer_name
-                cust.phone = order.customer_phone
-                cust.email = order.customer_email
+                if order.customer_name:
+                    cust.name = order.customer_name
+                if order.customer_phone:
+                    cust.phone = order.customer_phone
+                if order.customer_email:
+                    cust.email = order.customer_email
                 if new_branch_city:
                     cust.city = new_branch_city
-                cust.address = order.shipping_address
+                if order.shipping_address:
+                    cust.address = order.shipping_address
                 cust.save()
 
         # Now handle logistics send if requested
@@ -6139,12 +6337,15 @@ def redirect_order_save(request, order_id):
                     try:
                         _matched_order = Order.objects.get(id=int(_matched_oid), is_deleted=False)
 
-                        # Capture old matched order customer details for activity log
+                        # This order is the DESTINATION — its own customer is
+                        # unchanged, it is simply being fulfilled by the
+                        # redirected package. Record that, rather than a snapshot
+                        # of its current customer that later reads as an "old
+                        # customer" and shows the same person on both sides.
                         _matched_old_details = {
-                            'customer_name': _matched_order.customer_name,
-                            'customer_phone': _matched_order.customer_phone,
-                            'shipping_address': _matched_order.shipping_address,
-                            'branch_city': _matched_order.branch_city,
+                            'redirect_role': REDIRECT_ROLE_DESTINATION,
+                            'source_order_number': order.order_number or '',
+                            'source_ncm_order_id': order.ncm_order_id or '',
                         }
 
                         # Try to apply 'Redirected' status from Setup Management
@@ -6482,10 +6683,13 @@ def redirect_rtv_save(request, ncm_order_id):
 
                 # Store old customer details before updating
                 _old_customer_details = {
+                    'redirect_role': REDIRECT_ROLE_SOURCE,
                     'customer_name': local_order.customer_name,
                     'customer_phone': local_order.customer_phone,
+                    'customer_email': local_order.customer_email,
                     'shipping_address': local_order.shipping_address,
                     'branch_city': local_order.branch_city,
+                    'landmark': local_order.landmark,
                 }
 
                 local_order.ncm_status = 'redirected'
@@ -6493,6 +6697,20 @@ def redirect_rtv_save(request, ncm_order_id):
                 local_order.customer_phone = payload['phone'] or local_order.customer_phone
                 local_order.shipping_address = payload['address'] or local_order.shipping_address
                 _lo_update_fields = ['ncm_status', 'customer_name', 'customer_phone', 'shipping_address']
+
+                # Only name/phone/address go to NCM, but the redirect form also
+                # collects email/city/landmark. Without persisting them the
+                # order keeps the *previous* customer's branch and landmark,
+                # so "Redirected To" shows a destination that never existed.
+                for _field, _posted_key in (
+                    ('customer_email', 'customer_email'),
+                    ('branch_city', 'branch_city'),
+                    ('landmark', 'landmark'),
+                ):
+                    _posted = request.POST.get(_posted_key, '').strip()
+                    if _posted:
+                        setattr(local_order, _field, _posted)
+                        _lo_update_fields.append(_field)
                 # Apply 'Redirected' order status from Setup Management
                 try:
                     _redir_status = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
@@ -6512,12 +6730,12 @@ def redirect_rtv_save(request, ncm_order_id):
                 try:
                     _matched_order = Order.objects.get(id=int(_matched_oid), is_deleted=False)
 
-                    # Capture old matched order customer details for activity log
+                    # Destination order — see the matching branch in
+                    # redirect_order_save() for why this is a role marker rather
+                    # than a customer snapshot.
                     _matched_old_details = {
-                        'customer_name': _matched_order.customer_name,
-                        'customer_phone': _matched_order.customer_phone,
-                        'shipping_address': _matched_order.shipping_address,
-                        'branch_city': _matched_order.branch_city,
+                        'redirect_role': REDIRECT_ROLE_DESTINATION,
+                        'source_ncm_order_id': ncm_order_id,
                     }
 
                     # Try to apply 'Redirected' status from Setup Management
@@ -22178,19 +22396,38 @@ def get_redirect_order_details(request, order_id):
 
         # Walk every redirect log (newest first) so a later log written with empty
         # metadata doesn't hide the snapshot captured by an earlier one.
+        is_destination = False
         for log in redirection_logs:
-            snapshot = _redirect_old_customer(log.metadata)
+            role = _redirect_log_role(log, order)
+            # A destination log's metadata is this order's own current customer,
+            # not a pre-redirect snapshot — reading it as one is what made the
+            # modal show the same person under both "Original" and "Redirected To".
+            snapshot = (
+                _redirect_old_customer(log.metadata)
+                if role == REDIRECT_ROLE_SOURCE
+                else {'name': '', 'phone': '', 'email': '', 'branch': '', 'address': ''}
+            )
 
-            redirect_history.append({
+            entry = {
                 'redirect_user': (log.user.get_full_name() or log.user.username) if log.user else 'System',
                 'redirect_timestamp': log.created_at.isoformat(),
                 'redirect_timestamp_display': log.effective_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
                 'redirect_reason': log.description or '',
                 'old_customer': snapshot,
-            })
+                'role': role,
+            }
+            if role == REDIRECT_ROLE_DESTINATION:
+                entry['source'] = _redirect_source_reference(log)
+                is_destination = True
+            redirect_history.append(entry)
 
             if not old_customer_info and any(snapshot.values()):
                 old_customer_info = dict(snapshot)
+
+        # Only a log that actually redirected this order away makes it a source.
+        is_destination = is_destination and not any(
+            _entry['role'] == REDIRECT_ROLE_SOURCE for _entry in redirect_history
+        )
 
         if old_customer_info:
             # Email is never captured in redirect metadata — recover it from the
@@ -22214,6 +22451,12 @@ def get_redirect_order_details(request, order_id):
                 'old_shipping_address': old_customer_info['address'],
             })
 
+        # The customer the order was redirected TO. Resolved through the same
+        # fallback chain the order detail page uses, so a redirect that only
+        # persisted part of the destination details still renders a complete
+        # block instead of a column of em dashes.
+        new_customer_info = _redirect_new_customer(order, redirection_logs)
+
         # Get all order items
         items = []
         for item in order.items.all():
@@ -22236,12 +22479,16 @@ def get_redirect_order_details(request, order_id):
                 'discount_amount': str(order.discount_amount or '0'),
                 'shipping_charge': str(order.shipping_charge or '0'),
                 'tax_percent': str(order.tax_percent or '0'),
-                'customer_name': order.customer_name or '',
-                'customer_phone': order.customer_phone or '',
-                'customer_email': order.customer_email or '',
-                'branch_city': order.branch_city or '',
-                'shipping_address': order.shipping_address or '',
-                'landmark': order.landmark or '',
+                # Top-level customer_* keys stay on the resolved values, not the
+                # raw columns — they are what the modal's "Redirected To" block
+                # reads, and any consumer wanting the raw row can hit the order
+                # detail endpoint.
+                'customer_name': new_customer_info['name'],
+                'customer_phone': new_customer_info['phone'],
+                'customer_email': new_customer_info['email'],
+                'branch_city': new_customer_info['branch'],
+                'shipping_address': new_customer_info['address'],
+                'landmark': new_customer_info['landmark'],
                 'in_out': order.get_in_out_display() if order.in_out else '',
                 'delivery_type': order.ncm_delivery_type or '',
                 'payment_status': order.payment_status or '',
@@ -22252,6 +22499,15 @@ def get_redirect_order_details(request, order_id):
                 'created_at': order.created_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
                 'updated_at': order.updated_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
                 'old_customer_info': old_customer_info,
+                'new_customer_info': new_customer_info,
+                # True when this order only ever RECEIVED a redirected package —
+                # its own customer never changed, so the modal must not present
+                # it as a redirection with an old and a new customer.
+                'is_redirect_destination': is_destination,
+                'redirect_source': (
+                    _redirect_source_reference(redirection_logs[0])
+                    if is_destination and redirection_logs else {}
+                ),
                 'redirect_history': redirect_history,
                 'items': items,
             }

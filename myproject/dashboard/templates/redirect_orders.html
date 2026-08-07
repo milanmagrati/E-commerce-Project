@@ -615,17 +615,28 @@
                         {% endif %}
                     </td>
                     <td>
+                        {% if entry.is_destination %}
+                        <span class="text-muted small fst-italic"
+                            title="This order was not redirected — it received the package redirected from {% if entry.redirect_source.order_number %}order #{{ entry.redirect_source.order_number }}{% elif entry.redirect_source.ncm_order_id %}NCM package #{{ entry.redirect_source.ncm_order_id }}{% else %}another order{% endif %}.">
+                            <i class="fas fa-arrow-right me-1"></i>Destination — customer unchanged
+                        </span>
+                        {% else %}
                         <div class="customer-badge old">
                             <div>
                                 <div class="customer-name">{{ entry.old_customer_info.name }}</div>
                                 <div class="customer-phone">{{ entry.old_customer_info.phone }}</div>
                             </div>
                         </div>
+                        {% endif %}
                     </td>
                     <td class="hide-md">
+                        {% if not entry.is_destination %}
                         <span class="badge bg-secondary text-white" title="{{ entry.old_customer_info.branch }}">
                             {{ entry.old_customer_info.branch|truncatechars:15 }}
                         </span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
                     </td>
                     <td>
                         <div class="customer-badge new">
@@ -652,7 +663,9 @@
                         </div>
                     </td>
                     <td class="hide-sm">
-                        {% if entry.is_pending %}
+                        {% if entry.is_destination %}
+                            <span class="badge bg-info text-dark"><i class="fas fa-arrow-right me-1"></i>Destination</span>
+                        {% elif entry.is_pending %}
                             <span class="badge bg-warning text-dark"><i class="fas fa-hourglass-half me-1"></i>Pending</span>
                         {% else %}
                             <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Redirected</span>
@@ -814,8 +827,15 @@
                         </div>
                     </div>
 
+                    <!-- Destination-order notice -->
+                    <div class="od-section d-none" id="od_destination_section">
+                        <div class="od-section-body">
+                            <div class="alert alert-info mb-0" id="od_destination_note"></div>
+                        </div>
+                    </div>
+
                     <!-- Old Customer (Original) -->
-                    <div class="od-section">
+                    <div class="od-section" id="od_old_customer_section">
                         <div class="od-section-header"><i class="fas fa-user text-secondary me-2"></i>Original Customer
                             Details</div>
                         <div class="od-section-body">
@@ -852,10 +872,10 @@
 
                     <!-- New Customer (Redirected) -->
                     <div class="od-section">
-                        <div class="od-section-header"><i class="fas fa-user text-success me-2"></i>Redirected To (New
-                            Customer)</div>
+                        <div class="od-section-header"><i class="fas fa-user text-success me-2"></i><span
+                                id="od_new_customer_heading">Redirected To (New Customer)</span></div>
                         <div class="od-section-body">
-                            <div class="info-box success">
+                            <div class="info-box success" id="od_new_customer_box">
                                 <div class="row g-3">
                                     <div class="col-6 col-md-4">
                                         <div class="od-field-label">Name</div>
@@ -883,6 +903,14 @@
                                         <div class="od-field-value" id="od_new_shipping_address">—</div>
                                     </div>
                                 </div>
+                            </div>
+                            <div class="small text-muted mt-2 d-none" id="od_new_customer_recovered">
+                                <i class="fas fa-info-circle me-1"></i>Recovered from the redirection log — the order
+                                record itself no longer holds these details.
+                            </div>
+                            <div class="alert alert-secondary mb-0 d-none" id="od_new_customer_empty">
+                                <i class="fas fa-info-circle me-2"></i>No destination customer details are recorded for
+                                this order.
                             </div>
                         </div>
                     </div>
@@ -1139,9 +1167,32 @@
             || (order.ncm_status || '').toLowerCase() === 'redirected';
         document.getElementById('od_order_badge').textContent = 'Order #' + (order.order_number || '');
         document.getElementById('od_status_badge').textContent = order.ncm_status || order.order_status || 'Processing';
+        // A destination order received a redirected package; its own customer
+        // never changed, so it has no "before/after" to show.
+        const isDestination = !!order.is_redirect_destination;
         const redirectedBadge = document.getElementById('od_redirected_badge');
-        redirectedBadge.textContent = isRedirected ? 'Redirected' : 'Not Redirected Yet';
-        redirectedBadge.className = 'badge ' + (isRedirected ? 'bg-warning text-dark' : 'bg-secondary');
+        redirectedBadge.textContent = isDestination
+            ? 'Redirect Destination'
+            : (isRedirected ? 'Redirected' : 'Not Redirected Yet');
+        redirectedBadge.className = 'badge ' + (isDestination
+            ? 'bg-info text-dark'
+            : (isRedirected ? 'bg-warning text-dark' : 'bg-secondary'));
+
+        const source = order.redirect_source || {};
+        const sourceLabel = source.order_number
+            ? 'order #' + odEscape(source.order_number)
+            : (source.ncm_order_id ? 'NCM package #' + odEscape(source.ncm_order_id) : 'another order');
+        document.getElementById('od_destination_section').classList.toggle('d-none', !isDestination);
+        document.getElementById('od_destination_note').innerHTML =
+            '<i class="fas fa-arrow-right me-2"></i>This order did not move — it is the <strong>destination</strong> '
+            + 'of a redirection. ' + sourceLabel.charAt(0).toUpperCase() + sourceLabel.slice(1)
+            + ' was redirected to this customer, so the details below are unchanged.';
+        // Nothing changed about this order, so an "original customer" block
+        // would just repeat the customer shown below it.
+        document.getElementById('od_old_customer_section').classList.toggle('d-none', isDestination);
+        document.getElementById('od_new_customer_heading').textContent = isDestination
+            ? 'Customer (Unchanged)'
+            : 'Redirected To (New Customer)';
 
         // Old Customer — the API normalizes every historical metadata key style
         // down to name/phone/email/branch/address, so read those directly.
@@ -1161,13 +1212,35 @@
             ? 'The original customer details were not recorded for this redirection.'
             : 'This order has not been redirected yet, so there are no original customer details to compare.');
 
-        // New Customer (current)
-        odSetText('od_new_customer_name', order.customer_name);
-        odSetText('od_new_customer_phone', order.customer_phone);
-        odSetText('od_new_customer_email', order.customer_email);
-        odSetText('od_new_branch_city', order.branch_city || order.branch_name);
-        odSetText('od_new_landmark', order.landmark);
-        odSetText('od_new_shipping_address', order.shipping_address);
+        // New Customer — the API resolves this block (order fields, then the
+        // linked customer/branch, then the redirect log) and returns it under
+        // new_customer_info. Fall back to the flat customer_* keys so a cached
+        // copy of an older API response still renders.
+        const newCustomer = order.new_customer_info || {
+            name: order.customer_name,
+            phone: order.customer_phone,
+            email: order.customer_email,
+            branch: order.branch_city,
+            landmark: order.landmark,
+            address: order.shipping_address,
+        };
+        const hasNewCustomer = ['name', 'phone', 'email', 'branch', 'landmark', 'address']
+            .some(key => (newCustomer[key] || '').toString().trim());
+
+        odSetText('od_new_customer_name', newCustomer.name);
+        odSetText('od_new_customer_phone', newCustomer.phone);
+        odSetText('od_new_customer_email', newCustomer.email);
+        odSetText('od_new_branch_city', newCustomer.branch || order.branch_name);
+        odSetText('od_new_landmark', newCustomer.landmark);
+        odSetText('od_new_shipping_address', newCustomer.address);
+        document.getElementById('od_new_customer_box').classList.toggle('d-none', !hasNewCustomer);
+        document.getElementById('od_new_customer_recovered')
+            .classList.toggle('d-none', !newCustomer.recovered_from_log);
+        const newEmpty = document.getElementById('od_new_customer_empty');
+        newEmpty.classList.toggle('d-none', hasNewCustomer);
+        newEmpty.innerHTML = '<i class="fas fa-info-circle me-2"></i>' + (isRedirected
+            ? 'No destination customer details are recorded for this order.'
+            : 'This order has not been redirected yet, so there is no destination customer.');
 
         // Redirection History
         odRenderList(
@@ -1196,12 +1269,23 @@
                         </dl>
                     </div>` : '';
 
+                // A 'destination' entry records that this order RECEIVED a
+                // redirected package — it was not itself redirected anywhere.
+                const isDestinationLog = log.role === 'destination';
+                const logSource = log.source || {};
+                const logSourceLabel = logSource.order_number
+                    ? ' from order #' + odEscape(logSource.order_number)
+                    : (logSource.ncm_order_id ? ' from NCM package #' + odEscape(logSource.ncm_order_id) : '');
+                const headline = isDestinationLog
+                    ? `Received a redirected package${logSourceLabel} — recorded by <strong>${odEscape(log.redirect_user || 'Unknown')}</strong>`
+                    : `Redirected by <strong>${odEscape(log.redirect_user || 'Unknown')}</strong>`;
+
                 return `
             <div class="alert alert-light border mb-2">
                 <div class="d-flex align-items-start gap-3">
-                    <i class="fas fa-arrow-right text-success mt-1"></i>
+                    <i class="fas ${isDestinationLog ? 'fa-inbox text-info' : 'fa-arrow-right text-success'} mt-1"></i>
                     <div class="flex-grow-1 min-w-0">
-                        <div class="fw-bold">Redirected by <strong>${odEscape(log.redirect_user || 'Unknown')}</strong></div>
+                        <div class="fw-bold">${headline}</div>
                         <div class="small text-muted">${odEscape(log.redirect_timestamp_display || formatDateTime(log.redirect_timestamp))}</div>
                         ${log.redirect_reason ? `<div class="mt-2 text-dark">${odEscape(log.redirect_reason)}</div>` : ''}
                         ${oldBlock}
