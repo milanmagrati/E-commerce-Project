@@ -133,6 +133,7 @@
                         <option value="partial" {% if status_filter == 'partial' %}selected{% endif %}>Partial</option>
                         <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
                         <option value="processing" {% if status_filter == 'processing' %}selected{% endif %}>Processing</option>
+                        <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>Cancelled</option>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -170,6 +171,9 @@
                         <select name="bulk_action" class="form-select form-select-sm">
                             <option value="">-- Select Bulk Action --</option>
                             <option value="move_to_trash">Move to Trash</option>
+                            {% if can_manage_batches %}
+                            <option value="terminate">Terminate (stop processing batches)</option>
+                            {% endif %}
                         </select>
                     </div>
                     <div class="col-md-3">
@@ -210,7 +214,8 @@
                         </thead>
                         <tbody>
                             {% for log in logs %}
-                            <tr class="batch-row" data-batch-id="{{ log.id }}" data-provider="{{ log.log_provider }}">
+                            <tr class="batch-row" data-batch-id="{{ log.id }}" data-provider="{{ log.log_provider }}"
+                                data-open="{{ log.control.is_open|yesno:'1,0' }}">
                                 <td onclick="event.stopPropagation();">
                                     <input type="checkbox" class="form-check-input log-checkbox"
                                            name="log_ids" value="{{ log.id }}"
@@ -239,29 +244,37 @@
                                 <td class="text-center">
                                     <span class="badge bg-dark">{{ log.total_orders }}</span>
                                 </td>
-                                <td class="text-center">
+                                <td class="text-center" id="success-cell-{{ log.log_provider }}-{{ log.id }}">
                                     {% if log.success_count > 0 %}
                                     <span class="badge bg-success">{{ log.success_count }}</span>
                                     {% else %}
                                     <span class="text-muted">0</span>
                                     {% endif %}
                                 </td>
-                                <td class="text-center">
+                                <td class="text-center" id="failed-cell-{{ log.log_provider }}-{{ log.id }}">
                                     {% if log.failed_count > 0 %}
                                     <span class="badge bg-danger">{{ log.failed_count }}</span>
                                     {% else %}
                                     <span class="text-muted">0</span>
                                     {% endif %}
                                 </td>
-                                <td>
+                                <td class="status-cell" id="status-cell-{{ log.log_provider }}-{{ log.id }}">
                                     {% if log.status == 'completed' %}
                                         <span class="badge bulk-badge-completed"><i class="fas fa-check-circle"></i> Completed</span>
                                     {% elif log.status == 'partial' %}
                                         <span class="badge bulk-badge-partial"><i class="fas fa-exclamation-circle"></i> Partial</span>
                                     {% elif log.status == 'failed' %}
                                         <span class="badge bulk-badge-failed"><i class="fas fa-times-circle"></i> Failed</span>
+                                    {% elif log.status == 'cancelled' %}
+                                        <span class="badge bulk-badge-cancelled"><i class="fas fa-ban"></i> Cancelled</span>
                                     {% elif log.status == 'processing' %}
+                                        {% if log.control.is_stalled %}
+                                        <span class="badge bulk-badge-stalled" title="This batch has not made progress for a while - nothing is working it.">
+                                            <i class="fas fa-exclamation-triangle"></i> Stalled
+                                        </span>
+                                        {% else %}
                                         <span class="badge bulk-badge-processing"><i class="fas fa-spinner fa-spin"></i> Processing</span>
+                                        {% endif %}
                                     {% endif %}
                                 </td>
                                 <td>
@@ -275,12 +288,29 @@
                                     <small class="text-muted">{{ log.created_at|time:"h:i A" }}</small>
                                 </td>
                                 <td onclick="event.stopPropagation();">
-                                    <div class="btn-group btn-group-sm">
+                                    <div class="btn-group btn-group-sm" id="actions-{{ log.log_provider }}-{{ log.id }}"
+                                         data-can-terminate="{{ log.control.can_terminate|yesno:'1,0' }}"
+                                         data-can-resume="{{ log.control.can_resume|yesno:'1,0' }}"
+                                         data-pending="{{ log.control.pending_count }}">
                                         <button type="button" class="btn btn-outline-primary btn-sm"
                                                 onclick="toggleExpandRow({{ log.id }}, '{{ log.log_provider }}')"
                                                 title="Expand Orders">
                                             <i class="fas fa-chevron-down" id="expand-icon-{{ log.log_provider }}-{{ log.id }}"></i>
                                         </button>
+                                        {% if can_manage_batches %}
+                                        <button type="button" class="btn btn-outline-success btn-sm batch-resume-btn"
+                                                onclick="resumeBatch({{ log.id }}, '{{ log.batch_number|escapejs }}', '{{ log.log_provider }}')"
+                                                title="Send the {{ log.control.pending_count }} order(s) this batch never finished"
+                                                {% if not log.control.can_resume %}style="display:none;"{% endif %}>
+                                            <i class="fas fa-play"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm batch-terminate-btn"
+                                                onclick="terminateBatch({{ log.id }}, '{{ log.batch_number|escapejs }}', '{{ log.log_provider }}')"
+                                                title="Terminate this batch"
+                                                {% if not log.control.can_terminate %}style="display:none;"{% endif %}>
+                                            <i class="fas fa-stop"></i>
+                                        </button>
+                                        {% endif %}
                                         {% if log.log_provider == 'pnd' %}
                                         <a href="{% url 'pnd_bulk_log_detail' log.id %}"
                                            class="btn btn-outline-info btn-sm" title="View Details">
@@ -432,6 +462,10 @@
     .bulk-badge-partial { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 5px 12px; font-size: 0.78rem; }
     .bulk-badge-failed { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 5px 12px; font-size: 0.78rem; }
     .bulk-badge-processing { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; padding: 5px 12px; font-size: 0.78rem; }
+    .bulk-badge-cancelled { background: linear-gradient(135deg, #64748b, #475569); color: white; padding: 5px 12px; font-size: 0.78rem; }
+    /* Stalled: 'processing' with nobody working it. Deliberately not blue -
+       the whole complaint was that a dead batch looked busy. */
+    .bulk-badge-stalled { background: linear-gradient(135deg, #f59e0b, #b45309); color: white; padding: 5px 12px; font-size: 0.78rem; }
 
     /* ==================== PROVIDER BADGES ==================== */
     .bg-ncm-provider { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 5px 10px; font-size: 0.75rem; }
@@ -581,6 +615,15 @@ document.getElementById('bulkActionForm')?.addEventListener('submit', function(e
             return false;
         }
     }
+    if (action === 'terminate') {
+        if (!confirm(
+            `Terminate ${checked.length} batch(es)?\n\n` +
+            `Only batches still showing Processing are affected. Orders already ` +
+            `sent to the courier stay sent; anything not yet sent will not be sent.`
+        )) {
+            return false;
+        }
+    }
 
     if (currentProvider !== 'all') {
         // Single provider - submit normally
@@ -643,6 +686,193 @@ function trashBatch(id, batchNumber, logProvider) {
         form.submit();
     }
 }
+
+/* ==================== BATCH CONTROL (terminate / resume) ====================
+   A bulk send runs inline in the request that starts it, so a batch whose
+   request died is left at 'processing' with nothing working it. These controls
+   let staff close such a batch out, or send the orders it never reached. */
+
+const BATCH_TERMINATE_URL = "{% url 'logistics_bulk_log_terminate' 'PROVIDER' 0 %}";
+const BATCH_RESUME_URL = "{% url 'logistics_bulk_log_resume' 'PROVIDER' 0 %}";
+const BATCH_PROGRESS_URL = "{% url 'logistics_bulk_log_progress' %}";
+
+function batchUrl(template, logProvider, id) {
+    return template.replace('PROVIDER', logProvider).replace('/0/', '/' + id + '/');
+}
+
+function csrfToken() {
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? el.value : '';
+}
+
+function notify(kind, text) {
+    if (window.alertify) {
+        alertify[kind === 'error' ? 'error' : (kind === 'warning' ? 'warning' : 'success')](text);
+    } else {
+        alert(text);
+    }
+}
+
+/* Buttons are disabled for the duration of the request so an impatient double
+   click can't fire two terminates (or two resumes racing for the same claim). */
+function setRowBusy(logProvider, id, busy) {
+    const group = document.getElementById(`actions-${logProvider}-${id}`);
+    if (!group) return;
+    group.querySelectorAll('.batch-resume-btn, .batch-terminate-btn').forEach(btn => {
+        btn.disabled = busy;
+    });
+}
+
+function postBatchAction(url, logProvider, id) {
+    setRowBusy(logProvider, id, true);
+    return fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken(),
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    }).then(response => response.json().then(data => ({ ok: response.ok, data })))
+      .catch(() => ({ ok: false, data: { message: 'Network error - please try again.' } }))
+      .finally(() => setRowBusy(logProvider, id, false));
+}
+
+function terminateBatch(id, batchNumber, logProvider) {
+    if (!confirm(
+        `Terminate batch "${batchNumber}"?\n\n` +
+        `Orders already sent to the courier stay sent. Anything not yet sent ` +
+        `will not be sent, and the batch will be closed as Cancelled.`
+    )) return;
+
+    postBatchAction(batchUrl(BATCH_TERMINATE_URL, logProvider, id), logProvider, id)
+        .then(({ ok, data }) => {
+            if (!ok || !data.success) {
+                notify('error', data.message || 'Could not terminate the batch.');
+                return;
+            }
+            notify('warning', data.message);
+            if (data.state) applyBatchState(data.state);
+            // A live batch stops on its next order, so keep watching it.
+            scheduleProgressPoll();
+        });
+}
+
+function resumeBatch(id, batchNumber, logProvider) {
+    const group = document.getElementById(`actions-${logProvider}-${id}`);
+    const pending = group ? group.dataset.pending : '';
+    if (!confirm(
+        `Resume batch "${batchNumber}"?\n\n` +
+        `This sends the ${pending} order(s) the batch never completed. Orders ` +
+        `already accepted by the courier are skipped, not sent twice.`
+    )) return;
+
+    postBatchAction(batchUrl(BATCH_RESUME_URL, logProvider, id), logProvider, id)
+        .then(({ ok, data }) => {
+            if (!ok || !data.success) {
+                notify('error', data.message || 'Could not resume the batch.');
+                return;
+            }
+            notify('success', data.message);
+            if (data.state) applyBatchState(data.state);
+            scheduleProgressPoll();
+        });
+}
+
+/* ---------- live progress ---------- */
+
+const STATUS_BADGES = {
+    completed: '<span class="badge bulk-badge-completed"><i class="fas fa-check-circle"></i> Completed</span>',
+    partial: '<span class="badge bulk-badge-partial"><i class="fas fa-exclamation-circle"></i> Partial</span>',
+    failed: '<span class="badge bulk-badge-failed"><i class="fas fa-times-circle"></i> Failed</span>',
+    cancelled: '<span class="badge bulk-badge-cancelled"><i class="fas fa-ban"></i> Cancelled</span>',
+    processing: '<span class="badge bulk-badge-processing"><i class="fas fa-spinner fa-spin"></i> Processing</span>',
+    stalled: '<span class="badge bulk-badge-stalled" title="No progress for a while - nothing is working this batch."><i class="fas fa-exclamation-triangle"></i> Stalled</span>'
+};
+
+function countCell(value, cssClass) {
+    return value > 0
+        ? `<span class="badge ${cssClass}">${value}</span>`
+        : '<span class="text-muted">0</span>';
+}
+
+function applyBatchState(state) {
+    const key = `${state.provider}-${state.id}`;
+
+    const statusCell = document.getElementById(`status-cell-${key}`);
+    if (statusCell) {
+        const badge = (state.status === 'processing' && state.is_stalled)
+            ? STATUS_BADGES.stalled
+            : STATUS_BADGES[state.status];
+        if (badge) statusCell.innerHTML = badge;
+    }
+
+    const successCell = document.getElementById(`success-cell-${key}`);
+    if (successCell) successCell.innerHTML = countCell(state.success_count, 'bg-success');
+
+    const failedCell = document.getElementById(`failed-cell-${key}`);
+    if (failedCell) failedCell.innerHTML = countCell(state.failed_count, 'bg-danger');
+
+    const group = document.getElementById(`actions-${key}`);
+    if (group) {
+        group.dataset.canTerminate = state.can_terminate ? '1' : '0';
+        group.dataset.canResume = state.can_resume ? '1' : '0';
+        group.dataset.pending = state.pending_count;
+        const resumeBtn = group.querySelector('.batch-resume-btn');
+        if (resumeBtn) {
+            resumeBtn.style.display = state.can_resume ? '' : 'none';
+            resumeBtn.title = `Send the ${state.pending_count} order(s) this batch never finished`;
+        }
+        const terminateBtn = group.querySelector('.batch-terminate-btn');
+        if (terminateBtn) terminateBtn.style.display = state.can_terminate ? '' : 'none';
+    }
+
+    const row = document.querySelector(`.batch-row[data-batch-id="${state.id}"][data-provider="${state.provider}"]`);
+    if (row) row.dataset.open = state.is_open ? '1' : '0';
+}
+
+/* Rows still open (status 'processing') are the only ones worth polling: every
+   other status is terminal until somebody clicks Resume, which re-arms the
+   poll itself. */
+function openBatchKeys() {
+    return Array.from(document.querySelectorAll('.batch-row'))
+        .filter(row => row.dataset.open === '1')
+        .map(row => `${row.dataset.provider}:${row.dataset.batchId}`);
+}
+
+let progressTimer = null;
+
+function pollProgress() {
+    progressTimer = null;
+    const keys = openBatchKeys();
+    if (keys.length === 0) return;
+
+    fetch(`${BATCH_PROGRESS_URL}?keys=${encodeURIComponent(keys.join(','))}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (!data) return;   // 403/500: leave the rows alone and retry
+            const states = data.states || [];
+            states.forEach(applyBatchState);
+            // A key we asked about but got nothing back for is gone - trashed
+            // from another tab, most likely. Stop watching it, or this poll
+            // would keep asking about it for as long as the page stays open.
+            const returned = new Set(states.map(s => `${s.provider}:${s.id}`));
+            keys.filter(k => !returned.has(k)).forEach(k => {
+                const [provider, id] = k.split(':');
+                const row = document.querySelector(
+                    `.batch-row[data-batch-id="${id}"][data-provider="${provider}"]`);
+                if (row) row.dataset.open = '0';
+            });
+        })
+        .catch(() => { /* transient - the next tick tries again */ })
+        .finally(scheduleProgressPoll);
+}
+
+function scheduleProgressPoll() {
+    if (progressTimer !== null) return;   // one timer, however many callers ask
+    if (openBatchKeys().length === 0) return;
+    progressTimer = setTimeout(pollProgress, 6000);
+}
+
+document.addEventListener('DOMContentLoaded', scheduleProgressPoll);
 
 updateSelectedCount();
 </script>

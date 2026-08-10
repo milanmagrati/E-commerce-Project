@@ -326,6 +326,11 @@ urlpatterns = [
     path('logistics/bulk-logs/trash/<str:provider>/<int:log_id>/permanent-delete/', views.logistics_bulk_log_permanent_delete, name='logistics_bulk_log_permanent_delete'),
     path('logistics/bulk-logs/trash/bulk-action/', views.logistics_bulk_logs_trash_bulk_action, name='logistics_bulk_logs_trash_bulk_action'),
     path('logistics/bulk-logs/trash/empty/', views.logistics_bulk_logs_empty_trash, name='logistics_bulk_logs_empty_trash'),
+    # Batch control - keep these below the /trash/ routes so "trash" can never
+    # be read as a <str:provider>.
+    path('logistics/bulk-logs/progress/', views.logistics_bulk_log_progress, name='logistics_bulk_log_progress'),
+    path('logistics/bulk-logs/<str:provider>/<int:log_id>/terminate/', views.logistics_bulk_log_terminate, name='logistics_bulk_log_terminate'),
+    path('logistics/bulk-logs/<str:provider>/<int:log_id>/resume/', views.logistics_bulk_log_resume, name='logistics_bulk_log_resume'),
     path('logistics/branches/', views.logistics_branches, name='logistics_branches'),
 
     # Financial Report

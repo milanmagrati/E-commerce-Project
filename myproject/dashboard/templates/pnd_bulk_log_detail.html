@@ -57,6 +57,8 @@
                     <span class="badge bulk-badge-partial"><i class="fas fa-exclamation-circle"></i> Partial</span>
                     {% elif bulk_log.status == 'failed' %}
                     <span class="badge bulk-badge-failed"><i class="fas fa-times-circle"></i> Failed</span>
+                    {% elif bulk_log.status == 'cancelled' %}
+                    <span class="badge bulk-badge-cancelled"><i class="fas fa-ban"></i> Cancelled</span>
                     {% else %}
                     <span class="badge bulk-badge-processing"><i class="fas fa-spinner fa-spin"></i> Processing</span>
                     {% endif %}
@@ -258,6 +260,7 @@
     .bulk-badge-partial { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 5px 12px; }
     .bulk-badge-failed { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 5px 12px; }
     .bulk-badge-processing { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; padding: 5px 12px; }
+    .bulk-badge-cancelled { background: linear-gradient(135deg, #64748b, #475569); color: white; padding: 5px 12px; }
 
     /* ==================== LOG TIMELINE ==================== */
     .log-timeline {

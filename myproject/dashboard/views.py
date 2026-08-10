@@ -47,7 +47,7 @@ from .models import ReturnRequest, ReturnItem, ReturnActivityLog, Dispatch, Disp
 from .models import MediaCategory, MediaAsset
 
 # IMPORT DECORATORS
-from accounts.decorators import permission_required, admin_only, admin_or_permission_required
+from accounts.decorators import permission_required, admin_only, admin_or_permission_required, has_any_permission
 
 # GET CUSTOM USER MODEL
 User = get_user_model()
@@ -9031,6 +9031,14 @@ def orders_bulk_ncm_send(request):
         from_branch=from_branch,
         delivery_type=delivery_type,
         created_by=request.user,
+        # Recorded up front so a batch this request never finishes can still be
+        # resumed from the Bulk Logs page - see dashboard/bulk_batch.py.
+        selected_order_ids=list(orders.values_list('id', flat=True)),
+        send_options={
+            'api_config_id': api_config_id,
+            'default_weight': default_weight,
+            'auto_set_logistics': auto_set_logistics,
+        },
     )
     NCMBulkLogDetail.objects.create(
         batch=bulk_log,
@@ -9045,8 +9053,18 @@ def orders_bulk_ncm_send(request):
     error_count = 0
     error_details = []
 
+    from .bulk_batch import start_heartbeat
+    heartbeat = start_heartbeat(bulk_log)
+    stopped = False
+
     # 5. Iterate and Send
     for order in orders:
+        # Lets Terminate on the Bulk Logs page take effect, and keeps the batch
+        # from looking stalled while this request is still working.
+        if heartbeat.should_stop():
+            stopped = True
+            break
+
         result = send_single_order_to_ncm(
             request=request,
             order=order,
@@ -9095,7 +9113,9 @@ def orders_bulk_ncm_send(request):
         )
 
     # Update bulk log with final counts and status
-    if error_count == count:
+    if stopped:
+        final_status = 'cancelled'
+    elif error_count == count:
         final_status = 'failed'
     elif success_count == count:
         final_status = 'completed'
@@ -9110,15 +9130,28 @@ def orders_bulk_ncm_send(request):
     bulk_log.status = final_status
     bulk_log.completed_at = timezone.now()
     bulk_log.save()
+    heartbeat.release()
 
     NCMBulkLogDetail.objects.create(
         batch=bulk_log,
         action='batch_completed',
-        message=f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped',
+        message=(
+            f'Batch stopped on request: {success_count} success, {error_count} failed, '
+            f'{skip_count} skipped, {count - success_count - error_count - skip_count} not attempted'
+            if stopped else
+            f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped'
+        ),
         user=request.user,
     )
 
     # 6. Final Feedback
+    if stopped:
+        messages.warning(
+            request,
+            f'⏹️ Batch {bulk_log.batch_number} was stopped before finishing '
+            f'({count - success_count - error_count - skip_count} order(s) not attempted).'
+        )
+
     if success_count > 0:
         messages.success(request, f'✅ Successfully sent {success_count} order(s) to NCM.')
 
@@ -13971,6 +14004,14 @@ def orders_bulk_ncm_send(request):
             from_branch=from_branch,
             delivery_type=delivery_type,
             created_by=request.user,
+            # See dashboard/bulk_batch.py - lets a batch this request never
+            # finishes be resumed from the Bulk Logs page.
+            selected_order_ids=list(orders.values_list('id', flat=True)),
+            send_options={
+                'api_config_id': api_config_id,
+                'default_weight': default_weight,
+                'auto_set_logistics': auto_set_logistics,
+            },
         )
         NCMBulkLogDetail.objects.create(
             batch=bulk_log,
@@ -13984,8 +14025,16 @@ def orders_bulk_ncm_send(request):
         skip_count = 0
         error_count = 0
 
+        from .bulk_batch import start_heartbeat
+        heartbeat = start_heartbeat(bulk_log)
+        stopped = False
+
         # Process each order
         for order in orders:
+            if heartbeat.should_stop():
+                stopped = True
+                break
+
             result = send_single_order_to_ncm(
                 request,
                 order,
@@ -14036,7 +14085,9 @@ def orders_bulk_ncm_send(request):
             )
 
         # Update bulk log with final counts and status
-        if error_count == count:
+        if stopped:
+            final_status = 'cancelled'
+        elif error_count == count:
             final_status = 'failed'
         elif success_count == count:
             final_status = 'completed'
@@ -14051,15 +14102,29 @@ def orders_bulk_ncm_send(request):
         bulk_log.status = final_status
         bulk_log.completed_at = timezone.now()
         bulk_log.save()
+        heartbeat.release()
 
+        not_attempted = count - success_count - error_count - skip_count
         NCMBulkLogDetail.objects.create(
             batch=bulk_log,
             action='batch_completed',
-            message=f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped',
+            message=(
+                f'Batch stopped on request: {success_count} success, {error_count} failed, '
+                f'{skip_count} skipped, {not_attempted} not attempted'
+                if stopped else
+                f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped'
+            ),
             user=request.user,
         )
 
         # Show results
+        if stopped:
+            messages.warning(
+                request,
+                f'⏹️ Batch {bulk_log.batch_number} was stopped before finishing '
+                f'({not_attempted} order(s) not attempted).'
+            )
+
         if success_count > 0:
             messages.success(
                 request,
@@ -14846,6 +14911,9 @@ def ncm_bulk_logs_bulk_action(request):
                 deleted_at=timezone.now()
             )
             messages.success(request, f'{count} batch(es) moved to trash.')
+
+        elif action == 'terminate':
+            _bulk_terminate_batches(request, 'ncm', log_ids)
 
     return redirect('logistics_bulk_logs_list')
 
@@ -19363,6 +19431,14 @@ def orders_bulk_pnd_send(request):
             total_orders=count,
             status='processing',
             created_by=request.user,
+            # See dashboard/bulk_batch.py - lets a batch this request never
+            # finishes be resumed from the Bulk Logs page.
+            selected_order_ids=list(orders.values_list('id', flat=True)),
+            send_options={
+                'api_config_id': api_config_id,
+                'default_weight': default_weight,
+                'auto_set_logistics': auto_set_logistics,
+            },
         )
         PNDBulkLogDetail.objects.create(
             batch=bulk_log,
@@ -19377,8 +19453,16 @@ def orders_bulk_pnd_send(request):
         error_count = 0
         error_details = []
 
+        from .bulk_batch import start_heartbeat
+        heartbeat = start_heartbeat(bulk_log)
+        stopped = False
+
         # Process each order
         for order in orders:
+            if heartbeat.should_stop():
+                stopped = True
+                break
+
             result = send_single_order_to_pnd(
                 request,
                 order,
@@ -19428,7 +19512,9 @@ def orders_bulk_pnd_send(request):
             )
 
         # Update bulk log with final counts and status
-        if error_count == count:
+        if stopped:
+            final_status = 'cancelled'
+        elif error_count == count:
             final_status = 'failed'
         elif success_count == count:
             final_status = 'completed'
@@ -19443,15 +19529,29 @@ def orders_bulk_pnd_send(request):
         bulk_log.status = final_status
         bulk_log.completed_at = timezone.now()
         bulk_log.save()
+        heartbeat.release()
 
+        not_attempted = count - success_count - error_count - skip_count
         PNDBulkLogDetail.objects.create(
             batch=bulk_log,
             action='batch_completed',
-            message=f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped',
+            message=(
+                f'Batch stopped on request: {success_count} success, {error_count} failed, '
+                f'{skip_count} skipped, {not_attempted} not attempted'
+                if stopped else
+                f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped'
+            ),
             user=request.user,
         )
 
         # Show results
+        if stopped:
+            messages.warning(
+                request,
+                f"Batch {bulk_log.batch_number} was stopped before finishing "
+                f"({not_attempted} order(s) not attempted)."
+            )
+
         if success_count > 0:
             messages.success(
                 request,
@@ -19532,7 +19632,50 @@ def pnd_bulk_logs_bulk_action(request):
             )
             messages.success(request, f'{count} batch(es) moved to trash.')
 
+        elif action == 'terminate':
+            _bulk_terminate_batches(request, 'pnd', log_ids)
+
     return redirect('logistics_bulk_logs_list')
+
+
+def _bulk_terminate_batches(request, provider, log_ids):
+    """Terminate several batches at once, reporting each outcome separately.
+
+    Terminating is per-batch work (it reconciles counts, and a live batch is
+    only *asked* to stop), so this loops rather than issuing one UPDATE -
+    and reports the two outcomes apart, because "stopping shortly" and
+    "closed out now" mean different things to whoever clicked.
+    """
+    from .bulk_batch import BatchError, terminate
+
+    closed = requested = 0
+    problems = []
+    for log_id in log_ids:
+        try:
+            message, state = terminate(provider, int(log_id), request.user)
+        except (BatchError, ValueError, TypeError) as e:
+            problems.append(str(e))
+            continue
+        except Exception as e:
+            logger.exception('Bulk terminate failed for %s #%s', provider, log_id)
+            problems.append(str(e))
+            continue
+        if state.get('status') == 'cancelled':
+            closed += 1
+        else:
+            requested += 1
+
+    if closed:
+        messages.success(request, f'{closed} stalled batch(es) terminated.')
+    if requested:
+        messages.warning(
+            request,
+            f'{requested} batch(es) are mid-send and will stop after their current order.'
+        )
+    for problem in problems[:5]:
+        messages.error(request, problem)
+    if len(problems) > 5:
+        messages.error(request, f'...and {len(problems) - 5} more could not be terminated.')
 
 
 # ==================== UNIFIED LOGISTICS VIEWS ====================
@@ -19989,6 +20132,11 @@ def logistics_bulk_logs_list(request):
     paginator = Paginator(combined_logs, 20)
     logs = paginator.get_page(page_number)
 
+    # Terminate/Resume state for the Actions column. Done for the page as a
+    # whole (two queries) rather than per row.
+    from .bulk_batch import annotate_controls
+    annotate_controls(list(logs))
+
     context = {
         'logs': logs,
         'total_batches': total_batches,
@@ -20002,8 +20150,83 @@ def logistics_bulk_logs_list(request):
         'date_from': date_from,
         'date_to': date_to,
         'provider': provider,
+        'can_manage_batches': has_any_permission(request.user, 'can_manage_ncm_bulk_logs'),
     }
     return render(request, 'logistics_bulk_logs.html', context)
+
+
+# ==================== BULK BATCH CONTROL (terminate / resume) ====================
+
+@login_required
+@require_POST
+def logistics_bulk_log_terminate(request, provider, log_id):
+    """Stop a bulk batch that is stuck (or genuinely still) processing."""
+    from .bulk_batch import BatchError, terminate
+
+    # Checked here rather than with @permission_required: these are called over
+    # AJAX, and that decorator answers a refusal with an HTML redirect plus a
+    # queued message that would resurface on the next page. See has_any_permission.
+    if not has_any_permission(request.user, 'can_manage_ncm_bulk_logs'):
+        return JsonResponse(
+            {'success': False, 'message': 'You do not have permission to manage bulk logs.'},
+            status=403,
+        )
+
+    try:
+        message, state = terminate(provider, log_id, request.user)
+    except BatchError as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=400)
+    except Exception as e:
+        logger.exception('Bulk batch terminate failed for %s #%s', provider, log_id)
+        return JsonResponse(
+            {'success': False, 'message': f'Could not terminate the batch: {e}'},
+            status=500,
+        )
+
+    return JsonResponse({'success': True, 'message': message, 'state': state})
+
+
+@login_required
+@require_POST
+def logistics_bulk_log_resume(request, provider, log_id):
+    """Send the orders a bulk batch never got to, on a background thread."""
+    from .bulk_batch import BatchError, resume
+
+    if not has_any_permission(request.user, 'can_manage_ncm_bulk_logs'):
+        return JsonResponse(
+            {'success': False, 'message': 'You do not have permission to manage bulk logs.'},
+            status=403,
+        )
+
+    try:
+        message, state = resume(provider, log_id, request.user)
+    except BatchError as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=400)
+    except Exception as e:
+        logger.exception('Bulk batch resume failed for %s #%s', provider, log_id)
+        return JsonResponse(
+            {'success': False, 'message': f'Could not resume the batch: {e}'},
+            status=500,
+        )
+
+    return JsonResponse({'success': True, 'message': message, 'state': state})
+
+
+@login_required
+def logistics_bulk_log_progress(request):
+    """Live state for the batches on the current Bulk Logs page.
+
+    Takes `keys` as a comma-separated list of "<provider>:<id>" so one poll
+    covers every spinning row, rather than one request per row.
+    """
+    from .bulk_batch import progress_states
+
+    if not has_any_permission(request.user, 'can_view_ncm_bulk_logs', 'can_manage_ncm_bulk_logs'):
+        return JsonResponse({'states': []}, status=403)
+
+    keys = [k.strip() for k in request.GET.get('keys', '').split(',') if k.strip()]
+    # A page holds 20; the cap just bounds a hand-made URL.
+    return JsonResponse({'states': progress_states(keys[:50])})
 
 
 @login_required
