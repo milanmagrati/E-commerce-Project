@@ -1016,6 +1016,47 @@
         });
     }
 
+    // Repaint an existing row from a server payload.
+    //
+    // One function for every path that refreshes a row - your own edit, and
+    // the sync poll delivering somebody else's. They used to be two copies of
+    // this list and had drifted: the poll stopped at the Status cell, so a
+    // remark typed by one user updated the hidden data-remarks attribute in
+    // everyone else's browser but never repainted the Remarks column, which
+    // sat on whatever it had shown at page load. The poll also never refreshed
+    // data-followup-count, so the next "Add Follow-up Note" on that row
+    // proposed a number that was already taken.
+    //
+    // Column order: 0 S.N. | 1 Name | 2 Phone | 3 Lead | 4 Product
+    //               5 Follow Up | 6 Status | 7 Remarks | 8 Action
+    function paintRow(row, d) {
+        if (!row || !d) return;
+        const id = d.id || row.getAttribute('data-id');
+
+        row.setAttribute('data-version', d.version || 1);
+        row.setAttribute('data-status', d.status || '');
+        row.setAttribute('data-name', d.name || '');
+        row.setAttribute('data-phone', d.phone || '');
+        row.setAttribute('data-lead', d.lead_source || '');
+        row.setAttribute('data-products', JSON.stringify(d.products || []));
+        row.setAttribute('data-remarks', d.remarks || '');
+        row.setAttribute('data-followup-count', countFollowupLogs(d.all_logs));
+
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 8) return;   // not a data row
+
+        cells[1].textContent = d.name || '-';
+        cells[2].textContent = d.phone || '-';
+        cells[3].textContent = d.lead_source || '-';
+        cells[4].innerHTML = d.products?.length > 0
+            ? '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>'
+            : '<span class="text-muted">-</span>';
+        cells[5].innerHTML = buildFuCellHtml(d.all_logs, id);
+        cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" style="${getStatusBadgeStyle(d.status)}" data-status-val="${(d.status || '').toLowerCase()}">${d.status || '-'}</span>`;
+        // textContent, not innerHTML: remarks are free text typed by staff.
+        cells[7].textContent = d.remarks || '-';
+    }
+
     // ===== Add Note Modal =====
     function openAddNoteModal(id) {
         currentNoteId = id;
@@ -1066,14 +1107,10 @@
                     return;
                 }
 
-                row.setAttribute('data-version', result.data.version || 1);
-                row.setAttribute('data-status', finalStatus);
-                row.setAttribute('data-followup-count', countFollowupLogs(result.data.all_logs));
-
-                // Update the Followup cell and Status cell
-                const cells = row.querySelectorAll('td');
-                cells[5].innerHTML = buildFuCellHtml(result.data.all_logs, currentNoteId);
-                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalStatus)}" style="${getStatusBadgeStyle(finalStatus)}" data-status-val="${finalStatus.toLowerCase()}">${finalStatus || '-'}</span>`;
+                // Repaint from the server's copy of the row, not just the two
+                // cells this action changed: another user may have edited the
+                // same row in between, and the response carries their values.
+                paintRow(row, result.data);
 
             } else {
                 alertify.error('Error: ' + result.error);
@@ -1175,27 +1212,7 @@
                     return;
                 }
 
-                row.setAttribute('data-status', d.status || '');
-                row.setAttribute('data-name', d.name || '');
-                row.setAttribute('data-phone', d.phone || '');
-                row.setAttribute('data-lead', d.lead_source || '');
-                row.setAttribute('data-products', JSON.stringify(d.products || []));
-                row.setAttribute('data-remarks', d.remarks || '');
-                row.setAttribute('data-version', d.version || 1);
-                row.setAttribute('data-followup-count', countFollowupLogs(d.all_logs));
-
-                let productsHtml = '<span class="text-muted">-</span>';
-                if (d.products?.length > 0) {
-                    productsHtml = '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>';
-                }
-                const cells = row.querySelectorAll('td');
-                cells[1].textContent = d.name || '-';
-                cells[2].textContent = d.phone || '-';
-                cells[3].textContent = d.lead_source || '-';
-                cells[4].innerHTML = productsHtml;
-                cells[5].innerHTML = buildFuCellHtml(d.all_logs, currentEditId);
-                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" style="${getStatusBadgeStyle(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
-                cells[7].textContent = d.remarks || '-';
+                paintRow(row, d);
 
                 editModal.hide();
                 alertify.success('Updated successfully!');
@@ -1475,23 +1492,7 @@
                             appendNewRow(d);
                             row = document.querySelector(`tr[data-id="${d.id}"]`);
                         } else {
-                            row.setAttribute('data-version', d.version);
-                            row.setAttribute('data-status', d.status || '');
-                            row.setAttribute('data-name', d.name || '');
-                            row.setAttribute('data-phone', d.phone || '');
-                            row.setAttribute('data-lead', d.lead_source || '');
-                            row.setAttribute('data-products', JSON.stringify(d.products || []));
-                            row.setAttribute('data-remarks', d.remarks || '');
-
-                            const cells = row.querySelectorAll('td');
-                            if (cells.length > 6) {
-                                cells[1].textContent = d.name || '-';
-                                cells[2].textContent = d.phone || '';
-                                cells[3].textContent = d.lead_source || '-';
-                                cells[4].innerHTML = d.products?.length > 0 ? '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>' : '<span class="text-muted">-</span>';
-                                cells[5].innerHTML = buildFuCellHtml(d.all_logs, d.id);
-                                cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" style="${getStatusBadgeStyle(d.status)}" data-status-val="${(d.status||'').toLowerCase()}">${d.status || '-'}</span>`;
-                            }
+                            paintRow(row, d);
                         }
 
                         if (row) {
