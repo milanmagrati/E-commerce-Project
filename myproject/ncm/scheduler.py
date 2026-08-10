@@ -55,6 +55,11 @@ MAX_RUN_SECONDS = 480
 #: this at the NCM API every second.
 MIN_SYNC_SECONDS = 60
 
+#: Ceiling on the adaptive backoff in _claim(). However slow one run was, the
+#: next is never postponed by more than this - a single pathological run (NCM
+#: timing out on every request, say) must not effectively switch the sync off.
+MAX_ADAPTIVE_INTERVAL_SECONDS = 1800
+
 
 def _now():
     return timezone.now()
@@ -85,9 +90,33 @@ def _claim(force=False, advance_schedule=True):
     settings_obj = APISettings.get_settings()  # ensures pk=1 exists
 
     interval = max(int(settings_obj.order_sync_interval or 0), MIN_SYNC_SECONDS)
+
+    # Adaptive floor: rest at least as long as the last run took to work.
+    #
+    # The configured interval is a wish, and on shared hosting it can be a
+    # harmful one - at 60s, a run that takes 90s would start again immediately
+    # every time, so a sync thread would be doing NCM I/O essentially forever,
+    # competing with real user requests for the handful of workers and DB
+    # connections the plan allows. Pages elsewhere in the app go sluggish and
+    # nobody connects it to a setting on the NCM screen.
+    #
+    # The gap is measured start-to-start, so resting "as long as the last run
+    # took" would mean starting again the instant it finished - no rest at all.
+    # Twice the duration is what actually caps the sync at roughly half of
+    # wall-clock time: work for D, idle for D. A fast run (the normal case: a
+    # few requests, well under a second) never reaches the configured interval
+    # and is therefore unaffected.
+    last_duration = 0.0
+    started, finished = settings_obj.last_bulk_sync_started_at, settings_obj.last_bulk_sync_finished_at
+    if started and finished and finished > started:
+        last_duration = (finished - started).total_seconds()
+    effective_interval = min(
+        max(interval, 2 * last_duration), MAX_ADAPTIVE_INTERVAL_SECONDS
+    )
+
     now = _now()
     stale_cutoff = now - timedelta(seconds=STALE_CLAIM_SECONDS)
-    due_cutoff = now - timedelta(seconds=interval)
+    due_cutoff = now - timedelta(seconds=effective_interval)
 
     claim = APISettings.objects.filter(pk=settings_obj.pk).filter(
         Q(bulk_sync_running_since__isnull=True) | Q(bulk_sync_running_since__lt=stale_cutoff)
@@ -107,8 +136,8 @@ def _claim(force=False, advance_schedule=True):
 
     if won:
         logger.info(
-            'NCM bulk sync claimed (interval=%ss, force=%s, advance_schedule=%s)',
-            interval, force, advance_schedule,
+            'NCM bulk sync claimed (interval=%ss, effective=%ss, force=%s, advance_schedule=%s)',
+            interval, int(effective_interval), force, advance_schedule,
         )
     return won
 

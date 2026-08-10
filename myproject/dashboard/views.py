@@ -9,7 +9,13 @@ from django.contrib import messages
 from django.db.models import Sum, Count, Q, F, Prefetch, Min, Max, Avg, IntegerField, Case, When, Value
 from django.db.models.functions import TruncDate, Cast, Substr
 from django.http import JsonResponse, HttpResponse, Http404, HttpResponseRedirect
+from django.core.cache import cache
 from django.core.paginator import Paginator
+
+#: How long a follow-up presence ("X is viewing/typing") survives without a
+#: heartbeat. Must stay well above PRESENCE_INTERVAL_MS in follow_ups.html, or
+#: a live user's record expires between their own heartbeats.
+STALE_PRESENCE_SECONDS = 30
 from datetime import datetime, timedelta
 from typing import NamedTuple
 import pytz
@@ -24618,14 +24624,26 @@ def sync_follow_ups(request):
         now = timezone.now()
         next_sync_ts = now
 
-        # Cleanup stale presences (older than 10 seconds)
-        stale_threshold = now - timedelta(seconds=10)
-        FollowUpPresence.objects.filter(last_seen__lt=stale_threshold).delete()
+        # A presence is stale once its owner has missed several heartbeats.
+        # This has to stay comfortably above PRESENCE_INTERVAL_MS in
+        # follow_ups.html (10s) or a live user's own record would expire
+        # between their heartbeats and "X is viewing" would flicker.
+        stale_threshold = now - timedelta(seconds=STALE_PRESENCE_SECONDS)
+
+        # Purging is housekeeping, not correctness: the read below filters by
+        # last_seen itself, so a stale row is never reported even if it is
+        # still on disk. That lets the DELETE be rate-limited - it used to run
+        # on every poll, i.e. once every 2 seconds per open tab, writing to the
+        # table constantly whether or not anything had actually expired.
+        if cache.add('followup_presence_purge', 1, STALE_PRESENCE_SECONDS):
+            FollowUpPresence.objects.filter(last_seen__lt=stale_threshold).delete()
 
         # Fetch active presences
-        active_presences = list(FollowUpPresence.objects.all().select_related('user').values(
-            'followup_id', 'user__username', 'action'
-        ))
+        active_presences = list(
+            FollowUpPresence.objects.filter(last_seen__gte=stale_threshold)
+            .select_related('user')
+            .values('followup_id', 'user__username', 'action')
+        )
 
         # ------------------------------------------------------------------
         # Notification events.

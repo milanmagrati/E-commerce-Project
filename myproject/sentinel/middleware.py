@@ -34,6 +34,10 @@ logger = logging.getLogger('sentinel')
 HARD_EXCLUDED = (
     '/sentinel/api/', '/static/', '/media/', '/favicon.ico', '/iclock/',
     '/ncm/api/heartbeat/', '/ncm/api/orders/batch-status/',
+    # The Follow-ups page polls for changes every 2 seconds and posts presence
+    # ("X is typing") every 10 while a modal is open. Recorded, that is ~40
+    # audit rows a minute per open tab describing nothing a human did.
+    '/api/orders/follow-ups/sync/', '/api/orders/follow-ups/presence/',
 )
 
 # Read-only pollers whose order id sits mid-path, so a prefix can't describe

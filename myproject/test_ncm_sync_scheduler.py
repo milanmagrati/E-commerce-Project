@@ -43,14 +43,14 @@ def check(name, condition, detail=''):
         print(f'  [FAIL] {name} {detail}')
 
 
-def reset(interval=600, started_at=None, running_since=None):
+def reset(interval=600, started_at=None, running_since=None, finished_at=None):
     """Put the singleton into a known state without going through save()."""
     APISettings.get_settings()
     APISettings.objects.filter(pk=1).update(
         order_sync_interval=interval,
         last_bulk_sync_started_at=started_at,
         bulk_sync_running_since=running_since,
-        last_bulk_sync_finished_at=None,
+        last_bulk_sync_finished_at=finished_at,
         last_bulk_sync_summary={},
     )
 
@@ -284,6 +284,53 @@ def test_badge_classes_shared():
           logistics_status_text('', 'pick_and_drop') == 'Order Created')
 
 
+# ---------------------------------------------------------------- test 12
+def test_adaptive_backoff():
+    """A slow run must not be allowed to run back-to-back forever.
+
+    At a 60s interval a run that takes 90s would otherwise always be overdue
+    the moment it finished, so a sync thread would be hammering NCM and the
+    database continuously and every other page in the app would feel it.
+    """
+    print('\n12. A slow run backs the schedule off automatically')
+
+    now = timezone.now()
+
+    # Last run: started 5 min ago, took 4 minutes. Configured interval 60s.
+    reset(
+        interval=60,
+        started_at=now - timedelta(seconds=300),
+        finished_at=now - timedelta(seconds=60),
+    )
+    check('a slow previous run defers the next one', scheduler._claim() is False,
+          'a 240s run at a 60s interval would otherwise run continuously')
+
+    # Once a full "last duration" has passed since the start, it may run again.
+    reset(
+        interval=60,
+        started_at=now - timedelta(seconds=300),
+        finished_at=now - timedelta(seconds=245),
+    )
+    check('it runs again once the backoff has elapsed', scheduler._claim() is True)
+
+    # A fast run must not be penalised at all.
+    reset(
+        interval=60,
+        started_at=now - timedelta(seconds=61),
+        finished_at=now - timedelta(seconds=60),
+    )
+    check('a fast run keeps the configured interval', scheduler._claim() is True)
+
+    # A pathological run can't switch the sync off for good.
+    reset(
+        interval=60,
+        started_at=now - timedelta(seconds=scheduler.MAX_ADAPTIVE_INTERVAL_SECONDS + 60),
+        finished_at=now - timedelta(seconds=30),
+    )
+    check('backoff is capped so the sync always resumes', scheduler._claim() is True,
+          f'cap is {scheduler.MAX_ADAPTIVE_INTERVAL_SECONDS}s')
+
+
 # ---------------------------------------------------------------- test 11
 def test_ajax_permission_contract():
     """A refused AJAX call must answer in JSON and leave no message behind.
@@ -372,6 +419,7 @@ def main():
         test_page_refresh_field()
         test_partial_run_does_not_move_the_clock()
         test_badge_classes_shared()
+        test_adaptive_backoff()
         test_ajax_permission_contract()
     finally:
         if original:

@@ -929,7 +929,7 @@
             btn.innerHTML = origHtml; btn.disabled = false; return;
         }
 
-        fetch("{% url 'add_follow_up' %}", {
+        trackWrite(fetch("{% url 'add_follow_up' %}", {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
             body: JSON.stringify(data)
@@ -952,7 +952,7 @@
             }
         })
         .catch((err) => { console.error(err); alertify.error('An error occurred while saving.'); })
-        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; });
+        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; }));
     }
 
     function appendNewRow(data) {
@@ -1039,8 +1039,8 @@
         btn.disabled = true;
 
         const row = document.querySelector(`tr[data-id="${currentNoteId}"]`);
-        
-        fetch(`/api/orders/follow-ups/${currentNoteId}/edit/`, {
+
+        trackWrite(fetch(`/api/orders/follow-ups/${currentNoteId}/edit/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
             body: JSON.stringify({
@@ -1080,7 +1080,7 @@
             }
         })
         .catch(() => alertify.error('An error occurred while saving.'))
-        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; });
+        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; }));
     }
 
     // ===== Edit Modal (full edit of name/phone/lead/products/status/remarks) =====
@@ -1157,7 +1157,7 @@
             version: row.getAttribute('data-version') || 1
         };
 
-        fetch(`/api/orders/follow-ups/${currentEditId}/edit/`, {
+        trackWrite(fetch(`/api/orders/follow-ups/${currentEditId}/edit/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
             body: JSON.stringify(data)
@@ -1204,7 +1204,7 @@
             }
         })
         .catch(() => alertify.error('An error occurred while saving.'))
-        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; });
+        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; }));
     }
 
     // ===== Delete =====
@@ -1214,7 +1214,7 @@
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         btn.disabled = true;
 
-        fetch(`/api/orders/follow-ups/${id}/delete/`, {
+        trackWrite(fetch(`/api/orders/follow-ups/${id}/delete/`, {
             method: 'POST',
             headers: { 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value }
         })
@@ -1229,7 +1229,7 @@
                 btn.innerHTML = origHtml; btn.disabled = false;
             }
         })
-        .catch((err) => { console.error(err); alertify.error('An error occurred.'); btn.innerHTML = origHtml; btn.disabled = false; });
+        .catch((err) => { console.error(err); alertify.error('An error occurred.'); btn.innerHTML = origHtml; btn.disabled = false; }));
     }
 
     // ===== View Logs =====
@@ -1395,12 +1395,41 @@
     let syncInFlight = false;
     let syncTimer = null;
 
+    //: Number of user-initiated writes currently in flight (save note, save
+    //: edit, add row, delete...). While this is above zero the background
+    //: pollers stand down so they aren't competing with the user for the
+    //: browser's handful of per-host connections. Always adjusted through
+    //: trackWrite() so a failed request can't leave it stuck above zero.
+    let writesInFlight = 0;
+
+    function trackWrite(promise) {
+        writesInFlight++;
+        return promise.finally(() => {
+            writesInFlight = Math.max(0, writesInFlight - 1);
+            // The write almost certainly changed something; refresh promptly
+            // rather than waiting out the remainder of the poll interval.
+            if (writesInFlight === 0) {
+                lastPollAt = 0;
+                runSyncPoll();
+            }
+        });
+    }
+
     function runSyncPoll() {
         // Never let two polls overlap. setInterval fired regardless of whether
         // the previous request had returned, so a response slower than the
         // interval sent the next request with a stale cursor and every event
         // in that window was delivered — and toasted — twice.
         if (syncInFlight) return Promise.resolve();
+
+        // Yield to whatever the user is actually doing. A browser allows only
+        // ~6 connections per host, and this page keeps several timers running;
+        // a save fired while a slow poll held a slot would sit in the browser's
+        // own queue, leaving the button spinning on "Saving..." long after the
+        // click. User writes take priority — a poll skipped here is picked up
+        // 2 seconds later, and the cursors mean nothing is missed.
+        if (writesInFlight > 0) return Promise.resolve();
+
         syncInFlight = true;
 
         const params = new URLSearchParams({
@@ -1561,13 +1590,22 @@
     let heartbeatTimer = null;
     let currentPresenceAction = 'viewing';
 
+    // 10s, not 5s: this exists so a colleague sees "X is typing" within a
+    // second or two of it being true, and 10s is well inside the presence
+    // record's own lifetime. At 5s it was the second-chattiest timer on the
+    // page, and every tick is a POST that writes a row.
+    const PRESENCE_INTERVAL_MS = 10000;
+
     function startHeartbeat(id) {
         stopHeartbeat();
         currentPresenceAction = 'viewing';
         sendPresence(currentPresenceAction, id);
         heartbeatTimer = setInterval(() => {
+            // Nobody is watching a hidden tab type. Skip rather than clear the
+            // timer, so it resumes on its own when the tab comes back.
+            if (document.hidden) return;
             sendPresence(currentPresenceAction, id);
-        }, 5000);
+        }, PRESENCE_INTERVAL_MS);
     }
 
     function stopHeartbeat(id) {
