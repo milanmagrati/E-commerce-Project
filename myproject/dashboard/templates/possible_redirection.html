@@ -405,8 +405,10 @@
                                                 <td><strong>{{ match.customer_name }}</strong></td>
                                                 <td class="hide-sm text-muted">{{ match.customer_phone }}</td>
                                                 <td class="hide-md"><span class="badge bg-secondary">{{ match.branch_city }}</span></td>
-                                                {# Both product columns iterate row.products so each RTV reference
-                                                   prints on the same line as the order item it matched. #}
+                                                {% comment %}
+                                                Both product columns iterate row.products so each RTV reference
+                                                prints on the same line as the order item it matched.
+                                                {% endcomment %}
                                                 <td class="hide-sm">
                                                     {% for p in row.products %}
                                                         <div class="text-truncate" style="max-width:220px;" title="{{ p.item.product_name }} ×{{ p.item.quantity }}">{{ p.item.product_name }} &times;{{ p.item.quantity }}</div>

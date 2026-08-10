@@ -8,10 +8,12 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h2><i class="fas fa-shipping-fast"></i> Logistics Orders</h2>
             <div class="d-flex gap-2">
-                {# NCM only: Pick & Drop has no status-sync integration, so the
-                   button is hidden rather than silently doing nothing for it.
-                   `can_sync_now` also folds in the sync permission, so nobody
-                   is offered a button that can only answer "not permitted". #}
+                {% comment %}
+                NCM only: Pick & Drop has no status-sync integration, so the
+                button is hidden rather than silently doing nothing for it.
+                `can_sync_now` also folds in the sync permission, so nobody
+                is offered a button that can only answer "not permitted".
+                {% endcomment %}
                 {% if can_sync_now %}
                 <button type="button" class="btn btn-success btn-lg" id="syncNowBtn"
                         title="Fetch the latest status for the orders on this page from NCM">
@@ -99,8 +101,10 @@
                 <i class="fas fa-shipping-fast" id="syncStatIcon"></i>
             </div>
             <div class="stat-content">
-                {# Was a hardcoded "Today". Now the real time the background NCM
-                   sync last finished, so a stale page is visibly stale. #}
+                {% comment %}
+                Was a hardcoded "Today". Now the real time the background NCM
+                sync last finished, so a stale page is visibly stale.
+                {% endcomment %}
                 <h3 id="lastSyncValue" style="font-size:1.15rem;">
                     {% if sync_running %}Syncing…{% elif last_sync_at %}{{ last_sync_at|timesince }} ago{% else %}Never{% endif %}
                 </h3>
@@ -248,8 +252,10 @@
                             <strong class="text-success">Rs {{ order.total_amount|floatformat:2 }}</strong>
                         </td>
                         <td>
-                            {# Badge classes come from dashboard.logistics_status so this
-                               matches what the live status poller below assigns. #}
+                            {% comment %}
+                            Badge classes come from dashboard.logistics_status so this
+                            matches what the live status poller below assigns.
+                            {% endcomment %}
                             {% if order.logistics == 'ncm' %}
                                 <span class="badge {{ order.ncm_status|logistics_badge_class:'ncm' }}"
                                       data-logistics-status>{{ order.ncm_status|logistics_status_text:'ncm' }}</span>
