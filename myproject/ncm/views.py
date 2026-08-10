@@ -16,6 +16,7 @@ from django.conf import settings
 from functools import wraps
 
 # Import NCM service from services folder
+from accounts.decorators import has_any_permission
 from services.ncm_service import NCMService
 from ncm.webhook_handler import NCMWebhookHandler
 from ncm.bulk_sync import run_bulk_ncm_status_sync
@@ -45,12 +46,8 @@ def ncm_permission_required(permission_field):
     def decorator(view_func):
         @wraps(view_func)
         def wrapper(request, *args, **kwargs):
-            # Allow superusers and administrators
-            if request.user.is_superuser or request.user.role == 'administrator':
-                return view_func(request, *args, **kwargs)
-            
-            # Check specific permission
-            if not getattr(request.user, permission_field, False):
+            # Same admin bypass as every other permission check in the project
+            if not has_any_permission(request.user, permission_field):
                 messages.error(request, '❌ You do not have permission to access this page')
                 logger.warning(f"Access denied for user {request.user.username} - Missing permission: {permission_field}")
                 return redirect('orders_list')
@@ -569,11 +566,9 @@ def _may_sync_ncm(user):
     Deliberately not ncm_permission_required: that answers a refusal with a
     redirect and a queued Django message, which for an AJAX caller means an
     unparseable HTML response now and a stray error toast on some later,
-    unrelated page.
+    unrelated page. See accounts.decorators.has_any_permission.
     """
-    if user.is_superuser or user.role == 'administrator':
-        return True
-    return bool(getattr(user, 'can_sync_ncm_orders', False))
+    return has_any_permission(user, 'can_sync_ncm_orders')
 
 
 @login_required

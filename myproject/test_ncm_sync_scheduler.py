@@ -43,7 +43,8 @@ def check(name, condition, detail=''):
         print(f'  [FAIL] {name} {detail}')
 
 
-def reset(interval=600, started_at=None, running_since=None, finished_at=None):
+def reset(interval=600, started_at=None, running_since=None, finished_at=None,
+          summary=None):
     """Put the singleton into a known state without going through save()."""
     APISettings.get_settings()
     APISettings.objects.filter(pk=1).update(
@@ -51,7 +52,7 @@ def reset(interval=600, started_at=None, running_since=None, finished_at=None):
         last_bulk_sync_started_at=started_at,
         bulk_sync_running_since=running_since,
         last_bulk_sync_finished_at=finished_at,
-        last_bulk_sync_summary={},
+        last_bulk_sync_summary=summary if summary is not None else {},
     )
 
 
@@ -296,39 +297,88 @@ def test_adaptive_backoff():
 
     now = timezone.now()
 
-    # Last run: started 5 min ago, took 4 minutes. Configured interval 60s.
-    reset(
-        interval=60,
-        started_at=now - timedelta(seconds=300),
-        finished_at=now - timedelta(seconds=60),
-    )
+    # Last run started 5 min ago and took 240s. Configured interval 60s.
+    reset(interval=60, started_at=now - timedelta(seconds=300),
+          summary={'duration_seconds': 240})
     check('a slow previous run defers the next one', scheduler._claim() is False,
           'a 240s run at a 60s interval would otherwise run continuously')
 
-    # Once a full "last duration" has passed since the start, it may run again.
-    reset(
-        interval=60,
-        started_at=now - timedelta(seconds=300),
-        finished_at=now - timedelta(seconds=245),
-    )
+    # Twice the duration after the start, it may run again.
+    reset(interval=60, started_at=now - timedelta(seconds=500),
+          summary={'duration_seconds': 240})
     check('it runs again once the backoff has elapsed', scheduler._claim() is True)
 
     # A fast run must not be penalised at all.
-    reset(
-        interval=60,
-        started_at=now - timedelta(seconds=61),
-        finished_at=now - timedelta(seconds=60),
-    )
+    reset(interval=60, started_at=now - timedelta(seconds=61),
+          summary={'duration_seconds': 1})
     check('a fast run keeps the configured interval', scheduler._claim() is True)
 
     # A pathological run can't switch the sync off for good.
-    reset(
-        interval=60,
-        started_at=now - timedelta(seconds=scheduler.MAX_ADAPTIVE_INTERVAL_SECONDS + 60),
-        finished_at=now - timedelta(seconds=30),
-    )
+    reset(interval=60,
+          started_at=now - timedelta(seconds=scheduler.MAX_ADAPTIVE_INTERVAL_SECONDS + 60),
+          summary={'duration_seconds': 100000})
     check('backoff is capped so the sync always resumes', scheduler._claim() is True,
           f'cap is {scheduler.MAX_ADAPTIVE_INTERVAL_SECONDS}s')
+
+    # A corrupt/absent duration must not wedge the scheduler either way.
+    reset(interval=60, started_at=now - timedelta(seconds=120),
+          summary={'duration_seconds': 'not-a-number'})
+    check('a non-numeric stored duration is ignored', scheduler._claim() is True)
+
+    # THE REGRESSION: "Sync Now" is a partial run - it stamps finished_at but
+    # deliberately leaves started_at alone. Deriving the duration by
+    # subtracting those two turned a 2-second click into a "duration" of
+    # however long ago the last full sync began, and silenced background
+    # syncing for minutes afterwards.
+    reset(interval=60,
+          started_at=now - timedelta(seconds=600),   # full sync, 10 min ago
+          finished_at=now,                           # partial run just ended
+          summary={'duration_seconds': 2})           # ...and it took 2 seconds
+    check('a "Sync Now" click does not suppress the next background sync',
+          scheduler._claim() is True,
+          'duration must come from the run itself, not finished_at - started_at')
+
+
+# ---------------------------------------------------------------- test 13
+def test_liveness_is_time_based():
+    """The liveness ping must be driven by elapsed time, not order count.
+
+    Orders take wildly different amounts of time - one NCM request timing out
+    costs ncm_api_timeout on its own - so "ping every Nth order" is a poor
+    proxy for "ping often enough to stay inside the stale window". bulk_sync
+    now calls the callback after every order and _touch rate-limits itself.
+    """
+    print('\n13. Liveness pings are rate-limited, not count-based')
+
+    check('the ping interval is well inside the stale window',
+          scheduler.TOUCH_MIN_INTERVAL_SECONDS * 3 <= scheduler.STALE_CLAIM_SECONDS,
+          f'{scheduler.TOUCH_MIN_INTERVAL_SECONDS}s vs {scheduler.STALE_CLAIM_SECONDS}s')
+
+    reset(interval=600, running_since=timezone.now() - timedelta(seconds=120))
+    scheduler._last_touch = 0.0
+
+    scheduler._touch()
+    first = APISettings.get_settings().bulk_sync_running_since
+    check('the first ping writes', first is not None
+          and (timezone.now() - first).total_seconds() < 5)
+
+    # An immediate second ping must be a no-op (no DB write).
+    APISettings.objects.filter(pk=1).update(
+        bulk_sync_running_since=timezone.now() - timedelta(seconds=120))
+    scheduler._touch()
+    second = APISettings.get_settings().bulk_sync_running_since
+    check('a ping inside the rate limit does not write',
+          (timezone.now() - second).total_seconds() > 60,
+          'it wrote when it should have been throttled')
+
+    # Releasing resets the throttle so the next run's first ping is not skipped.
+    scheduler._release({'total_orders': 0})
+    check('release rearms the throttle', scheduler._last_touch == 0.0)
+
+    # bulk_sync must no longer carry a count-based constant.
+    from ncm import bulk_sync as bs
+    check('the count-based PROGRESS_EVERY constant is gone',
+          not hasattr(bs, 'PROGRESS_EVERY'))
 
 
 # ---------------------------------------------------------------- test 11
@@ -420,6 +470,7 @@ def main():
         test_partial_run_does_not_move_the_clock()
         test_badge_classes_shared()
         test_adaptive_backoff()
+        test_liveness_is_time_based()
         test_ajax_permission_contract()
     finally:
         if original:

@@ -12,6 +12,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.utils import timezone
 from django.core.mail import send_mail
+from accounts.decorators import has_any_permission
 from dashboard.logistics_status import logistics_badge_class, logistics_status_text
 from dashboard.models import Order, OrderActivityLog
 from dashboard.timezone_utils import format_nepali_datetime, parse_ncm_datetime
@@ -40,13 +41,6 @@ SYNC_THROTTLE_SECONDS = 20
 ORDER_STATUS_VIEW_PERMISSIONS = (
     'can_view_orders', 'can_view_orders_list', 'can_view_ncm_orders',
 )
-
-
-def _may_view_order_statuses(user):
-    """Whether `user` may read order status over the polling API."""
-    if getattr(user, 'is_superuser', False) or getattr(user, 'role', None) == 'administrator':
-        return True
-    return any(getattr(user, perm, False) for perm in ORDER_STATUS_VIEW_PERMISSIONS)
 
 
 def get_cached_comments(order_id):
@@ -386,7 +380,7 @@ def api_get_orders_status_batch(request):
     Query params:
     - order_ids: comma-separated list of order IDs
     """
-    if not _may_view_order_statuses(request.user):
+    if not has_any_permission(request.user, *ORDER_STATUS_VIEW_PERMISSIONS):
         return JsonResponse(
             {'success': False, 'message': 'Not permitted'}, status=403)
 

@@ -35,10 +35,6 @@ PROTECTED_STATUSES = ('cancelled',)
 #: URIs/timeouts start biting well before that - keep requests chunked.
 CHUNK_SIZE = 100
 
-#: How many orders to process between progress_callback pings. Small enough
-#: that the scheduler's liveness window can stay short, large enough that the
-#: callback's DB write is noise next to the NCM requests around it.
-PROGRESS_EVERY = 25
 
 
 def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None,
@@ -67,12 +63,13 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None,
             True/False overrides it. Costs one extra NCM request per order
             whose status actually changed, in exchange for activity-log
             timestamps that match NCM instead of the run's own clock.
-        progress_callback: called with no arguments after every chunk and
-            every PROGRESS_EVERY orders. The scheduler uses it to prove the
-            run is still alive, so its lock isn't mistaken for an abandoned
-            one; a run's total duration is unbounded (a first sync after a
-            long gap can be hundreds of sequential requests), but the gap
-            between two callbacks is not.
+        progress_callback: called with no arguments after every order and
+            every chunk. The scheduler uses it to prove the run is still
+            alive, so its lock isn't mistaken for an abandoned one; a run's
+            total duration is unbounded (a first sync after a long gap can be
+            hundreds of sequential requests), but the gap between two
+            callbacks is not. Callbacks are cheap by contract - the callee
+            rate-limits, so this can be called freely.
         deadline: a timezone-aware datetime past which no NEW chunk is
             started. The in-flight chunk always finishes.
 
@@ -175,8 +172,12 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None,
                     logger.exception(f"Bulk sync failed for order {order.order_number}")
 
                 processed += 1
-                if processed % PROGRESS_EVERY == 0:
-                    _ping()
+                # Reported after every order, not every Nth: orders take wildly
+                # different amounts of time (a timing-out NCM request costs
+                # ncm_api_timeout on its own), so a count is a poor proxy for
+                # elapsed time. The callback is responsible for rate-limiting
+                # itself - see ncm.scheduler._touch.
+                _ping()
 
             _ping()
 

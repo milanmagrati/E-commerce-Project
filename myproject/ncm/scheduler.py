@@ -27,6 +27,7 @@ UPDATE statement so the database - not Python - decides the winner.
 import logging
 import threading
 from datetime import timedelta
+from time import monotonic
 
 from django.db import connections, transaction
 from django.db.models import Q
@@ -39,11 +40,10 @@ logger = logging.getLogger('ncm')
 
 #: A claim whose liveness hasn't been refreshed in this long is treated as
 #: abandoned and taken over. A running sync bumps `bulk_sync_running_since`
-#: every chunk and every 25 orders (see bulk_sync.PROGRESS_EVERY), so this only
-#: has to cover the gap between two pings - not the total run time, which is
-#: unbounded. That distinction matters: Passenger recycles idle workers, and a
-#: daemon thread dies with its process, leaving the claim set with nobody to
-#: release it.
+#: at most every TOUCH_MIN_INTERVAL_SECONDS while it works, so this only has to
+#: cover the gap between two pings - not the total run time, which is unbounded.
+#: That distinction matters: Passenger recycles idle workers, and a daemon
+#: thread dies with its process, leaving the claim set with nobody to release it.
 STALE_CLAIM_SECONDS = 300
 
 #: Wall-clock budget for one run. Past this no new chunk is started, so a huge
@@ -59,6 +59,9 @@ MIN_SYNC_SECONDS = 60
 #: next is never postponed by more than this - a single pathological run (NCM
 #: timing out on every request, say) must not effectively switch the sync off.
 MAX_ADAPTIVE_INTERVAL_SECONDS = 1800
+
+#: APISettings is a singleton pinned to this row (see its save()).
+SETTINGS_PK = 1
 
 
 def _now():
@@ -106,10 +109,18 @@ def _claim(force=False, advance_schedule=True):
     # wall-clock time: work for D, idle for D. A fast run (the normal case: a
     # few requests, well under a second) never reaches the configured interval
     # and is therefore unaffected.
+    #
+    # The duration is read from the last run's own summary rather than derived
+    # from finished_at - started_at. Those two columns do not always describe
+    # the same run: a partial "Sync Now" deliberately leaves started_at alone
+    # but still stamps finished_at, so subtracting them turned a two-second
+    # button click into a "duration" of however long ago the last full sync
+    # began - and suppressed background syncing for the next several minutes.
     last_duration = 0.0
-    started, finished = settings_obj.last_bulk_sync_started_at, settings_obj.last_bulk_sync_finished_at
-    if started and finished and finished > started:
-        last_duration = (finished - started).total_seconds()
+    try:
+        last_duration = float((settings_obj.last_bulk_sync_summary or {}).get('duration_seconds') or 0)
+    except (TypeError, ValueError):
+        last_duration = 0.0
     effective_interval = min(
         max(interval, 2 * last_duration), MAX_ADAPTIVE_INTERVAL_SECONDS
     )
@@ -142,18 +153,42 @@ def _claim(force=False, advance_schedule=True):
     return won
 
 
+#: Smallest gap between two liveness writes. The sync calls the callback after
+#: every order; this is what keeps that from meaning an UPDATE per order.
+TOUCH_MIN_INTERVAL_SECONDS = 30
+
+#: Monotonic timestamp of the last liveness write. Only ever touched by the one
+#: thread holding the claim, so it needs no lock.
+_last_touch = 0.0
+
+
 def _touch():
-    """Prove the running sync is still alive. Passed to bulk_sync as its progress_callback."""
+    """Prove the running sync is still alive. bulk_sync's progress_callback.
+
+    Rate-limited rather than driven by a count of orders: the callback has to
+    fire often enough in WALL-CLOCK terms to stay inside STALE_CLAIM_SECONDS,
+    and orders take wildly different amounts of time - a run whose NCM requests
+    are all timing out at 60s spends half an hour on 25 orders, and a
+    count-based ping would let its own claim look abandoned and be stolen
+    while it was still working.
+    """
+    global _last_touch
+    now = monotonic()
+    if now - _last_touch < TOUCH_MIN_INTERVAL_SECONDS:
+        return
+    _last_touch = now
     try:
-        APISettings.objects.filter(pk=1).update(bulk_sync_running_since=_now())
+        APISettings.objects.filter(pk=SETTINGS_PK).update(bulk_sync_running_since=_now())
     except Exception:
         logger.debug('Could not refresh bulk sync liveness', exc_info=True)
 
 
 def _release(summary=None):
     """Drop the claim and record the result. Must run even when the sync raised."""
+    global _last_touch
+    _last_touch = 0.0  # so the next run's first ping isn't skipped
     try:
-        APISettings.objects.filter(pk=1).update(
+        APISettings.objects.filter(pk=SETTINGS_PK).update(
             bulk_sync_running_since=None,
             last_bulk_sync_finished_at=_now(),
             last_bulk_sync_summary=summary if summary is not None else {},
@@ -166,6 +201,9 @@ def _release(summary=None):
 def _run(order_ids=None, user=None):
     """Body of a claimed run. Never raises - callers may be a bare thread."""
     summary = {}
+    # Timed here, so `duration_seconds` always describes THIS run - see the
+    # note in _claim() about why the stored timestamps can't be subtracted.
+    began = monotonic()
     try:
         summary = run_bulk_ncm_status_sync(
             user=user,
@@ -186,6 +224,9 @@ def _run(order_ids=None, user=None):
         logger.exception('NCM bulk sync run failed')
         summary = {'total_orders': 0, 'updated_count': 0, 'error_count': 1, 'errors': [str(e)]}
     finally:
+        # monotonic() so a clock adjustment mid-run can't produce a negative or
+        # wildly inflated duration that the next claim would then act on.
+        summary['duration_seconds'] = round(monotonic() - began, 2)
         _release(summary)
     return summary
 
