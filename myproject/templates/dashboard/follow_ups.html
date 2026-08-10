@@ -745,6 +745,31 @@
         window.location.href = url.toString();
     }
 
+    // Final safety net against duplicate toasts. The server cursor should
+    // already guarantee an event is delivered once, but a retried request or a
+    // second copy of the loop must never produce a second identical toast.
+    const MAX_TOASTS_PER_POLL = 5;
+    const FU_SEEN_EVENT_LIMIT = 500;
+    const fuSeenEvents = new Set();
+
+    function isUnseenEvent(ev) {
+        const key = ev && ev.event_key
+            ? ev.event_key
+            : `${ev && ev.followup_id}:${ev && ev.user}:${ev && ev.timestamp}`;
+        if (fuSeenEvents.has(key)) return false;
+        fuSeenEvents.add(key);
+        if (fuSeenEvents.size > FU_SEEN_EVENT_LIMIT) {
+            // Drop the oldest keys — Sets iterate in insertion order.
+            const excess = fuSeenEvents.size - FU_SEEN_EVENT_LIMIT;
+            let dropped = 0;
+            for (const k of fuSeenEvents) {
+                fuSeenEvents.delete(k);
+                if (++dropped >= excess) break;
+            }
+        }
+        return true;
+    }
+
     function showUpdateToast(ev) {
         const container = document.getElementById('fuToastContainer');
         if (!container) return;
@@ -1362,21 +1387,37 @@
 
     // Real-Time AJAX Polling Setup (cPanel / WSGI Compatible)
     let typingTimer = null;
-    let lastSyncTimestamp = new Date().toISOString();
+    // Cursors are seeded from the server, never from the browser clock — a
+    // client running behind the server would otherwise re-request activity it
+    // has already displayed.
+    let lastSyncTimestamp = "{{ sync_cursor }}";
+    let lastEventId = {{ event_cursor|default:0 }};
+    let syncInFlight = false;
+    let syncTimer = null;
 
-    function startSyncLoop() {
-        setInterval(() => {
-            const params = new URLSearchParams({
-                last_sync: lastSyncTimestamp,
-                q: activeFilters.q,
-                lead_source: activeFilters.lead_source,
-                status: activeFilters.status
-            });
-            fetch(`/api/orders/follow-ups/sync/?${params.toString()}`)
+    function runSyncPoll() {
+        // Never let two polls overlap. setInterval fired regardless of whether
+        // the previous request had returned, so a response slower than the
+        // interval sent the next request with a stale cursor and every event
+        // in that window was delivered — and toasted — twice.
+        if (syncInFlight) return Promise.resolve();
+        syncInFlight = true;
+
+        const params = new URLSearchParams({
+            last_sync: lastSyncTimestamp,
+            last_event_id: lastEventId,
+            q: activeFilters.q,
+            lead_source: activeFilters.lead_source,
+            status: activeFilters.status
+        });
+        return fetch(`/api/orders/follow-ups/sync/?${params.toString()}`)
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
                     lastSyncTimestamp = data.timestamp;
+                    if (typeof data.last_event_id === 'number') {
+                        lastEventId = data.last_event_id;
+                    }
 
                     // Handle deleted rows
                     data.deleted_ids.forEach(id => {
@@ -1431,12 +1472,16 @@
                         }
                     });
 
-                    // Handle live-update notification toasts (other users' activity)
-                    (data.events || []).forEach(ev => showUpdateToast(ev));
+                    // Handle live-update notification toasts (other users' activity).
+                    // Only the newest few are rendered: anything older would be
+                    // trimmed off the stack immediately anyway, and after a long
+                    // spell in a background tab the backlog can be large.
+                    const freshEvents = (data.events || []).filter(isUnseenEvent);
+                    freshEvents.slice(-MAX_TOASTS_PER_POLL).forEach(ev => showUpdateToast(ev));
 
                     // Handle presence indicators
                     document.querySelectorAll('.presence-indicator').forEach(el => el.remove()); // clear all
-                    data.presences.forEach(p => {
+                    (data.presences || []).forEach(p => {
                         // Only show presence for OTHER users
                         // We check if username matches the current user's name (basic check)
                         const currentUser = "{{ request.user.username }}";
@@ -1446,10 +1491,36 @@
                     });
                 }
             })
-            .catch(err => console.error("Sync error:", err));
-        }, 2000); // Check every 2 seconds for snappier notifications
+            .catch(err => console.error("Sync error:", err))
+            .finally(() => { syncInFlight = false; });
     }
-    
+
+    const SYNC_INTERVAL_MS = 2000;         // foreground: near-real-time
+    const SYNC_HIDDEN_INTERVAL_MS = 30000; // background: keep cursors moving cheaply
+    let lastPollAt = 0;
+
+    function startSyncLoop() {
+        if (syncTimer) return;   // guard against a double start
+        syncTimer = setInterval(() => {
+            // A background tab doesn't need second-by-second updates, and the
+            // browser throttles its timers anyway. Back off instead of stopping
+            // so the cursors keep advancing and the tab never has to catch up
+            // on a huge backlog when it comes back to the foreground.
+            const minGap = document.hidden ? SYNC_HIDDEN_INTERVAL_MS : SYNC_INTERVAL_MS;
+            if (Date.now() - lastPollAt < minGap) return;
+            lastPollAt = Date.now();
+            runSyncPoll();
+        }, SYNC_INTERVAL_MS);
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                lastPollAt = Date.now();
+                runSyncPoll();
+            }
+        });
+    }
+
+
     function sendPresence(type, id) {
         if (!id) return;
         fetch('/api/orders/follow-ups/presence/', {

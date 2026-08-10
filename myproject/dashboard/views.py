@@ -23211,7 +23211,16 @@ def follow_ups_list(request):
     statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('name')
     action_statuses = statuses.exclude(name__iexact='Converted')
     order_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
-    
+
+    # Seed the live-sync cursors from the SERVER clock / log head. Seeding them
+    # in JS from `new Date()` meant a browser running behind the server replayed
+    # already-rendered activity as a burst of duplicate toasts on every load.
+    from .models import FollowUpLog
+    from django.db.models import Max
+    from django.utils import timezone as dj_timezone
+    sync_cursor = dj_timezone.now().isoformat()
+    event_cursor = FollowUpLog.objects.aggregate(max_id=Max('id'))['max_id'] or 0
+
     context = {
         'follow_ups': page_obj,
         'page_obj': page_obj,
@@ -23223,6 +23232,8 @@ def follow_ups_list(request):
         'search_query': search_query,
         'lead_source': lead_source,
         'filter_status': filter_status,
+        'sync_cursor': sync_cursor,
+        'event_cursor': event_cursor,
     }
     return render(request, 'dashboard/follow_ups.html', context)
 
@@ -24564,21 +24575,51 @@ def sync_follow_ups(request):
     """AJAX endpoint to silently fetch updated rows and active presences."""
     from .models import FollowUp, FollowUpPresence, FollowUpLog
     from django.utils import timezone
-    from django.db.models import Q
+    from django.db.models import Q, Max
     import dateutil.parser
     from datetime import timedelta
 
+    # Hard caps on how much one poll will return, so a bulk edit (or a tab that
+    # sat in the background for hours) can't dump an unbounded payload. Both
+    # cursors are advanced only as far as was actually read, so a backlog
+    # drains over consecutive polls instead of being skipped.
+    MAX_EVENT_LOGS = 200
+    MAX_UPDATE_ROWS = 200
+
+    search_query = request.GET.get('q', '').strip()
+    lead_source = request.GET.get('lead_source', '').strip()
+    filter_status = request.GET.get('status', '').strip()
+
+    def apply_list_filters(qs):
+        """Mirror the follow_ups_list filters so the client can tell whether a
+        row belongs under the filters it is currently showing."""
+        if search_query:
+            qs = qs.filter(
+                Q(name__icontains=search_query) |
+                Q(phone__icontains=search_query) |
+                Q(remarks__icontains=search_query)
+            )
+        if lead_source:
+            qs = qs.filter(lead_source__iexact=lead_source)
+        if filter_status:
+            qs = qs.filter(status__iexact=filter_status)
+        return qs
+
     try:
         last_sync_str = request.GET.get('last_sync')
-        search_query = request.GET.get('q', '').strip()
-        lead_source = request.GET.get('lead_source', '').strip()
-        filter_status = request.GET.get('status', '').strip()
         updates = []
         deleted_ids = []
         events = []
 
+        # Snapshot the clock ONCE, before touching the DB, and bound every
+        # cursor query with it. Reading "now" after the queries (as this used
+        # to) left rows written mid-request on the wrong side of the cursor,
+        # so they were never delivered by any poll.
+        now = timezone.now()
+        next_sync_ts = now
+
         # Cleanup stale presences (older than 10 seconds)
-        stale_threshold = timezone.now() - timedelta(seconds=10)
+        stale_threshold = now - timedelta(seconds=10)
         FollowUpPresence.objects.filter(last_seen__lt=stale_threshold).delete()
 
         # Fetch active presences
@@ -24586,27 +24627,68 @@ def sync_follow_ups(request):
             'followup_id', 'user__username', 'action'
         ))
 
+        # ------------------------------------------------------------------
+        # Notification events.
+        #
+        # These are cursored on the log's primary key rather than on a
+        # timestamp. A timestamp cursor re-delivered the same logs whenever
+        # two polls overlapped or the browser clock ran behind the server's,
+        # which is what caused the same toast to pop up over and over.
+        # ------------------------------------------------------------------
+        try:
+            last_event_id = int(request.GET.get('last_event_id'))
+        except (TypeError, ValueError):
+            last_event_id = None
+
+        max_event_id = FollowUpLog.objects.aggregate(max_id=Max('id'))['max_id'] or 0
+
+        if last_event_id is None:
+            # First poll after a page load: start at the head of the log so a
+            # freshly opened page never replays notifications for activity
+            # that happened before it was opened.
+            next_event_id = max_event_id
+            recent_logs = []
+        else:
+            recent_logs = list(
+                FollowUpLog.objects
+                .filter(id__gt=last_event_id, id__lte=max_event_id)
+                .exclude(user=request.user)
+                .select_related('user', 'follow_up')
+                .order_by('id')[:MAX_EVENT_LOGS]
+            )
+            # When the batch is truncated, only advance as far as we actually
+            # read; otherwise jump to the head so the requester's own logs
+            # (excluded above) don't get re-scanned every poll.
+            if len(recent_logs) == MAX_EVENT_LOGS:
+                next_event_id = recent_logs[-1].id
+            else:
+                next_event_id = max_event_id
+
         if last_sync_str:
             last_sync = dateutil.parser.parse(last_sync_str)
-            
-            # Find recently updated rows
-            updated_rows = FollowUp.objects.filter(updated_at__gt=last_sync, is_deleted=False).prefetch_related('products', 'product_variations', 'logs')
+            if timezone.is_naive(last_sync):
+                last_sync = timezone.make_aware(last_sync, timezone.get_default_timezone())
+
+            # Find recently updated rows, oldest first, so a truncated batch can
+            # be resumed from where it stopped on the next poll.
+            updated_rows = list(
+                FollowUp.objects.filter(
+                    updated_at__gt=last_sync, updated_at__lte=now, is_deleted=False
+                )
+                .prefetch_related('products', 'product_variations', 'logs')
+                .order_by('updated_at')[:MAX_UPDATE_ROWS]
+            )
+            if len(updated_rows) == MAX_UPDATE_ROWS:
+                next_sync_ts = updated_rows[-1].updated_at
 
             # Determine which of those rows still match the requester's active
             # list filters, so the client can add/keep or drop them accordingly
             # instead of showing entries that don't belong to the current filter.
-            filtered_qs = updated_rows
-            if search_query:
-                filtered_qs = filtered_qs.filter(
-                    Q(name__icontains=search_query) |
-                    Q(phone__icontains=search_query) |
-                    Q(remarks__icontains=search_query)
-                )
-            if lead_source:
-                filtered_qs = filtered_qs.filter(lead_source__iexact=lead_source)
-            if filter_status:
-                filtered_qs = filtered_qs.filter(status__iexact=filter_status)
-            matching_ids = set(filtered_qs.values_list('id', flat=True))
+            matching_ids = set(
+                apply_list_filters(
+                    FollowUp.objects.filter(id__in=[r.id for r in updated_rows])
+                ).values_list('id', flat=True)
+            ) if updated_rows else set()
 
             for follow_up in updated_rows:
                 products_data = [
@@ -24642,56 +24724,70 @@ def sync_follow_ups(request):
                     'matches_filter': follow_up.id in matching_ids,
                 })
 
-            # Find recently deleted rows
-            deleted_rows = FollowUp.objects.filter(updated_at__gt=last_sync, is_deleted=True).values_list('id', flat=True)
+            # Find recently deleted rows (bounded by the same cursor the client
+            # will send back, so nothing falls into a gap)
+            deleted_rows = FollowUp.objects.filter(
+                updated_at__gt=last_sync, updated_at__lte=next_sync_ts, is_deleted=True
+            ).values_list('id', flat=True)
             deleted_ids = list(deleted_rows)
 
-            # Build lightweight notification events from other users' activity,
-            # so the requester can be alerted about changes even when they
-            # don't match (and therefore aren't shown under) the requester's
-            # current list filters. Own actions are excluded since the client
-            # already reflects those instantly.
-            recent_logs = FollowUpLog.objects.filter(
-                timestamp__gt=last_sync
-            ).exclude(user=request.user).select_related('user', 'follow_up').order_by('timestamp')
+        # Build lightweight notification events from other users' activity, so
+        # the requester can be alerted about changes even when they don't match
+        # (and therefore aren't shown under) the requester's current list
+        # filters. Own actions are excluded since the client already reflects
+        # those instantly.
+        #
+        # Grouping is per (follow-up, actor): two people editing the same entry
+        # in one window must produce two toasts, otherwise every change gets
+        # attributed to whoever happened to write the last log.
+        events_by_key = {}
+        event_order = []
+        for log in recent_logs:
+            fu = log.follow_up
+            if fu is None:
+                continue
+            key = (fu.id, log.user_id)
+            if key not in events_by_key:
+                events_by_key[key] = {
+                    'event_key': f"{fu.id}:{log.user_id or 0}:{log.id}",
+                    'followup_id': fu.id,
+                    'name': fu.name,
+                    'phone': fu.phone,
+                    'lead_source': fu.lead_source,
+                    'status': fu.status,
+                    'is_deleted': fu.is_deleted,
+                    'user': log.user.username if log.user else 'System',
+                    'changes': [],
+                }
+                event_order.append(key)
+            ev = events_by_key[key]
+            ev['timestamp'] = timezone.localtime(log.timestamp).strftime("%I:%M %p")
+            ev['changes'].append({
+                'field': log.field_changed,
+                'old': log.old_value,
+                'new': log.new_value,
+            })
 
-            events_by_fu = {}
-            event_order = []
-            for log in recent_logs:
-                fu = log.follow_up
-                if fu is None:
-                    continue
-                if fu.id not in events_by_fu:
-                    events_by_fu[fu.id] = {
-                        'followup_id': fu.id,
-                        'name': fu.name,
-                        'phone': fu.phone,
-                        'lead_source': fu.lead_source,
-                        'status': fu.status,
-                        'is_deleted': fu.is_deleted,
-                        'changes': [],
-                    }
-                    event_order.append(fu.id)
-                ev = events_by_fu[fu.id]
-                ev['user'] = log.user.username if log.user else 'System'
-                ev['timestamp'] = timezone.localtime(log.timestamp).strftime("%I:%M %p")
-                ev['changes'].append({
-                    'field': log.field_changed,
-                    'old': log.old_value,
-                    'new': log.new_value,
-                })
-
-            for fu_id in event_order:
-                ev = events_by_fu[fu_id]
+        if event_order:
+            # Re-check filter membership against the follow-ups the events
+            # actually reference; `matching_ids` above only covers rows whose
+            # updated_at fell inside this poll's window.
+            event_fu_ids = {key[0] for key in event_order}
+            visible_event_ids = set(
+                apply_list_filters(
+                    FollowUp.objects.filter(id__in=event_fu_ids, is_deleted=False)
+                ).values_list('id', flat=True)
+            )
+            for key in event_order:
+                ev = events_by_key[key]
                 ev['is_new'] = any(c['field'] == 'Entry Created' for c in ev['changes'])
-                ev['matches_filter'] = (not ev['is_deleted']) and (fu_id in matching_ids)
+                ev['matches_filter'] = (not ev['is_deleted']) and (ev['followup_id'] in visible_event_ids)
                 events.append(ev)
 
-        current_time = timezone.now().isoformat()
-        
         return JsonResponse({
             'success': True,
-            'timestamp': current_time,
+            'timestamp': next_sync_ts.isoformat(),
+            'last_event_id': next_event_id,
             'updates': updates,
             'deleted_ids': deleted_ids,
             'presences': active_presences,
