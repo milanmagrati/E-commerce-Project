@@ -20,8 +20,10 @@
                 <i class="bi bi-arrow-left"></i> Back to List
             </a>
             {% if dispatch.is_deleted %}
-            {# A trashed batch can still be opened by URL; offer Restore, since
-               Move to Trash would 404 on a row that is already trashed. #}
+            {% comment %}
+            A trashed batch can still be opened by URL; offer Restore, since
+            Move to Trash would 404 on a row that is already trashed.
+            {% endcomment %}
             <form method="post" action="{% url 'dispatch_restore' dispatch.pk %}"
                   onsubmit="return confirm('Restore this dispatch from trash?');">
                 {% csrf_token %}
