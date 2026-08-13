@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q, Sum
 from django.conf import settings  # ✅ Add this import
 from django.utils import timezone
@@ -1149,25 +1149,136 @@ class Dispatch(models.Model):
         """Return list of all scanned order IDs in this dispatch"""
         return [item.scanned_order_id for item in self.items.all()]
 
+    # ── Outcome counters ─────────────────────────────────────────────────────
+    # These are read once per row on the dispatch list, so they must not fire a
+    # query per call. Resolution order:
+    #   1. an annotation set by the list view (`annot_success_count`, ...)
+    #   2. the prefetch cache (`prefetch_related('items')`)
+    #   3. a single grouped query, cached on the instance
+    def _status_counts(self):
+        annotated = {}
+        for status in ('success', 'failed', 'not_found'):
+            value = getattr(self, f'annot_{status}_count', None)
+            if value is not None:
+                annotated[status] = value
+        if len(annotated) == 3:
+            return annotated
+
+        cached = getattr(self, '_status_counts_cache', None)
+        if cached is not None:
+            return cached
+
+        counts = {'success': 0, 'failed': 0, 'not_found': 0}
+        prefetched = getattr(self, '_prefetched_objects_cache', None) or {}
+        if 'items' in prefetched:
+            for item in prefetched['items']:
+                counts[item.dispatch_status] = counts.get(item.dispatch_status, 0) + 1
+        else:
+            for row in self.items.values('dispatch_status').annotate(c=models.Count('id')):
+                counts[row['dispatch_status']] = row['c']
+
+        self._status_counts_cache = counts
+        return counts
+
     def get_linked_orders_count(self):
-        """Count orders that were successfully linked"""
+        """Count order IDs that resolved to a real Order row"""
         return self.items.filter(order__isnull=False).count()
 
     def get_unlinked_orders_count(self):
-        """Count order IDs that couldn't be found in system"""
+        """Count order IDs that couldn't be matched to an Order row"""
         return self.items.filter(order__isnull=True).count()
 
     def get_success_count(self):
         """Count orders that were successfully dispatched"""
-        return self.items.filter(dispatch_status='success').count()
+        return self._status_counts().get('success', 0)
 
     def get_failed_count(self):
         """Count orders that failed (e.g. already dispatched)"""
-        return self.items.filter(dispatch_status='failed').count()
+        return self._status_counts().get('failed', 0)
 
     def get_not_found_count(self):
-        """Count orders that were not found in system"""
-        return self.items.filter(dispatch_status='not_found').count()
+        """Count scanned IDs that were not found in the system"""
+        return self._status_counts().get('not_found', 0)
+
+    def get_item_count(self):
+        """Number of scanned rows actually recorded for this batch"""
+        value = getattr(self, 'annot_item_count', None)
+        if value is not None:
+            return value
+        counts = self._status_counts()
+        return sum(counts.get(s, 0) for s in ('success', 'failed', 'not_found'))
+
+    def get_issue_count(self):
+        """Every scanned ID that did NOT dispatch — failed + not found.
+
+        This is the number the "Failed" column shows: a scanned ID that was
+        never found in the system is just as much a failure to the packer as
+        one rejected for being already dispatched, and counting only
+        `dispatch_status='failed'` made those rows silently read as 0.
+        """
+        return self.get_failed_count() + self.get_not_found_count()
+
+    def get_unrecorded_count(self):
+        """Scanned IDs claimed by `total_orders` that have no DispatchItem row.
+
+        Legacy batches created before per-item tracking existed have
+        total_orders > 0 with zero items; surface that instead of rendering a
+        misleading 0/0.
+        """
+        return max(0, (self.total_orders or 0) - self.get_item_count())
+
+    def get_outcome(self):
+        """Coarse batch outcome used for badges and row colouring."""
+        if self.get_item_count() == 0:
+            return 'unrecorded' if (self.total_orders or 0) > 0 else 'empty'
+        success = self.get_success_count()
+        issues = self.get_issue_count()
+        if issues and success:
+            return 'partial'
+        if issues:
+            return 'failed'
+        return 'completed'
+
+    def get_success_rate(self):
+        """Percentage of recorded scans that dispatched successfully (0-100)."""
+        total = self.get_item_count()
+        if not total:
+            return 0
+        return round((self.get_success_count() * 100.0) / total)
+
+    def get_failed_items(self):
+        """All problem items (failed + not found), ready for display."""
+        return [
+            item for item in self.items.all()
+            if item.dispatch_status != 'success'
+        ]
+
+    def log(self, event, message, level='info', item=None, order_ref='', user=None):
+        """Append an audit entry for this batch. Never raises.
+
+        The write runs in its own savepoint: these calls happen inside the
+        dispatch's `transaction.atomic()` block, and swallowing a database error
+        without rolling back to a savepoint would poison the outer transaction
+        so every later query in the batch fails too.
+        """
+        try:
+            with transaction.atomic():
+                return DispatchLog.objects.create(
+                    dispatch=self,
+                    item=item,
+                    level=level,
+                    event=event,
+                    message=(message or '')[:1000],
+                    order_ref=(order_ref or (item.scanned_order_id if item else ''))[:100],
+                    user=user if (user is not None and getattr(user, 'is_authenticated', False)) else None,
+                )
+        except Exception:  # logging must never break a dispatch
+            return None
+
+    def refresh_from_db(self, *args, **kwargs):
+        # Drop memoised outcome counts so a reloaded row re-reads them.
+        self._status_counts_cache = None
+        return super().refresh_from_db(*args, **kwargs)
 
     # ✅ SOFT DELETE METHOD
     def soft_delete(self, user):
@@ -1195,6 +1306,25 @@ class DispatchItem(models.Model):
         ('not_found', 'Not Found'),
     ]
 
+    # Machine-readable cause, so the UI can group/colour failures without
+    # string-matching the human sentence in `failure_reason`.
+    FAILURE_CODE_CHOICES = [
+        ('already_dispatched', 'Already dispatched'),
+        ('not_found', 'Order ID not found'),
+        ('status_reverted', 'Status moved away from dispatched'),
+        ('error', 'Processing error'),
+    ]
+
+    FAILURE_CODE_HINTS = {
+        'already_dispatched': 'This order ID was scanned into an earlier batch that is still active. '
+                              'Remove it from this batch, or restore/clear the earlier dispatch first.',
+        'not_found': 'No order matched this ID by order number or barcode. '
+                     'Check for a mis-scan, a trimmed prefix, or an order that was deleted.',
+        'status_reverted': 'The order was dispatched in this batch but its status was later changed '
+                           'away from "dispatched", so the stock deduction was rolled back.',
+        'error': 'The order could not be processed. See the activity log for the underlying error.',
+    }
+
     dispatch = models.ForeignKey(
         Dispatch,
         on_delete=models.CASCADE,
@@ -1215,6 +1345,14 @@ class DispatchItem(models.Model):
         db_index=True
     )
     failure_reason = models.CharField(max_length=255, blank=True, default='')
+    failure_code = models.CharField(
+        max_length=32,
+        choices=FAILURE_CODE_CHOICES,
+        blank=True,
+        default='',
+        db_index=True
+    )
+    failed_at = models.DateTimeField(null=True, blank=True)
     scanned_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1228,6 +1366,119 @@ class DispatchItem(models.Model):
 
     def __str__(self):
         return f"{self.scanned_order_id} in {self.dispatch.batch_number}"
+
+    def mark_failed(self, reason, code='error', save=True):
+        """Flag this scan as failed with a reason + machine code."""
+        self.dispatch_status = 'failed'
+        self.failure_reason = (reason or '')[:255]
+        self.failure_code = code if code in dict(self.FAILURE_CODE_CHOICES) else 'error'
+        self.failed_at = timezone.now()
+        if save:
+            self.save(update_fields=['dispatch_status', 'failure_reason', 'failure_code', 'failed_at'])
+        return self
+
+    def mark_not_found(self, reason='', save=True):
+        """Flag this scan as unmatched — it is a failure, just a different cause."""
+        self.dispatch_status = 'not_found'
+        self.failure_reason = (reason or 'Order ID not found in the system')[:255]
+        self.failure_code = 'not_found'
+        self.failed_at = timezone.now()
+        if save:
+            self.save(update_fields=['dispatch_status', 'failure_reason', 'failure_code', 'failed_at'])
+        return self
+
+    def mark_success(self, save=True):
+        """Flag this scan as dispatched and clear any earlier failure detail."""
+        self.dispatch_status = 'success'
+        self.failure_reason = ''
+        self.failure_code = ''
+        self.failed_at = None
+        if save:
+            self.save(update_fields=['dispatch_status', 'failure_reason', 'failure_code', 'failed_at'])
+        return self
+
+    @property
+    def is_problem(self):
+        return self.dispatch_status != 'success'
+
+    def get_failure_reason_display(self):
+        """Human sentence for the reason column — never blank for a problem row."""
+        if self.dispatch_status == 'success':
+            return ''
+        if self.failure_reason:
+            return self.failure_reason
+        if self.dispatch_status == 'not_found':
+            return 'Order ID not found in the system'
+        return 'Failed — no reason was recorded for this scan'
+
+    def get_failure_hint(self):
+        """Actionable next step for this failure cause, if we know one."""
+        code = self.failure_code
+        if not code and self.dispatch_status == 'not_found':
+            code = 'not_found'
+        return self.FAILURE_CODE_HINTS.get(code, '')
+
+
+class DispatchLog(models.Model):
+    """Append-only audit trail for a dispatch batch.
+
+    Every scan outcome, stock movement and later status change writes a row
+    here so the detail page can explain exactly what happened and when.
+    """
+
+    LEVEL_CHOICES = [
+        ('info', 'Info'),
+        ('success', 'Success'),
+        ('warning', 'Warning'),
+        ('error', 'Error'),
+    ]
+
+    EVENT_CHOICES = [
+        ('batch_created', 'Batch created'),
+        ('order_dispatched', 'Order dispatched'),
+        ('order_failed', 'Order failed'),
+        ('order_not_found', 'Order not found'),
+        ('stock_oversold', 'Stock oversold'),
+        ('status_reverted', 'Status reverted'),
+        ('batch_completed', 'Batch completed'),
+        ('batch_error', 'Batch error'),
+    ]
+
+    dispatch = models.ForeignKey(
+        Dispatch,
+        on_delete=models.CASCADE,
+        related_name='logs'
+    )
+    item = models.ForeignKey(
+        DispatchItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='logs'
+    )
+    level = models.CharField(max_length=10, choices=LEVEL_CHOICES, default='info', db_index=True)
+    event = models.CharField(max_length=32, choices=EVENT_CHOICES, default='batch_created', db_index=True)
+    message = models.TextField()
+    order_ref = models.CharField(max_length=100, blank=True, default='')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dispatch_logs'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        verbose_name = 'Dispatch Log'
+        verbose_name_plural = 'Dispatch Logs'
+        indexes = [
+            models.Index(fields=['dispatch', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"[{self.level}] {self.event} — {self.dispatch_id}"
 
     def is_linked(self):
         """Check if order was successfully linked"""

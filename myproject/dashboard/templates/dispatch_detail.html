@@ -1,63 +1,182 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load dashboard_extras %}
 
 {% block title %}Dispatch Details - {{ dispatch.batch_number }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
     <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2><i class="bi bi-box-seam"></i> Dispatch Details</h2>
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
         <div>
+            <h2 class="h4 mb-1"><i class="bi bi-box-seam"></i> Dispatch Details</h2>
+            <div class="text-muted small">
+                <code class="detail-batch">{{ dispatch.batch_number }}</code>
+                <span class="badge bg-info ms-1">{{ dispatch.get_logistics_display }}</span>
+            </div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap detail-actions">
             <a href="{% url 'dispatch_list' %}" class="btn btn-secondary">
                 <i class="bi bi-arrow-left"></i> Back to List
             </a>
-            <form method="post" action="{% url 'dispatch_move_to_trash' dispatch.pk %}" 
-                  style="display:inline;" 
+            {% if dispatch.is_deleted %}
+            {# A trashed batch can still be opened by URL; offer Restore, since
+               Move to Trash would 404 on a row that is already trashed. #}
+            <form method="post" action="{% url 'dispatch_restore' dispatch.pk %}"
+                  onsubmit="return confirm('Restore this dispatch from trash?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success">
+                    <i class="bi bi-arrow-counterclockwise"></i> Restore
+                </button>
+            </form>
+            {% else %}
+            <form method="post" action="{% url 'dispatch_move_to_trash' dispatch.pk %}"
                   onsubmit="return confirm('Move this dispatch to trash?');">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-danger">
+                <button type="submit" class="btn btn-outline-danger">
                     <i class="bi bi-trash"></i> Move to Trash
                 </button>
             </form>
+            {% endif %}
         </div>
     </div>
+
+    {% if dispatch.is_deleted %}
+    <div class="alert alert-secondary d-flex align-items-center gap-2 py-2 px-3 mb-3">
+        <i class="bi bi-trash3-fill"></i>
+        <div class="small">
+            This dispatch is <strong>in the trash</strong>{% if dispatch.deleted_by %},
+            moved there by {{ dispatch.deleted_by.username }}{% endif %}{% if dispatch.deleted_at %}
+            on {{ dispatch.deleted_at|nepali_date }}{% endif %}. It is read-only until restored.
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Statistics Cards -->
     <div class="row g-3 mb-4">
         <div class="col-6 col-md-3">
-            <div class="card bg-primary text-white shadow-sm">
+            <div class="card bg-primary text-white shadow-sm h-100">
                 <div class="card-body py-3">
                     <h6 class="mb-1" style="font-size:0.8rem;opacity:0.85;">Total Orders Scanned</h6>
                     <h2 class="mb-0">{{ dispatch.total_orders }}</h2>
+                    {% if dispatch.get_unrecorded_count %}
+                    <small style="opacity:0.85;">{{ dispatch.get_unrecorded_count }} with no recorded outcome</small>
+                    {% endif %}
                 </div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card bg-success text-white shadow-sm">
+            <div class="card bg-success text-white shadow-sm h-100">
                 <div class="card-body py-3">
                     <h6 class="mb-1" style="font-size:0.8rem;opacity:0.85;">Successfully Dispatched</h6>
                     <h2 class="mb-0">{{ dispatch.get_success_count }}</h2>
+                    <small style="opacity:0.85;">{{ dispatch.get_success_rate }}% of recorded scans</small>
                 </div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card bg-warning text-dark shadow-sm">
+            <div class="card {% if dispatch.get_failed_count %}bg-danger text-white{% else %}bg-light text-muted border{% endif %} shadow-sm h-100">
                 <div class="card-body py-3">
-                    <h6 class="mb-1" style="font-size:0.8rem;opacity:0.85;">Failed</h6>
+                    <h6 class="mb-1" style="font-size:0.8rem;opacity:0.85;">Failed / Rejected</h6>
                     <h2 class="mb-0">{{ dispatch.get_failed_count }}</h2>
+                    <small style="opacity:0.85;">order found, but not dispatchable</small>
                 </div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card bg-danger text-white shadow-sm">
+            <div class="card {% if dispatch.get_not_found_count %}bg-warning text-dark{% else %}bg-light text-muted border{% endif %} shadow-sm h-100">
                 <div class="card-body py-3">
                     <h6 class="mb-1" style="font-size:0.8rem;opacity:0.85;">Not Found in System</h6>
                     <h2 class="mb-0">{{ dispatch.get_not_found_count }}</h2>
+                    <small style="opacity:0.85;">scanned ID matched no order</small>
                 </div>
             </div>
         </div>
     </div>
+
+    {% if failed_items %}
+    <!-- ✅ FAILURE REPORT — why each scan did not dispatch -->
+    <div class="card shadow-sm mb-4 dfr-card">
+        <div class="dfr-header">
+            <div class="d-flex align-items-center gap-3">
+                <div class="dfr-icon"><i class="bi bi-exclamation-octagon-fill"></i></div>
+                <div>
+                    <h5 class="mb-0 fw-bold">Failure Report</h5>
+                    <small style="opacity:0.9;">
+                        {{ failed_items|length }} of {{ dispatch.get_item_count }} scanned order{{ dispatch.get_item_count|pluralize }} did not dispatch
+                    </small>
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm dfr-copy-btn" id="copyFailedBtn"
+                    data-ids="{{ failed_order_ids }}">
+                <i class="bi bi-clipboard"></i> Copy failed IDs
+            </button>
+        </div>
+
+        <!-- Cause breakdown: what went wrong, and what to do about it -->
+        <div class="dfr-causes">
+            {% for cause in failure_breakdown %}
+            <div class="dfr-cause dfr-cause-{{ cause.code }}">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <strong>{{ cause.label }}</strong>
+                    <span class="dfr-cause-count">{{ cause.count }}</span>
+                </div>
+                {% if cause.hint %}<p class="dfr-cause-hint">{{ cause.hint }}</p>{% endif %}
+                <div class="dfr-cause-ids">
+                    {% for oid in cause.order_ids %}<code>{{ oid }}</code>{% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm mb-0 dfr-table rcards">
+                <thead>
+                    <tr>
+                        <th style="width:36px;">#</th>
+                        <th>Scanned Order ID</th>
+                        <th>Customer</th>
+                        <th>Outcome</th>
+                        <th>Reason</th>
+                        <th>Recorded At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in failed_items %}
+                    <tr>
+                        <td class="text-muted rc-num" data-label="">{{ forloop.counter }}</td>
+                        <td data-label="Order ID" class="rc-head"><strong class="text-danger">{{ item.scanned_order_id }}</strong></td>
+                        <td data-label="Customer">
+                            {% if item.order %}
+                                {{ item.order.customer_name|default:"—" }}
+                            {% else %}
+                                <span class="text-muted fst-italic">no matching order</span>
+                            {% endif %}
+                        </td>
+                        <td data-label="Outcome">
+                            {% if item.dispatch_status == 'not_found' %}
+                                <span class="badge bg-warning text-dark">Not Found</span>
+                            {% else %}
+                                <span class="badge bg-danger">Failed</span>
+                            {% endif %}
+                        </td>
+                        <td data-label="Reason" class="rc-block">
+                            <div class="dfr-reason">{{ item.get_failure_reason_display }}</div>
+                            {% if item.get_failure_hint %}
+                            <div class="dfr-hint"><i class="bi bi-lightbulb"></i> {{ item.get_failure_hint }}</div>
+                            {% endif %}
+                        </td>
+                        <td data-label="Recorded" class="text-nowrap">
+                            <small>{{ item.failed_at|default:item.scanned_at|date:"M d, Y" }}</small>
+                            <small class="text-muted d-block d-md-inline">{{ item.failed_at|default:item.scanned_at|date:"h:i A" }}</small>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
 
     {% if stock_summary %}
     <!-- ✅ STOCK DEDUCTION SUMMARY CARD -->
@@ -104,7 +223,7 @@
         {% if stock_summary.deductions %}
         <div class="ssc-body">
             <div class="table-responsive">
-                <table class="ssc-table">
+                <table class="ssc-table rcards">
                     <thead>
                         <tr>
                             <th>#</th>
@@ -121,25 +240,25 @@
                     <tbody>
                         {% for item in stock_summary.deductions %}
                         <tr class="{% if item.oversold %}ssc-row-warn{% elif item.new_stock == 0 %}ssc-row-danger{% elif item.new_stock <= 5 %}ssc-row-low{% else %}ssc-row-ok{% endif %}">
-                            <td class="ssc-num">{{ forloop.counter }}</td>
-                            <td><span class="ssc-order-chip">{{ item.order_id }}</span></td>
-                            <td class="ssc-product-name">{{ item.name }}</td>
-                            <td class="ssc-sku">{{ item.sku }}</td>
-                            <td>
+                            <td class="ssc-num rc-num" data-label="">{{ forloop.counter }}</td>
+                            <td class="rc-head" data-label="Order ID"><span class="ssc-order-chip">{{ item.order_id }}</span></td>
+                            <td class="ssc-product-name rc-block" data-label="Product">{{ item.name }}</td>
+                            <td class="ssc-sku" data-label="SKU">{{ item.sku }}</td>
+                            <td data-label="Type">
                                 {% if item.type == 'variation' %}
                                     <span class="ssc-badge ssc-badge-var"><i class="fas fa-layer-group"></i> Variation</span>
                                 {% else %}
                                     <span class="ssc-badge ssc-badge-simple"><i class="fas fa-box"></i> Simple</span>
                                 {% endif %}
                             </td>
-                            <td class="ssc-qty">
+                            <td class="ssc-qty" data-label="Qty Deducted">
                                 <span class="ssc-deducted">-{{ item.qty }}</span>
                             </td>
-                            <td class="ssc-old-stock">{{ item.old_stock }}</td>
-                            <td class="ssc-new-stock">
+                            <td class="ssc-old-stock" data-label="Before">{{ item.old_stock }}</td>
+                            <td class="ssc-new-stock" data-label="After">
                                 <strong>{{ item.new_stock }}</strong>
                             </td>
-                            <td>
+                            <td data-label="Status">
                                 {% if item.oversold %}
                                     <span class="ssc-status-chip ssc-chip-oversold"><i class="fas fa-exclamation-triangle"></i> Oversold</span>
                                 {% elif item.new_stock == 0 %}
@@ -374,52 +493,73 @@
         <!-- Orders List Card -->
         <div class="col-md-8 mb-4">
             <div class="card shadow-sm h-100">
-                <div class="card-header bg-success text-white">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <h5 class="mb-0"><i class="bi bi-list-ul"></i> Orders in This Dispatch</h5>
+                    <div class="btn-group btn-group-sm dfr-scope" role="group" aria-label="Filter scanned orders">
+                        <button type="button" class="btn btn-light active" data-scope="all">
+                            All <span class="badge bg-secondary">{{ dispatch.get_item_count }}</span>
+                        </button>
+                        <button type="button" class="btn btn-light" data-scope="success">
+                            Success <span class="badge bg-success">{{ dispatch.get_success_count }}</span>
+                        </button>
+                        <button type="button" class="btn btn-light" data-scope="problem"
+                                {% if not failed_items %}disabled{% endif %}>
+                            Problems <span class="badge bg-danger">{{ dispatch.get_issue_count }}</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-hover table-sm">
+                        <table class="table table-hover table-sm align-middle rcards" id="dispatchItemsTable">
                             <thead class="table-light">
                                 <tr>
                                     <th>#</th>
                                     <th>Scanned Order ID</th>
                                     <th>Customer</th>
                                     <th>Status</th>
+                                    <th>Reason</th>
                                     <th>Scanned At</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for item in dispatch.items.all %}
-                                <tr>
-                                    <td>{{ forloop.counter }}</td>
-                                    <td>
-                                        <strong class="text-primary">{{ item.scanned_order_id }}</strong>
+                                <tr class="{% if item.dispatch_status == 'success' %}di-row-success{% elif item.dispatch_status == 'not_found' %}di-row-notfound{% else %}di-row-failed{% endif %}"
+                                    data-scope="{% if item.dispatch_status == 'success' %}success{% else %}problem{% endif %}">
+                                    <td class="rc-num" data-label="">{{ forloop.counter }}</td>
+                                    <td data-label="Order ID" class="rc-head">
+                                        <strong class="{% if item.is_problem %}text-danger{% else %}text-primary{% endif %}">{{ item.scanned_order_id }}</strong>
                                     </td>
-                                    <td>
+                                    <td data-label="Customer">
                                         {% if item.order %}
-                                            {{ item.order.customer_name }}
+                                            {{ item.order.customer_name|default:"—" }}
                                         {% else %}
-                                            <span class="text-muted">Not Found</span>
+                                            <span class="text-muted fst-italic">no matching order</span>
                                         {% endif %}
                                     </td>
-                                    <td>
+                                    <td data-label="Status">
                                         {% if item.dispatch_status == 'success' %}
-                                            <span class="badge bg-success">Success</span>
+                                            <span class="badge bg-success"><i class="bi bi-check-lg"></i> Success</span>
                                         {% elif item.dispatch_status == 'failed' %}
-                                            <span class="badge bg-warning text-dark" title="{{ item.failure_reason }}">Failed</span>
+                                            <span class="badge bg-danger"><i class="bi bi-x-lg"></i> Failed</span>
                                         {% else %}
-                                            <span class="badge bg-danger">Not Found</span>
+                                            <span class="badge bg-warning text-dark"><i class="bi bi-question-lg"></i> Not Found</span>
                                         {% endif %}
                                     </td>
-                                    <td>
+                                    <td data-label="Reason" class="rc-block">
+                                        {% if item.is_problem %}
+                                            <div class="dfr-reason">{{ item.get_failure_reason_display }}</div>
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td data-label="Scanned" class="text-nowrap">
                                         <small>{{ item.scanned_at|date:"M d, h:i A" }}</small>
                                     </td>
-                                    <td>
+                                    <td data-label="" class="rc-action">
                                         {% if item.order %}
-                                            <a href="{% url 'order_detail' item.order.id %}" 
-                                               class="btn btn-sm btn-outline-primary" 
+                                            <a href="{% url 'order_detail' item.order.id %}"
+                                               class="btn btn-sm btn-outline-primary"
                                                target="_blank">
                                                 <i class="bi bi-box-arrow-up-right"></i> View Order
                                             </a>
@@ -429,12 +569,23 @@
                                     </td>
                                 </tr>
                                 {% empty %}
-                                <tr>
-                                    <td colspan="6" class="text-center text-muted">No orders in this dispatch</td>
+                                <tr class="no-card">
+                                    <td colspan="7" class="text-center text-muted py-3">
+                                        No per-order records exist for this batch.
+                                        {% if dispatch.total_orders %}
+                                        <div class="small mt-1">
+                                            It reports {{ dispatch.total_orders }} scanned order{{ dispatch.total_orders|pluralize }},
+                                            but predates per-order outcome tracking.
+                                        </div>
+                                        {% endif %}
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
+                        <p class="text-muted small mb-0 d-none" id="dispatchItemsEmptyNote">
+                            No rows match this filter.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -473,7 +624,7 @@
         </div>
         <div id="stockReductionBody">
             <div class="table-responsive">
-                <table class="table table-hover mb-0" style="font-size:0.88rem;">
+                <table class="table table-hover mb-0 rcards" style="font-size:0.88rem;">
                     <thead style="background:#f0fdfa;color:#0f766e;">
                         <tr>
                             <th style="padding:10px 14px;">#</th>
@@ -490,16 +641,16 @@
                     <tbody>
                         {% for item in dispatch_items_detail %}
                         <tr style="border-bottom:1px solid #f0fdf4;">
-                            <td style="padding:10px 14px;color:#9ca3af;">{{ forloop.counter }}</td>
-                            <td style="padding:10px 14px;">
+                            <td class="rc-num" data-label="" style="padding:10px 14px;color:#9ca3af;">{{ forloop.counter }}</td>
+                            <td class="rc-head" data-label="Order ID" style="padding:10px 14px;">
                                 <span style="background:#d1fae5;color:#065f46;border-radius:6px;padding:3px 9px;font-weight:600;font-size:0.82rem;">
                                     {{ item.order_id }}
                                 </span>
                             </td>
-                            <td style="padding:10px 14px;font-weight:600;color:#1e293b;">{{ item.customer }}</td>
-                            <td style="padding:10px 14px;font-weight:600;color:#1e293b;max-width:180px;">{{ item.product_name }}</td>
-                            <td style="padding:10px 14px;color:#6b7280;font-family:monospace;font-size:0.83rem;">{{ item.sku }}</td>
-                            <td style="padding:10px 14px;">
+                            <td data-label="Customer" style="padding:10px 14px;font-weight:600;color:#1e293b;">{{ item.customer }}</td>
+                            <td class="rc-block" data-label="Product" style="padding:10px 14px;font-weight:600;color:#1e293b;max-width:180px;">{{ item.product_name }}</td>
+                            <td data-label="SKU" style="padding:10px 14px;color:#6b7280;font-family:monospace;font-size:0.83rem;">{{ item.sku }}</td>
+                            <td data-label="Type" style="padding:10px 14px;">
                                 {% if item.type == 'variation' %}
                                 <span style="background:#e0f2fe;color:#0369a1;border-radius:6px;padding:3px 9px;font-size:0.78rem;font-weight:600;">
                                     <i class="fas fa-layer-group me-1"></i>Variation
@@ -510,10 +661,10 @@
                                 </span>
                                 {% endif %}
                             </td>
-                            <td style="padding:10px 14px;text-align:center;">
+                            <td data-label="Qty Deducted" style="padding:10px 14px;text-align:center;">
                                 <span style="color:#dc2626;font-weight:700;font-size:1rem;">-{{ item.qty }}</span>
                             </td>
-                            <td style="padding:10px 14px;text-align:center;font-weight:700;">
+                            <td data-label="Current Stock" style="padding:10px 14px;text-align:center;font-weight:700;">
                                 {% if item.current_stock == 0 %}
                                 <span style="color:#dc2626;">{{ item.current_stock }}</span>
                                 {% elif item.current_stock <= 5 %}
@@ -522,7 +673,7 @@
                                 <span style="color:#16a34a;">{{ item.current_stock }}</span>
                                 {% endif %}
                             </td>
-                            <td style="padding:10px 14px;text-align:center;">
+                            <td data-label="Stock Status" style="padding:10px 14px;text-align:center;">
                                 {% if item.stock_status == 'out_of_stock' %}
                                 <span style="background:#fee2e2;color:#991b1b;border-radius:20px;padding:4px 12px;font-size:0.78rem;font-weight:700;">
                                     <i class="fas fa-ban me-1"></i>Out of Stock
@@ -545,10 +696,327 @@
             <div style="background:#f0fdfa;padding:10px 18px;border-top:1px solid #ccfbf1;font-size:0.82rem;color:#0f766e;">
                 <i class="fas fa-info-circle me-1"></i>
                 Current stock shown is <strong>live</strong> — reflects latest inventory state.
+                Only successfully dispatched orders are listed; failed scans never deducted stock.
             </div>
         </div>
     </div>
     {% endif %}
 
+    <!-- ✅ ACTIVITY LOG — full audit trail for this batch -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2"
+             style="background:linear-gradient(135deg,#1e293b 0%,#334155 100%);color:#fff;">
+            <h5 class="mb-0"><i class="bi bi-clock-history"></i> Activity Log</h5>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-light text-dark">{{ activity_logs|length }} event{{ activity_logs|length|pluralize }}</span>
+                <button class="btn btn-sm btn-outline-light" type="button"
+                        onclick="var b=document.getElementById('activityLogBody');var i=this.querySelector('i');
+                                 if(b.style.display==='none'){b.style.display='';i.className='bi bi-chevron-up';}
+                                 else{b.style.display='none';i.className='bi bi-chevron-down';}">
+                    <i class="bi bi-chevron-up"></i>
+                </button>
+            </div>
+        </div>
+        <div id="activityLogBody">
+            {% if has_activity_logs %}
+            <ul class="dlog">
+                {% for log in activity_logs %}
+                <li class="dlog-item dlog-{{ log.level }}">
+                    <span class="dlog-dot"></span>
+                    <div class="dlog-body">
+                        <div class="dlog-top">
+                            <span class="dlog-event">{{ log.get_event_display }}</span>
+                            {% if log.order_ref %}<code class="dlog-ref">{{ log.order_ref }}</code>{% endif %}
+                            <span class="dlog-time">{{ log.created_at|nepali_date }} · {{ log.created_at|nepali_time }}</span>
+                        </div>
+                        <div class="dlog-msg">{{ log.message }}</div>
+                        <div class="dlog-user">
+                            <i class="bi bi-person"></i>
+                            {% if log.user %}{{ log.user.username }}{% else %}system{% endif %}
+                        </div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="p-4 text-center text-muted">
+                <i class="bi bi-journal-x" style="font-size:1.8rem;opacity:0.4;"></i>
+                <p class="mb-0 mt-2 small">
+                    No activity was recorded for this batch. Event logging starts with batches
+                    created after this release — older batches keep only their per-order outcomes above.
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
 </div>
+
+<style>
+    /* ==================== FAILURE REPORT ==================== */
+    .dfr-card { border: 1px solid #fecaca; overflow: hidden; }
+    .dfr-header {
+        display: flex; justify-content: space-between; align-items: center;
+        flex-wrap: wrap; gap: 12px; padding: 16px 20px;
+        background: linear-gradient(135deg, #b91c1c 0%, #dc2626 100%); color: #fff;
+    }
+    .dfr-icon {
+        width: 46px; height: 46px; border-radius: 11px; font-size: 1.4rem;
+        background: rgba(255,255,255,0.2);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .dfr-copy-btn { background: rgba(255,255,255,0.2); color: #fff; border: none; font-weight: 600; }
+    .dfr-copy-btn:hover { background: rgba(255,255,255,0.35); color: #fff; }
+
+    .dfr-causes {
+        display: grid; gap: 12px; padding: 16px 20px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        background: #fff7f7; border-bottom: 1px solid #fee2e2;
+    }
+    .dfr-cause {
+        background: #fff; border: 1px solid #fecaca; border-left: 4px solid #dc2626;
+        border-radius: 9px; padding: 11px 13px; font-size: 0.86rem;
+    }
+    .dfr-cause-not_found { border-left-color: #f59e0b; }
+    .dfr-cause-count {
+        background: #fee2e2; color: #991b1b; border-radius: 20px;
+        padding: 1px 10px; font-weight: 800; font-size: 0.8rem; flex-shrink: 0;
+    }
+    .dfr-cause-not_found .dfr-cause-count { background: #fef3c7; color: #92400e; }
+    .dfr-cause-hint { margin: 6px 0 8px; font-size: 0.78rem; color: #64748b; line-height: 1.45; }
+    .dfr-cause-ids { display: flex; flex-wrap: wrap; gap: 5px; }
+    .dfr-cause-ids code {
+        background: #f1f5f9; color: #334155; border-radius: 5px;
+        padding: 1px 7px; font-size: 0.76rem;
+    }
+
+    .dfr-table thead th {
+        background: #fff1f2; color: #991b1b; font-size: 0.74rem;
+        text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap;
+    }
+    .dfr-reason { font-size: 0.85rem; color: #1e293b; line-height: 1.4; }
+    .dfr-hint {
+        font-size: 0.75rem; color: #64748b; margin-top: 3px; line-height: 1.4;
+        max-width: 460px;
+    }
+    .dfr-hint .bi { color: #f59e0b; }
+
+    /* Row tinting in the per-order table — colour is a secondary cue, the
+       Status badge and Reason text carry the meaning on their own. */
+    #dispatchItemsTable tbody tr.di-row-failed {
+        --bs-table-bg: #fff1f2;
+        --bs-table-hover-bg: #ffe1e4;
+        box-shadow: inset 3px 0 0 0 #dc3545;
+    }
+    #dispatchItemsTable tbody tr.di-row-notfound {
+        --bs-table-bg: #fffbeb;
+        --bs-table-hover-bg: #fef3c7;
+        box-shadow: inset 3px 0 0 0 #f59e0b;
+    }
+    #dispatchItemsTable tbody tr.di-row-success { box-shadow: inset 3px 0 0 0 #198754; }
+    .dfr-scope .btn.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+
+    /* ==================== ACTIVITY LOG TIMELINE ==================== */
+    .dlog { list-style: none; margin: 0; padding: 14px 20px 14px 8px; max-height: 480px; overflow-y: auto; }
+    .dlog-item { position: relative; padding: 0 0 16px 30px; }
+    .dlog-item:not(:last-child)::before {
+        content: ''; position: absolute; left: 12px; top: 16px; bottom: 0;
+        width: 2px; background: #e2e8f0;
+    }
+    .dlog-dot {
+        position: absolute; left: 7px; top: 5px;
+        width: 12px; height: 12px; border-radius: 50%;
+        background: #94a3b8; border: 2px solid #fff; box-shadow: 0 0 0 2px #e2e8f0;
+    }
+    .dlog-success .dlog-dot { background: #16a34a; box-shadow: 0 0 0 2px #bbf7d0; }
+    .dlog-warning .dlog-dot { background: #f59e0b; box-shadow: 0 0 0 2px #fde68a; }
+    .dlog-error   .dlog-dot { background: #dc2626; box-shadow: 0 0 0 2px #fecaca; }
+
+    .dlog-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .dlog-event { font-weight: 700; font-size: 0.84rem; color: #1e293b; }
+    .dlog-ref {
+        background: #eef2ff; color: #4338ca; border-radius: 5px;
+        padding: 1px 7px; font-size: 0.76rem;
+    }
+    .dlog-time { font-size: 0.74rem; color: #94a3b8; margin-left: auto; white-space: nowrap; }
+    .dlog-msg { font-size: 0.84rem; color: #334155; margin-top: 3px; line-height: 1.45; }
+    .dlog-error .dlog-msg { color: #991b1b; }
+    .dlog-user { font-size: 0.72rem; color: #94a3b8; margin-top: 3px; }
+
+    .detail-batch {
+        background: #eef2ff; color: #4338ca; border-radius: 5px;
+        padding: 1px 7px; font-size: 0.8rem;
+    }
+
+    /* ==================== MOBILE: TABLES → CARDS ====================
+       Every table on this page carries `.rcards` plus per-cell data-labels, so
+       below md each row becomes a labelled card instead of a wide horizontal
+       scroll. One markup tree, no duplicated mobile DOM. */
+    @media (max-width: 767.98px) {
+        .rcards thead { display: none; }
+        .rcards, .rcards tbody, .rcards tr, .rcards td { display: block; width: 100%; }
+
+        .rcards tr {
+            position: relative;
+            border: 1px solid #e5e7eb;
+            border-radius: 11px;
+            margin: 0 10px 10px;
+            padding: 10px 12px;
+            background: #fff;
+        }
+        .rcards tbody tr:first-child { margin-top: 10px; }
+        .rcards td {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            border: none !important;
+            padding: 4px 0 !important;
+            text-align: right !important;
+        }
+        .rcards td::before {
+            content: attr(data-label);
+            flex: 0 0 auto;
+            font-size: 0.66rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: #64748b;
+            text-align: left;
+            padding-top: 3px;
+        }
+        .rcards td[data-label=""]::before { display: none; }
+
+        /* Row number becomes a corner chip; the ID heads the card */
+        .rcards td.rc-num {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            width: auto;
+            padding: 0 !important;
+            font-size: 0.7rem;
+            opacity: 0.6;
+        }
+        .rcards td.rc-head {
+            padding: 0 0 8px !important;
+            margin-bottom: 4px;
+            border-bottom: 1px dashed #e5e7eb !important;
+            text-align: left !important;
+            max-width: none !important;
+        }
+        /* Long prose (reason, product name) reads better stacked than split */
+        .rcards td.rc-block {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 3px;
+            text-align: left !important;
+            max-width: none !important;
+        }
+        .rcards td.rc-block::before { padding-top: 0; }
+        .rcards td.rc-action {
+            padding-top: 10px !important;
+            margin-top: 6px;
+            border-top: 1px dashed #e5e7eb !important;
+        }
+        .rcards td.rc-action .btn { width: 100%; }
+        .dfr-hint { max-width: none; }
+
+        .rcards tr.no-card {
+            display: table-row;
+            border: none;
+            background: none;
+            margin: 0;
+            padding: 0;
+        }
+        .rcards tr.no-card td {
+            display: table-cell;
+            text-align: center !important;
+        }
+        .rcards tr.no-card td::before { display: none; }
+
+        /* Row tints survive the switch to block layout */
+        #dispatchItemsTable tr.di-row-failed   { background: #fff1f2; border-color: #fecdd3; }
+        #dispatchItemsTable tr.di-row-notfound { background: #fffbeb; border-color: #fde68a; }
+
+        .table-responsive { overflow-x: visible; }
+        .dfr-causes { grid-template-columns: 1fr; padding: 12px; }
+        .dfr-header { padding: 13px 14px; }
+        .dfr-copy-btn { width: 100%; }
+        .dfr-scope { width: 100%; }
+        .dfr-scope .btn { flex: 1; }
+        .detail-actions { width: 100%; }
+        .detail-actions > .btn,
+        .detail-actions > form { flex: 1; }
+        .detail-actions > form .btn { width: 100%; }
+        .dlog { padding: 12px 14px 12px 6px; max-height: 380px; }
+        .dlog-time { margin-left: 0; width: 100%; }
+    }
+
+    /* Stat cards: keep the caption legible when it wraps on narrow screens */
+    @media (max-width: 575.98px) {
+        .container-fluid { padding-left: 0.75rem; padding-right: 0.75rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .stock-summary-card { animation: none; }
+    }
+
+    @media print {
+        .detail-actions, .dfr-copy-btn, .dfr-scope { display: none !important; }
+        .dfr-card, .card { break-inside: avoid; }
+    }
+</style>
+
+<script>
+(function () {
+    // Copy the failed order IDs so a packer can paste them straight back into
+    // the scan box after fixing the underlying cause.
+    var copyBtn = document.getElementById('copyFailedBtn');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', function () {
+            var ids = copyBtn.dataset.ids || '';
+            var done = function () {
+                var original = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i class="bi bi-check-lg"></i> Copied';
+                setTimeout(function () { copyBtn.innerHTML = original; }, 1800);
+            };
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(ids).then(done, fallback);
+            } else {
+                fallback();
+            }
+            function fallback() {
+                // http:// admin panels have no navigator.clipboard
+                var ta = document.createElement('textarea');
+                ta.value = ids;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); done(); } catch (e) { window.prompt('Copy the failed order IDs:', ids); }
+                document.body.removeChild(ta);
+            }
+        });
+    }
+
+    // Success / Problems filter over the per-order table
+    var table = document.getElementById('dispatchItemsTable');
+    var note = document.getElementById('dispatchItemsEmptyNote');
+    document.querySelectorAll('.dfr-scope .btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.dfr-scope .btn').forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            var scope = btn.dataset.scope;
+            var visible = 0;
+            if (!table) return;
+            table.querySelectorAll('tbody tr[data-scope]').forEach(function (row) {
+                var show = (scope === 'all' || row.dataset.scope === scope);
+                row.style.display = show ? '' : 'none';
+                if (show) visible++;
+            });
+            if (note) note.classList.toggle('d-none', visible > 0);
+        });
+    });
+})();
+</script>
 {% endblock %}

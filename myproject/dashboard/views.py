@@ -6,8 +6,8 @@ from django.views.decorators.http import require_POST, require_http_methods
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from django.contrib import messages
-from django.db.models import Sum, Count, Q, F, Prefetch, Min, Max, Avg, IntegerField, Case, When, Value
-from django.db.models.functions import TruncDate, Cast, Substr
+from django.db.models import Sum, Count, Q, F, Prefetch, Min, Max, Avg, IntegerField, Case, When, Value, OuterRef, Subquery
+from django.db.models.functions import TruncDate, Cast, Substr, Coalesce
 from django.http import JsonResponse, HttpResponse, Http404, HttpResponseRedirect
 from django.core.cache import cache
 from django.core.paginator import Paginator
@@ -4462,10 +4462,11 @@ def order_edit(request, order_id):
                     from inventory.services import restore_order_stock
                     restore_order_stock(order)
                     # Invalidate dispatch items so that if it is dispatched again later, stock will be deducted
-                    from dashboard.models import DispatchItem
-                    DispatchItem.objects.filter(order=order, dispatch_status='success').update(
-                        dispatch_status='failed',
-                        failure_reason='Order status changed manually away from dispatched'
+                    _invalidate_dispatch_items(
+                        order,
+                        f'Order status changed manually from "dispatched" to "{order.order_status}" — '
+                        f'stock deduction was rolled back',
+                        request.user,
                     )
                 # Update payment_setup and sync payment_method
                 if payment_setup_id:
@@ -8821,10 +8822,11 @@ def orders_bulk_action(request):
                             try:
                                 from inventory.services import restore_order_stock
                                 restore_order_stock(order)
-                                from dashboard.models import DispatchItem
-                                DispatchItem.objects.filter(order=order, dispatch_status='success').update(
-                                    dispatch_status='failed',
-                                    failure_reason='Order status changed manually away from dispatched'
+                                _invalidate_dispatch_items(
+                                    order,
+                                    f'Order status changed from "dispatched" to "{normalized_status}" — '
+                                    f'stock deduction was rolled back',
+                                    request.user,
                                 )
                             except Exception as e:
                                 logger.error(f"Failed to restore stock for order {order.order_number}: {e}")
@@ -9386,6 +9388,28 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         return {'status': 'error', 'message': str(e)}
 # ==================== DISPATCH MANAGEMENT VIEWS ====================
 
+def _invalidate_dispatch_items(order, reason, user=None):
+    """Mark an order's successful dispatch rows as failed after its status is
+    moved away from "dispatched".
+
+    The stock deduction has just been rolled back, so the batch no longer
+    dispatched this order — recording the reason (and an audit entry) is what
+    lets the dispatch detail page explain why a previously green row is now red.
+    """
+    items = list(
+        DispatchItem.objects.filter(
+            order=order, dispatch_status='success'
+        ).select_related('dispatch')
+    )
+    for item in items:
+        item.mark_failed(reason, code='status_reverted')
+        item.dispatch.log(
+            'status_reverted', reason, level='warning',
+            item=item, order_ref=item.scanned_order_id, user=user,
+        )
+    return len(items)
+
+
 @login_required
 @permission_required('can_view_dispatch')
 def dispatch_management(request):
@@ -9416,10 +9440,20 @@ def dispatch_management(request):
             messages.error(request, 'Duplicate order IDs detected. Please remove duplicates.')
             return redirect('dispatch_management')
 
+        from .timezone_utils import format_nepali_datetime
+
         try:
             with transaction.atomic():
-                # Generate batch number
-                batch_number = f"DISPATCH-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                # Generate batch number. The timestamp only has second
+                # granularity, so two batches submitted inside the same second
+                # collide on the unique constraint — suffix until it is free
+                # rather than failing the whole scan.
+                stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+                batch_number = f"DISPATCH-{stamp}"
+                suffix = 1
+                while Dispatch.objects.filter(batch_number=batch_number).exists():
+                    suffix += 1
+                    batch_number = f"DISPATCH-{stamp}-{suffix}"
 
                 # Create dispatch
                 dispatch = Dispatch.objects.create(
@@ -9429,16 +9463,26 @@ def dispatch_management(request):
                     total_orders=len(order_ids),
                     created_by=request.user
                 )
+                dispatch.log(
+                    'batch_created',
+                    f'Batch {batch_number} created with {len(order_ids)} scanned ID(s) — '
+                    f'logistics: {dict(Dispatch.LOGISTICS_CHOICES).get(logistics, logistics)}, '
+                    f'target status: {set_status}.',
+                    level='info',
+                    user=request.user,
+                )
 
                 # Create dispatch items and update orders
                 updated_count = 0
                 not_found = []
+                failed_details = []  # (order_id, reason) for the redirect message
                 stock_warnings = []
                 stock_deductions = []  # detailed per-item deduction records
 
                 for order_id in order_ids:
-                    # Create dispatch item
-                    DispatchItem.objects.create(
+                    # Create dispatch item — one row per scan, held as an object so
+                    # its outcome is written exactly once instead of via re-queries.
+                    dispatch_item = DispatchItem.objects.create(
                         dispatch=dispatch,
                         scanned_order_id=order_id
                     )
@@ -9450,26 +9494,35 @@ def dispatch_management(request):
 
                     if order:
                         # Always link the dispatch item to the order (even if already dispatched)
-                        DispatchItem.objects.filter(
-                            dispatch=dispatch,
-                            scanned_order_id=order_id
-                        ).update(order=order)
+                        dispatch_item.order = order
+                        dispatch_item.save(update_fields=['order'])
 
                         # Check if historically dispatched (even if status was changed manually later)
-                        has_been_dispatched_ever = DispatchItem.objects.filter(
+                        prior_item = DispatchItem.objects.filter(
                             order=order,
-                            dispatch__is_deleted=False
-                        ).exclude(dispatch=dispatch).exists()
+                            dispatch__is_deleted=False,
+                            dispatch_status='success',
+                        ).exclude(dispatch=dispatch).select_related('dispatch').first()
 
-                        if order.order_status == 'dispatched' or has_been_dispatched_ever:
-                            DispatchItem.objects.filter(
-                                dispatch=dispatch,
-                                scanned_order_id=order_id
-                            ).update(dispatch_status='failed', failure_reason='Already dispatched previously')
-                            messages.warning(request, f'⚠️ Order {order_id} has already been dispatched previously and cannot be dispatched again.')
+                        if order.order_status == 'dispatched' or prior_item:
+                            if prior_item:
+                                reason = (
+                                    f'Already dispatched in batch {prior_item.dispatch.batch_number} '
+                                    f'on {format_nepali_datetime(prior_item.scanned_at)}'
+                                )
+                            else:
+                                reason = 'Order is already in "dispatched" status'
+                            dispatch_item.mark_failed(reason, code='already_dispatched')
+                            failed_details.append((order_id, reason))
+                            dispatch.log(
+                                'order_failed', reason, level='error',
+                                item=dispatch_item, order_ref=order_id, user=request.user,
+                            )
+                            messages.warning(request, f'⚠️ Order {order_id} was not dispatched — {reason}.')
                             continue
 
                         # ✅ STOCK DEDUCTION: Reduce stock when status is "dispatched"
+                        warn_start = len(stock_warnings)
                         if set_status == 'dispatched':
                             order_items = order.items.select_related(
                                 'product', 'product_variation'
@@ -9649,6 +9702,13 @@ def dispatch_management(request):
                                                 'oversold': oversold,
                                             })
 
+                        # Any oversell raised while deducting this order's stock
+                        for warn_msg in stock_warnings[warn_start:]:
+                            dispatch.log(
+                                'stock_oversold', warn_msg, level='warning',
+                                item=dispatch_item, order_ref=order_id, user=request.user,
+                            )
+
                         # Capture old values BEFORE modification
                         old_order_status = order.order_status
 
@@ -9688,12 +9748,23 @@ def dispatch_management(request):
                         )
 
                         updated_count += 1
-                        DispatchItem.objects.filter(
-                            dispatch=dispatch,
-                            scanned_order_id=order_id
-                        ).update(dispatch_status='success')
+                        dispatch_item.mark_success()
+                        dispatch.log(
+                            'order_dispatched',
+                            f'Order {order.order_number} ({order.customer_name or "no customer name"}) '
+                            f'moved {old_order_status or "—"} → {order.order_status} via {logistics}.',
+                            level='success',
+                            item=dispatch_item, order_ref=order_id, user=request.user,
+                        )
                     else:
+                        reason = 'No order matches this ID by order number or barcode'
+                        dispatch_item.mark_not_found(reason)
                         not_found.append(order_id)
+                        failed_details.append((order_id, reason))
+                        dispatch.log(
+                            'order_not_found', reason, level='error',
+                            item=dispatch_item, order_ref=order_id, user=request.user,
+                        )
 
                 # Store detailed stock deduction summary in session for display on detail page
                 import json as _json
@@ -9706,25 +9777,42 @@ def dispatch_management(request):
                     'batch_number': batch_number,
                 })
 
-                # Success message
-                if updated_count == len(order_ids):
+                # Closing summary — count every non-success, not just "not found",
+                # so the message agrees with the Failed column on the list page.
+                issue_count = len(failed_details)
+                dispatch.log(
+                    'batch_completed',
+                    f'Batch finished: {updated_count} dispatched, {issue_count} failed '
+                    f'({len(not_found)} not found) out of {len(order_ids)} scanned.',
+                    level='success' if issue_count == 0 else ('error' if updated_count == 0 else 'warning'),
+                    user=request.user,
+                )
+
+                if issue_count == 0:
                     messages.success(
                         request,
-                        f'✅ Successfully dispatched {updated_count} orders! Batch: {batch_number}'
+                        f'✅ Successfully dispatched {updated_count} order(s)! Batch: {batch_number}'
                     )
                 else:
+                    failed_ids = ', '.join(oid for oid, _ in failed_details)
                     messages.warning(
                         request,
                         f'⚠️ Dispatched {updated_count}/{len(order_ids)} orders. '
-                        f'{len(not_found)} order(s) not found: {", ".join(not_found)}'
+                        f'{issue_count} failed ({len(not_found)} not found in system): {failed_ids}. '
+                        f'See the Failure Report below for the reason on each.'
                     )
 
                 return redirect('dispatch_detail', pk=dispatch.pk)
 
         except Exception as e:
+            # The atomic block rolled the batch back, but the session write is
+            # not part of it — drop the summary so it can't surface later,
+            # attached to an unrelated dispatch.
+            request.session.pop('stock_deduction_summary', None)
             messages.error(request, f'Error creating dispatch: {str(e)}')
             import traceback
             traceback.print_exc()
+            logger.exception('Dispatch batch creation failed')
             return redirect('dispatch_management')
 
     # Get status setups for the dropdown
@@ -9743,69 +9831,6 @@ def dispatch_management(request):
     }
 
     return render(request, 'dispatch_management.html', context)
-
-
-@login_required
-@permission_required('can_view_dispatch')
-def dispatch_list(request):
-    """List all dispatches (not trashed)"""
-    dispatches = Dispatch.objects.filter(is_deleted=False).prefetch_related('items').order_by('-created_at')
-
-    # Filters
-    logistics_filter = request.GET.get('logistics')
-    status_filter = request.GET.get('status')
-    search = request.GET.get('search')
-
-    if logistics_filter:
-        dispatches = dispatches.filter(logistics=logistics_filter)
-
-    if status_filter:
-        dispatches = dispatches.filter(status=status_filter)
-
-    if search:
-        dispatches = dispatches.filter(
-            Q(batch_number__icontains=search) |
-            Q(items__scanned_order_id__icontains=search)
-        ).distinct()
-
-    context = {
-        'dispatches': dispatches,
-        'logistics_choices': Dispatch.LOGISTICS_CHOICES,
-        'status_choices': Dispatch.STATUS_CHOICES,
-        'search': search,
-        'logistics_filter': logistics_filter,
-        'status_filter': status_filter,
-    }
-
-    return render(request, 'dispatch_list.html', context)
-
-
-@login_required
-@permission_required('can_view_dispatch')
-def dispatch_detail(request, pk):
-    """View single dispatch details"""
-    import json as _json
-    dispatch = get_object_or_404(
-        Dispatch.objects.prefetch_related('items__order'),
-        pk=pk,
-        is_deleted=False
-    )
-
-    # Pop one-time stock deduction summary stored by dispatch_management view
-    stock_summary_raw = request.session.pop('stock_deduction_summary', None)
-    stock_summary = None
-    if stock_summary_raw:
-        try:
-            stock_summary = _json.loads(stock_summary_raw)
-        except Exception:
-            stock_summary = None
-
-    context = {
-        'dispatch': dispatch,
-        'stock_summary': stock_summary,
-    }
-
-    return render(request, 'dispatch_detail.html', context)
 
 
 # ==================== DISPATCH TRASH MANAGEMENT ====================
@@ -9957,7 +9982,34 @@ def empty_dispatch_trash(request):
 @permission_required('can_view_dispatch')
 def dispatch_list(request):
     """List all dispatches (not trashed)"""
-    dispatches = Dispatch.objects.filter(is_deleted=False).prefetch_related('items').order_by('-created_at')
+    from urllib.parse import urlencode as _urlencode
+
+    # Outcome counters come from correlated subqueries rather than JOIN-based
+    # aggregates: the search filter below joins `items`, and a plain
+    # Count('items', filter=...) over that join double-counts. Subqueries stay
+    # correct regardless of what else is joined, and keep the page at a fixed
+    # query count instead of 4 per row.
+    def _outcome_count(status):
+        return Coalesce(
+            Subquery(
+                DispatchItem.objects
+                .filter(dispatch=OuterRef('pk'), dispatch_status=status)
+                .values('dispatch')
+                .annotate(c=Count('id'))
+                .values('c')[:1],
+                output_field=IntegerField(),
+            ),
+            Value(0),
+        )
+
+    dispatches = Dispatch.objects.filter(is_deleted=False).annotate(
+        annot_success_count=_outcome_count('success'),
+        annot_failed_count=_outcome_count('failed'),
+        annot_not_found_count=_outcome_count('not_found'),
+    ).annotate(
+        annot_item_count=F('annot_success_count') + F('annot_failed_count') + F('annot_not_found_count'),
+        annot_issue_count=F('annot_failed_count') + F('annot_not_found_count'),
+    ).select_related('created_by').order_by('-created_at')
 
     # Filters
     logistics_filter = request.GET.get('logistics')
@@ -9965,6 +10017,7 @@ def dispatch_list(request):
     search = request.GET.get('search')
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
+    outcome_filter = request.GET.get('outcome')
 
     if logistics_filter:
         dispatches = dispatches.filter(logistics=logistics_filter)
@@ -9995,6 +10048,42 @@ def dispatch_list(request):
         except ValueError:
             pass
 
+    # Outcome filter — lets staff jump straight to the batches needing attention
+    if outcome_filter == 'failed':
+        dispatches = dispatches.filter(annot_issue_count__gt=0, annot_success_count=0)
+    elif outcome_filter == 'partial':
+        dispatches = dispatches.filter(annot_issue_count__gt=0, annot_success_count__gt=0)
+    elif outcome_filter == 'issues':
+        dispatches = dispatches.filter(annot_issue_count__gt=0)
+    elif outcome_filter == 'completed':
+        dispatches = dispatches.filter(annot_issue_count=0, annot_success_count__gt=0)
+
+    dispatches = list(dispatches)
+
+    # Page totals for the stat cards — computed from the same rows on screen so
+    # the headline numbers always agree with the table underneath.
+    totals = {
+        'batches': len(dispatches),
+        'scanned': sum(d.get_item_count() for d in dispatches),
+        'success': sum(d.get_success_count() for d in dispatches),
+        'failed': sum(d.get_failed_count() for d in dispatches),
+        'not_found': sum(d.get_not_found_count() for d in dispatches),
+    }
+    totals['issues'] = totals['failed'] + totals['not_found']
+    totals['batches_with_issues'] = sum(1 for d in dispatches if d.get_issue_count() > 0)
+    totals['success_rate'] = (
+        round(totals['success'] * 100.0 / totals['scanned']) if totals['scanned'] else 0
+    )
+
+    base_query = _urlencode({
+        k: v for k, v in (
+            ('search', search), ('logistics', logistics_filter), ('status', status_filter),
+            ('date_from', date_from), ('date_to', date_to),
+        ) if v
+    })
+    if base_query:
+        base_query += '&'
+
     context = {
         'dispatches': dispatches,
         'logistics_choices': Dispatch.LOGISTICS_CHOICES,
@@ -10004,6 +10093,13 @@ def dispatch_list(request):
         'status_filter': status_filter,
         'date_from': date_from,
         'date_to': date_to,
+        'outcome_filter': outcome_filter,
+        'totals': totals,
+        'has_filters': bool(search or logistics_filter or status_filter or date_from or date_to or outcome_filter),
+        # Current filters minus `outcome`, so the stat cards can toggle outcome
+        # without dropping the search/date/logistics the user already applied.
+        # Ends with '&' when non-empty so templates can append a param directly.
+        'base_query': base_query,
     }
 
     return render(request, 'dispatch_list.html', context)
@@ -10015,7 +10111,9 @@ def dispatch_detail(request, pk):
     """View single dispatch details"""
     import json as _json
     dispatch = get_object_or_404(
-        Dispatch.objects.prefetch_related('items__order__items__product', 'items__order__items__product_variation'),
+        Dispatch.objects.select_related('created_by', 'deleted_by').prefetch_related(
+            'items__order__items__product', 'items__order__items__product_variation'
+        ),
         pk=pk
     )
 
@@ -10029,9 +10127,11 @@ def dispatch_detail(request, pk):
             stock_summary = None
 
     # ── Persistent: build items table from linked orders (always available) ───
+    # Only successful scans actually moved stock; a failed/not-found scan never
+    # deducted anything, so including it here overstated the reduction report.
     dispatch_items_detail = []
     for di in dispatch.items.all():
-        if di.order:
+        if di.order and di.dispatch_status == 'success':
             for oi in di.order.items.all():
                 product = oi.product
                 variation = oi.product_variation
@@ -10046,10 +10146,32 @@ def dispatch_detail(request, pk):
                     'stock_status': (variation.status if variation else (product.stock_status if product else '—')),
                 })
 
+    # ── Failure report: every scan that did not dispatch, with its reason ─────
+    failed_items = [di for di in dispatch.items.all() if di.dispatch_status != 'success']
+    failure_breakdown = {}  # dicts preserve insertion order — first-seen cause first
+    for di in failed_items:
+        code = di.failure_code or ('not_found' if di.dispatch_status == 'not_found' else 'error')
+        bucket = failure_breakdown.setdefault(code, {
+            'code': code,
+            'label': dict(DispatchItem.FAILURE_CODE_CHOICES).get(code, 'Other failure'),
+            'hint': DispatchItem.FAILURE_CODE_HINTS.get(code, ''),
+            'count': 0,
+            'order_ids': [],
+        })
+        bucket['count'] += 1
+        bucket['order_ids'].append(di.scanned_order_id)
+
+    activity_logs = dispatch.logs.select_related('user').all()
+
     context = {
         'dispatch': dispatch,
         'stock_summary': stock_summary,
         'dispatch_items_detail': dispatch_items_detail,
+        'failed_items': failed_items,
+        'failure_breakdown': list(failure_breakdown.values()),
+        'failed_order_ids': ', '.join(di.scanned_order_id for di in failed_items),
+        'activity_logs': activity_logs,
+        'has_activity_logs': bool(activity_logs),
     }
 
     return render(request, 'dispatch_detail.html', context)
@@ -10068,6 +10190,94 @@ def dispatch_delete(request, pk):
         return redirect('dispatch_list')
 
     return redirect('dispatch_detail', pk=pk)
+
+def _export_dispatches_excel(dispatches):
+    """Two-sheet workbook: one row per batch, one row per scanned order.
+
+    The per-order sheet carries the failure reason, which is the whole point of
+    exporting — it is what staff need to chase the orders that did not ship.
+    """
+    from .timezone_utils import format_nepali_datetime, get_nepali_now
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', start_color='1E293B')
+    fail_fill = PatternFill('solid', start_color='FFE4E6')
+    warn_fill = PatternFill('solid', start_color='FEF3C7')
+
+    def write_header(sheet, columns):
+        sheet.append(columns)
+        for cell in sheet[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        sheet.freeze_panes = 'A2'
+
+    wb = Workbook()
+
+    summary = wb.active
+    summary.title = 'Batches'
+    write_header(summary, [
+        'Batch Number', 'Logistics', 'Status', 'Outcome', 'Total Scanned',
+        'Success', 'Failed', 'Not Found', 'Success Rate %', 'Created By', 'Created At',
+    ])
+
+    detail = wb.create_sheet('Scanned Orders')
+    write_header(detail, [
+        'Batch Number', 'Scanned Order ID', 'Customer', 'Outcome',
+        'Failure Cause', 'Reason', 'Scanned At', 'Failed At',
+    ])
+
+    cause_labels = dict(DispatchItem.FAILURE_CODE_CHOICES)
+
+    for dispatch in dispatches.select_related('created_by').prefetch_related('items__order'):
+        summary.append([
+            dispatch.batch_number,
+            dispatch.get_logistics_display(),
+            dispatch.get_status_display(),
+            dispatch.get_outcome().title(),
+            dispatch.total_orders,
+            dispatch.get_success_count(),
+            dispatch.get_failed_count(),
+            dispatch.get_not_found_count(),
+            dispatch.get_success_rate(),
+            dispatch.created_by.username if dispatch.created_by else '',
+            format_nepali_datetime(dispatch.created_at),
+        ])
+        if dispatch.get_issue_count():
+            for cell in summary[summary.max_row]:
+                cell.fill = fail_fill
+
+        for item in dispatch.items.all():
+            detail.append([
+                dispatch.batch_number,
+                item.scanned_order_id,
+                item.order.customer_name if item.order else '',
+                item.get_dispatch_status_display(),
+                cause_labels.get(item.failure_code, ''),
+                item.get_failure_reason_display(),
+                format_nepali_datetime(item.scanned_at),
+                format_nepali_datetime(item.failed_at) if item.failed_at else '',
+            ])
+            if item.dispatch_status == 'failed':
+                for cell in detail[detail.max_row]:
+                    cell.fill = fail_fill
+            elif item.dispatch_status == 'not_found':
+                for cell in detail[detail.max_row]:
+                    cell.fill = warn_fill
+
+    for sheet in (summary, detail):
+        for column in sheet.columns:
+            width = max((len(str(c.value)) for c in column if c.value is not None), default=10)
+            sheet.column_dimensions[column[0].column_letter].width = min(max(width + 2, 12), 60)
+
+    filename = f"dispatches-{get_nepali_now().strftime('%Y%m%d-%H%M%S')}.xlsx"
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
+
 
 @login_required
 @permission_required('can_view_dispatch')
@@ -10107,8 +10317,7 @@ def dispatch_bulk_action(request):
                 messages.success(request, f'✅ {count} dispatch(es) status updated to {new_status}!')
 
             elif action == 'export_excel':
-                # Export functionality (you can implement this later)
-                messages.info(request, 'Export functionality coming soon!')
+                return _export_dispatches_excel(dispatches)
 
             else:
                 messages.error(request, 'Invalid action selected!')
@@ -23377,21 +23586,131 @@ def stop_notice(request, notice_id):
 
 @login_required
 def woocommerce_orders_list(request):
-    """View to list WooCommerce orders received via webhook."""
+    """View to list WooCommerce orders received via webhook/API poll, with
+    search, status/sync/date filtering and pagination."""
     if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
         from django.contrib import messages
         messages.error(request, "Permission denied.", extra_tags='permission_denied')
         from django.shortcuts import redirect
         return redirect('dashboard')
-        
+
+    from django.utils.dateparse import parse_date
     from integrations.models import WooCommerceOrder
-    # Ordering by created_at descending
-    orders = WooCommerceOrder.objects.all().order_by('-created_at')
-    
+
+    all_orders = WooCommerceOrder.objects.all()
+
+    search = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    sync_filter = request.GET.get('sync', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    orders = all_orders.order_by('-created_at')
+
+    if search:
+        search_filter = Q(customer_name__icontains=search) | \
+            Q(customer_email__icontains=search) | \
+            Q(billing_phone__icontains=search)
+        if search.isdigit():
+            search_filter |= Q(woo_order_id=search)
+        orders = orders.filter(search_filter)
+
+    if status_filter:
+        orders = orders.filter(status=status_filter)
+
+    if sync_filter == 'synced':
+        orders = orders.filter(order__isnull=False)
+    elif sync_filter == 'failed':
+        orders = orders.filter(order__isnull=True)
+
+    parsed_from = parse_date(date_from) if date_from else None
+    if parsed_from:
+        orders = orders.filter(created_at__date__gte=parsed_from)
+
+    parsed_to = parse_date(date_to) if date_to else None
+    if parsed_to:
+        orders = orders.filter(created_at__date__lte=parsed_to)
+
+    stats = {
+        'total': all_orders.count(),
+        'synced': all_orders.filter(order__isnull=False).count(),
+        'failed': all_orders.filter(order__isnull=True).count(),
+        'total_revenue': all_orders.aggregate(total=Sum('total'))['total'] or 0,
+    }
+
+    paginator = Paginator(orders, 20)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    querystring = request.GET.copy()
+    querystring.pop('page', None)
+
+    status_choices = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('on-hold', 'On Hold'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+        ('refunded', 'Refunded'),
+        ('failed', 'Failed'),
+    ]
+
+    orders_detail_map = {
+        str(o.woo_order_id): {
+            'order_number': o.order.order_number if o.order_id else None,
+            'status': o.status,
+            'currency': o.currency,
+            'total': str(o.total),
+            'customer_name': o.customer_name,
+            'customer_email': o.customer_email,
+            'billing_phone': o.billing_phone,
+            'billing': o.billing_data,
+            'shipping': o.shipping_data,
+            'items': o.line_items_json,
+            'sync_source': o.sync_source,
+        }
+        for o in page_obj.object_list
+    }
+
     context = {
-        'orders': orders,
+        'page_obj': page_obj,
+        'orders': page_obj.object_list,
+        'stats': stats,
+        'status_choices': status_choices,
+        'search': search,
+        'status_filter': status_filter,
+        'sync_filter': sync_filter,
+        'date_from': date_from,
+        'date_to': date_to,
+        'querystring': querystring.urlencode(),
+        'result_count': paginator.count,
+        'orders_detail_map': orders_detail_map,
     }
     return render(request, 'woocommerce_orders.html', context)
+
+
+@login_required
+def woocommerce_orders_sync(request):
+    """Pull recent orders from the WooCommerce REST API on demand - the
+    on-page 'Refresh Data' action, for use before the push webhook is set up."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'}, status=405)
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
+
+    from integrations.services import ingest_polled_order
+    from services.woocommerce_service import WooCommerceService
+
+    try:
+        service = WooCommerceService()
+        since = timezone.now() - timezone.timedelta(days=30)
+        synced = 0
+        for raw in service.fetch_all_orders(modified_after=since.isoformat(), max_pages=10):
+            ingest_polled_order(raw)
+            synced += 1
+        return JsonResponse({'success': True, 'synced': synced})
+    except Exception as e:
+        logger.exception('WooCommerce manual sync failed')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 @login_required
 def follow_ups_list(request):

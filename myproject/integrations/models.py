@@ -35,3 +35,9 @@ class WooCommerceOrder(models.Model):
 
     def __str__(self):
         return f'WOO-{self.woo_order_id} ({self.status})'
+
+    @property
+    def is_synced(self):
+        """True once this WooCommerce order is linked to an internal store.Order.
+        Only false if that internal order was later deleted (order FK is SET_NULL)."""
+        return self.order_id is not None

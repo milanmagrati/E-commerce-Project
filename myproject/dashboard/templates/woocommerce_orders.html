@@ -4,14 +4,14 @@
 {% block extra_css %}
 <style>
     /* WooCommerce Orders Page Premium Styles */
-    
+
     .woo-header-card {
         background: linear-gradient(135deg, #ffffff 0%, #f8f9fc 100%);
         border-radius: 16px;
         padding: 1.5rem 2rem;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
         border: 1px solid rgba(0, 0, 0, 0.05);
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
         position: relative;
         overflow: hidden;
     }
@@ -40,6 +40,7 @@
         font-size: 1.8rem;
         margin-right: 1rem;
         box-shadow: 0 8px 16px rgba(33, 117, 155, 0.2);
+        flex-shrink: 0;
     }
 
     .woo-title-area {
@@ -71,9 +72,10 @@
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
+        white-space: nowrap;
     }
 
-    .btn-refresh:hover {
+    .btn-refresh:hover:not(:disabled) {
         border-color: #21759b;
         color: #21759b;
         background: rgba(33, 117, 155, 0.05);
@@ -81,13 +83,173 @@
         box-shadow: 0 4px 12px rgba(33, 117, 155, 0.1);
     }
 
-    .btn-refresh:hover i {
+    .btn-refresh:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    .btn-refresh:hover:not(:disabled) i {
         animation: spin-once 0.8s ease;
     }
 
     @keyframes spin-once {
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
+    }
+
+    /* Stat cards */
+    .woo-stats-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .woo-stat-card {
+        background: white;
+        border-radius: 14px;
+        padding: 1.25rem 1.5rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+        border: 1px solid rgba(0, 0, 0, 0.04);
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .woo-stat-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+
+    .woo-stat-icon.total { background: rgba(78, 115, 223, 0.1); color: #4e73df; }
+    .woo-stat-icon.synced { background: rgba(28, 200, 138, 0.1); color: #1cc88a; }
+    .woo-stat-icon.failed { background: rgba(231, 74, 59, 0.1); color: #e74a3b; }
+    .woo-stat-icon.revenue { background: rgba(246, 194, 62, 0.15); color: #b8860b; }
+
+    .woo-stat-value {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: #2c3e50;
+        line-height: 1.2;
+    }
+
+    .woo-stat-label {
+        font-size: 0.78rem;
+        color: #858796;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    /* Filter bar */
+    .woo-filter-card {
+        background: white;
+        border-radius: 14px;
+        padding: 1.1rem 1.4rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+        border: 1px solid rgba(0, 0, 0, 0.04);
+        margin-bottom: 1.5rem;
+    }
+
+    .woo-filter-form {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 0.9rem;
+    }
+
+    .woo-filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .woo-filter-group label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #858796;
+    }
+
+    .woo-filter-group .form-control,
+    .woo-filter-group .form-select {
+        border-radius: 8px;
+        border: 1.5px solid #e3e6f0;
+        font-size: 0.9rem;
+        min-width: 160px;
+    }
+
+    .woo-filter-group.search-group .form-control {
+        min-width: 220px;
+    }
+
+    .woo-filter-group .form-control:focus,
+    .woo-filter-group .form-select:focus {
+        border-color: #21759b;
+        box-shadow: 0 0 0 0.15rem rgba(33, 117, 155, 0.15);
+    }
+
+    .woo-filter-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .btn-apply-filter {
+        background: #21759b;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1.1rem;
+        font-weight: 600;
+        font-size: 0.9rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        transition: all 0.2s ease;
+    }
+
+    .btn-apply-filter:hover {
+        background: #185a78;
+        color: white;
+    }
+
+    .btn-clear-filter {
+        background: white;
+        color: #858796;
+        border: 1.5px solid #e3e6f0;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-weight: 600;
+        font-size: 0.9rem;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        transition: all 0.2s ease;
+    }
+
+    .btn-clear-filter:hover {
+        color: #e74a3b;
+        border-color: #e74a3b;
+        background: rgba(231, 74, 59, 0.04);
+    }
+
+    .woo-result-count {
+        color: #858796;
+        font-size: 0.85rem;
+        margin-bottom: 0.75rem;
+        font-weight: 500;
+    }
+
+    .woo-result-count strong {
+        color: #2c3e50;
     }
 
     .woo-table-card {
@@ -109,13 +271,14 @@
         text-transform: uppercase;
         font-size: 0.75rem;
         letter-spacing: 1px;
-        padding: 1.2rem 1.5rem;
+        padding: 1.1rem 1.4rem;
         border-bottom: 2px solid #e3e6f0;
         border-top: none;
+        white-space: nowrap;
     }
 
     .woo-table tbody td {
-        padding: 1.2rem 1.5rem;
+        padding: 1.1rem 1.4rem;
         vertical-align: middle;
         border-bottom: 1px solid #f1f3f9;
         color: #5a5c69;
@@ -129,7 +292,6 @@
 
     .woo-table tbody tr:hover {
         background-color: #fcfdfd;
-        transform: scale(1.002);
         box-shadow: inset 4px 0 0 #21759b;
     }
 
@@ -141,6 +303,7 @@
         padding: 0.3rem 0.6rem;
         border-radius: 6px;
         letter-spacing: 0.5px;
+        white-space: nowrap;
     }
 
     .customer-info {
@@ -161,6 +324,7 @@
     .order-total {
         font-weight: 700;
         color: #1cc88a;
+        white-space: nowrap;
     }
 
     /* Soft Badges */
@@ -170,6 +334,9 @@
         font-weight: 600;
         font-size: 0.75rem;
         letter-spacing: 0.5px;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
     }
 
     .badge-soft-warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
@@ -182,6 +349,24 @@
         display: inline-flex;
         align-items: center;
         gap: 0.4rem;
+    }
+
+    .btn-view-order {
+        background: rgba(33, 117, 155, 0.08);
+        color: #21759b;
+        border: none;
+        border-radius: 8px;
+        width: 34px;
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+    }
+
+    .btn-view-order:hover {
+        background: #21759b;
+        color: white;
     }
 
     .empty-state {
@@ -214,6 +399,105 @@
         margin: 0 auto;
     }
 
+    /* Pagination */
+    .woo-pagination-wrap {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        padding: 1.1rem 1.4rem;
+        background: white;
+        border-top: 1px solid #f1f3f9;
+    }
+
+    .woo-pagination {
+        display: flex;
+        gap: 0.35rem;
+        margin: 0;
+    }
+
+    .woo-pagination .page-link {
+        border-radius: 8px;
+        border: 1.5px solid #e3e6f0;
+        color: #5a5c69;
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+
+    .woo-pagination .page-item.active .page-link {
+        background: #21759b;
+        border-color: #21759b;
+    }
+
+    .woo-pagination .page-item.disabled .page-link {
+        color: #c3c6d5;
+    }
+
+    /* Order detail modal */
+    .woo-modal-section-title {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #858796;
+        margin-bottom: 0.6rem;
+    }
+
+    .woo-modal-line-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #f1f3f9;
+        font-size: 0.9rem;
+    }
+
+    .woo-modal-line-item:last-child {
+        border-bottom: none;
+    }
+
+    /* Responsive */
+    @media (max-width: 1200px) {
+        .woo-stats-row {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 768px) {
+        .woo-header-card {
+            padding: 1.25rem;
+        }
+        .woo-stats-row {
+            grid-template-columns: 1fr;
+        }
+        .woo-filter-form {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .woo-filter-group .form-control,
+        .woo-filter-group .form-select,
+        .woo-filter-group.search-group .form-control {
+            min-width: 0;
+            width: 100%;
+        }
+        .woo-filter-actions {
+            width: 100%;
+        }
+        .woo-filter-actions .btn-apply-filter,
+        .woo-filter-actions .btn-clear-filter {
+            flex: 1;
+            justify-content: center;
+        }
+        .woo-pagination-wrap {
+            flex-direction: column;
+            align-items: stretch;
+            text-align: center;
+        }
+        .woo-pagination {
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -230,12 +514,91 @@
             </div>
         </div>
         <div>
-            <button class="btn-refresh" onclick="location.reload();">
+            <button class="btn-refresh" id="wooSyncBtn" onclick="wooSyncNow();">
                 <i class="fas fa-sync-alt"></i> Refresh Data
             </button>
         </div>
     </div>
 </div>
+
+<div class="woo-stats-row">
+    <div class="woo-stat-card">
+        <div class="woo-stat-icon total"><i class="fas fa-receipt"></i></div>
+        <div>
+            <div class="woo-stat-value">{{ stats.total }}</div>
+            <div class="woo-stat-label">Total Orders</div>
+        </div>
+    </div>
+    <div class="woo-stat-card">
+        <div class="woo-stat-icon synced"><i class="fas fa-check-circle"></i></div>
+        <div>
+            <div class="woo-stat-value">{{ stats.synced }}</div>
+            <div class="woo-stat-label">Synced to Orders</div>
+        </div>
+    </div>
+    <div class="woo-stat-card">
+        <div class="woo-stat-icon failed"><i class="fas fa-unlink"></i></div>
+        <div>
+            <div class="woo-stat-value">{{ stats.failed }}</div>
+            <div class="woo-stat-label">Unlinked</div>
+        </div>
+    </div>
+    <div class="woo-stat-card">
+        <div class="woo-stat-icon revenue"><i class="fas fa-coins"></i></div>
+        <div>
+            <div class="woo-stat-value">{{ stats.total_revenue|floatformat:2 }}</div>
+            <div class="woo-stat-label">Total Value (mixed currencies)</div>
+        </div>
+    </div>
+</div>
+
+<div class="woo-filter-card">
+    <form method="get" class="woo-filter-form" id="wooFilterForm">
+        <div class="woo-filter-group search-group">
+            <label for="wooSearch">Search</label>
+            <input type="text" class="form-control" id="wooSearch" name="q" value="{{ search }}"
+                   placeholder="Customer, email, phone or #ID">
+        </div>
+        <div class="woo-filter-group">
+            <label for="wooStatus">Order Status</label>
+            <select class="form-select" id="wooStatus" name="status" onchange="document.getElementById('wooFilterForm').submit();">
+                <option value="">All Statuses</option>
+                {% for value, display in status_choices %}
+                <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ display }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="woo-filter-group">
+            <label for="wooSync">Sync Status</label>
+            <select class="form-select" id="wooSync" name="sync" onchange="document.getElementById('wooFilterForm').submit();">
+                <option value="">All</option>
+                <option value="synced" {% if sync_filter == 'synced' %}selected{% endif %}>Synced</option>
+                <option value="failed" {% if sync_filter == 'failed' %}selected{% endif %}>Unlinked</option>
+            </select>
+        </div>
+        <div class="woo-filter-group">
+            <label for="wooDateFrom">From</label>
+            <input type="date" class="form-control" id="wooDateFrom" name="date_from" value="{{ date_from }}">
+        </div>
+        <div class="woo-filter-group">
+            <label for="wooDateTo">To</label>
+            <input type="date" class="form-control" id="wooDateTo" name="date_to" value="{{ date_to }}">
+        </div>
+        <div class="woo-filter-actions">
+            <button type="submit" class="btn-apply-filter">
+                <i class="fas fa-filter"></i> Apply
+            </button>
+            <a href="{% url 'woocommerce_orders' %}" class="btn-clear-filter">
+                <i class="fas fa-times"></i> Clear
+            </a>
+        </div>
+    </form>
+</div>
+
+<p class="woo-result-count">
+    Showing <strong>{{ page_obj.start_index|default:0 }}-{{ page_obj.end_index|default:0 }}</strong>
+    of <strong>{{ result_count }}</strong> order{{ result_count|pluralize }}
+</p>
 
 <div class="row">
     <div class="col-12">
@@ -250,6 +613,7 @@
                             <th>Order Status</th>
                             <th>Sync Status</th>
                             <th>Created At</th>
+                            <th class="text-center">Details</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -274,9 +638,11 @@
                                     <span class="badge-soft badge-soft-warning"><i class="fas fa-clock me-1"></i> Pending</span>
                                 {% elif order.status == 'processing' %}
                                     <span class="badge-soft badge-soft-primary"><i class="fas fa-cog fa-spin me-1"></i> Processing</span>
+                                {% elif order.status == 'on-hold' %}
+                                    <span class="badge-soft badge-soft-warning"><i class="fas fa-pause me-1"></i> On Hold</span>
                                 {% elif order.status == 'completed' %}
                                     <span class="badge-soft badge-soft-success"><i class="fas fa-check me-1"></i> Completed</span>
-                                {% elif order.status == 'cancelled' or order.status == 'failed' %}
+                                {% elif order.status == 'cancelled' or order.status == 'failed' or order.status == 'refunded' %}
                                     <span class="badge-soft badge-soft-danger"><i class="fas fa-times me-1"></i> {{ order.status|title }}</span>
                                 {% else %}
                                     <span class="badge-soft badge-soft-secondary">{{ order.status|title|default:"Unknown" }}</span>
@@ -286,21 +652,32 @@
                                 {% if order.is_synced %}
                                     <span class="badge-soft badge-soft-success sync-badge"><i class="fas fa-check-circle"></i> Synced</span>
                                 {% else %}
-                                    <span class="badge-soft badge-soft-danger sync-badge"><i class="fas fa-exclamation-triangle"></i> Failed</span>
+                                    <span class="badge-soft badge-soft-danger sync-badge"><i class="fas fa-exclamation-triangle"></i> Unlinked</span>
                                 {% endif %}
                             </td>
                             <td>
                                 <span class="text-muted"><i class="far fa-calendar-alt me-1"></i> {{ order.created_at|date:"M d, Y" }}</span><br>
                                 <small class="text-muted"><i class="far fa-clock me-1"></i> {{ order.created_at|date:"H:i" }}</small>
                             </td>
+                            <td class="text-center">
+                                <button type="button" class="btn-view-order" onclick="showOrderDetails('{{ order.woo_order_id }}')" title="View details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="6">
+                            <td colspan="7">
                                 <div class="empty-state">
                                     <i class="fas fa-box-open empty-state-icon"></i>
                                     <h5 class="empty-state-title">No WooCommerce orders found</h5>
-                                    <p class="empty-state-text">New orders from your WooCommerce store will automatically appear here once the webhook syncs the data.</p>
+                                    <p class="empty-state-text">
+                                        {% if search or status_filter or sync_filter or date_from or date_to %}
+                                            No orders match the current filters. Try clearing them.
+                                        {% else %}
+                                            Click "Refresh Data" to pull orders from WooCommerce, or wait for the next webhook sync.
+                                        {% endif %}
+                                    </p>
                                 </div>
                             </td>
                         </tr>
@@ -308,7 +685,166 @@
                     </tbody>
                 </table>
             </div>
+            {% if page_obj.paginator.num_pages > 1 %}
+            <div class="woo-pagination-wrap">
+                <span class="text-muted" style="font-size: 0.85rem;">
+                    Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                </span>
+                <ul class="pagination woo-pagination">
+                    <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page=1">
+                            <i class="fas fa-angle-double-left"></i>
+                        </a>
+                    </li>
+                    <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">
+                            <i class="fas fa-angle-left"></i>
+                        </a>
+                    </li>
+                    {% for num in page_obj.paginator.page_range %}
+                        {% if num == page_obj.number %}
+                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ num }}">{{ num }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                    <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.next_page_number }}">
+                            <i class="fas fa-angle-right"></i>
+                        </a>
+                    </li>
+                    <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.paginator.num_pages }}">
+                            <i class="fas fa-angle-double-right"></i>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
+
+<!-- Order Detail Modal -->
+<div class="modal fade" id="wooOrderDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content" style="border-radius: 14px; border: none;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #21759b 0%, #3083a6 100%); color: white; border-radius: 14px 14px 0 0;">
+                <h5 class="modal-title" id="wooModalOrderTitle"><i class="fab fa-wordpress me-2"></i>Order Details</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="wooModalBody">
+                <!-- populated via JS -->
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ orders_detail_map|json_script:"woo-orders-detail-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function wooSyncNow() {
+    const btn = document.getElementById('wooSyncBtn');
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Syncing...';
+
+    fetch("{% url 'woocommerce_orders_sync' %}", {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alertify.success(`Synced ${data.synced} order(s) from WooCommerce.`);
+                location.reload();
+            } else {
+                alertify.error(data.error || 'Sync failed.');
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        })
+        .catch(() => {
+            alertify.error('Sync failed - could not reach the server.');
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        });
+}
+
+const wooOrdersDetailData = JSON.parse(document.getElementById('woo-orders-detail-data').textContent);
+
+function showOrderDetails(wooOrderId) {
+    const data = wooOrdersDetailData[wooOrderId];
+    if (!data) {
+        alertify.error('Order details unavailable.');
+        return;
+    }
+
+    document.getElementById('wooModalOrderTitle').innerHTML =
+        `<i class="fab fa-wordpress me-2"></i>Order #${wooOrderId}` +
+        (data.order_number ? ` <span style="font-size:0.8rem;opacity:0.85;">(${data.order_number})</span>` : '');
+
+    const billing = data.billing || {};
+    const shipping = data.shipping || {};
+    const items = data.items || [];
+
+    let itemsHtml = '<p class="text-muted mb-0">No line items recorded.</p>';
+    if (items.length) {
+        itemsHtml = items.map(item => `
+            <div class="woo-modal-line-item">
+                <span>${escapeHtml(item.name || 'Item')} &times; ${escapeHtml(String(item.quantity ?? ''))}</span>
+                <strong>${escapeHtml(String(item.total ?? ''))} ${escapeHtml(data.currency || '')}</strong>
+            </div>
+        `).join('');
+    }
+
+    const addressLine = (addr) => {
+        const parts = [addr.address_1, addr.address_2, addr.city, addr.state, addr.postcode, addr.country]
+            .filter(Boolean);
+        return parts.length ? escapeHtml(parts.join(', ')) : '<span class="text-muted">No address on file</span>';
+    };
+
+    document.getElementById('wooModalBody').innerHTML = `
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="woo-modal-section-title">Billing</div>
+                <div><strong>${escapeHtml((billing.first_name || '') + ' ' + (billing.last_name || ''))}</strong></div>
+                <div class="text-muted" style="font-size:0.9rem;">${escapeHtml(billing.email || data.customer_email || '')}</div>
+                <div class="text-muted" style="font-size:0.9rem;">${escapeHtml(billing.phone || data.billing_phone || '')}</div>
+                <div style="font-size:0.9rem; margin-top:0.4rem;">${addressLine(billing)}</div>
+            </div>
+            <div class="col-md-6">
+                <div class="woo-modal-section-title">Shipping</div>
+                <div><strong>${escapeHtml((shipping.first_name || billing.first_name || '') + ' ' + (shipping.last_name || billing.last_name || ''))}</strong></div>
+                <div style="font-size:0.9rem; margin-top:0.4rem;">${addressLine(Object.keys(shipping).length ? shipping : billing)}</div>
+            </div>
+            <div class="col-12">
+                <div class="woo-modal-section-title">Line Items</div>
+                ${itemsHtml}
+                <div class="d-flex justify-content-between pt-2 mt-2" style="border-top: 2px solid #f1f3f9; font-weight: 700;">
+                    <span>Order Total</span>
+                    <span>${escapeHtml(data.total || '')} ${escapeHtml(data.currency || '')}</span>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="woo-modal-section-title">Sync Info</div>
+                <span class="badge-soft badge-soft-secondary">${escapeHtml(data.sync_source || 'unknown')}</span>
+            </div>
+        </div>
+    `;
+
+    const modal = new bootstrap.Modal(document.getElementById('wooOrderDetailModal'));
+    modal.show();
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+</script>
 {% endblock %}

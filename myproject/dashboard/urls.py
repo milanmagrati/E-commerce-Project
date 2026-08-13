@@ -68,6 +68,7 @@ urlpatterns = [
     # Orders
     path('orders/', views.orders_list, name='orders_list'),
     path('orders/woocommerce/', views.woocommerce_orders_list, name='woocommerce_orders'),
+    path('orders/woocommerce/sync/', views.woocommerce_orders_sync, name='woocommerce_orders_sync'),
     path('orders/create/', views.order_create, name='order_create'),
     path('orders/<int:order_id>/', views.order_detail, name='order_detail'),
     path('orders/<int:order_id>/edit/', views.order_edit, name='order_edit'),

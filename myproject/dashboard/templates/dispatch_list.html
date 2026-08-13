@@ -7,79 +7,111 @@
 {% block content %}
 <div class="container-fluid py-4">
     <!-- Header with Count -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
         <div>
-            <h2 class="mb-1">
+            <h2 class="mb-1 h4 h2-md">
                 <i class="bi bi-box-seam"></i> Dispatch List
             </h2>
             <p class="text-muted mb-0">
                 <span class="badge bg-primary fs-6">
-                    <i class="bi bi-stack"></i> {{ dispatches.count }} Total Dispatch{{ dispatches.count|pluralize:"es" }}
+                    <i class="bi bi-stack"></i> {{ totals.batches }} Dispatch{{ totals.batches|pluralize:"es" }}
                 </span>
-                {% if search or logistics_filter or status_filter or date_from or date_to %}
+                {% if has_filters %}
                 <span class="badge bg-info fs-6 ms-2">
                     <i class="bi bi-funnel"></i> Filtered Results
                 </span>
                 {% endif %}
             </p>
         </div>
-        <div>
+        <div class="d-flex gap-2 page-header-actions w-100 w-sm-auto">
             <a href="{% url 'dispatch_management' %}" class="btn btn-primary">
                 <i class="bi bi-plus-circle"></i> New Dispatch
             </a>
-            <a href="{% url 'dispatch_trash' %}" class="btn btn-danger">
+            <a href="{% url 'dispatch_trash' %}" class="btn btn-outline-danger">
                 <i class="bi bi-trash"></i> Trash
             </a>
         </div>
     </div>
 
-    <!-- Statistics Cards -->
-    <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3">
-            <div class="stat-card stat-card-primary">
+    <!-- Statistics Cards — every number is derived from the rows shown below,
+         so the headline figures can never disagree with the table.
+         On phones this becomes a swipeable strip instead of three cramped rows. -->
+    <div class="stat-strip mb-3">
+        <a href="{% url 'dispatch_list' %}?{{ base_query }}" class="stat-card-link">
+            <div class="stat-card stat-card-primary {% if not outcome_filter %}stat-card-active{% endif %}">
                 <div class="stat-icon"><i class="bi bi-box-seam"></i></div>
                 <div class="stat-content">
-                    <div class="stat-number">{{ dispatches.count }}</div>
-                    <div class="stat-label">Total Dispatches</div>
+                    <div class="stat-number">{{ totals.batches }}</div>
+                    <div class="stat-label">Batches</div>
+                </div>
+            </div>
+        </a>
+        <div class="stat-card-link">
+            <div class="stat-card stat-card-muted">
+                <div class="stat-icon"><i class="bi bi-upc-scan"></i></div>
+                <div class="stat-content">
+                    <div class="stat-number">{{ totals.scanned }}</div>
+                    <div class="stat-label">Orders Scanned</div>
                 </div>
             </div>
         </div>
-        <div class="col-6 col-md-3">
-            <div class="stat-card stat-card-success">
+        <a href="?{{ base_query }}outcome=completed" class="stat-card-link">
+            <div class="stat-card stat-card-success {% if outcome_filter == 'completed' %}stat-card-active{% endif %}">
                 <div class="stat-icon"><i class="bi bi-check-circle"></i></div>
                 <div class="stat-content">
-                    <div class="stat-number">{{ dispatches|length }}</div>
-                    <div class="stat-label">Showing</div>
+                    <div class="stat-number">{{ totals.success }}</div>
+                    <div class="stat-label">Dispatched OK</div>
                 </div>
             </div>
-        </div>
-        <div class="col-6 col-md-3">
+        </a>
+        <a href="?{{ base_query }}outcome=issues" class="stat-card-link">
+            <div class="stat-card stat-card-danger {% if outcome_filter == 'issues' %}stat-card-active{% endif %}">
+                <div class="stat-icon"><i class="bi bi-x-octagon"></i></div>
+                <div class="stat-content">
+                    <div class="stat-number">{{ totals.issues }}</div>
+                    <div class="stat-label">Failed{% if totals.not_found %} · {{ totals.not_found }} not found{% endif %}</div>
+                </div>
+            </div>
+        </a>
+        <a href="?{{ base_query }}outcome=partial" class="stat-card-link">
+            <div class="stat-card stat-card-warning {% if outcome_filter == 'partial' %}stat-card-active{% endif %}">
+                <div class="stat-icon"><i class="bi bi-exclamation-triangle"></i></div>
+                <div class="stat-content">
+                    <div class="stat-number">{{ totals.batches_with_issues }}</div>
+                    <div class="stat-label">Batches w/ Issues</div>
+                </div>
+            </div>
+        </a>
+        <div class="stat-card-link">
             <div class="stat-card stat-card-info">
-                <div class="stat-icon"><i class="bi bi-truck"></i></div>
+                <div class="stat-icon"><i class="bi bi-graph-up"></i></div>
                 <div class="stat-content">
-                    <div class="stat-number">{{ dispatches.count }}</div>
-                    <div class="stat-label">{% if logistics_filter %}{{ logistics_filter|title }}{% else %}All Logistics{% endif %}</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="stat-card stat-card-warning">
-                <div class="stat-icon"><i class="bi bi-clipboard-check"></i></div>
-                <div class="stat-content">
-                    <div class="stat-number" id="selectedCountLarge">0</div>
-                    <div class="stat-label">Selected</div>
+                    <div class="stat-number">{{ totals.success_rate }}%</div>
+                    <div class="stat-label">Success Rate</div>
                 </div>
             </div>
         </div>
     </div>
 
+    {% if totals.issues %}
+    <div class="alert alert-danger d-flex align-items-center py-2 px-3 mb-2" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <div class="small">
+            <strong>{{ totals.issues }} scanned order{{ totals.issues|pluralize }}</strong> across
+            <strong>{{ totals.batches_with_issues }} batch{{ totals.batches_with_issues|pluralize:"es" }}</strong>
+            did not dispatch{% if totals.not_found %} ({{ totals.not_found }} not found in the system){% endif %}.
+            Open a highlighted row to see the reason for each.
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Filters Card -->
     <div class="card mb-2 shadow-sm">
         <div class="card-body py-2 px-3">
-            <form method="get">
+            <form method="get" id="dispatchFilters">
                 <div class="row g-2 align-items-end">
                     <div class="col-12 col-sm-6 col-md">
-                        <label class="form-label form-label-sm mb-1">Search</label>
+                        <label class="form-label form-label-sm mb-1">Search <kbd class="d-none d-lg-inline kbd-hint">/</kbd></label>
                         <input type="text" name="search" class="form-control form-control-sm"
                                placeholder="Batch or Order ID" value="{{ search }}">
                     </div>
@@ -102,6 +134,16 @@
                         </select>
                     </div>
                     <div class="col-12 col-sm-6 col-md">
+                        <label class="form-label form-label-sm mb-1">Outcome</label>
+                        <select name="outcome" class="form-select form-select-sm">
+                            <option value="">All Outcomes</option>
+                            <option value="issues" {% if outcome_filter == 'issues' %}selected{% endif %}>Any failure</option>
+                            <option value="failed" {% if outcome_filter == 'failed' %}selected{% endif %}>Fully failed</option>
+                            <option value="partial" {% if outcome_filter == 'partial' %}selected{% endif %}>Partially failed</option>
+                            <option value="completed" {% if outcome_filter == 'completed' %}selected{% endif %}>Completed</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-sm-6 col-md">
                         <label class="form-label form-label-sm mb-1">Date From</label>
                         <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
                     </div>
@@ -114,7 +156,7 @@
                             <i class="bi bi-search"></i> Filter
                         </button>
                     </div>
-                    {% if search or logistics_filter or status_filter or date_from or date_to %}
+                    {% if has_filters %}
                     <div class="col-12 col-sm-6 col-md-auto">
                         <a href="{% url 'dispatch_list' %}" class="btn btn-outline-secondary btn-sm w-100">
                             <i class="bi bi-x-circle"></i> Clear
@@ -169,96 +211,128 @@
         <div class="card shadow-sm">
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-hover table-sm align-middle mb-0">
+                    <table class="table table-hover table-sm align-middle mb-0 rtable" id="dispatchTable">
                         <thead class="table-light">
                             <tr>
                                 <th width="36" class="ps-3">
-                                    <input type="checkbox" class="form-check-input" id="selectAll">
+                                    <input type="checkbox" class="form-check-input" id="selectAll"
+                                           title="Select all dispatches on this page">
                                 </th>
                                 <th>Batch Number</th>
                                 <th>Logistics</th>
-                                <th>Orders</th>
-                                <th>Success</th>
-                                <th>Failed</th>
-                                <th>Status</th>
-                                <th class="d-none d-md-table-cell">Created By</th>
+                                <th class="text-center">Orders</th>
+                                <th class="text-center">Success</th>
+                                <th class="text-center">Failed</th>
+                                <th>Outcome</th>
+                                <th class="d-none d-lg-table-cell">Created By</th>
                                 <th>Created At</th>
-                                <th>Actions</th>
+                                <th class="text-end pe-3">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for dispatch in dispatches %}
-                            <tr class="clickable-row" data-href="{% url 'dispatch_detail' dispatch.pk %}">
-                                <td class="ps-3" onclick="event.stopPropagation();">
-                                    <input type="checkbox" class="form-check-input dispatch-checkbox" 
-                                           name="dispatch_ids" value="{{ dispatch.id }}">
+                            {% with outcome=dispatch.get_outcome success_count=dispatch.get_success_count failed_count=dispatch.get_failed_count not_found_count=dispatch.get_not_found_count issue_count=dispatch.get_issue_count unrecorded=dispatch.get_unrecorded_count %}
+                            <tr class="clickable-row row-{{ outcome }}" data-href="{% url 'dispatch_detail' dispatch.pk %}">
+                                <td class="ps-3 cell-select" data-label="" onclick="event.stopPropagation();">
+                                    <input type="checkbox" class="form-check-input dispatch-checkbox"
+                                           name="dispatch_ids" value="{{ dispatch.id }}"
+                                           aria-label="Select {{ dispatch.batch_number }}">
                                 </td>
-                                <td>
+                                <td data-label="Batch" class="cell-batch">
                                     <strong class="text-primary batch-number">{{ dispatch.batch_number }}</strong>
+                                    {% if issue_count > 0 %}
+                                    <i class="bi bi-exclamation-triangle-fill text-danger ms-1"
+                                       title="{{ issue_count }} of {{ dispatch.get_item_count }} scanned order(s) did not dispatch"></i>
+                                    {% endif %}
                                 </td>
-                                <td>
+                                <td data-label="Logistics">
                                     <span class="badge bg-info">
                                         {{ dispatch.get_logistics_display }}
                                     </span>
                                 </td>
-                                <td>
+                                <td data-label="Orders" class="text-center">
                                     <span class="badge bg-dark">{{ dispatch.total_orders }}</span>
-                                </td>
-                                <td>
-                                    {% with success_count=dispatch.get_success_count %}
-                                    <span class="badge bg-success">{{ success_count }}</span>
-                                    {% endwith %}
-                                </td>
-                                <td>
-                                    {% with failed_count=dispatch.get_failed_count %}
-                                    {% if failed_count > 0 %}
-                                        <span class="badge bg-danger">{{ failed_count }}</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary">0</span>
+                                    {% if unrecorded > 0 %}
+                                    <div class="cell-note text-muted" title="This batch predates per-order tracking, so {{ unrecorded }} scan(s) have no recorded outcome.">
+                                        {{ unrecorded }} untracked
+                                    </div>
                                     {% endif %}
-                                    {% endwith %}
                                 </td>
-                                <td>
-                                    {% with success_count=dispatch.get_success_count failed_count=dispatch.get_failed_count %}
-                                    {% if dispatch.total_orders > 0 and success_count == dispatch.total_orders %}
+                                <td data-label="Success" class="text-center">
+                                    {% if success_count > 0 %}
+                                        <span class="badge bg-success">{{ success_count }}</span>
+                                    {% else %}
+                                        <span class="badge count-zero">0</span>
+                                    {% endif %}
+                                </td>
+                                <td data-label="Failed" class="text-center">
+                                    {% comment %}
+                                    "Failed" is every scan that did not dispatch — rejected AND
+                                    not-found. Counting only dispatch_status='failed' here made
+                                    batches whose order IDs were never matched read as 0 failures.
+                                    {% endcomment %}
+                                    {% if issue_count > 0 %}
+                                        <span class="badge bg-danger"
+                                              title="{{ failed_count }} rejected, {{ not_found_count }} not found in system">{{ issue_count }}</span>
+                                        {% if failed_count > 0 and not_found_count > 0 %}
+                                        <div class="cell-note text-danger">{{ failed_count }} rejected · {{ not_found_count }} not found</div>
+                                        {% elif not_found_count > 0 %}
+                                        <div class="cell-note text-danger">not found</div>
+                                        {% else %}
+                                        <div class="cell-note text-danger">rejected</div>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="badge count-zero">0</span>
+                                    {% endif %}
+                                </td>
+                                <td data-label="Outcome">
+                                    {% if outcome == 'completed' %}
                                         <span class="badge bg-success"><i class="bi bi-check-circle"></i> Completed</span>
-                                    {% elif success_count > 0 and failed_count > 0 %}
-                                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-circle"></i> Partial</span>
-                                    {% elif failed_count > 0 and success_count == 0 %}
+                                    {% elif outcome == 'partial' %}
+                                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Partial</span>
+                                        <div class="cell-note text-muted">{{ dispatch.get_success_rate }}% dispatched</div>
+                                    {% elif outcome == 'failed' %}
                                         <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Failed</span>
-                                    {% elif dispatch.total_orders == 0 %}
-                                        <span class="badge bg-secondary">Pending</span>
+                                    {% elif outcome == 'unrecorded' %}
+                                        <span class="badge bg-secondary" title="No per-order records exist for this batch"><i class="bi bi-question-circle"></i> No records</span>
                                     {% else %}
-                                        <span class="badge bg-secondary">{{ dispatch.get_status_display }}</span>
+                                        <span class="badge bg-secondary"><i class="bi bi-hourglass"></i> Empty</span>
                                     {% endif %}
-                                    {% endwith %}
                                 </td>
-                                <td class="d-none d-md-table-cell">{{ dispatch.created_by.username|default:"N/A" }}</td>
-                                <td>
-                                    <small>{{ dispatch.created_at|nepali_date }}</small><br>
-                                    <small class="text-muted">{{ dispatch.created_at|nepali_time }}</small>
+                                <td data-label="Created By" class="d-none d-lg-table-cell">{{ dispatch.created_by.username|default:"N/A" }}</td>
+                                <td data-label="Created At" class="text-nowrap">
+                                    <small>{{ dispatch.created_at|nepali_date }}</small>
+                                    <small class="text-muted d-block d-md-inline">{{ dispatch.created_at|nepali_time }}</small>
                                 </td>
-                                <td onclick="event.stopPropagation();">
-                                    <a href="{% url 'dispatch_detail' dispatch.pk %}" 
+                                <td data-label="" class="text-end pe-3 cell-actions" onclick="event.stopPropagation();">
+                                    <a href="{% url 'dispatch_detail' dispatch.pk %}"
                                        class="action-btn view-btn">
                                         <i class="bi bi-eye"></i> View
                                     </a>
-                                    <button type="button" 
+                                    <button type="button"
                                             class="action-btn delete-btn delete-dispatch-btn"
-                                            data-id="{{ dispatch.id }}"
-                                            data-batch="{{ dispatch.batch_number|escape }}">
+                                            data-url="{% url 'dispatch_move_to_trash' dispatch.pk %}"
+                                            data-batch="{{ dispatch.batch_number }}">
                                         <i class="bi bi-trash"></i> Delete
                                     </button>
                                 </td>
                             </tr>
+                            {% endwith %}
                             {% empty %}
-                            <tr>
-                                <td colspan="10" class="text-center py-4">
+                            <tr class="no-card">
+                                <td colspan="10" class="text-center py-5">
                                     <i class="bi bi-inbox" style="font-size: 48px; color: #ccc;"></i>
-                                    <p class="text-muted mt-2">No dispatches found</p>
+                                    {% if has_filters %}
+                                    <p class="text-muted mt-2 mb-1">No dispatches match these filters</p>
+                                    <a href="{% url 'dispatch_list' %}" class="btn btn-outline-secondary btn-sm">
+                                        <i class="bi bi-x-circle"></i> Clear filters
+                                    </a>
+                                    {% else %}
+                                    <p class="text-muted mt-2 mb-1">No dispatches yet</p>
                                     <a href="{% url 'dispatch_management' %}" class="btn btn-primary btn-sm">
                                         <i class="bi bi-plus-circle"></i> Create First Dispatch
                                     </a>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
@@ -329,6 +403,64 @@
         text-overflow: ellipsis;
     }
 
+    .stat-card-danger   { border-left-color: #dc3545; background: linear-gradient(135deg,#fff 0%,#ffe3e6 100%); }
+    .stat-card-danger .stat-icon { color: #dc3545; }
+    .stat-card-muted    { border-left-color: #94a3b8; background: linear-gradient(135deg,#fff 0%,#eef2f7 100%); }
+    .stat-card-muted .stat-icon { color: #94a3b8; }
+    .stat-card-link { text-decoration: none; display: block; height: 100%; }
+    .stat-card-link:hover .stat-card { box-shadow: 0 4px 14px rgba(0,0,0,.16); }
+    .stat-card-active { outline: 2px solid #0d6efd; outline-offset: 1px; }
+
+    /* ==================== OUTCOME ROW COLOURING ====================
+       Bootstrap 5.3 tables paint rows through CSS variables, so overriding
+       --bs-table-bg / --bs-table-hover-bg keeps `.table-hover` and striping
+       working instead of fighting them with !important backgrounds. */
+    tbody tr.row-failed {
+        --bs-table-bg: #fff1f2;
+        --bs-table-hover-bg: #ffe1e4;
+        box-shadow: inset 3px 0 0 0 #dc3545;
+    }
+    tbody tr.row-partial {
+        --bs-table-bg: #fff8e6;
+        --bs-table-hover-bg: #ffefc9;
+        box-shadow: inset 3px 0 0 0 #f59e0b;
+    }
+    tbody tr.row-completed {
+        box-shadow: inset 3px 0 0 0 #198754;
+    }
+    tbody tr.row-unrecorded,
+    tbody tr.row-empty {
+        --bs-table-bg: #f8fafc;
+        --bs-table-hover-bg: #eef2f7;
+        box-shadow: inset 3px 0 0 0 #cbd5e1;
+    }
+    tbody tr.row-failed td:first-child,
+    tbody tr.row-partial td:first-child { position: relative; }
+
+    .cell-note {
+        font-size: 0.66rem;
+        font-weight: 600;
+        line-height: 1.2;
+        margin-top: 2px;
+        text-transform: uppercase;
+        letter-spacing: 0.2px;
+    }
+    .badge.count-zero {
+        background: #e9ecef;
+        color: #6c757d;
+    }
+    .kbd-hint {
+        background: #eef2f7; color: #64748b; border: 1px solid #dbe2ea;
+        border-radius: 4px; padding: 0 5px; font-size: 0.65rem; font-weight: 600;
+    }
+
+    /* Keep colour from being the only signal, for colour-blind users and
+       greyscale printouts. */
+    @media print {
+        tbody tr.row-failed  { outline: 1px solid #000; }
+        tbody tr.row-partial { outline: 1px dashed #000; }
+    }
+
     /* ==================== BATCH NUMBER TRUNCATION ==================== */
     .batch-number {
         font-size: 0.82rem;
@@ -394,12 +526,164 @@
         to   { opacity:1; transform:translateY(0); }
     }
 
+    /* ==================== STAT STRIP ====================
+       Six equal cards on desktop; a swipeable strip on phones so the numbers
+       stay one glance instead of three stacked rows pushing the table away. */
+    .stat-strip {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+    @media (max-width: 1199.98px) {
+        .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 767.98px) {
+        .stat-strip {
+            display: flex;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 4px;
+            margin-inline: -0.25rem;
+            padding-inline: 0.25rem;
+        }
+        .stat-strip::-webkit-scrollbar { height: 4px; }
+        .stat-strip::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .stat-strip > * {
+            flex: 0 0 clamp(140px, 45%, 190px);
+            scroll-snap-align: start;
+        }
+    }
+
+    /* ==================== STICKY TABLE HEADER ==================== */
+    @media (min-width: 768px) {
+        #dispatchTable thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #f8f9fa;
+            box-shadow: inset 0 -1px 0 #dee2e6;
+        }
+    }
+
+    /* ==================== MOBILE: TABLE → CARDS ====================
+       Below md the ten columns cannot fit, and a horizontally scrolling table
+       is unusable one-handed. Each row collapses into a labelled card; the
+       markup stays a single <table> so there is no duplicate DOM to keep in
+       sync (and the outcome colours carry straight over as a left bar). */
+    @media (max-width: 767.98px) {
+        #dispatchTable thead { display: none; }
+        #dispatchTable,
+        #dispatchTable tbody,
+        #dispatchTable tr,
+        #dispatchTable td { display: block; width: 100%; }
+
+        #dispatchTable tr {
+            position: relative;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            padding: 10px 12px 10px 16px;
+            background: #fff;
+        }
+        #dispatchTable tr.row-failed    { background: #fff1f2; border-color: #fecdd3; }
+        #dispatchTable tr.row-partial   { background: #fff8e6; border-color: #fde3a7; }
+        #dispatchTable tr.row-unrecorded,
+        #dispatchTable tr.row-empty     { background: #f8fafc; border-color: #e2e8f0; }
+
+        #dispatchTable td {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            border: none !important;
+            padding: 4px 0;
+            text-align: right !important;
+        }
+        #dispatchTable td::before {
+            content: attr(data-label);
+            flex: 0 0 auto;
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: #64748b;
+            text-align: left;
+            padding-top: 2px;
+        }
+        #dispatchTable td[data-label=""]::before { display: none; }
+
+        /* Batch number heads the card, full width and left aligned */
+        #dispatchTable td.cell-batch {
+            padding: 0 0 8px;
+            margin-bottom: 4px;
+            border-bottom: 1px dashed #e5e7eb !important;
+            text-align: left !important;
+        }
+        #dispatchTable td.cell-batch .batch-number {
+            white-space: normal;
+            max-width: none;
+            font-size: 0.9rem;
+        }
+        /* Checkbox floats into the card's top-right corner */
+        #dispatchTable td.cell-select {
+            position: absolute;
+            top: 10px;
+            right: 12px;
+            width: auto;
+            padding: 0;
+        }
+        #dispatchTable td.cell-actions {
+            justify-content: stretch;
+            gap: 8px;
+            padding-top: 10px;
+            margin-top: 6px;
+            border-top: 1px dashed #e5e7eb !important;
+        }
+        #dispatchTable td.cell-actions .action-btn {
+            flex: 1;
+            text-align: center;
+            padding: 7px 10px;
+            font-size: 0.82rem;
+            margin: 0;
+        }
+        #dispatchTable td .cell-note { text-align: right; }
+        #dispatchTable tr.no-card {
+            display: table-row;
+            border: none;
+            background: none;
+            padding: 0;
+        }
+        #dispatchTable tr.no-card td {
+            display: table-cell;
+            text-align: center !important;
+        }
+        #dispatchTable tr.no-card td::before { display: none; }
+        .table-responsive { overflow-x: visible; }
+    }
+
+    /* ==================== STICKY BULK BAR ON MOBILE ==================== */
+    @media (max-width: 767.98px) {
+        #bulkActionsPanel {
+            position: sticky;
+            bottom: 0;
+            z-index: 5;
+            margin-bottom: 0;
+            box-shadow: 0 -4px 16px rgba(0,0,0,.14);
+        }
+    }
+
     /* ==================== RESPONSIVE ==================== */
     @media (max-width: 576px) {
         .stat-number { font-size: 1.25rem; }
         .stat-icon   { font-size: 1.3rem; margin-right: 0.5rem; }
         .stat-card   { padding: 0.5rem 0.65rem; }
         .container-fluid { padding-left: 0.75rem; padding-right: 0.75rem; }
+        .page-header-actions .btn { flex: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .stat-card, #bulkActionsPanel { transition: none; animation: none; }
     }
 </style>
 
@@ -418,24 +702,43 @@
     });
 
     // ==================== SELECT ALL CHECKBOX ====================
+    const allBoxes = () => Array.from(document.querySelectorAll('.dispatch-checkbox'));
+
     document.getElementById('selectAll')?.addEventListener('change', function() {
-        const checkboxes = document.querySelectorAll('.dispatch-checkbox');
-        checkboxes.forEach(checkbox => {
-            checkbox.checked = this.checked;
-        });
+        allBoxes().forEach(checkbox => { checkbox.checked = this.checked; });
         updateSelectedCount();
     });
 
-    // ==================== UPDATE SELECTED COUNT ====================
-    document.querySelectorAll('.dispatch-checkbox').forEach(checkbox => {
+    // ==================== SHIFT-CLICK RANGE SELECT ====================
+    // Selecting a run of batches (e.g. every failure from one shift) otherwise
+    // means one click per row.
+    let lastCheckedIndex = null;
+    allBoxes().forEach((checkbox, index) => {
+        checkbox.addEventListener('click', function(e) {
+            if (e.shiftKey && lastCheckedIndex !== null) {
+                const boxes = allBoxes();
+                const [from, to] = [lastCheckedIndex, index].sort((a, b) => a - b);
+                for (let i = from; i <= to; i++) boxes[i].checked = this.checked;
+            }
+            lastCheckedIndex = index;
+            updateSelectedCount();
+        });
         checkbox.addEventListener('change', updateSelectedCount);
     });
 
     function updateSelectedCount() {
-        const checkedBoxes = document.querySelectorAll('.dispatch-checkbox:checked');
-        const count = checkedBoxes.length;
-        document.getElementById('selectedCount').textContent = count;
-        document.getElementById('selectedCountLarge').textContent = count;
+        const boxes = allBoxes();
+        const count = boxes.filter(b => b.checked).length;
+        const badge = document.getElementById('selectedCount');
+        if (badge) badge.textContent = count;
+
+        // Tri-state header checkbox so a partial selection is visible
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) {
+            selectAll.checked = count > 0 && count === boxes.length;
+            selectAll.indeterminate = count > 0 && count < boxes.length;
+        }
+
         // Show/hide bulk actions panel
         const panel = document.getElementById('bulkActionsPanel');
         if (panel) panel.style.display = count > 0 ? 'block' : 'none';
@@ -491,27 +794,44 @@
     });
 
     // ==================== DELETE SINGLE DISPATCH ====================
-    function deleteDispatch(id, batchNumber) {
-        if (confirm(`⚠️ Move dispatch "${batchNumber}" to trash?`)) {
-            const form = document.getElementById('deleteForm');
-            form.action = `/dispatch/${id}/trash/`;
-            form.submit();
-        }
-    }
-
+    // The trash URL is resolved server-side onto the button's data-url rather
+    // than rebuilt in JS, so a route change can't silently break the button.
     document.querySelectorAll('.delete-dispatch-btn').forEach(btn => {
         btn.addEventListener('click', function(e) {
             e.stopPropagation();
-            deleteDispatch(this.dataset.id, this.dataset.batch);
+            if (confirm(`⚠️ Move dispatch "${this.dataset.batch}" to trash?`)) {
+                const form = document.getElementById('deleteForm');
+                form.action = this.dataset.url;
+                form.submit();
+            }
         });
     });
 
     // ==================== CLEAR SELECTION ====================
     document.getElementById('clearSelectionBtn')?.addEventListener('click', function() {
-        document.querySelectorAll('.dispatch-checkbox').forEach(cb => cb.checked = false);
-        const selectAll = document.getElementById('selectAll');
-        if (selectAll) selectAll.checked = false;
+        allBoxes().forEach(cb => { cb.checked = false; });
+        lastCheckedIndex = null;
         updateSelectedCount();
+    });
+
+    // ==================== FILTERS: SUBMIT ON CHANGE ====================
+    // Dropdowns and dates apply immediately; the text search still waits for
+    // Enter or the Filter button so typing isn't interrupted.
+    document.querySelectorAll('#dispatchFilters select, #dispatchFilters input[type="date"]')
+        .forEach(field => {
+            field.addEventListener('change', () => field.form.submit());
+        });
+
+    // ==================== KEYBOARD SHORTCUTS ====================
+    document.addEventListener('keydown', function(e) {
+        const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+        if (e.key === '/' && !typing) {
+            e.preventDefault();
+            document.querySelector('#dispatchFilters input[name="search"]')?.focus();
+        }
+        if (e.key === 'Escape' && document.querySelectorAll('.dispatch-checkbox:checked').length) {
+            document.getElementById('clearSelectionBtn')?.click();
+        }
     });
 
     // Initialize count on page load

@@ -7694,3 +7694,313 @@ ConnectionError: network down
 [DEBUG] 2026-08-06 17:14:21 ncm_service._fetch_comments:145 NCM: 404 returned for order 20563261 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
 [DEBUG] 2026-08-06 17:14:24 ncm_service._fetch_comments:145 NCM: 404 returned for order 20563253 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
 [DEBUG] 2026-08-06 17:14:26 ncm_service._fetch_comments:145 NCM: 404 returned for order 20563247 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-07 17:10:14 ncm_service._fetch_comments:145 NCM: 404 returned for order 22614428 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-07 17:10:24 ncm_service._fetch_comments:145 NCM: 404 returned for order 22614428 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[INFO] 2026-08-07 17:55:29 scheduler._claim:100 NCM bulk sync claimed (interval=600s, force=False)
+[INFO] 2026-08-07 17:55:29 scheduler._claim:100 NCM bulk sync claimed (interval=600s, force=False)
+[INFO] 2026-08-07 17:55:29 scheduler._claim:100 NCM bulk sync claimed (interval=600s, force=True)
+[INFO] 2026-08-07 17:55:29 scheduler._claim:100 NCM bulk sync claimed (interval=600s, force=False)
+[INFO] 2026-08-07 17:55:29 scheduler._claim:100 NCM bulk sync claimed (interval=60s, force=False)
+[INFO] 2026-08-07 17:55:29 scheduler._claim:100 NCM bulk sync claimed (interval=60s, force=False)
+[INFO] 2026-08-07 17:55:31 scheduler._claim:100 NCM bulk sync claimed (interval=600s, force=False)
+[ERROR] 2026-08-07 17:55:31 scheduler._run:145 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 129, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 191, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-07 17:58:25 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 17:58:25 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 17:58:25 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-07 17:58:25 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 17:58:25 scheduler._claim:109 NCM bulk sync claimed (interval=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 17:58:25 scheduler._claim:109 NCM bulk sync claimed (interval=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 17:58:27 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-07 17:58:27 scheduler._run:157 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 141, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 191, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-07 17:58:27 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-07 17:58:27 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-07 17:58:45 scheduler._claim:109 NCM bulk sync claimed (interval=14400s, force=True, advance_schedule=False)
+[INFO] 2026-08-07 18:03:44 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 18:03:44 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 18:03:44 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-07 18:03:44 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 18:03:44 scheduler._claim:109 NCM bulk sync claimed (interval=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 18:03:44 scheduler._claim:109 NCM bulk sync claimed (interval=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 18:03:46 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-07 18:03:46 scheduler._run:157 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 141, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 191, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-07 18:03:46 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-07 18:03:46 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=True, advance_schedule=True)
+[WARNING] 2026-08-07 18:06:00 views.bulk_sync_ncm_orders_json:596 Bulk sync denied for _tmp_sync_probe - missing can_sync_ncm_orders
+[INFO] 2026-08-07 18:07:01 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 18:07:01 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 18:07:01 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-07 18:07:01 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 18:07:01 scheduler._claim:109 NCM bulk sync claimed (interval=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 18:07:01 scheduler._claim:109 NCM bulk sync claimed (interval=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-07 18:07:03 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-07 18:07:03 scheduler._run:157 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 141, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 191, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-07 18:07:03 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-07 18:07:03 scheduler._claim:109 NCM bulk sync claimed (interval=600s, force=True, advance_schedule=True)
+[WARNING] 2026-08-07 18:07:04 views.bulk_sync_ncm_orders_json:596 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[INFO] 2026-08-07 18:07:31 scheduler._claim:109 NCM bulk sync claimed (interval=14400s, force=True, advance_schedule=False)
+[INFO] 2026-08-10 13:59:28 scheduler._claim:109 NCM bulk sync claimed (interval=14400s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:15 scheduler._claim:133 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:15 scheduler._claim:133 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:15 scheduler._claim:133 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:04:15 scheduler._claim:133 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:15 scheduler._claim:133 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:15 scheduler._claim:133 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:17 scheduler._claim:133 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-10 14:04:17 scheduler._run:181 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 165, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 191, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-10 14:04:17 scheduler._claim:133 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-10 14:04:17 scheduler._claim:133 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:04:17 scheduler._claim:133 NCM bulk sync claimed (interval=60s, effective=240s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:17 scheduler._claim:133 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:17 scheduler._claim:133 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:17 scheduler._claim:133 NCM bulk sync claimed (interval=60s, effective=1800s, force=False, advance_schedule=True)
+[WARNING] 2026-08-10 14:04:17 views.bulk_sync_ncm_orders_json:596 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[INFO] 2026-08-10 14:04:50 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:50 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:50 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:04:50 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:50 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:50 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:52 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-10 14:04:52 scheduler._run:186 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 170, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 191, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-10 14:04:52 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-10 14:04:52 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:04:52 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=110s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:52 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:52 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=1800s, force=False, advance_schedule=True)
+[WARNING] 2026-08-10 14:04:53 views.bulk_sync_ncm_orders_json:596 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[INFO] 2026-08-10 14:04:54 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:54 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:54 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:04:54 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:54 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:54 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:56 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-10 14:04:56 scheduler._run:186 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 170, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 191, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-10 14:04:56 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-10 14:04:56 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:04:56 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=110s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:56 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:04:56 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=1800s, force=False, advance_schedule=True)
+[WARNING] 2026-08-10 14:04:56 views.bulk_sync_ncm_orders_json:596 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[INFO] 2026-08-10 14:07:38 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:07:38 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:07:38 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:07:38 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:07:38 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:07:38 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:07:40 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-10 14:07:40 scheduler._run:186 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 170, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 191, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-10 14:07:40 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-10 14:07:40 scheduler._claim:138 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:07:40 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=110s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:07:40 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:07:40 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=1800s, force=False, advance_schedule=True)
+[WARNING] 2026-08-10 14:07:41 views.bulk_sync_ncm_orders_json:596 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[INFO] 2026-08-10 14:16:58 scheduler._claim:138 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:21:18 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:21:18 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:21:18 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:21:18 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:21:18 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:21:18 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:21:20 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-10 14:21:20 scheduler._run:224 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 208, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 192, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-10 14:21:20 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-10 14:21:20 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:21:20 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=480s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:21:20 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:21:20 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=1800s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:21:20 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:21:20 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[WARNING] 2026-08-10 14:21:21 views.bulk_sync_ncm_orders_json:591 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[WARNING] 2026-08-10 14:21:57 views.wrapper:52 Access denied for user _tmp_refactor_probe - Missing permission: can_sync_ncm_orders
+[INFO] 2026-08-10 14:22:12 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=True, advance_schedule=False)
+[INFO] 2026-08-10 14:22:57 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:26:35 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:41:14 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:41:14 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:41:14 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:41:14 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:41:14 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:41:14 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:41:16 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-10 14:41:16 scheduler._run:224 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 208, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 192, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-10 14:41:16 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-10 14:41:16 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-10 14:41:16 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=480s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:41:16 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:41:16 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=1800s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:41:16 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 14:41:16 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[WARNING] 2026-08-10 14:41:17 views.bulk_sync_ncm_orders_json:591 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[INFO] 2026-08-10 14:42:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 15:01:24 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 15:31:13 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 15:33:13 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 15:37:29 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 15:38:54 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 15:40:59 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 15:42:30 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 15:46:39 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 15:48:54 bulk_batch.terminate:522 Bulk batch TEST-BBC-100354190584 terminated by milan (Administrator) (2 unreached)
+[INFO] 2026-08-10 15:48:54 bulk_batch.terminate:491 Bulk batch TEST-BBC-100354219057: stop requested by milan (Administrator)
+[INFO] 2026-08-10 15:48:54 bulk_batch._finalise:780 Bulk batch TEST-BBC-100354251801 resume ended (completed): Resume finished: 3 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 15:50:29 bulk_batch._finalise:780 Bulk batch 1786356328TEST-SMOKE-1 resume ended (completed): Resume finished: 0 sent, 0 failed, 2 skipped.
+[INFO] 2026-08-10 15:50:29 bulk_batch.terminate:522 Bulk batch 1786356328TEST-SMOKE-2 terminated by engineer (Sales) (5 unreached)
+[INFO] 2026-08-10 15:51:36 bulk_batch.terminate:522 Bulk batch TEST-BBC-100636971126 terminated by milan (Administrator) (2 unreached)
+[INFO] 2026-08-10 15:51:37 bulk_batch.terminate:491 Bulk batch TEST-BBC-100636993172: stop requested by milan (Administrator)
+[INFO] 2026-08-10 15:51:37 bulk_batch._finalise:781 Bulk batch TEST-BBC-100637023251 resume ended (completed): Resume finished: 3 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 15:52:00 bulk_batch.terminate:522 Bulk batch 1786356420-BULK1 terminated by engineer (Sales) (10 unreached)
+[INFO] 2026-08-10 15:52:00 bulk_batch.terminate:522 Bulk batch 1786356420-BULK2 terminated by engineer (Sales) (4 unreached)
+[INFO] 2026-08-10 15:52:00 bulk_batch.terminate:491 Bulk batch 1786356420-BULK3: stop requested by engineer (Sales)
+[INFO] 2026-08-10 15:54:43 bulk_batch.terminate:559 Bulk batch TEST-BBC-100943345060 terminated by milan (Administrator) (2 unreached)
+[INFO] 2026-08-10 15:54:43 bulk_batch.terminate:528 Bulk batch TEST-BBC-100943367481: stop requested by milan (Administrator)
+[INFO] 2026-08-10 15:54:43 bulk_batch._finalise:818 Bulk batch TEST-BBC-100943400877 resume ended (completed): Resume finished: 3 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 15:55:39 bulk_batch.terminate:563 Bulk batch TEST-BBC-101039885866 terminated by milan (Administrator) (2 unreached)
+[INFO] 2026-08-10 15:55:39 bulk_batch.terminate:532 Bulk batch TEST-BBC-101039907444: stop requested by milan (Administrator)
+[INFO] 2026-08-10 15:55:39 bulk_batch._finalise:822 Bulk batch TEST-BBC-101039942736 resume ended (completed): Resume finished: 3 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 15:55:41 bulk_batch._finalise:822 Bulk batch 1786356640TEST-SMOKE-1 resume ended (completed): Resume finished: 0 sent, 0 failed, 2 skipped.
+[INFO] 2026-08-10 15:55:41 bulk_batch.terminate:563 Bulk batch 1786356640TEST-SMOKE-2 terminated by engineer (Sales) (5 unreached)
+[INFO] 2026-08-10 15:59:33 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 16:07:01 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 16:10:15 bulk_batch.terminate:588 Bulk batch TEST-BBC-102515536654 terminated by milan (Administrator) (2 unreached)
+[INFO] 2026-08-10 16:10:15 bulk_batch.terminate:557 Bulk batch TEST-BBC-102515562037: stop requested by milan (Administrator)
+[INFO] 2026-08-10 16:10:15 bulk_batch._finalise:857 Bulk batch TEST-BBC-102515596268 resume ended (completed): Resume finished: 3 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 16:10:15 bulk_batch._finalise:857 Bulk batch TEST-BBC-102515829810 resume ended (completed): Resume finished: 1 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 16:10:15 bulk_batch._finalise:857 Bulk batch TEST-BBC-102515879695 resume ended (completed): Resume finished: 1 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 16:11:43 bulk_batch.terminate:598 Bulk batch TEST-BBC-102643257485 terminated by milan (Administrator) (2 unreached)
+[INFO] 2026-08-10 16:11:43 bulk_batch.terminate:567 Bulk batch TEST-BBC-102643280521: stop requested by milan (Administrator)
+[INFO] 2026-08-10 16:11:43 bulk_batch._finalise:867 Bulk batch TEST-BBC-102643317227 resume ended (completed): Resume finished: 3 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 16:11:43 bulk_batch._finalise:867 Bulk batch TEST-BBC-102643566065 resume ended (completed): Resume finished: 1 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 16:11:43 bulk_batch._finalise:867 Bulk batch TEST-BBC-102643611166 resume ended (completed): Resume finished: 1 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 16:12:44 bulk_batch._finalise:874 Bulk batch 1786357664TEST-SMOKE-1 resume ended (completed): Resume finished: 0 sent, 0 failed, 2 skipped.
+[INFO] 2026-08-10 16:12:45 bulk_batch.terminate:605 Bulk batch 1786357664TEST-SMOKE-2 terminated by engineer (Sales) (5 unreached)
+[INFO] 2026-08-10 16:12:46 bulk_batch.terminate:605 Bulk batch 1786357666-BULK1 terminated by engineer (Sales) (10 unreached)
+[INFO] 2026-08-10 16:12:46 bulk_batch.terminate:605 Bulk batch 1786357666-BULK2 terminated by engineer (Sales) (4 unreached)
+[INFO] 2026-08-10 16:12:46 bulk_batch.terminate:574 Bulk batch 1786357666-BULK3: stop requested by engineer (Sales)
+[INFO] 2026-08-10 16:13:28 bulk_batch.terminate:605 Bulk batch 1786357708-PND-0 terminated by engineer (Sales) (1 unreached)
+[INFO] 2026-08-10 16:13:28 bulk_batch._finalise:874 Bulk batch 1786357708-PND-1 resume ended (partial): Resume finished: 1 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 16:13:53 bulk_batch.terminate:605 Bulk batch 1786357733-PND-0 terminated by engineer (Sales) (1 unreached)
+[INFO] 2026-08-10 16:13:53 bulk_batch._finalise:874 Bulk batch 1786357733-PND-1 resume ended (completed): Resume finished: 1 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 16:14:22 bulk_batch.terminate:605 Bulk batch TEST-BBC-102922730132 terminated by milan (Administrator) (2 unreached)
+[INFO] 2026-08-10 16:14:22 bulk_batch.terminate:574 Bulk batch TEST-BBC-102922753648: stop requested by milan (Administrator)
+[INFO] 2026-08-10 16:14:22 bulk_batch._finalise:874 Bulk batch TEST-BBC-102922786120 resume ended (completed): Resume finished: 3 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 16:14:23 bulk_batch._finalise:874 Bulk batch TEST-BBC-102923016512 resume ended (completed): Resume finished: 1 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 16:14:23 bulk_batch._finalise:874 Bulk batch TEST-BBC-102923064900 resume ended (completed): Resume finished: 1 sent, 0 failed, 0 skipped.
+[INFO] 2026-08-10 16:14:23 bulk_batch.terminate:605 Bulk batch TEST-BBC-PND-102923112926 terminated by milan (Administrator) (1 unreached)
+[INFO] 2026-08-10 16:25:11 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 16:32:30 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-10 17:09:51 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-11 17:10:42 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-11 17:12:48 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-12 11:48:33 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-12 11:54:11 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-12 12:19:56 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-12 12:30:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-12 12:45:50 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-12 12:46:59 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-13 16:34:25 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-13 16:37:38 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-13 16:42:18 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-13 17:01:53 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-13 17:14:55 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)

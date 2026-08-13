@@ -17,3 +17,9 @@
 [INFO] 2026-04-17 16:38:08 views.post:103 WooCommerce order 77777 updated (internal order: WOO-77777)
 [INFO] 2026-04-17 16:38:08 views.post:103 WooCommerce order 88888 updated (internal order: WOO-88888)
 [WARNING] 2026-04-17 16:38:08 views.post:36 WooCommerce order validation failed: {'order_id': [ErrorDetail(string='order_id must be a positive integer.', code='invalid')]}
+[INFO] 2026-08-12 11:48:42 services.get_woocommerce_system_user:41 Created system user for WooCommerce sync operations
+[INFO] 2026-08-12 11:48:42 services.upsert_woocommerce_order:102 WooCommerce order 6804 created via woocommerce_api_poll (internal order: WOO-6804)
+[INFO] 2026-08-12 11:48:42 services.upsert_woocommerce_order:102 WooCommerce order 6805 created via woocommerce_api_poll (internal order: WOO-6805)
+[INFO] 2026-08-12 11:48:42 services.upsert_woocommerce_order:102 WooCommerce order 6806 created via woocommerce_api_poll (internal order: WOO-6806)
+[INFO] 2026-08-12 11:48:42 services.upsert_woocommerce_order:102 WooCommerce order 6807 created via woocommerce_api_poll (internal order: WOO-6807)
+[INFO] 2026-08-12 11:48:42 services.upsert_woocommerce_order:102 WooCommerce order 6808 created via woocommerce_api_poll (internal order: WOO-6808)

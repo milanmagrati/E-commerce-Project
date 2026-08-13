@@ -249,6 +249,13 @@ NCM_API_BASE_URL_V2 = config('NCM_API_BASE_URL_V2')
 # Webhook Security: Set this in your .env file
 NCM_WEBHOOK_SECRET = config('NCM_WEBHOOK_SECRET', default=None)
 WOOCOMMERCE_WEBHOOK_SECRET = config('WOOCOMMERCE_WEBHOOK_SECRET', default='')
+
+# ==================== WooCommerce REST API (polling) ====================
+# Generate under WooCommerce > Settings > Advanced > REST API in wp-admin.
+# Read permission is enough - polling only pulls orders, it doesn't write back.
+WOOCOMMERCE_SITE_URL = config('WOOCOMMERCE_SITE_URL', default='')
+WOOCOMMERCE_CONSUMER_KEY = config('WOOCOMMERCE_CONSUMER_KEY', default='')
+WOOCOMMERCE_CONSUMER_SECRET = config('WOOCOMMERCE_CONSUMER_SECRET', default='')
 SITE_URL = config('SITE_URL', default='https://office.orajil.com.np').rstrip('/')
 
 META_PAGE_ACCESS_TOKEN = config('META_PAGE_ACCESS_TOKEN', default='')
