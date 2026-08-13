@@ -2,8 +2,20 @@
 
 {% block title %}Follow-ups{% endblock %}
 
-{% block content %}
+{% block extra_css %}
+{% comment %}
+Select2's stylesheet belongs in <head>, not next to the widget in the body.
+A stylesheet the browser only discovers part-way down the body is applied
+after the table has already been laid out, so on any load where it arrived
+late, the Product cell of the entry row painted as a raw full-height
+multi-select listbox and dragged the whole row's layout with it. Whether that
+happened depended on cache state, which is why the page looked fine on one
+load and broken on the next refresh.
+{% endcomment %}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+{% endblock %}
+
+{% block content %}
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
@@ -56,7 +68,7 @@
                             <th>Name</th>
                             <th>Phone Number</th>
                             <th>Lead Source</th>
-                            <th>Product</th>
+                            <th class="product-column">Product</th>
                             <th style="min-width: 135px;">Follow up</th>
                             <th>Status</th>
                             <th style="max-width: 200px;">Remarks</th>
@@ -81,7 +93,7 @@
                                     {% endfor %}
                                 </select>
                             </td>
-                            <td>
+                            <td class="product-column">
                                 <select class="form-select select2-products" id="newProducts" multiple="multiple" style="width: 100%;">
                                     {% for product in products %}
                                     <option value="{{ product.id }}" data-type="{{ product.product_type }}">{{ product.name }}</option>
@@ -124,7 +136,7 @@
                             <td>{{ item.name|default:"-" }}</td>
                             <td>{{ item.phone }}</td>
                             <td>{{ item.lead_source|default:"-" }}</td>
-                            <td>
+                            <td class="product-column">
                                 {% if all_products %}
                                     <div class="d-flex flex-wrap">
                                     {% for p in all_products %}
@@ -366,6 +378,12 @@
     border-bottom: 2px solid #e2e8f0;
 }
 .follow-ups-table td { vertical-align: middle; padding: 0.75rem; }
+/* The table is auto-layout, so every column's width is negotiated from its
+   content. The Product column is the one cell whose content changes shape
+   after load (native select -> select2 widget, and chips repainted by the sync
+   poll), so pin it: otherwise the whole table re-flowed the moment select2
+   initialised and the row looked different from one refresh to the next. */
+.follow-ups-table .product-column { width: 230px; min-width: 230px; }
 .entry-row-bg > td {
     background-color: #f0fdf4 !important;
     border-bottom: 2px solid #bbf7d0;
@@ -423,6 +441,18 @@
 /* ===== Select2 ===== */
 .select2-container .select2-selection--multiple { min-height: 31px; border-color: #dee2e6; border-radius: 6px; }
 .wide-dropdown { min-width: 350px !important; }
+/* Between first paint and select2 taking over, #newProducts is still a native
+   <select multiple> holding every product and variation, which the browser
+   draws as a full-height scroll list. Select2 stamps .select2-hidden-accessible
+   on the element once it owns it, so this rule targets only that in-between
+   state and keeps the cell one input tall. It also keeps the row usable if
+   the select2 script itself never arrives. */
+select.select2-products:not(.select2-hidden-accessible) {
+    height: 31px;
+    overflow: hidden;
+    display: block;
+    width: 100%;
+}
 
 /* ===== Timeline ===== */
 .timeline-item { position: relative; padding-left: 30px; margin-bottom: 20px; }
@@ -578,11 +608,30 @@
     }
 
     // ===== Init =====
-    document.addEventListener('DOMContentLoaded', function () {
-        editModal = new bootstrap.Modal(document.getElementById('editFollowUpModal'));
-        addNoteModal = new bootstrap.Modal(document.getElementById('addNoteModal'));
+    //
+    // jQuery and select2 come off a CDN. If either is slow or blocked, the
+    // whole DOMContentLoaded handler used to die on the first `$(...)` call —
+    // taking the modals, the entry-row Enter shortcut and the status badge
+    // colours down with the product picker. Each step is now independent, and
+    // the picker waits for its dependencies instead of failing once and for
+    // all on the first tick.
+    const SELECT2_READY_RETRY_MS = 100;
+    const SELECT2_READY_MAX_WAIT_MS = 10000;
 
-        // Select2
+    function initProductSelects(waitedMs) {
+        waitedMs = waitedMs || 0;
+
+        if (typeof jQuery === 'undefined' || !jQuery.fn || !jQuery.fn.select2) {
+            if (waitedMs >= SELECT2_READY_MAX_WAIT_MS) {
+                // The CSS keeps the bare <select> a single input tall, so the
+                // row still looks right and stays usable without select2.
+                console.warn('select2 did not load; product pickers stay as plain multi-selects.');
+                return;
+            }
+            setTimeout(() => initProductSelects(waitedMs + SELECT2_READY_RETRY_MS), SELECT2_READY_RETRY_MS);
+            return;
+        }
+
         function formatProductResult(product) {
             if (!product.id) return product.text;
             const type = $(product.element).data('type');
@@ -605,6 +654,10 @@
             return $(html);
         }
         $('.select2-products').select2({
+            // Stated explicitly rather than left to select2's 'resolve'
+            // default, which reads back whatever width the cell happens to
+            // have at the moment it initialises.
+            width: '100%',
             placeholder: 'Select Products...',
             allowClear: true,
             dropdownCssClass: 'wide-dropdown',
@@ -612,6 +665,11 @@
             templateSelection: formatProductSelection,
             escapeMarkup: m => m
         });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        editModal = new bootstrap.Modal(document.getElementById('editFollowUpModal'));
+        addNoteModal = new bootstrap.Modal(document.getElementById('addNoteModal'));
 
         // Enter to save in entry row
         document.getElementById('entryRow').addEventListener('keydown', function (e) {
@@ -622,6 +680,7 @@
         });
 
         applyStatusBadgeColors();
+        initProductSelects();
     });
 
     // ===== Utilities =====
@@ -980,7 +1039,7 @@
             <td>${escapeHtml(data.name) || '-'}</td>
             <td>${escapeHtml(data.phone)}</td>
             <td>${escapeHtml(data.lead_source) || '-'}</td>
-            <td>${productsHtml}</td>
+            <td class="product-column">${productsHtml}</td>
             <td class="fu-cell position-relative p-1" style="min-width:135px;vertical-align:top;background-color:#f8f9fa;">
                 ${buildFuCellHtml(data.all_logs, data.id)}
             </td>
