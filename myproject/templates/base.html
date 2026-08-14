@@ -1636,6 +1636,11 @@
                             <a href="{% url 'follow_up_report' %}"><i class="fas fa-phone-alt me-1"></i>Follow-ups Report</a>
                         </li>
                         {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_rtv_report %}
+                        <li class="{% if request.resolver_match.url_name == 'rtv_report' %}active{% endif %}">
+                            <a href="{% url 'rtv_report' %}"><i class="fas fa-undo-alt me-1"></i>RTV Report</a>
+                        </li>
+                        {% endif %}
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_staff_performance %}
                         <li class="staff-performance-menu {% if request.resolver_match.url_name == 'staff_performance_analytics' %}active{% endif %}">
                             <a href="{% url 'staff_performance_analytics' %}"><i class="fas fa-chart-bar me-1"></i> Staff Performance<span class="performance-badge">ANALYTICS</span></a>

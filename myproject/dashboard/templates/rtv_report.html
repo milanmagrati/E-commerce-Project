@@ -1,0 +1,978 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}RTV Report — Staff Performance{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ================================================================
+       RTV REPORT
+       Scoped with the rtvr- prefix so nothing here can bleed into the
+       RTV list page, which this report is built on top of.
+       ================================================================ */
+    :root {
+        --rtvr-card: #ffffff;
+        --rtvr-border: #e6e9f0;
+        --rtvr-text: #1e293b;
+        --rtvr-muted: #64748b;
+        --rtvr-primary: #6366f1;
+        --rtvr-radius: 14px;
+        --rtvr-shadow: 0 1px 3px rgba(15, 23, 42, .06);
+    }
+
+    .rtvr-page { padding: .5rem 0 3rem; max-width: 100%; box-sizing: border-box; }
+
+    /* --- Header ------------------------------------------------------ */
+    .rtvr-header {
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 55%, #a21caf 100%);
+        border-radius: 18px;
+        padding: 1.6rem 1.9rem;
+        color: #fff;
+        margin-bottom: 1.4rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .rtvr-header h1 { font-size: 1.45rem; font-weight: 700; margin: 0 0 .3rem; }
+    .rtvr-header p { margin: 0; opacity: .85; font-size: .87rem; }
+    .rtvr-header-actions { display: flex; gap: .6rem; flex-wrap: wrap; }
+    .rtvr-btn {
+        display: inline-flex; align-items: center; gap: .45rem;
+        padding: .55rem 1rem; border-radius: 9px; font-size: .82rem;
+        font-weight: 600; text-decoration: none; border: 1px solid transparent;
+        cursor: pointer; transition: all .15s;
+    }
+    .rtvr-btn-ghost { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.28); }
+    .rtvr-btn-ghost:hover { background: rgba(255,255,255,.27); color: #fff; }
+    .rtvr-period-chip {
+        display: inline-flex; align-items: center; gap: .4rem;
+        background: rgba(255,255,255,.18); border-radius: 999px;
+        padding: .25rem .8rem; font-size: .76rem; font-weight: 600; margin-top: .55rem;
+    }
+
+    /* --- Cards ------------------------------------------------------- */
+    .rtvr-card {
+        background: var(--rtvr-card);
+        border: 1px solid var(--rtvr-border);
+        border-radius: var(--rtvr-radius);
+        box-shadow: var(--rtvr-shadow);
+        padding: 1.25rem 1.4rem;
+        margin-bottom: 1.25rem;
+    }
+    .rtvr-card-title {
+        font-size: .92rem; font-weight: 700; color: var(--rtvr-text);
+        margin: 0 0 1rem; display: flex; align-items: center; gap: .5rem;
+        flex-wrap: wrap;
+    }
+    .rtvr-card-title i { color: var(--rtvr-primary); }
+    .rtvr-card-title small { font-weight: 500; color: var(--rtvr-muted); font-size: .76rem; }
+
+    /* --- Filters ----------------------------------------------------- */
+    .rtvr-filters { display: flex; flex-wrap: wrap; gap: .7rem; align-items: flex-end; }
+    .rtvr-field { display: flex; flex-direction: column; gap: .28rem; }
+    .rtvr-field label {
+        font-size: .68rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; color: var(--rtvr-muted);
+    }
+    .rtvr-field select, .rtvr-field input {
+        border: 1px solid var(--rtvr-border); border-radius: 8px;
+        padding: .45rem .65rem; font-size: .83rem; color: var(--rtvr-text);
+        background: #fff; min-width: 140px;
+    }
+    .rtvr-field input[type="search"] { min-width: 200px; }
+    .rtvr-field select:focus, .rtvr-field input:focus {
+        outline: none; border-color: var(--rtvr-primary);
+        box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+    }
+    .rtvr-btn-primary { background: var(--rtvr-primary); color: #fff; }
+    .rtvr-btn-primary:hover { background: #4f46e5; color: #fff; }
+    .rtvr-btn-plain { background: #f1f5f9; color: var(--rtvr-muted); }
+    .rtvr-btn-plain:hover { background: #e2e8f0; color: var(--rtvr-text); }
+    #rtvrCustomDates { display: contents; }
+
+    .rtvr-active-filters { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .9rem; }
+    .rtvr-chip {
+        display: inline-flex; align-items: center; gap: .35rem;
+        background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe;
+        border-radius: 999px; padding: .22rem .7rem; font-size: .74rem; font-weight: 600;
+    }
+    .rtvr-chip a { color: #4338ca; text-decoration: none; opacity: .65; }
+    .rtvr-chip a:hover { opacity: 1; }
+
+    /* --- KPI grid ----------------------------------------------------- */
+    .rtvr-kpis {
+        display: grid; gap: .9rem; margin-bottom: 1.25rem;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    }
+    .rtvr-kpi {
+        background: var(--rtvr-card); border: 1px solid var(--rtvr-border);
+        border-radius: var(--rtvr-radius); padding: 1rem 1.15rem;
+        box-shadow: var(--rtvr-shadow); position: relative; overflow: hidden;
+    }
+    .rtvr-kpi::before {
+        content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+        background: var(--rtvr-primary);
+    }
+    .rtvr-kpi.k-amber::before { background: #f59e0b; }
+    .rtvr-kpi.k-red::before   { background: #ef4444; }
+    .rtvr-kpi.k-green::before { background: #10b981; }
+    .rtvr-kpi.k-slate::before { background: #64748b; }
+    .rtvr-kpi-label {
+        font-size: .68rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .05em; color: var(--rtvr-muted); margin-bottom: .35rem;
+    }
+    .rtvr-kpi-value { font-size: 1.6rem; font-weight: 700; color: var(--rtvr-text); line-height: 1.1; }
+    .rtvr-kpi-value small { font-size: .8rem; font-weight: 600; color: var(--rtvr-muted); }
+    .rtvr-kpi-sub { font-size: .74rem; color: var(--rtvr-muted); margin-top: .35rem; }
+    .rtvr-delta { font-weight: 700; font-size: .76rem; }
+    .rtvr-delta.up { color: #dc2626; }
+    .rtvr-delta.down { color: #059669; }
+
+    /* --- Charts ------------------------------------------------------- */
+    .rtvr-chart-grid { display: grid; grid-template-columns: 1.65fr 1fr; gap: 1.25rem; }
+    .rtvr-chart-grid.even { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 1000px) { .rtvr-chart-grid, .rtvr-chart-grid.even { grid-template-columns: 1fr; } }
+    .rtvr-canvas-wrap { position: relative; height: 280px; }
+
+    /* --- Tables ------------------------------------------------------- */
+    .rtvr-table-scroll { overflow-x: auto; }
+    .rtvr-table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+    .rtvr-table thead th {
+        text-align: left; font-size: .68rem; font-weight: 700; letter-spacing: .04em;
+        text-transform: uppercase; color: var(--rtvr-muted);
+        padding: .6rem .8rem; border-bottom: 2px solid var(--rtvr-border); white-space: nowrap;
+    }
+    .rtvr-table tbody td {
+        padding: .7rem .8rem; border-bottom: 1px solid #f1f5f9;
+        color: var(--rtvr-text); vertical-align: middle;
+    }
+    .rtvr-table tbody tr:hover { background: #f8fafc; }
+    .rtvr-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .rtvr-rank {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 26px; height: 26px; border-radius: 8px; font-size: .76rem;
+        font-weight: 700; background: #f1f5f9; color: var(--rtvr-muted);
+    }
+    .rtvr-rank.top1 { background: linear-gradient(135deg,#f59e0b,#f97316); color: #fff; }
+    .rtvr-rank.top2 { background: linear-gradient(135deg,#94a3b8,#64748b); color: #fff; }
+    .rtvr-rank.top3 { background: linear-gradient(135deg,#c2833a,#a16207); color: #fff; }
+
+    .rtvr-person { display: flex; align-items: center; gap: .6rem; }
+    .rtvr-avatar {
+        width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: .8rem; font-weight: 700; color: #fff;
+        background: linear-gradient(135deg,#6366f1,#8b5cf6); text-transform: uppercase;
+    }
+    .rtvr-avatar.none { background: linear-gradient(135deg,#94a3b8,#64748b); }
+    .rtvr-person-name { font-weight: 600; }
+    .rtvr-person-role { font-size: .71rem; color: var(--rtvr-muted); }
+
+    .rtvr-bar-cell { min-width: 160px; }
+    .rtvr-bar { height: 7px; background: #eef2ff; border-radius: 999px; overflow: hidden; margin-top: .3rem; }
+    .rtvr-bar span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg,#6366f1,#a855f7); }
+    .rtvr-bar.none span { background: linear-gradient(90deg,#94a3b8,#cbd5e1); }
+
+    .rtvr-tag {
+        display: inline-flex; align-items: center; gap: .3rem; border-radius: 999px;
+        padding: .16rem .6rem; font-size: .71rem; font-weight: 600;
+        border: 1px solid transparent; white-space: nowrap;
+    }
+    .rtvr-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .rtvr-reason-tags { display: flex; flex-wrap: wrap; gap: .3rem; }
+
+    .rtvr-conf {
+        display: inline-flex; align-items: center; gap: .3rem;
+        font-size: .7rem; font-weight: 600; border-radius: 6px; padding: .12rem .45rem;
+    }
+    .rtvr-conf.confirmed { background: #ecfdf5; color: #047857; }
+    .rtvr-conf.probable  { background: #fffbeb; color: #b45309; }
+    .rtvr-conf.none      { background: #f1f5f9; color: #64748b; }
+
+    /* --- Matrix ------------------------------------------------------- */
+    .rtvr-matrix td.cell { text-align: center; font-variant-numeric: tabular-nums; padding: .45rem .5rem; }
+    .rtvr-matrix .cell-box {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-width: 34px; padding: .28rem .35rem; border-radius: 7px;
+        font-weight: 600; font-size: .78rem;
+    }
+    .rtvr-matrix th.rot { font-size: .64rem; max-width: 90px; white-space: normal; line-height: 1.25; }
+
+    /* --- Misc --------------------------------------------------------- */
+    .rtvr-note {
+        display: flex; gap: .6rem; align-items: flex-start;
+        background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+        border-radius: 10px; padding: .7rem .9rem; font-size: .78rem;
+        margin-bottom: 1.25rem;
+    }
+    .rtvr-note i { margin-top: .12rem; }
+    .rtvr-note.info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+
+    .rtvr-empty { text-align: center; padding: 2.5rem 1rem; color: var(--rtvr-muted); font-size: .86rem; }
+    .rtvr-empty i { font-size: 2rem; opacity: .35; display: block; margin-bottom: .6rem; }
+
+    .rtvr-pager { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; }
+    .rtvr-pager-size { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .rtvr-pager-size label {
+        font-size: .68rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; color: var(--rtvr-muted); margin: 0;
+    }
+    .rtvr-pager-size select {
+        border: 1px solid var(--rtvr-border); border-radius: 8px;
+        padding: .3rem .5rem; font-size: .8rem; color: var(--rtvr-text); background: #fff;
+    }
+    .rtvr-pager-size select:focus {
+        outline: none; border-color: var(--rtvr-primary);
+        box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+    }
+    .rtvr-pager-links { display: flex; gap: .35rem; flex-wrap: wrap; }
+    .rtvr-pager-links a, .rtvr-pager-links span {
+        min-width: 32px; text-align: center; padding: .32rem .55rem; border-radius: 7px;
+        font-size: .8rem; text-decoration: none; border: 1px solid var(--rtvr-border);
+        color: var(--rtvr-muted); background: #fff;
+    }
+    .rtvr-pager-links a:hover { border-color: var(--rtvr-primary); color: var(--rtvr-primary); }
+    .rtvr-pager-links .current { background: var(--rtvr-primary); border-color: var(--rtvr-primary); color: #fff; font-weight: 700; }
+
+    .rtvr-comment { max-width: 320px; color: var(--rtvr-muted); font-size: .78rem; }
+    .rtvr-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    @media (max-width: 1000px) { .rtvr-two-col { grid-template-columns: 1fr; } }
+
+    a.rtvr-link { color: var(--rtvr-primary); text-decoration: none; font-weight: 600; }
+    a.rtvr-link:hover { text-decoration: underline; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rtvr-page">
+
+    <!-- ============ Header ============ -->
+    <div class="rtvr-header">
+        <div>
+            <h1><i class="fas fa-undo-alt me-2"></i>RTV Report</h1>
+            <p>Who took the orders that came back, and why they came back.</p>
+            <span class="rtvr-period-chip"><i class="fas fa-calendar-day"></i> {{ period_label }}</span>
+        </div>
+        <div class="rtvr-header-actions">
+            <a class="rtvr-btn rtvr-btn-ghost" href="{% url 'ncm_rtvs_list' %}">
+                <i class="fas fa-list"></i> RTV List
+            </a>
+            <a class="rtvr-btn rtvr-btn-ghost"
+                href="?{% if querystring %}{{ querystring }}&{% endif %}export=xlsx">
+                <i class="fas fa-file-excel"></i> Export Excel
+            </a>
+        </div>
+    </div>
+
+    <!-- ============ Filters ============ -->
+    <div class="rtvr-card">
+        <form method="get" id="rtvrFilterForm" class="rtvr-filters">
+            <!-- Page size is chosen down at the pager, but it has to ride along
+                 with a filter submit or applying a filter would silently reset it. -->
+            <input type="hidden" name="per_page" value="{{ per_page }}">
+            <div class="rtvr-field">
+                <label for="f-period">Period</label>
+                <select name="period" id="f-period">
+                    <option value="today" {% if period == 'today' %}selected{% endif %}>Today</option>
+                    <option value="yesterday" {% if period == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                    <option value="last7" {% if period == 'last7' %}selected{% endif %}>Last 7 Days</option>
+                    <option value="last30" {% if period == 'last30' %}selected{% endif %}>Last 30 Days</option>
+                    <option value="last90" {% if period == 'last90' %}selected{% endif %}>Last 90 Days</option>
+                    <option value="thismonth" {% if period == 'thismonth' %}selected{% endif %}>This Month</option>
+                    <option value="lastmonth" {% if period == 'lastmonth' %}selected{% endif %}>Last Month</option>
+                    <option value="thisyear" {% if period == 'thisyear' %}selected{% endif %}>This Year</option>
+                    <option value="all" {% if period == 'all' %}selected{% endif %}>All Time</option>
+                    <option value="custom" {% if period == 'custom' %}selected{% endif %}>Custom Range…</option>
+                </select>
+            </div>
+            <div id="rtvrCustomDates" {% if period != 'custom' %}hidden{% endif %}>
+                <div class="rtvr-field">
+                    <label for="f-from">From</label>
+                    <input type="date" name="date_from" id="f-from" value="{{ date_from }}">
+                </div>
+                <div class="rtvr-field">
+                    <label for="f-to">To</label>
+                    <input type="date" name="date_to" id="f-to" value="{{ date_to }}">
+                </div>
+            </div>
+            <div class="rtvr-field">
+                <label for="f-staff">Order By</label>
+                <select name="staff" id="f-staff">
+                    <option value="">All staff</option>
+                    {% for opt in staff_options %}
+                    <option value="{{ opt.value }}" {% if staff_filter == opt.value %}selected{% endif %}>
+                        {{ opt.label }} ({{ opt.count }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="rtvr-field">
+                <label for="f-reason">Reason</label>
+                <select name="reason" id="f-reason">
+                    <option value="">All reasons</option>
+                    {% for opt in reason_options %}
+                    <option value="{{ opt.value }}" {% if reason_filter == opt.value %}selected{% endif %}>
+                        {{ opt.label }} ({{ opt.count }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="rtvr-field">
+                <label for="f-conf">Attribution</label>
+                <select name="confidence" id="f-conf">
+                    <option value="">Any</option>
+                    <option value="confirmed" {% if confidence_filter == 'confirmed' %}selected{% endif %}>Confirmed only</option>
+                    <option value="probable" {% if confidence_filter == 'probable' %}selected{% endif %}>Probable only</option>
+                    <option value="none" {% if confidence_filter == 'none' %}selected{% endif %}>Not linked</option>
+                </select>
+            </div>
+            <div class="rtvr-field">
+                <label for="f-portal">Portal</label>
+                <select name="api_config_id" id="f-portal">
+                    <option value="">All portals</option>
+                    {% for cfg in ncm_api_configs %}
+                    <option value="{{ cfg.id }}" {% if api_config_id == cfg.id|stringformat:"s" %}selected{% endif %}>{{ cfg.api_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="rtvr-field">
+                <label for="f-ncmstatus">NCM Status</label>
+                <select name="ncm_status" id="f-ncmstatus">
+                    <option value="">All NCM statuses</option>
+                    {% for opt in ncm_status_options %}
+                    <option value="{{ opt.value }}" {% if ncm_status_filter == opt.value %}selected{% endif %}>
+                        {{ opt.label }} ({{ opt.count }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="rtvr-field">
+                <label for="f-status">Local Status</label>
+                <select name="rtv_status_id" id="f-status">
+                    <option value="">All statuses</option>
+                    <option value="not_set" {% if rtv_status_id == 'not_set' %}selected{% endif %}>Not set</option>
+                    {% for st in rtv_statuses %}
+                    <option value="{{ st.id }}" {% if rtv_status_id == st.id|stringformat:"s" %}selected{% endif %}>{{ st.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="rtvr-field">
+                <label for="f-search">Search</label>
+                <input type="search" name="search" id="f-search" value="{{ search }}"
+                    placeholder="Order ID, comment, customer…">
+            </div>
+            <button type="submit" class="rtvr-btn rtvr-btn-primary"><i class="fas fa-filter"></i> Apply</button>
+            <a href="{% url 'rtv_report' %}" class="rtvr-btn rtvr-btn-plain"><i class="fas fa-rotate-left"></i> Reset</a>
+        </form>
+
+        {% if drilled_down or search or api_config_id or rtv_status_id or ncm_status_filter %}
+        <div class="rtvr-active-filters">
+            {% if staff_filter %}<span class="rtvr-chip">Order By: {% for o in staff_options %}{% if o.value == staff_filter %}{{ o.label }}{% endif %}{% endfor %}</span>{% endif %}
+            {% if reason_filter %}<span class="rtvr-chip">Reason: {% for o in reason_options %}{% if o.value == reason_filter %}{{ o.label }}{% endif %}{% endfor %}</span>{% endif %}
+            {% if confidence_filter %}<span class="rtvr-chip">Attribution: {{ confidence_filter|title }}</span>{% endif %}
+            {% if ncm_status_filter %}<span class="rtvr-chip">NCM Status: {{ ncm_status_filter }}</span>{% endif %}
+            {% if selected_config %}<span class="rtvr-chip">Portal: {{ selected_config.api_name }}</span>{% endif %}
+            {% if search %}<span class="rtvr-chip">Search: “{{ search }}”</span>{% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    {% if truncated %}
+    <div class="rtvr-note">
+        <i class="fas fa-triangle-exclamation"></i>
+        <div>{{ total_in_scope|intcomma }} RTVs match these filters, but only the
+            {{ max_rows|intcomma }} most recent are analysed on this page. Narrow the
+            date range for a complete picture.</div>
+    </div>
+    {% endif %}
+    {% if date_filter_active and undated_count %}
+    <div class="rtvr-note info">
+        <i class="fas fa-circle-info"></i>
+        <div>{{ undated_count|intcomma }} RTV{{ undated_count|pluralize }} have no
+            RTV-marked date from NCM and so cannot fall inside any date range.
+            Switch the period to <strong>All Time</strong> to include them.</div>
+    </div>
+    {% endif %}
+
+    <!-- ============ KPIs ============ -->
+    <div class="rtvr-kpis">
+        <div class="rtvr-kpi">
+            <div class="rtvr-kpi-label">Total RTVs</div>
+            <div class="rtvr-kpi-value">{{ kpis.total|intcomma }}</div>
+            <div class="rtvr-kpi-sub">
+                {% if kpis.delta_pct is not None %}
+                <span class="rtvr-delta {% if kpis.delta_pct > 0 %}up{% else %}down{% endif %}">
+                    <i class="fas fa-arrow-{% if kpis.delta_pct > 0 %}up{% else %}down{% endif %}"></i>
+                    {{ kpis.delta_pct }}%
+                </span>
+                vs previous {{ kpis.prev_total|intcomma }}
+                {% else %}
+                {{ kpis.avg_per_day }} per day average
+                {% endif %}
+            </div>
+        </div>
+        <div class="rtvr-kpi k-green">
+            <div class="rtvr-kpi-label">Attributed to Staff</div>
+            <div class="rtvr-kpi-value">{{ kpis.coverage_pct }}<small>%</small></div>
+            <div class="rtvr-kpi-sub">{{ kpis.confirmed|intcomma }} confirmed · {{ kpis.probable|intcomma }} probable</div>
+        </div>
+        <div class="rtvr-kpi k-amber">
+            <div class="rtvr-kpi-label">Most RTVs</div>
+            <div class="rtvr-kpi-value" style="font-size:1.1rem;padding-top:.3rem;">{{ kpis.top_staff_name }}</div>
+            <div class="rtvr-kpi-sub">{{ kpis.top_staff_count|intcomma }} RTVs — {{ kpis.top_staff_share }}% of the total</div>
+        </div>
+        <div class="rtvr-kpi k-red">
+            <div class="rtvr-kpi-label">Top Reason</div>
+            <div class="rtvr-kpi-value" style="font-size:1.1rem;padding-top:.3rem;">{{ kpis.top_reason_label }}</div>
+            <div class="rtvr-kpi-sub">{{ kpis.top_reason_count|intcomma }} RTVs — {{ kpis.top_reason_share }}%</div>
+        </div>
+        <div class="rtvr-kpi k-slate">
+            <div class="rtvr-kpi-label">Staff Involved</div>
+            <div class="rtvr-kpi-value">{{ kpis.staff_count }}</div>
+            <div class="rtvr-kpi-sub">{{ kpis.unattributed|intcomma }} RTVs not linked to anyone</div>
+        </div>
+        <div class="rtvr-kpi">
+            <div class="rtvr-kpi-label">Avg Order → RTV</div>
+            <div class="rtvr-kpi-value">
+                {% if kpis.avg_age_days is not None %}{{ kpis.avg_age_days }}<small> days</small>{% else %}—{% endif %}
+            </div>
+            <div class="rtvr-kpi-sub">how long before an order bounced</div>
+        </div>
+        <div class="rtvr-kpi k-green">
+            <div class="rtvr-kpi-label">Followed Up</div>
+            <div class="rtvr-kpi-value">{{ kpis.followup_pct }}<small>%</small></div>
+            <div class="rtvr-kpi-sub">{{ kpis.followed_up|intcomma }} of {{ kpis.total|intcomma }} have a follow-up logged</div>
+        </div>
+        <div class="rtvr-kpi k-amber">
+            <div class="rtvr-kpi-label">Busiest {% if chart_data.trend.granularity == 'day' %}Day{% else %}Month{% endif %}</div>
+            <div class="rtvr-kpi-value" style="font-size:1.1rem;padding-top:.3rem;">{{ kpis.peak_label }}</div>
+            <div class="rtvr-kpi-sub">{{ kpis.peak_count|intcomma }} RTVs marked</div>
+        </div>
+    </div>
+
+    {% if kpis.total == 0 %}
+    <div class="rtvr-card">
+        <div class="rtvr-empty">
+            <i class="fas fa-inbox"></i>
+            No RTVs match these filters.<br>Try widening the period or clearing the drill-downs.
+        </div>
+    </div>
+    {% else %}
+
+    <!-- ============ Charts row 1 ============ -->
+    <div class="rtvr-chart-grid">
+        <div class="rtvr-card">
+            <div class="rtvr-card-title">
+                <i class="fas fa-chart-column"></i> RTV Trend
+                <small>· by {{ chart_data.trend.granularity }}</small>
+                {% if chart_data.trend.undated %}
+                <small title="NCM never gave these RTVs a marked-at date, so they have no bar to sit in — but they are still counted in every total on this page.">
+                    · excludes {{ chart_data.trend.undated }} undated
+                </small>
+                {% endif %}
+            </div>
+            <div class="rtvr-canvas-wrap"><canvas id="rtvrTrendChart"></canvas></div>
+        </div>
+        <div class="rtvr-card">
+            <div class="rtvr-card-title"><i class="fas fa-chart-pie"></i> Why They Came Back</div>
+            <div class="rtvr-canvas-wrap"><canvas id="rtvrReasonChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- ============ Charts row 2 ============ -->
+    <div class="rtvr-chart-grid even">
+        <div class="rtvr-card">
+            <div class="rtvr-card-title">
+                <i class="fas fa-ranking-star"></i> RTVs by Staff
+                <small>· top 10, split by attribution confidence</small>
+            </div>
+            <div class="rtvr-canvas-wrap"><canvas id="rtvrStaffChart"></canvas></div>
+        </div>
+        <div class="rtvr-card">
+            <div class="rtvr-card-title">
+                <i class="fas fa-truck-fast"></i> NCM Shipment Status
+                <small>· where the returned parcels actually are</small>
+            </div>
+            <div class="rtvr-canvas-wrap"><canvas id="rtvrStatusChart"></canvas></div>
+            <div style="margin-top:1rem;border-top:1px solid var(--rtvr-border);padding-top:.9rem;">
+                <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--rtvr-muted);margin-bottom:.5rem;">
+                    Your local RTV status tags
+                </div>
+                <div class="rtvr-reason-tags">
+                    {% for s in local_status_rows %}
+                    <span class="rtvr-tag" style="background:{{ s.colour }}1a;color:{{ s.colour }};border-color:{{ s.colour }}40;">
+                        <span class="rtvr-dot" style="background:{{ s.colour }}"></span>{{ s.name }} {{ s.count }}
+                    </span>
+                    {% endfor %}
+                    {% if local_status_unset %}
+                    <span class="rtvr-tag" style="background:#f1f5f9;color:#64748b;border-color:#e2e8f0;"
+                        title="Nobody has assigned a local RTV status to these yet. Set them on the RTV list page.">
+                        Not tagged {{ local_status_unset|intcomma }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ Staff leaderboard ============ -->
+    <div class="rtvr-card">
+        <div class="rtvr-card-title">
+            <i class="fas fa-users"></i> Staff Leaderboard
+            <small>· click a name to drill into just their RTVs</small>
+        </div>
+        <div class="rtvr-table-scroll">
+            <table class="rtvr-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Order By</th>
+                        <th class="num">RTVs</th>
+                        <th class="rtvr-bar-cell">Share</th>
+                        <th class="num" title="Orders this person created inside the selected period.">Orders</th>
+                        <th class="num" title="RTVs ÷ orders created in the same period. Indicative only: an RTV is usually marked weeks after the order was placed, so some RTVs here belong to orders taken before the period started.">RTV Rate *</th>
+                        <th class="num" title="Average days between the local order being placed and NCM marking it RTV.">Avg Age</th>
+                        <th class="num" title="Share of this person's RTVs that have at least one follow-up logged.">Followed Up</th>
+                        <th>Main Reasons</th>
+                        <th>Last RTV</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in staff_rows %}
+                    <tr>
+                        <td>
+                            {% if s.rank %}
+                            <span class="rtvr-rank {% if s.rank == 1 %}top1{% elif s.rank == 2 %}top2{% elif s.rank == 3 %}top3{% endif %}">{{ s.rank }}</span>
+                            {% else %}
+                            <span class="rtvr-rank">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="rtvr-person">
+                                <span class="rtvr-avatar {% if s.unattributed %}none{% endif %}">
+                                    {% if s.unattributed %}<i class="fas fa-question" style="font-size:.7rem"></i>{% else %}{{ s.name|slice:":1" }}{% endif %}
+                                </span>
+                                <span>
+                                    {% if s.unattributed %}
+                                    <span class="rtvr-person-name">Not linked to a local order</span>
+                                    <span class="rtvr-person-role">created in the NCM portal, or the link was lost</span>
+                                    {% else %}
+                                    <a class="rtvr-link" href="?{{ querystring_no_staff }}&staff={{ s.key|urlencode }}">{{ s.name }}</a>
+                                    <span class="rtvr-person-role">
+                                        {{ s.role|default:"—" }}
+                                        {% if s.probable %}· {{ s.probable }} probable{% endif %}
+                                    </span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </td>
+                        <td class="num"><strong>{{ s.total|intcomma }}</strong></td>
+                        <td class="rtvr-bar-cell">
+                            {{ s.share }}%
+                            <div class="rtvr-bar {% if s.unattributed %}none{% endif %}"><span style="width:{{ s.bar_pct }}%"></span></div>
+                        </td>
+                        <td class="num">{% if s.orders_placed %}{{ s.orders_placed|intcomma }}{% else %}—{% endif %}</td>
+                        <td class="num">{% if s.rtv_rate is not None %}{{ s.rtv_rate }}%{% else %}—{% endif %}</td>
+                        <td class="num">{% if s.avg_age_days is not None %}{{ s.avg_age_days }}d{% else %}—{% endif %}</td>
+                        <td class="num">{{ s.followup_share }}%</td>
+                        <td>
+                            <div class="rtvr-reason-tags">
+                                {% for r in s.top_reasons %}
+                                <span class="rtvr-tag" style="background:{{ r.colour }}1a;color:{{ r.colour }};border-color:{{ r.colour }}40;">
+                                    <span class="rtvr-dot" style="background:{{ r.colour }}"></span>{{ r.label }} {{ r.count }}
+                                </span>
+                                {% empty %}—{% endfor %}
+                            </div>
+                        </td>
+                        <td style="white-space:nowrap;color:var(--rtvr-muted);">{{ s.last_day_display }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="rtvr-kpi-sub" style="margin-top:.8rem;">
+            * RTV Rate divides RTVs marked in this period by orders <em>created</em> in the
+            same period. Because an RTV is usually marked weeks after the order was placed,
+            treat it as a direction, not a precise ratio.
+        </div>
+    </div>
+
+    <!-- ============ Reason breakdown + matrix ============ -->
+    <div class="rtvr-two-col">
+        <div class="rtvr-card">
+            <div class="rtvr-card-title">
+                <i class="fas fa-comment-dots"></i> Reasons from RTV Comments
+                <small>· click to filter</small>
+            </div>
+            <div class="rtvr-table-scroll">
+                <table class="rtvr-table">
+                    <thead>
+                        <tr><th>Reason</th><th class="num">RTVs</th><th class="rtvr-bar-cell">Share</th><th>Most Affected</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for r in reason_rows %}
+                        <tr>
+                            <td>
+                                <a class="rtvr-link" href="?{{ querystring_no_reason }}&reason={{ r.key }}">
+                                    <span class="rtvr-dot" style="background:{{ r.colour }};display:inline-block;margin-right:.4rem;"></span>{{ r.label }}
+                                </a>
+                            </td>
+                            <td class="num"><strong>{{ r.count|intcomma }}</strong></td>
+                            <td class="rtvr-bar-cell">
+                                {{ r.share }}%
+                                <div class="rtvr-bar"><span style="width:{{ r.bar_pct }}%;background:{{ r.colour }}"></span></div>
+                            </td>
+                            <td>
+                                {{ r.top_staff }}
+                                {% if r.top_staff_count %}<span style="color:var(--rtvr-muted);">({{ r.top_staff_count }})</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if unmatched_comments %}
+            <div class="rtvr-card-title" style="margin-top:1.4rem;">
+                <i class="fas fa-circle-question"></i> Uncategorised Comments
+                <small>· most repeated — tell me which bucket these belong in</small>
+            </div>
+            <table class="rtvr-table">
+                <tbody>
+                    {% for c in unmatched_comments %}
+                    <tr>
+                        <td class="rtvr-comment" style="max-width:none;">{{ c.comment|truncatechars:120 }}</td>
+                        <td class="num">{{ c.count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+
+        <div class="rtvr-card">
+            <div class="rtvr-card-title">
+                <i class="fas fa-table-cells"></i> Staff × Reason
+                <small>· a dark column for one person is a coachable pattern</small>
+            </div>
+            {% if matrix_rows %}
+            <div class="rtvr-table-scroll">
+                <table class="rtvr-table rtvr-matrix">
+                    <thead>
+                        <tr>
+                            <th>Order By</th>
+                            {% for r in matrix_reasons %}<th class="rot" style="text-align:center;">{{ r.label }}</th>{% endfor %}
+                            <th class="num">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in matrix_rows %}
+                        <tr>
+                            <td style="white-space:nowrap;font-weight:600;">{{ row.name }}</td>
+                            {% for c in row.cells %}
+                            <td class="cell">
+                                {% if c.count %}
+                                <span class="cell-box"
+                                    style="background:rgba(99,102,241,{{ c.intensity }});color:{% if c.intensity > 0.55 %}#fff{% else %}#334155{% endif %};">{{ c.count }}</span>
+                                {% else %}
+                                <span style="color:#cbd5e1;">·</span>
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                            <td class="num"><strong>{{ row.total }}</strong></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="rtvr-empty"><i class="fas fa-table-cells"></i>No attributed RTVs to cross-tabulate.</div>
+            {% endif %}
+
+            {% if repeat_rows %}
+            <div class="rtvr-card-title" style="margin-top:1.4rem;">
+                <i class="fas fa-user-clock"></i> Repeat RTV Customers
+                <small>· same phone bouncing more than once</small>
+            </div>
+            <div class="rtvr-table-scroll">
+                <table class="rtvr-table">
+                    <thead><tr><th>Customer</th><th>Phone</th><th class="num">RTVs</th><th>Ordered With</th></tr></thead>
+                    <tbody>
+                        {% for c in repeat_rows %}
+                        <tr>
+                            <td>{{ c.name }}</td>
+                            <td style="white-space:nowrap;">{{ c.phone }}</td>
+                            <td class="num"><strong>{{ c.count }}</strong></td>
+                            <td style="color:var(--rtvr-muted);font-size:.78rem;">{{ c.staff|join:", "|default:"—" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ============ Detail table ============ -->
+    <div class="rtvr-card">
+        <div class="rtvr-card-title">
+            <i class="fas fa-list-ul"></i> RTV Detail
+            <small>· {{ page_obj.paginator.count|intcomma }} row{{ page_obj.paginator.count|pluralize }} matching these filters</small>
+        </div>
+        <div class="rtvr-table-scroll">
+            <table class="rtvr-table">
+                <thead>
+                    <tr>
+                        <th>S/N</th>
+                        <th>NCM Order</th>
+                        <th>Order By</th>
+                        <th>Reason</th>
+                        <th>Comment</th>
+                        <th>Status</th>
+                        <th>Portal</th>
+                        <th>Customer</th>
+                        <th class="num">Age</th>
+                        <th>Marked At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in page_obj %}
+                    <tr>
+                        <td style="color:var(--rtvr-muted);">{{ forloop.counter|add:sn_offset }}</td>
+                        <td style="white-space:nowrap;font-weight:600;">#{{ r.order_id }}</td>
+                        <td>
+                            {% if r.staff_name %}
+                            <div style="font-weight:600;">{{ r.staff_name }}</div>
+                            <div style="font-size:.72rem;">
+                                {% if r.order_pk %}<a class="rtvr-link" href="{% url 'order_detail' r.order_pk %}">{{ r.order_number }}</a>{% endif %}
+                                {% if r.match == 'exact' %}
+                                <span class="rtvr-conf confirmed" title="Linked by NCM order id."><i class="fas fa-check"></i> confirmed</span>
+                                {% elif r.match == 'bulk_log' %}
+                                <span class="rtvr-conf confirmed" title="Linked through the NCM bulk-send log."><i class="fas fa-check"></i> confirmed</span>
+                                {% else %}
+                                <span class="rtvr-conf probable" title="Matched on the receiver's phone, not on an NCM order id{% if r.ambiguous %} — this customer has more than one order{% endif %}."><i class="fas fa-question"></i> probable</span>
+                                {% endif %}
+                            </div>
+                            {% elif r.no_creator %}
+                            <span class="rtvr-conf none" title="Local order {{ r.order_number }} was found, but no creator is recorded against it, so it cannot be credited to anyone.">no creator recorded</span>
+                            <div style="font-size:.72rem;">
+                                <a class="rtvr-link" href="{% url 'order_detail' r.order_pk %}">{{ r.order_number }}</a>
+                            </div>
+                            {% else %}
+                            <span class="rtvr-conf none" title="No local order carries this NCM id, the bulk-send log has no record of it, and no local order matches the receiver.">not linked</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="rtvr-tag" style="background:{{ r.reason_colour }}1a;color:{{ r.reason_colour }};border-color:{{ r.reason_colour }}40;">
+                                <span class="rtvr-dot" style="background:{{ r.reason_colour }}"></span>{{ r.reason_label }}
+                            </span>
+                        </td>
+                        <td class="rtvr-comment">{{ r.comment|default:"—"|truncatechars:90 }}</td>
+                        <td>
+                            {% if r.ncm_status %}
+                            <span class="rtvr-tag" style="background:{{ r.ncm_status_colour }}1a;color:{{ r.ncm_status_colour }};border-color:{{ r.ncm_status_colour }}40;"
+                                title="NCM's current status for this shipment.">{{ r.ncm_status }}</span>
+                            {% else %}<span style="color:#cbd5e1;">—</span>{% endif %}
+                            {% if r.status_name %}
+                            <div style="margin-top:.25rem;">
+                                <span class="rtvr-tag" style="background:{{ r.status_colour }}1a;color:{{ r.status_colour }};border-color:{{ r.status_colour }}40;"
+                                    title="Your locally assigned RTV status.">{{ r.status_name }}</span>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td style="color:var(--rtvr-muted);white-space:nowrap;">{{ r.portal|default:"—" }}</td>
+                        <td>
+                            <div>{{ r.receiver_name|default:"—" }}</div>
+                            <div style="font-size:.72rem;color:var(--rtvr-muted);">{{ r.receiver_phone }}</div>
+                        </td>
+                        <td class="num">{% if r.age_days is not None %}{{ r.age_days }}d{% else %}—{% endif %}</td>
+                        <td style="white-space:nowrap;color:var(--rtvr-muted);">
+                            {{ r.marked_at|default:"—" }}
+                            {% if r.marked_at and not r.marked_trusted %}
+                            <i class="fas fa-triangle-exclamation" style="color:#f59e0b;"
+                                title="This date is NCM's best approximation, not a confirmed RTV-marked time."></i>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="rtvr-pager">
+            <div class="rtvr-pager-size">
+                <label for="f-perpage">Rows per page</label>
+                <select id="f-perpage"
+                    data-base="?{{ querystring_no_per_page }}">
+                    {% for n in per_page_choices %}
+                    <option value="{{ n }}" {% if per_page == n|stringformat:"s" %}selected{% endif %}>{{ n }}</option>
+                    {% endfor %}
+                    <option value="all" {% if per_page == 'all' %}selected{% endif %}>All ({{ page_obj.paginator.count|intcomma }})</option>
+                </select>
+                <span class="rtvr-kpi-sub" style="margin:0;">
+                    showing {{ page_obj.start_index|intcomma }}–{{ page_obj.end_index|intcomma }}
+                    of {{ page_obj.paginator.count|intcomma }}
+                </span>
+            </div>
+            {% if page_obj.paginator.num_pages > 1 %}
+            <div class="rtvr-pager-links">
+                {% if page_obj.has_previous %}
+                <a href="?{{ querystring }}&page=1" title="First page"><i class="fas fa-angles-left"></i></a>
+                <a href="?{{ querystring }}&page={{ page_obj.previous_page_number }}" title="Previous page"><i class="fas fa-chevron-left"></i></a>
+                {% endif %}
+                {% for p in page_obj.paginator.page_range %}
+                    {% if p == page_obj.number %}
+                    <span class="current">{{ p }}</span>
+                    {% elif p == 1 or p == page_obj.paginator.num_pages or p >= page_obj.number|add:-2 and p <= page_obj.number|add:2 %}
+                    <a href="?{{ querystring }}&page={{ p }}">{{ p }}</a>
+                    {% endif %}
+                {% endfor %}
+                {% if page_obj.has_next %}
+                <a href="?{{ querystring }}&page={{ page_obj.next_page_number }}" title="Next page"><i class="fas fa-chevron-right"></i></a>
+                <a href="?{{ querystring }}&page={{ page_obj.paginator.num_pages }}" title="Last page"><i class="fas fa-angles-right"></i></a>
+                {% endif %}
+            </div>
+            <div class="rtvr-kpi-sub" style="margin:0;">
+                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% endif %}
+</div>
+
+{{ chart_data|json_script:"rtvrChartData" }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    // Custom date inputs only make sense for the custom preset.
+    const periodSelect = document.getElementById('f-period');
+    const customDates = document.getElementById('rtvrCustomDates');
+    if (periodSelect && customDates) {
+        periodSelect.addEventListener('change', function () {
+            customDates.hidden = this.value !== 'custom';
+            // Any other preset can submit immediately; a custom range needs the
+            // two dates filled in first, so it waits for Apply.
+            if (this.value !== 'custom') {
+                document.getElementById('rtvrFilterForm').submit();
+            }
+        });
+    }
+
+    // Drill-down selects re-submit on change — the leaderboard links do the
+    // same thing, so keeping the two in step avoids a stale-looking form.
+    // Page size lives outside the filter form (it sits with the pager), so it
+    // navigates directly. Changing it always returns to page 1 — page 7 of a
+    // 25-row layout is not page 7 of a 250-row one.
+    const perPage = document.getElementById('f-perpage');
+    if (perPage) {
+        perPage.addEventListener('change', function () {
+            const base = this.dataset.base;
+            window.location = base + (base.endsWith('?') ? '' : '&') + 'per_page=' + this.value;
+        });
+    }
+
+    ['f-staff', 'f-reason', 'f-conf', 'f-portal', 'f-status', 'f-ncmstatus'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('change', function () {
+                document.getElementById('rtvrFilterForm').submit();
+            });
+        }
+    });
+
+    const payload = document.getElementById('rtvrChartData');
+    if (!payload || typeof Chart === 'undefined') { return; }
+    const data = JSON.parse(payload.textContent);
+
+    Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+    Chart.defaults.color = '#64748b';
+    Chart.defaults.borderColor = 'rgba(15,23,42,.07)';
+
+    const noLegend = { legend: { display: false } };
+    const sideLegend = {
+        legend: {
+            position: 'right',
+            labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: 'circle', padding: 12, font: { size: 11 } }
+        }
+    };
+
+    const trend = document.getElementById('rtvrTrendChart');
+    if (trend) {
+        new Chart(trend, {
+            type: 'bar',
+            data: {
+                labels: data.trend.labels,
+                datasets: [{
+                    label: 'RTVs',
+                    data: data.trend.values,
+                    backgroundColor: 'rgba(99,102,241,.75)',
+                    hoverBackgroundColor: '#4f46e5',
+                    borderRadius: 4,
+                    maxBarThickness: 26
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: noLegend,
+                scales: {
+                    y: { beginAtZero: true, ticks: { precision: 0 } },
+                    x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 14 } }
+                }
+            }
+        });
+    }
+
+    const reason = document.getElementById('rtvrReasonChart');
+    if (reason && data.reasons.values.length) {
+        new Chart(reason, {
+            type: 'doughnut',
+            data: {
+                labels: data.reasons.labels,
+                datasets: [{ data: data.reasons.values, backgroundColor: data.reasons.colours, borderWidth: 2, borderColor: '#fff' }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '58%', plugins: sideLegend }
+        });
+    }
+
+    const staff = document.getElementById('rtvrStaffChart');
+    if (staff && data.staff.labels.length) {
+        new Chart(staff, {
+            type: 'bar',
+            data: {
+                labels: data.staff.labels,
+                datasets: [
+                    { label: 'Confirmed', data: data.staff.confirmed, backgroundColor: '#6366f1', borderRadius: 4 },
+                    { label: 'Probable', data: data.staff.probable, backgroundColor: '#fbbf24', borderRadius: 4 }
+                ]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, pointStyle: 'circle' } } },
+                scales: {
+                    x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+                    y: { stacked: true, grid: { display: false } }
+                }
+            }
+        });
+    }
+
+    const status = document.getElementById('rtvrStatusChart');
+    if (status && data.statuses.values.length) {
+        new Chart(status, {
+            type: 'doughnut',
+            data: {
+                labels: data.statuses.labels,
+                datasets: [{ data: data.statuses.values, backgroundColor: data.statuses.colours, borderWidth: 2, borderColor: '#fff' }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '58%', plugins: sideLegend }
+        });
+    }
+})();
+</script>
+{% endblock %}

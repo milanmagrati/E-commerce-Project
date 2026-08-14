@@ -667,6 +667,89 @@
         white-space: nowrap;
     }
 
+    /* --- "Order By" (who took the local order) ----------------------- */
+    .order-by-cell {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        min-width: 0;
+    }
+
+    .order-by-avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: #fff;
+        font-size: 0.72rem;
+        font-weight: 800;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        text-transform: uppercase;
+    }
+
+    .order-by-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 0.05rem;
+        min-width: 0;
+    }
+
+    .order-by-name {
+        font-weight: 700;
+        color: #1e293b;
+        font-size: 0.82rem;
+        line-height: 1.15;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 150px;
+    }
+
+    .order-by-sub {
+        font-size: 0.68rem;
+        color: #64748b;
+        white-space: nowrap;
+    }
+
+    .order-by-sub a {
+        color: #4f46e5;
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    .order-by-sub a:hover {
+        text-decoration: underline;
+    }
+
+    /* Matched on the receiver's phone rather than an NCM order id — shown, but
+       visibly provisional so nobody treats it as a confirmed attribution. */
+    .order-by-avatar.probable {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+    }
+
+    .order-by-name.probable {
+        color: #92400e;
+        border-bottom: 1px dashed #f59e0b;
+        cursor: help;
+    }
+
+    .order-by-probable-icon {
+        font-size: 0.62rem;
+        color: #d97706;
+        vertical-align: 1px;
+    }
+
+    .order-by-none {
+        color: #94a3b8;
+        font-size: 0.78rem;
+        font-style: italic;
+        white-space: nowrap;
+        cursor: help;
+    }
+
     /* --- Empty state ------------------------------------------------ */
     .rtv-empty-state {
         flex: 1;
@@ -1967,7 +2050,7 @@
     <div class="rtv-toolbar">
         <div class="rtv-search-box">
             <i class="fas fa-search search-icon"></i>
-            <input type="text" id="rtvSearch" placeholder="Search order ID or comment..." autocomplete="off"
+            <input type="text" id="rtvSearch" placeholder="Search order ID, comment or staff..." autocomplete="off"
                 value="{{ search }}">
             <button class="clear-search" id="clearSearch" tabindex="-1"><i class="fas fa-times"></i></button>
         </div>
@@ -2110,6 +2193,7 @@
                         <th>Status</th>
                         {% if not selected_api_config_id %}<th>API Portal</th>{% endif %}
                         <th>Last Follow-Up</th>
+                        <th>Order By</th>
                         <th>Added Time</th>
                         <th>Actions</th>
                     </tr>
@@ -2205,6 +2289,29 @@
                             </div>
                             {% else %}
                             <span class="text-muted small">No follow-ups</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if rtv.order_by and rtv.order_by.name %}
+                            <div class="order-by-cell">
+                                <span class="order-by-avatar {% if rtv.order_by.match == 'phone' %}probable{% endif %}">{{ rtv.order_by.name|slice:":1" }}</span>
+                                <span class="order-by-meta">
+                                    <span class="order-by-name {% if rtv.order_by.match == 'phone' %}probable{% endif %}"
+                                        title="{{ rtv.order_by.name }}{% if rtv.order_by.role %} — {{ rtv.order_by.role }}{% endif %}{% if rtv.order_by.order_from %} · via {{ rtv.order_by.order_from }}{% endif %}&#10;{% if rtv.order_by.match == 'exact' %}Linked by NCM order id — confirmed.{% elif rtv.order_by.match == 'bulk_log' %}Linked through the NCM bulk-send log — confirmed.{% else %}Probable: matched on the receiver's phone ({{ rtv.order_by.matched_phone }}), not on an NCM order id.{% if rtv.order_by.ambiguous %} This customer has more than one order — the one placed closest before this RTV was picked.{% endif %}{% endif %}">
+                                        {{ rtv.order_by.name }}{% if rtv.order_by.match == 'phone' %} <i class="fas fa-question-circle order-by-probable-icon"></i>{% endif %}
+                                    </span>
+                                    <span class="order-by-sub">
+                                        <a href="{% url 'order_detail' rtv.order_by.order_pk %}"
+                                            title="Open local order {{ rtv.order_by.order_number }}">{{ rtv.order_by.order_number }}</a>{% if rtv.order_by.is_deleted %} <span title="This local order is in Trash">🗑</span>{% endif %}
+                                    </span>
+                                </span>
+                            </div>
+                            {% elif rtv.order_by %}
+                            <span class="order-by-none"
+                                title="Local order {{ rtv.order_by.order_number }} exists but has no creator recorded.">Unknown staff</span>
+                            {% else %}
+                            <span class="order-by-none"
+                                title="Nothing links NCM order #{{ rtv.order_id }} to a local order: no order carries this NCM id, the bulk-send log has no record of it, and no local order matches the receiver{% if rtv.receiver_phone %} ({{ rtv.receiver_name }} · {{ rtv.receiver_phone }}){% endif %}. It was most likely created directly in the NCM portal.">Not in system</span>
                             {% endif %}
                         </td>
                         <td>

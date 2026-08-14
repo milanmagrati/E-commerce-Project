@@ -282,6 +282,7 @@ urlpatterns = [
     path('reports/orders-by-source/', views.orders_by_source_report, name='orders_by_source_report'),
     path('api/reports/orders-by-source/analytics/', views.orders_by_source_analytics_data, name='orders_by_source_analytics_data'),
     path('api/reports/orders-by-source/table/', views.orders_by_source_table_data, name='orders_by_source_table_data'),
+    path('reports/rtv/', views.rtv_report, name='rtv_report'),
     path('reports/followups/', views.follow_up_report, name='follow_up_report'),
     path('api/reports/followups/<int:pk>/logs/', views.follow_up_report_logs_api, name='follow_up_report_logs_api'),
     path('api/reports/followups/staff/<int:staff_id>/logs/', views.staff_follow_up_logs_api, name='staff_follow_up_logs_api'),

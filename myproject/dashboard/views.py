@@ -21713,6 +21713,185 @@ def select_rtv_comment_sync_batch(config_ids, limit=RTV_COMMENT_SYNC_BATCH):
     return picked
 
 
+def _normalize_np_phone(raw):
+    """Reduce a phone to its comparable 10-digit Nepali subscriber number.
+
+    NCM returns receiver phones in whatever shape the order was created with
+    (+977, 977-, spaces, dashes), so raw string equality against
+    Order.customer_phone misses most real matches.
+    """
+    digits = re.sub(r'\D', '', raw or '')
+    if len(digits) > 10 and digits.startswith('977'):
+        digits = digits[3:]
+    return digits[-10:] if len(digits) >= 10 else ''
+
+
+# Above this many distinct receiver phones, resolve_rtv_order_by stops issuing
+# one `customer_phone LIKE '%<number>'` per phone. A trailing-wildcard LIKE
+# cannot use an index, so every term is its own full scan of Orders — fine for
+# the 25 rows of a list page, ruinous for the RTV report, which resolves a
+# whole date range at once. Past the threshold a single narrow pass over
+# (id, phone, created_at) indexes every order phone in memory instead.
+PHONE_INDEX_THRESHOLD = 40
+
+
+def resolve_rtv_order_by(rtv_orders):
+    """Map NCM order id -> the staff member who took the underlying local order.
+
+    An RTV row carries only NCM's order id, so attribution has to be
+    reconstructed. Three sources are tried, most authoritative first; a later
+    layer never overwrites an earlier one:
+
+      1. Order.ncm_order_id — written back when this app dispatched the order
+         to NCM. Exact, but absent for orders punched straight into the NCM
+         portal or created before that write-back existed.
+      2. NCMBulkLogOrder.ncm_order_id — the bulk-send log's own record of
+         which local order became which NCM order. Also exact, and it survives
+         the case where the write-back onto Order failed or the id was later
+         cleared by order recovery.
+      3. Receiver phone — every RTV NCM returns carries receiver_phone, so a
+         customer's local order can still be found even when nothing ever
+         linked the two ids. This is a heuristic: it is flagged 'phone' so the
+         UI can mark it probable, and it is never written back to the DB.
+
+    rtv.vendor is deliberately not a fallback — that is whoever marked the RTV
+    in this app, not who took the order.
+    """
+    from ncm.models import NCMBulkLogOrder
+
+    resolved = {}
+    if not rtv_orders:
+        return resolved
+
+    ncm_ids = [r.order_id for r in rtv_orders]
+
+    def _pack(order, source):
+        u = order.created_by
+        return {
+            'name': (u.get_full_name() or u.username) if u else None,
+            'username': u.username if u else None,
+            'user_id': u.id if u else None,
+            'role': (u.role or '').replace('_', ' ').title() if u else None,
+            'order_pk': order.id,
+            'order_number': order.order_number,
+            'order_from': order.order_from or '',
+            'is_deleted': bool(order.is_deleted),
+            'match': source,
+            'ambiguous': False,
+        }
+
+    # ── 1. Exact: the id stamped on the order itself ──────────────────
+    for o in Order.objects.filter(
+        ncm_order_id__in=ncm_ids
+    ).select_related('created_by'):
+        resolved[o.ncm_order_id] = _pack(o, 'exact')
+
+    # ── 2. Exact: the bulk-send log that created the NCM order ────────
+    missing_ids = [i for i in ncm_ids if i not in resolved]
+    if missing_ids:
+        # Oldest first so the earliest send wins if an order was re-sent.
+        for ble in NCMBulkLogOrder.objects.filter(
+            ncm_order_id__in=missing_ids, order__isnull=False
+        ).select_related('order__created_by').order_by('created_at'):
+            if ble.ncm_order_id not in resolved:
+                resolved[ble.ncm_order_id] = _pack(ble.order, 'bulk_log')
+
+        # Log rows whose order FK was nulled still kept the order number.
+        orphan_ids = [i for i in ncm_ids if i not in resolved]
+        if orphan_ids:
+            number_by_ncm_id = {}
+            for ncm_id, number in NCMBulkLogOrder.objects.filter(
+                ncm_order_id__in=orphan_ids
+            ).exclude(order_number='').order_by('created_at').values_list(
+                'ncm_order_id', 'order_number'
+            ):
+                number_by_ncm_id.setdefault(ncm_id, number)
+            if number_by_ncm_id:
+                orders_by_number = {
+                    o.order_number: o for o in Order.objects.filter(
+                        order_number__in=set(number_by_ncm_id.values())
+                    ).select_related('created_by')
+                }
+                for ncm_id, number in number_by_ncm_id.items():
+                    o = orders_by_number.get(number)
+                    if o:
+                        resolved[ncm_id] = _pack(o, 'bulk_log')
+
+    # ── 3. Probable: the customer's phone number ──────────────────────
+    unmatched = [r for r in rtv_orders if r.order_id not in resolved]
+    rtvs_by_phone = {}
+    for r in unmatched:
+        phone = _normalize_np_phone(r.receiver_phone)
+        if phone:
+            rtvs_by_phone.setdefault(phone, []).append(r)
+
+    if rtvs_by_phone:
+        wanted = set(rtvs_by_phone)
+        # (normalized phone, order pk, order created_at) for every local order
+        # whose phone is one we are looking for.
+        matches = []
+
+        if len(wanted) > PHONE_INDEX_THRESHOLD:
+            # Index every order phone in memory in one narrow pass. See
+            # PHONE_INDEX_THRESHOLD for why the LIKE chain is abandoned here.
+            phone_rows = Order.objects.filter(is_deleted=False).values_list(
+                'id', 'customer_phone', 'created_at'
+            ).iterator(chunk_size=2000)
+        else:
+            phone_q = Q()
+            for phone in wanted:
+                phone_q |= Q(customer_phone__endswith=phone)
+            phone_rows = Order.objects.filter(phone_q).filter(
+                is_deleted=False
+            ).values_list('id', 'customer_phone', 'created_at')
+
+        # Whichever path produced the rows, endswith was only ever a prefilter:
+        # the authoritative comparison is the normalized form, recomputed here.
+        for pk, cphone, created in phone_rows:
+            key = _normalize_np_phone(cphone)
+            if key in wanted:
+                matches.append((key, pk, created))
+
+        # Newest first, so "the closest order at or before the reference date"
+        # is simply the first candidate that qualifies.
+        matches.sort(key=lambda m: m[2], reverse=True)
+        orders_by_pk = {
+            o.id: o for o in Order.objects.filter(
+                id__in={m[1] for m in matches}
+            ).select_related('created_by')
+        } if matches else {}
+
+        candidates_by_phone = {}
+        for key, pk, _created in matches:
+            o = orders_by_pk.get(pk)
+            if o is not None:
+                candidates_by_phone.setdefault(key, []).append(o)
+
+        for phone, rtvs_for_phone in rtvs_by_phone.items():
+            candidates = candidates_by_phone.get(phone)
+            if not candidates:
+                continue
+            for r in rtvs_for_phone:
+                # NCM's own order-creation date sits closest to when the local
+                # order was placed; rtv_marked_at can be weeks later, by which
+                # time a repeat customer may have ordered again.
+                reference = r.ncm_created_date or r.rtv_marked_at
+                chosen = None
+                if reference:
+                    # candidates are newest-first, so the first one at or
+                    # before the reference is the closest preceding order.
+                    chosen = next(
+                        (o for o in candidates if o.created_at <= reference), None
+                    )
+                chosen = chosen or candidates[0]
+                info = _pack(chosen, 'phone')
+                info['ambiguous'] = len(candidates) > 1
+                info['matched_phone'] = r.receiver_phone
+                resolved[r.order_id] = info
+
+    return resolved
+
+
 @login_required
 @permission_required('can_view_orders')
 def ncm_rtvs_list(request):
@@ -21829,9 +22008,34 @@ def ncm_rtvs_list(request):
         from django.db.models import CharField
         # Cast order_id to string for partial matching (portable across SQLite/PostgreSQL)
         qs = qs.annotate(_oid_str=Cast('order_id', output_field=CharField()))
+        # Also let the search box find RTVs by the staff member who took the
+        # local order (the "Order By" column), and by the customer NCM was
+        # delivering to. Only the two id-based links are searchable in SQL —
+        # the phone fallback in resolve_rtv_order_by is resolved per page, so
+        # a phone-matched row is found by searching the customer instead.
+        from ncm.models import NCMBulkLogOrder
+        _staff_q = (
+            Q(created_by__first_name__icontains=search) |
+            Q(created_by__last_name__icontains=search) |
+            Q(created_by__username__icontains=search)
+        )
+        staff_matched_ncm_ids = Order.objects.filter(
+            ncm_order_id__isnull=False,
+        ).filter(_staff_q).values('ncm_order_id')
+        bulk_matched_ncm_ids = NCMBulkLogOrder.objects.filter(
+            ncm_order_id__isnull=False, order__isnull=False,
+        ).filter(
+            Q(order__created_by__first_name__icontains=search) |
+            Q(order__created_by__last_name__icontains=search) |
+            Q(order__created_by__username__icontains=search)
+        ).values('ncm_order_id')
         qs = qs.filter(
             Q(_oid_str__icontains=search) |
-            Q(comment__icontains=search)
+            Q(comment__icontains=search) |
+            Q(receiver_name__icontains=search) |
+            Q(receiver_phone__icontains=search) |
+            Q(order_id__in=staff_matched_ncm_ids) |
+            Q(order_id__in=bulk_matched_ncm_ids)
         )
 
     # "Today's RTVs" is a fixed daily counter (like Total RTVs), scoped to the
@@ -21937,6 +22141,10 @@ def ncm_rtvs_list(request):
                 rtv.api_config = primary_cfg
                 rtv.api_config_id = primary_cfg.id
 
+    # "Order By" — see resolve_rtv_order_by for how an RTV is traced back to
+    # the staff member who took the order.
+    order_by_map = resolve_rtv_order_by(page_objs)
+
     # Build follow-up metadata directly from RTVFollowUp (no local Order needed)
     followup_meta = {}
     if rtv_ids_page:
@@ -21981,6 +22189,11 @@ def ncm_rtvs_list(request):
             'status': status_dict,
             'api_config_name': rtv.api_config.api_name if rtv.api_config else None,
             'followup': followup_meta.get(rtv.id),
+            'order_by': order_by_map.get(rtv.order_id),
+            # Shown in the "not linked" tooltip so the row can still be traced
+            # by hand when nothing resolved automatically.
+            'receiver_name': rtv.receiver_name,
+            'receiver_phone': rtv.receiver_phone,
         })
 
     from dashboard.models import RTVStatus
@@ -24508,6 +24721,917 @@ def delete_staff_report(request, pk):
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)})
     return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+
+# ==================== RTV REPORT ====================
+
+#: Keyword rules that turn a free-text NCM RTV comment into a reason bucket.
+#: NCM staff type these by hand — English, Romanised Nepali, or a mix — so this
+#: is a best-effort classifier, not a taxonomy the courier guarantees. Rules are
+#: tried in order and the first hit wins, so specific reasons come before vague
+#: ones: "customer cancelled after not responding" should land in Cancelled.
+#: Anything that matches nothing falls into "Uncategorised", and the report
+#: surfaces the most common uncategorised comments so these rules can be grown
+#: from what the courier actually writes rather than from guesswork.
+RTV_REASON_RULES = [
+    # NCM's own canned reason. Its own bucket because "the customer says they
+    # never placed this" is the one RTV reason that points at how the order was
+    # taken rather than at the customer or the courier.
+    ('not_ordered', 'Customer Denies Ordering', '#be123c', (
+        'did not order', 'did not ordered', 'didnt order', "didn't order",
+        'never order', 'not ordered by', 'no order placed', 'not my order',
+    )),
+    ('wrong_number', 'Wrong Phone Number', '#e11d48', (
+        'wrong number', 'wrong contact', 'invalid number', 'number is wrong',
+        'incorrect number', 'fake number',
+    )),
+    ('cancelled', 'Customer Cancelled', '#ef4444', (
+        'cancel', 'refus', 'reject', 'denied', 'deny', 'dispute', 'not want',
+        'dont want', "don't want", 'no need', 'not needed', 'no longer',
+        'nachahiyo', 'chahidaina', 'nalinu', 'linna',
+    )),
+    ('unreachable', 'Unreachable / No Response', '#f59e0b', (
+        # PNR/PUR/PSO is NCM's shorthand for the phone-contact failures and is
+        # by far the most common comment they send, so it must not sit in
+        # Uncategorised. The slashed form and each code on its own are matched
+        # because NCM sometimes sends only one of them.
+        'pnr/pur/pso', 'pnr', 'pur/pso', 'pso',
+        'not respond', 'no response', 'not receiv', 'not pick', 'not answer',
+        'no answer', 'not attend', 'switch off', 'switched off', 'phone off',
+        'number off', 'unreachable', 'not reachable', 'out of reach', 'call not',
+        'not contact', 'uthaena', 'uthdaina',
+    )),
+    ('unavailable', 'Customer Unavailable', '#8b5cf6', (
+        'out of station', 'not at home', 'not available', 'not in home',
+        'abroad', 'foreign', 'travel', 'hospital', 'out of valley', 'gharma chaina',
+        'bahira',
+    )),
+    ('address', 'Address / Location Issue', '#3b82f6', (
+        'address', 'location', 'wrong place', 'not found', 'unable to locate',
+        'incomplete detail', 'thegana',
+    )),
+    ('area', 'Out of Delivery Area', '#06b6d4', (
+        'out of delivery', 'out of area', 'out of coverage', 'no branch',
+        'branch nadeliver', 'service not', 'not deliverable', 'no service',
+    )),
+    ('payment', 'Payment / Price Issue', '#f97316', (
+        'no cash', 'cash not', 'insufficient', 'expensive', 'costly', 'too high',
+        'price', 'payment', 'paisa', 'cod issue', 'advance',
+    )),
+    ('damaged', 'Damaged / Wrong Item', '#dc2626', (
+        'damage', 'broken', 'defect', 'faulty', 'quality', 'wrong item',
+        'wrong product', 'wrong size', 'size', 'not match', 'mismatch', 'leak',
+    )),
+    ('duplicate', 'Duplicate / Mistake Order', '#64748b', (
+        'duplicate', 'double order', 'same order', 'test order', 'by mistake',
+        'mistakenly', 'wrong order', 'fake order', 'prank',
+    )),
+    ('delayed', 'Held Too Long / Expired', '#a855f7', (
+        'long time', 'too long', 'hold', 'holding', 'expire', 'delay', 'late',
+        'overdue', 'no update', 'many days',
+    )),
+    # NCM's canned "As per vendor request": the return was this business's own
+    # decision, so it is not a delivery failure and does not belong against a
+    # staff member's record the way the buckets above do.
+    ('vendor_request', 'Vendor Requested Return', '#0891b2', (
+        'as per vendor', 'vendor request', 'per vendor',
+    )),
+    # Last: nearly every RTV comment mentions returning something, so these
+    # keywords would swallow the specific buckets above if they ran earlier.
+    ('return_request', 'Return Requested', '#14b8a6', (
+        'return', 'rtv', 'send back', 'sent back', 'vendor',
+    )),
+]
+
+#: NCM's own shipment status for the RTV, unlike RTVStatus which is a local
+#: workflow tag. Anything NCM sends that is not listed falls back to grey.
+NCM_STATUS_COLOURS = {
+    'Delivered': '#10b981',
+    'Returned to Warehouse': '#3b82f6',
+    'Sent to Vendor': '#8b5cf6',
+    'Arrived': '#f59e0b',
+    'Dispatched': '#6366f1',
+    'Drop off Order Created': '#64748b',
+    'Pickup Complete': '#0ea5e9',
+    'Pickup Pending': '#94a3b8',
+}
+NCM_STATUS_FALLBACK = '#94a3b8'
+
+RTV_REASON_NO_COMMENT = ('no_comment', 'No Comment Recorded', '#cbd5e1')
+RTV_REASON_OTHER = ('other', 'Uncategorised', '#94a3b8')
+
+#: Hard ceiling on how many RTV rows one report will resolve and aggregate.
+#: Attribution and reason classification happen in Python, so an unbounded
+#: "All time" range on a large database would otherwise build a very large list
+#: in memory. Past this the newest rows are kept and the page says so.
+RTV_REPORT_MAX_ROWS = 20000
+
+
+def classify_rtv_reason(comment):
+    """Return ``(key, label, colour)`` for one RTV comment. See RTV_REASON_RULES."""
+    text = (comment or '').strip().lower()
+    # '—' is what the RTV list substitutes for an empty comment; treat both the
+    # placeholder and a genuinely blank string as "nothing was written".
+    if not text or text == '—':
+        return RTV_REASON_NO_COMMENT
+    for key, label, colour, keywords in RTV_REASON_RULES:
+        if any(k in text for k in keywords):
+            return (key, label, colour)
+    return RTV_REASON_OTHER
+
+
+@login_required
+def rtv_report(request):
+    """Staff-performance view of Return-to-Vendor orders.
+
+    The RTV list page answers "which orders came back"; this page answers
+    "whose orders came back, and why". Both read the same RTVOrder rows through
+    the same resolve_rtv_order_by attribution, so a figure here always
+    reconciles with the "Order By" column there.
+
+    Everything past the database filters is computed in Python. Attribution is
+    not a database relation — an RTV carries only NCM's order id, never a FK to
+    a local Order — so it cannot be grouped in SQL, and the reason buckets are
+    keyword rules over free text rather than a stored column.
+    """
+    from collections import Counter
+    from django.db.models import CharField
+    from dashboard.models import RTVOrder, LogisticsAPIConfig, RTVStatus, RTVFollowUp
+    from dashboard.timezone_utils import (
+        convert_to_nepali, format_nepali_datetime_or_none, get_nepali_now,
+        nepali_day_start, nepali_day_end_exclusive,
+    )
+
+    has_access = (
+        request.user.is_superuser
+        or getattr(request.user, 'role', '') == 'administrator'
+        or getattr(request.user, 'can_view_rtv_report', False)
+    )
+    if not has_access:
+        messages.error(request, 'You do not have permission to view the RTV Report.')
+        return redirect('dashboard')
+
+    today_nepal = get_nepali_now().date()
+
+    # ---------- Period ----------
+    period = request.GET.get('period', 'last30').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    def _default_range():
+        return today_nepal - timedelta(days=29), today_nepal
+
+    if period == 'today':
+        start_day = end_day = today_nepal
+    elif period == 'yesterday':
+        start_day = end_day = today_nepal - timedelta(days=1)
+    elif period == 'last7':
+        start_day, end_day = today_nepal - timedelta(days=6), today_nepal
+    elif period == 'last30':
+        start_day, end_day = _default_range()
+    elif period == 'last90':
+        start_day, end_day = today_nepal - timedelta(days=89), today_nepal
+    elif period == 'thismonth':
+        start_day, end_day = today_nepal.replace(day=1), today_nepal
+    elif period == 'lastmonth':
+        end_day = today_nepal.replace(day=1) - timedelta(days=1)
+        start_day = end_day.replace(day=1)
+    elif period == 'thisyear':
+        start_day, end_day = today_nepal.replace(month=1, day=1), today_nepal
+    elif period == 'all':
+        start_day = end_day = None
+    elif period == 'custom' and date_from and date_to:
+        try:
+            start_day = datetime.strptime(date_from, '%Y-%m-%d').date()
+            end_day = datetime.strptime(date_to, '%Y-%m-%d').date()
+            if start_day > end_day:
+                start_day, end_day = end_day, start_day
+        except ValueError:
+            period = 'last30'
+            start_day, end_day = _default_range()
+    else:
+        period = 'last30'
+        start_day, end_day = _default_range()
+
+    date_from = start_day.isoformat() if start_day else ''
+    date_to = end_day.isoformat() if end_day else ''
+
+    period_labels = {
+        'today': 'Today', 'yesterday': 'Yesterday', 'last7': 'Last 7 Days',
+        'last30': 'Last 30 Days', 'last90': 'Last 90 Days',
+        'thismonth': 'This Month', 'lastmonth': 'Last Month',
+        'thisyear': 'This Year', 'all': 'All Time',
+    }
+    if period == 'custom':
+        period_label = (
+            start_day.strftime('%b %d, %Y') if start_day == end_day
+            else f"{start_day.strftime('%b %d')} → {end_day.strftime('%b %d, %Y')}"
+        )
+    else:
+        period_label = period_labels.get(period, 'Last 30 Days')
+
+    # ---------- Database-level filters ----------
+    api_config_id = request.GET.get('api_config_id', '').strip()
+    rtv_status_id = request.GET.get('rtv_status_id', '').strip()
+    search = request.GET.get('search', '').strip()
+
+    selected_config = None
+    if api_config_id:
+        try:
+            selected_config = LogisticsAPIConfig.objects.get(
+                id=int(api_config_id), logistics_provider='ncm'
+            )
+        except (LogisticsAPIConfig.DoesNotExist, ValueError, TypeError):
+            api_config_id = ''
+
+    def apply_db_filters(qs):
+        """Portal / status / text filters — everything expressible in SQL."""
+        if api_config_id:
+            qs = qs.filter(api_config_id=int(api_config_id))
+        if rtv_status_id == 'not_set':
+            qs = qs.filter(rtv_status__isnull=True)
+        elif rtv_status_id:
+            try:
+                qs = qs.filter(rtv_status_id=int(rtv_status_id))
+            except (ValueError, TypeError):
+                pass
+        if search:
+            qs = qs.annotate(
+                _oid_str=Cast('order_id', output_field=CharField())
+            ).filter(
+                Q(_oid_str__icontains=search) |
+                Q(comment__icontains=search) |
+                Q(receiver_name__icontains=search) |
+                Q(receiver_phone__icontains=search)
+            )
+        return qs
+
+    if rtv_status_id and rtv_status_id != 'not_set':
+        try:
+            int(rtv_status_id)
+        except (ValueError, TypeError):
+            rtv_status_id = ''
+
+    base_qs = apply_db_filters(
+        RTVOrder.objects.select_related('vendor', 'api_config', 'rtv_status')
+    )
+
+    # RTVs NCM never gave us a marked-at date for drop out of every dated range.
+    # Counting them here lets the page admit to the omission instead of quietly
+    # under-reporting — see RTVOrder.rtv_marked_at_source for why they exist.
+    undated_count = base_qs.filter(rtv_marked_at__isnull=True).count()
+
+    scoped_qs = base_qs
+    if start_day:
+        scoped_qs = scoped_qs.filter(
+            rtv_marked_at__gte=nepali_day_start(start_day),
+            rtv_marked_at__lt=nepali_day_end_exclusive(end_day),
+        )
+
+    scoped_qs = scoped_qs.order_by(
+        F('rtv_marked_at').desc(nulls_last=True), '-created_at', '-id'
+    )
+
+    total_in_scope = scoped_qs.count()
+    truncated = total_in_scope > RTV_REPORT_MAX_ROWS
+    rtv_objs = list(scoped_qs[:RTV_REPORT_MAX_ROWS])
+
+    # ---------- Attribution + reason classification ----------
+    attribution = resolve_rtv_order_by(rtv_objs)
+
+    # How long an order sat before it bounced. Only attributed RTVs have a local
+    # order to measure from, and only NCM-confirmed marked-at dates are worth
+    # measuring against, so this is reported as a coverage-limited average.
+    attributed_pks = {
+        info['order_pk'] for info in attribution.values() if info.get('order_pk')
+    }
+    order_created_at = dict(
+        Order.objects.filter(id__in=attributed_pks).values_list('id', 'created_at')
+    ) if attributed_pks else {}
+
+    # Which RTVs anyone actually chased. Follow-ups are the one activity signal
+    # this page has that is not inherited from NCM.
+    followed_up_ids = set(
+        RTVFollowUp.objects.filter(
+            rtv_order_id__in=[r.id for r in rtv_objs]
+        ).values_list('rtv_order_id', flat=True)
+    ) if rtv_objs else set()
+
+    CONFIRMED_MATCHES = ('exact', 'bulk_log')
+    records = []
+    for rtv in rtv_objs:
+        info = attribution.get(rtv.order_id) or {}
+        match = info.get('match') or 'none'
+        # A local order was found but nobody is recorded as having created it.
+        # Demote it to unlinked: counting it as confirmed coverage would inflate
+        # the attribution rate for a row the leaderboard has no name to file
+        # under. The order link survives so the row is still traceable by hand.
+        no_creator = bool(info) and not info.get('username')
+        if no_creator:
+            match = 'none'
+        reason_key, reason_label, reason_colour = classify_rtv_reason(rtv.comment)
+        marked_local = convert_to_nepali(rtv.rtv_marked_at) if rtv.rtv_marked_at else None
+
+        age_days = None
+        placed = order_created_at.get(info.get('order_pk'))
+        if placed and rtv.rtv_marked_at:
+            delta = (rtv.rtv_marked_at - placed).days
+            # A negative age means the ids were linked to the wrong order, or
+            # the marked-at date is one of the untrusted approximations. Either
+            # way it is not a measurement — drop it rather than skew the mean.
+            if delta >= 0:
+                age_days = delta
+
+        records.append({
+            'rtv_id': rtv.id,
+            'order_id': rtv.order_id,
+            'comment': (rtv.comment or '').strip(),
+            'reason_key': reason_key,
+            'reason_label': reason_label,
+            'reason_colour': reason_colour,
+            'staff_name': info.get('name'),
+            'staff_username': info.get('username'),
+            'staff_user_id': info.get('user_id'),
+            'staff_role': info.get('role'),
+            'order_number': info.get('order_number'),
+            'order_pk': info.get('order_pk'),
+            'order_from': info.get('order_from') or '',
+            'match': match,
+            'confirmed': match in CONFIRMED_MATCHES,
+            'no_creator': no_creator,
+            'ambiguous': bool(info.get('ambiguous')),
+            # Two different things both called "status". NCM's last_status is
+            # where the parcel actually is and arrives on every row; RTVStatus
+            # is a local workflow tag someone has to set by hand and is unset on
+            # nearly everything. The report leads with NCM's and keeps the local
+            # one alongside rather than showing an empty column.
+            'ncm_status': (rtv.last_status or '').strip(),
+            'ncm_status_colour': NCM_STATUS_COLOURS.get(
+                (rtv.last_status or '').strip(), NCM_STATUS_FALLBACK
+            ),
+            'status_name': rtv.rtv_status.name if rtv.rtv_status else None,
+            'status_colour': rtv.rtv_status.color if rtv.rtv_status else None,
+            'portal': rtv.api_config.api_name if rtv.api_config else None,
+            'marked_at': format_nepali_datetime_or_none(rtv.rtv_marked_at),
+            'marked_day': marked_local.date() if marked_local else None,
+            'marked_trusted': rtv.rtv_marked_at_is_trusted,
+            'receiver_name': rtv.receiver_name,
+            'receiver_phone': rtv.receiver_phone,
+            'phone_key': _normalize_np_phone(rtv.receiver_phone),
+            'age_days': age_days,
+            'has_followup': rtv.id in followed_up_ids,
+        })
+
+    # ---------- Python-level filters (attribution is not a SQL column) ----------
+    staff_filter = request.GET.get('staff', '').strip()
+    confidence_filter = request.GET.get('confidence', '').strip()
+    reason_filter = request.GET.get('reason', '').strip()
+    ncm_status_filter = request.GET.get('ncm_status', '').strip()
+
+    UNATTRIBUTED = '__none__'
+
+    def keep(rec):
+        if ncm_status_filter and rec['ncm_status'] != ncm_status_filter:
+            return False
+        if staff_filter == UNATTRIBUTED:
+            if rec['staff_username']:
+                return False
+        elif staff_filter and rec['staff_username'] != staff_filter:
+            return False
+        if confidence_filter == 'confirmed' and not rec['confirmed']:
+            return False
+        if confidence_filter == 'probable' and rec['match'] != 'phone':
+            return False
+        if confidence_filter == 'none' and rec['match'] != 'none':
+            return False
+        if reason_filter and rec['reason_key'] != reason_filter:
+            return False
+        return True
+
+    rows = [r for r in records if keep(r)]
+    drilled_down = bool(
+        staff_filter or confidence_filter or reason_filter or ncm_status_filter
+    )
+
+    # Dropdown options come from the pre-drill-down set, so picking a staff
+    # member never removes everyone else from the list you picked them from.
+    option_counts = Counter(
+        r['staff_username'] or UNATTRIBUTED for r in records
+    )
+    option_names = {}
+    for r in records:
+        key = r['staff_username'] or UNATTRIBUTED
+        option_names.setdefault(key, r['staff_name'] or 'Not linked to a local order')
+    staff_options = sorted(
+        (
+            {'value': k, 'label': option_names[k], 'count': c}
+            for k, c in option_counts.items()
+        ),
+        key=lambda o: (o['value'] == UNATTRIBUTED, -o['count'], o['label'].lower()),
+    )
+    reason_options = sorted(
+        (
+            {'value': k, 'label': lbl, 'count': c}
+            for (k, lbl), c in Counter(
+                (r['reason_key'], r['reason_label']) for r in records
+            ).items()
+        ),
+        key=lambda o: -o['count'],
+    )
+    ncm_status_options = [
+        {'value': v, 'label': v, 'count': c}
+        for v, c in Counter(
+            r['ncm_status'] for r in records if r['ncm_status']
+        ).most_common()
+    ]
+
+    # ---------- Excel export (of exactly what is on screen) ----------
+    if request.GET.get('export') == 'xlsx':
+        return _rtv_report_export(rows, period_label)
+
+    # ---------- Per-staff aggregation ----------
+    staff_stats = {}
+    for rec in rows:
+        key = rec['staff_username'] or UNATTRIBUTED
+        s = staff_stats.get(key)
+        if s is None:
+            s = staff_stats[key] = {
+                'key': key,
+                'name': rec['staff_name'] or 'Not linked to a local order',
+                'role': rec['staff_role'] or '',
+                'user_id': rec['staff_user_id'],
+                'unattributed': key == UNATTRIBUTED,
+                'total': 0, 'confirmed': 0, 'probable': 0,
+                'followed_up': 0,
+                'reasons': Counter(),
+                'ages': [],
+                'last_day': None,
+            }
+        s['total'] += 1
+        if rec['confirmed']:
+            s['confirmed'] += 1
+        elif rec['match'] == 'phone':
+            s['probable'] += 1
+        if rec['has_followup']:
+            s['followed_up'] += 1
+        s['reasons'][(rec['reason_key'], rec['reason_label'], rec['reason_colour'])] += 1
+        if rec['age_days'] is not None:
+            s['ages'].append(rec['age_days'])
+        if rec['marked_day'] and (s['last_day'] is None or rec['marked_day'] > s['last_day']):
+            s['last_day'] = rec['marked_day']
+
+    total_rtvs = len(rows)
+
+    # Orders each staff member created inside the same window. This is the
+    # denominator people reach for, but the two dates are not comparable: an
+    # RTV is marked weeks after the order was placed, so a window contains RTVs
+    # for orders taken before it. The ratio is carried through as indicative
+    # only and the template says so — see the tooltip on the RTV Rate column.
+    orders_in_window = {}
+    if start_day:
+        window_orders = Order.objects.filter(
+            created_at__gte=nepali_day_start(start_day),
+            created_at__lt=nepali_day_end_exclusive(end_day),
+            is_deleted=False,
+            created_by__isnull=False,
+        )
+    else:
+        window_orders = Order.objects.filter(is_deleted=False, created_by__isnull=False)
+    for username, count in window_orders.values_list(
+        'created_by__username'
+    ).annotate(n=Count('id')).values_list('created_by__username', 'n'):
+        orders_in_window[username] = count
+
+    staff_rows = []
+    for s in staff_stats.values():
+        top_reasons = [
+            {'key': k, 'label': lbl, 'colour': col, 'count': c,
+             'share': round(c * 100.0 / s['total'], 1) if s['total'] else 0}
+            for (k, lbl, col), c in s['reasons'].most_common(3)
+        ]
+        placed = orders_in_window.get(s['key']) if not s['unattributed'] else None
+        staff_rows.append({
+            **s,
+            'share': round(s['total'] * 100.0 / total_rtvs, 1) if total_rtvs else 0,
+            'top_reasons': top_reasons,
+            'top_reason_label': top_reasons[0]['label'] if top_reasons else '—',
+            'avg_age_days': round(sum(s['ages']) / len(s['ages'])) if s['ages'] else None,
+            'orders_placed': placed,
+            'rtv_rate': round(s['total'] * 100.0 / placed, 1) if placed else None,
+            'followup_share': (
+                round(s['followed_up'] * 100.0 / s['total']) if s['total'] else 0
+            ),
+            'last_day_display': s['last_day'].strftime('%b %d, %Y') if s['last_day'] else '—',
+        })
+
+    staff_rows.sort(key=lambda s: (s['unattributed'], -s['total'], s['name'].lower()))
+    max_staff_total = max((s['total'] for s in staff_rows), default=0)
+    for i, s in enumerate(staff_rows, start=1):
+        s['rank'] = i if not s['unattributed'] else None
+        s['bar_pct'] = round(s['total'] * 100.0 / max_staff_total, 1) if max_staff_total else 0
+
+    attributed_staff = [s for s in staff_rows if not s['unattributed']]
+
+    # ---------- Reason aggregation ----------
+    reason_counter = Counter(
+        (r['reason_key'], r['reason_label'], r['reason_colour']) for r in rows
+    )
+    reason_top_staff = {}
+    for rec in rows:
+        if rec['staff_username']:
+            reason_top_staff.setdefault(rec['reason_key'], Counter())[rec['staff_name']] += 1
+
+    reason_rows = []
+    for (key, label, colour), count in reason_counter.most_common():
+        leader = reason_top_staff.get(key)
+        top_name, top_count = leader.most_common(1)[0] if leader else ('—', 0)
+        reason_rows.append({
+            'key': key, 'label': label, 'colour': colour, 'count': count,
+            'share': round(count * 100.0 / total_rtvs, 1) if total_rtvs else 0,
+            'top_staff': top_name,
+            'top_staff_count': top_count,
+        })
+    max_reason_count = max((r['count'] for r in reason_rows), default=0)
+    for r in reason_rows:
+        r['bar_pct'] = round(r['count'] * 100.0 / max_reason_count, 1) if max_reason_count else 0
+
+    # The comments no rule matched, most repeated first. This is the feedback
+    # loop for RTV_REASON_RULES: whatever shows up here is a rule worth adding.
+    unmatched_comments = [
+        {'comment': c, 'count': n}
+        for c, n in Counter(
+            r['comment'] for r in rows if r['reason_key'] == 'other' and r['comment']
+        ).most_common(8)
+    ]
+
+    # ---------- Staff × reason matrix ----------
+    # Reasons across the top, staff down the side, so a column that is dark for
+    # one person and pale for everyone else points straight at a coachable habit.
+    matrix_reasons = [
+        {'key': r['key'], 'label': r['label'], 'colour': r['colour']}
+        for r in reason_rows[:7]
+    ]
+    matrix_keys = [r['key'] for r in matrix_reasons]
+    matrix_rows = []
+    for s in attributed_staff[:12]:
+        by_key = {k: c for (k, _lbl, _col), c in s['reasons'].items()}
+        cells = [{'key': k, 'count': by_key.get(k, 0)} for k in matrix_keys]
+        matrix_rows.append({'name': s['name'], 'total': s['total'], 'cells': cells})
+    max_cell = max(
+        (c['count'] for row in matrix_rows for c in row['cells']), default=0
+    )
+    for row in matrix_rows:
+        for c in row['cells']:
+            c['intensity'] = round(c['count'] / max_cell, 3) if max_cell else 0
+
+    # ---------- Trend ----------
+    # Daily buckets while they stay readable, monthly once the window is long.
+    dated = [r['marked_day'] for r in rows if r['marked_day']]
+    trend_start = start_day or (min(dated) if dated else today_nepal)
+    trend_end = end_day or (max(dated) if dated else today_nepal)
+    span_days = (trend_end - trend_start).days + 1
+    trend_granularity = 'day' if span_days <= 92 else 'month'
+
+    if trend_granularity == 'day':
+        counts = Counter(dated)
+        trend_labels, trend_values = [], []
+        cursor = trend_start
+        while cursor <= trend_end:
+            trend_labels.append(cursor.strftime('%b %d'))
+            trend_values.append(counts.get(cursor, 0))
+            cursor += timedelta(days=1)
+    else:
+        counts = Counter((d.year, d.month) for d in dated)
+        trend_labels, trend_values = [], []
+        y, m = trend_start.year, trend_start.month
+        while (y, m) <= (trend_end.year, trend_end.month):
+            trend_labels.append(datetime(y, m, 1).strftime('%b %Y'))
+            trend_values.append(counts.get((y, m), 0))
+            y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+
+    # On "All Time" the row set can contain RTVs NCM never dated, which have no
+    # bucket to sit in. Carrying the count means the trend can say why its bars
+    # add up to less than the headline total instead of quietly disagreeing.
+    trend_undated = sum(1 for r in rows if not r['marked_day'])
+
+    peak_count = max(trend_values, default=0)
+    peak_label = trend_labels[trend_values.index(peak_count)] if peak_count else '—'
+    avg_per_day = round(total_rtvs / span_days, 1) if span_days else 0
+
+    # ---------- Previous-period comparison ----------
+    # Only meaningful against the same slice of data, so it is withheld while a
+    # Python-side drill-down is active rather than compared against a whole
+    # period it does not correspond to.
+    prev_total = None
+    delta_pct = None
+    if start_day and not drilled_down:
+        prev_end = start_day - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=span_days - 1)
+        prev_total = base_qs.filter(
+            rtv_marked_at__gte=nepali_day_start(prev_start),
+            rtv_marked_at__lt=nepali_day_end_exclusive(prev_end),
+        ).count()
+        if prev_total:
+            delta_pct = round((total_rtvs - prev_total) * 100.0 / prev_total, 1)
+        elif total_rtvs:
+            delta_pct = 100.0
+
+    # ---------- Repeat customers ----------
+    # The same phone bouncing repeatedly is a customer problem, not a staff one;
+    # separating it keeps it from being read as anyone's performance.
+    phone_counter = Counter(r['phone_key'] for r in rows if r['phone_key'])
+    repeat_rows = []
+    for phone_key, count in phone_counter.most_common(8):
+        if count < 2:
+            break
+        sample = next(r for r in rows if r['phone_key'] == phone_key)
+        repeat_rows.append({
+            'name': sample['receiver_name'] or '—',
+            'phone': sample['receiver_phone'],
+            'count': count,
+            'staff': sorted({
+                r['staff_name'] for r in rows
+                if r['phone_key'] == phone_key and r['staff_name']
+            }),
+        })
+
+    # ---------- Headline numbers ----------
+    confirmed_count = sum(1 for r in rows if r['confirmed'])
+    probable_count = sum(1 for r in rows if r['match'] == 'phone')
+    unattributed_count = sum(1 for r in rows if r['match'] == 'none')
+    followed_up_count = sum(1 for r in rows if r['has_followup'])
+    ages = [r['age_days'] for r in rows if r['age_days'] is not None]
+
+    top_staff = attributed_staff[0] if attributed_staff else None
+    portal_counter = Counter(r['portal'] or 'Unassigned' for r in rows)
+
+    # NCM's shipment status — the one that is actually populated. Ordered by
+    # frequency so the chart legend leads with what dominates.
+    ncm_status_counter = Counter(r['ncm_status'] or 'Unknown' for r in rows)
+    ncm_status_colours = {
+        (r['ncm_status'] or 'Unknown'): (
+            r['ncm_status_colour'] if r['ncm_status'] else NCM_STATUS_FALLBACK
+        )
+        for r in rows
+    }
+
+    # The local workflow tag, kept as its own small breakdown so the fact that
+    # almost nothing is tagged stays visible instead of masquerading as a chart.
+    local_status_counter = Counter(r['status_name'] for r in rows if r['status_name'])
+    local_status_colours = {
+        r['status_name']: r['status_colour'] or '#cbd5e1'
+        for r in rows if r['status_name']
+    }
+    local_status_rows = [
+        {'name': name, 'count': count, 'colour': local_status_colours[name]}
+        for name, count in local_status_counter.most_common()
+    ]
+    local_status_unset = total_rtvs - sum(local_status_counter.values())
+
+    kpis = {
+        'total': total_rtvs,
+        'prev_total': prev_total,
+        'delta_pct': delta_pct,
+        'attributed': confirmed_count + probable_count,
+        'coverage_pct': (
+            round((confirmed_count + probable_count) * 100.0 / total_rtvs) if total_rtvs else 0
+        ),
+        'confirmed': confirmed_count,
+        'probable': probable_count,
+        'unattributed': unattributed_count,
+        'staff_count': len(attributed_staff),
+        'avg_per_day': avg_per_day,
+        'peak_label': peak_label,
+        'peak_count': peak_count,
+        'avg_age_days': round(sum(ages) / len(ages)) if ages else None,
+        'followed_up': followed_up_count,
+        'followup_pct': round(followed_up_count * 100.0 / total_rtvs) if total_rtvs else 0,
+        'top_staff_name': top_staff['name'] if top_staff else '—',
+        'top_staff_count': top_staff['total'] if top_staff else 0,
+        'top_staff_share': top_staff['share'] if top_staff else 0,
+        'top_reason_label': reason_rows[0]['label'] if reason_rows else '—',
+        'top_reason_count': reason_rows[0]['count'] if reason_rows else 0,
+        'top_reason_share': reason_rows[0]['share'] if reason_rows else 0,
+    }
+
+    # ---------- Chart payloads ----------
+    chart_data = {
+        'trend': {
+            'labels': trend_labels,
+            'values': trend_values,
+            'granularity': trend_granularity,
+            'undated': trend_undated,
+        },
+        'reasons': {
+            'labels': [r['label'] for r in reason_rows],
+            'values': [r['count'] for r in reason_rows],
+            'colours': [r['colour'] for r in reason_rows],
+        },
+        'staff': {
+            'labels': [s['name'] for s in attributed_staff[:10]],
+            'confirmed': [s['confirmed'] for s in attributed_staff[:10]],
+            'probable': [s['probable'] for s in attributed_staff[:10]],
+        },
+        'statuses': {
+            'labels': [k for k, _ in ncm_status_counter.most_common()],
+            'values': [v for _, v in ncm_status_counter.most_common()],
+            'colours': [
+                ncm_status_colours.get(k, NCM_STATUS_FALLBACK)
+                for k, _ in ncm_status_counter.most_common()
+            ],
+        },
+    }
+
+    # ---------- Detail table ----------
+    # Page size is the reader's call. "All" is capped at the analysis ceiling
+    # rather than being unbounded, so the option can never render more rows than
+    # the page actually loaded.
+    PER_PAGE_CHOICES = [25, 50, 100, 250, 500]
+    per_page_raw = request.GET.get('per_page', '50').strip()
+    if per_page_raw == 'all':
+        per_page = max(len(rows), 1)
+    else:
+        try:
+            per_page = int(per_page_raw)
+        except (ValueError, TypeError):
+            per_page = 50
+        if per_page not in PER_PAGE_CHOICES:
+            per_page = 50
+        per_page_raw = str(per_page)
+
+    paginator = Paginator(rows, per_page)
+    try:
+        page_number = int(request.GET.get('page', 1))
+    except (ValueError, TypeError):
+        page_number = 1
+    page_obj = paginator.get_page(page_number)
+
+    querystring = request.GET.copy()
+    querystring.pop('page', None)
+    querystring.pop('export', None)
+
+    # The leaderboard and reason table each append their own key. Handing them a
+    # querystring that already dropped that key keeps every other filter intact
+    # while stopping repeated clicks from piling up duplicate parameters.
+    def without(*keys):
+        qd = querystring.copy()
+        for k in keys:
+            qd.pop(k, None)
+        return qd.urlencode()
+
+    context = {
+        'kpis': kpis,
+        'staff_rows': staff_rows,
+        'attributed_staff_count': len(attributed_staff),
+        'reason_rows': reason_rows,
+        'unmatched_comments': unmatched_comments,
+        'matrix_reasons': matrix_reasons,
+        'matrix_rows': matrix_rows,
+        'repeat_rows': repeat_rows,
+        'portal_rows': portal_counter.most_common(),
+        'chart_data': chart_data,
+        'page_obj': page_obj,
+        'sn_offset': (page_obj.number - 1) * paginator.per_page,
+        'querystring': querystring.urlencode(),
+        'querystring_no_staff': without('staff'),
+        'querystring_no_reason': without('reason'),
+        'querystring_no_per_page': without('per_page'),
+        'per_page': per_page_raw,
+        'per_page_choices': PER_PAGE_CHOICES,
+        # filter state
+        'period': period,
+        'period_label': period_label,
+        'date_from': date_from,
+        'date_to': date_to,
+        'search': search,
+        'api_config_id': api_config_id,
+        'selected_config': selected_config,
+        'rtv_status_id': rtv_status_id,
+        'staff_filter': staff_filter,
+        'confidence_filter': confidence_filter,
+        'reason_filter': reason_filter,
+        'ncm_status_filter': ncm_status_filter,
+        'drilled_down': drilled_down,
+        'staff_options': staff_options,
+        'reason_options': reason_options,
+        'ncm_status_options': ncm_status_options,
+        'local_status_rows': local_status_rows,
+        'local_status_unset': local_status_unset,
+        'ncm_api_configs': list(
+            LogisticsAPIConfig.objects.filter(logistics_provider='ncm')
+            .values('id', 'api_name').order_by('api_name')
+        ),
+        'rtv_statuses': list(
+            RTVStatus.objects.filter(is_active=True).order_by('name')
+            .values('id', 'name', 'color')
+        ),
+        # data-quality disclosures
+        'undated_count': undated_count,
+        'date_filter_active': bool(start_day),
+        'truncated': truncated,
+        'total_in_scope': total_in_scope,
+        'max_rows': RTV_REPORT_MAX_ROWS,
+    }
+    return render(request, 'rtv_report.html', context)
+
+
+def _rtv_report_export(rows, period_label):
+    """Write the on-screen RTV report to a three-sheet workbook.
+
+    Exports `rows` — the filtered set, not the current page — so the file
+    matches what the filters say rather than what happens to be paginated.
+    """
+    from collections import Counter
+
+    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+
+    def write_sheet(ws, headers, data_rows):
+        ws.append(headers)
+        for col_num in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        for r in data_rows:
+            ws.append(r)
+        for column in ws.columns:
+            width = max((len(str(c.value)) for c in column if c.value is not None), default=0)
+            ws.column_dimensions[column[0].column_letter].width = min(width + 2, 55)
+        ws.freeze_panes = 'A2'
+
+    confidence_label = {
+        'exact': 'Confirmed (NCM order id)',
+        'bulk_log': 'Confirmed (bulk-send log)',
+        'phone': 'Probable (phone match)',
+        'none': 'Not linked',
+    }
+
+    wb = Workbook()
+    write_sheet(
+        wb.active,
+        ['NCM Order ID', 'Order By', 'Role', 'Local Order', 'Attribution',
+         'Reason', 'Comment', 'NCM Status', 'Local RTV Status', 'Portal',
+         'Receiver', 'Phone', 'Marked At', 'Days Order → RTV', 'Followed Up'],
+        [
+            [
+                r['order_id'],
+                r['staff_name'] or 'Not linked',
+                r['staff_role'] or '',
+                r['order_number'] or '',
+                confidence_label.get(r['match'], r['match']),
+                r['reason_label'],
+                r['comment'],
+                r['ncm_status'] or '',
+                r['status_name'] or '',
+                r['portal'] or '',
+                r['receiver_name'],
+                r['receiver_phone'],
+                r['marked_at'] or '',
+                r['age_days'] if r['age_days'] is not None else '',
+                'Yes' if r['has_followup'] else 'No',
+            ]
+            for r in rows
+        ],
+    )
+    wb.active.title = 'RTV Detail'
+
+    total = len(rows)
+    staff_counter = Counter(r['staff_name'] or 'Not linked' for r in rows)
+    staff_reason = {}
+    for r in rows:
+        staff_reason.setdefault(r['staff_name'] or 'Not linked', Counter())[r['reason_label']] += 1
+    write_sheet(
+        wb.create_sheet('Staff Summary'),
+        ['Order By', 'RTVs', 'Share %', 'Top Reason', 'Top Reason Count'],
+        [
+            [
+                name, count,
+                round(count * 100.0 / total, 1) if total else 0,
+                staff_reason[name].most_common(1)[0][0],
+                staff_reason[name].most_common(1)[0][1],
+            ]
+            for name, count in staff_counter.most_common()
+        ],
+    )
+
+    reason_counter = Counter(r['reason_label'] for r in rows)
+    write_sheet(
+        wb.create_sheet('Reason Summary'),
+        ['Reason', 'RTVs', 'Share %'],
+        [
+            [label, count, round(count * 100.0 / total, 1) if total else 0]
+            for label, count in reason_counter.most_common()
+        ],
+    )
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    response['Content-Disposition'] = f'attachment; filename=rtv_report_{stamp}.xlsx'
+    wb.save(response)
+    return response
 
 
 # ==================== FOLLOW-UPS REPORT ====================
