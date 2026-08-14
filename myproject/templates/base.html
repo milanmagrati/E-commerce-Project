@@ -1598,32 +1598,6 @@
                 </li>
                 {% endif %}
 
-                <!-- ==================== STAFF PERFORMANCE ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' or user.can_view_staff_performance %}
-                <li
-                    class="staff-performance-menu {% if request.resolver_match.url_name == 'staff_performance_analytics' %}active{% endif %}">
-                    <a href="{% url 'staff_performance_analytics' %}">
-                        <i class="fas fa-chart-bar"></i> Staff Performance<span
-                            class="performance-badge">ANALYTICS</span>
-                    </a>
-                </li>
-                {% endif %}
-
-                <!-- ==================== STAFF TARGETS ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' or user.can_view_targets %}
-                <li class="{% if request.resolver_match.url_name == 'manage_targets' %}active{% endif %}">
-                    <a href="{% url 'manage_targets' %}">
-                        <i class="fas fa-bullseye"></i> Staff Targets<span class="performance-badge">TARGETS</span>
-                    </a>
-                </li>
-                {% elif user.can_view_own_targets %}
-                <li class="{% if request.resolver_match.url_name == 'my_targets' %}active{% endif %}">
-                    <a href="{% url 'my_targets' %}">
-                        <i class="fas fa-bullseye"></i> My Targets
-                    </a>
-                </li>
-                {% endif %}
-
                 <!-- ==================== REPORTS ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_reports %}
                 <li>
@@ -1660,6 +1634,20 @@
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_follow_up_report %}
                         <li class="{% if request.resolver_match.url_name == 'follow_up_report' %}active{% endif %}">
                             <a href="{% url 'follow_up_report' %}"><i class="fas fa-phone-alt me-1"></i>Follow-ups Report</a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_staff_performance %}
+                        <li class="staff-performance-menu {% if request.resolver_match.url_name == 'staff_performance_analytics' %}active{% endif %}">
+                            <a href="{% url 'staff_performance_analytics' %}"><i class="fas fa-chart-bar me-1"></i> Staff Performance<span class="performance-badge">ANALYTICS</span></a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_targets %}
+                        <li class="{% if request.resolver_match.url_name == 'manage_targets' %}active{% endif %}">
+                            <a href="{% url 'manage_targets' %}"><i class="fas fa-bullseye me-1"></i> Staff Targets<span class="performance-badge">TARGETS</span></a>
+                        </li>
+                        {% elif user.can_view_own_targets %}
+                        <li class="{% if request.resolver_match.url_name == 'my_targets' %}active{% endif %}">
+                            <a href="{% url 'my_targets' %}"><i class="fas fa-bullseye me-1"></i> My Targets</a>
                         </li>
                         {% endif %}
                     </ul>
@@ -1791,6 +1779,14 @@
                         <li class="{% if request.resolver_match.url_name == 'landing_page_setup' %}active{% endif %}">
                             <a href="{% url 'landing_page_setup' %}"><i class="fas fa-globe me-1"></i> Landing Page Setup</a>
                         </li>
+                        <li class="{% if 'pages' in request.path %}active{% endif %}">
+                            <a href="{% url 'page_list' %}"><i class="fas fa-file-alt me-1"></i> Page Setup</a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_edit_products or user.can_create_products %}
+                        <li class="{% if request.resolver_match.url_name == 'media_library' %}active{% endif %}">
+                            <a href="{% url 'media_library' %}"><i class="fas fa-photo-video me-1"></i> Media</a>
+                        </li>
                         {% endif %}
                     </ul>
                 </li>
@@ -1811,29 +1807,11 @@
                     </a>
                 </li>
 
-                <!-- ==================== PAGE SETUP ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' %}
-                <li class="{% if 'pages' in request.path %}active{% endif %}">
-                    <a href="{% url 'page_list' %}">
-                        <i class="fas fa-file-alt"></i> Page Setup
-                    </a>
-                </li>
-                {% endif %}
-
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_resources or user.can_create_resources %}
                 <!-- ==================== RESOURCES ==================== -->
                 <li class="{% if 'resources' in request.path %}active{% endif %}">
                     <a href="{% url 'resources:list' %}">
                         <i class="fas fa-book-open"></i> Resources
-                    </a>
-                </li>
-                {% endif %}
-
-                <!-- ==================== MEDIA LIBRARY ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' or user.can_edit_products or user.can_create_products %}
-                <li class="{% if request.resolver_match.url_name == 'media_library' %}active{% endif %}">
-                    <a href="{% url 'media_library' %}">
-                        <i class="fas fa-photo-video"></i> Media
                     </a>
                 </li>
                 {% endif %}
