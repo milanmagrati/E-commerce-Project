@@ -321,6 +321,7 @@ urlpatterns = [
 
     # UNIFIED LOGISTICS
     path('logistics/orders/', views.logistics_orders_list, name='logistics_orders_list'),
+    path('logistics/orders/export/', views.export_logistics_orders_excel, name='logistics_orders_export'),
     path('logistics/bulk-logs/', views.logistics_bulk_logs_list, name='logistics_bulk_logs_list'),
     path('logistics/bulk-logs/trash/', views.logistics_bulk_logs_trash, name='logistics_bulk_logs_trash'),
     path('logistics/bulk-logs/trash/<str:provider>/<int:log_id>/restore/', views.logistics_bulk_log_restore, name='logistics_bulk_log_restore'),

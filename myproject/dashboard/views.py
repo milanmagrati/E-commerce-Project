@@ -19889,18 +19889,12 @@ def _bulk_terminate_batches(request, provider, log_ids):
 
 # ==================== UNIFIED LOGISTICS VIEWS ====================
 
-# These three were login-only while the sidebar links to them were gated on the
-# permissions below, and while their sibling (ncm_orders_trash) enforced its
-# own - so any logged-in account could read every customer's name, phone and
-# address by typing the URL. Gated to match what the menu already declares.
-@login_required
-@permission_required('can_view_ncm_orders')
-def logistics_orders_list(request):
-    """
-    Unified Logistics Orders Page - Shows NCM and/or PND orders with a provider toggle filter
-    """
-    provider = request.GET.get('provider', 'all').strip()
+def _filtered_logistics_orders(provider, search_query, branch_filter, status_filter, date_from, date_to):
+    """Shared query-building for the logistics orders list and its Excel export.
 
+    Kept as one function so the list page and the export can never drift apart
+    on what a given filter combination actually matches.
+    """
     # Build base queryset based on provider filter
     if provider == 'ncm':
         orders = Order.objects.select_related('customer', 'created_by', 'api_config').filter(
@@ -19927,13 +19921,6 @@ def logistics_orders_list(request):
             pnd_order_id__isnull=False
         )
         orders = (ncm_orders | pnd_orders).order_by('-created_at')
-
-    # Get filter parameters
-    search_query = request.GET.get('search', '').strip()
-    branch_filter = request.GET.get('branch', '').strip()
-    status_filter = request.GET.get('status', '').strip()
-    date_from = request.GET.get('date_from', '').strip()
-    date_to = request.GET.get('date_to', '').strip()
 
     # Search filter
     if search_query:
@@ -20015,6 +20002,137 @@ def logistics_orders_list(request):
                 orders = orders.filter(created_at__lt=_date_to_end)
         except:
             pass
+
+    return orders
+
+
+def _export_logistics_orders_excel(orders, provider, date_from, date_to):
+    """Build the Logistics Orders export workbook. One row per order, same
+    columns as the on-screen table so the file matches what staff were
+    looking at when they exported it."""
+    from .timezone_utils import get_nepali_now
+    from .logistics_status import logistics_status_text
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Logistics Orders"
+
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    center_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    headers = [
+        'S.N.', 'Provider', 'Order ID', 'Vendor Ref', 'API Account',
+        'Created Date', 'Branch', 'Receiver', 'Phone', 'Address',
+        'COD Amount', 'Status',
+    ]
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.value = header
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center_alignment
+        cell.border = border
+    ws.freeze_panes = 'A2'
+
+    row_num = 2
+    for i, order in enumerate(orders.iterator(), 1):
+        is_ncm = order.logistics == 'ncm'
+        provider_label = 'NCM' if is_ncm else 'Pick & Drop'
+        provider_order_id = order.ncm_order_id if is_ncm else order.pnd_order_id
+        created_at = order.ncm_created_at if is_ncm else order.pnd_created_at
+        branch = order.ncm_destination_branch if is_ncm else order.pnd_destination_branch
+        provider_status = order.ncm_status if is_ncm else order.pnd_status
+        status_text = logistics_status_text(provider_status, order.logistics)
+
+        row_data = [
+            i, provider_label, provider_order_id or '', order.order_number,
+            order.api_config.api_name if order.api_config else 'Default',
+            created_at.strftime('%Y-%m-%d %H:%M') if created_at else '',
+            branch or 'N/A', order.customer_name or '', order.customer_phone or '',
+            order.shipping_address or '', float(order.total_amount or 0),
+            status_text,
+        ]
+        for col_num, value in enumerate(row_data, 1):
+            cell = ws.cell(row=row_num, column=col_num)
+            cell.value = value
+            cell.border = border
+            cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+            if col_num == 11:  # COD Amount
+                cell.alignment = center_alignment
+                cell.number_format = '"Rs "#,##0.00'
+        row_num += 1
+
+    column_widths = [6, 12, 12, 12, 16, 16, 12, 18, 14, 30, 14, 16]
+    for col_num, width in enumerate(column_widths, 1):
+        ws.column_dimensions[chr(64 + col_num)].width = width
+
+    range_bits = []
+    if provider and provider != 'all':
+        range_bits.append(provider)
+    if date_from:
+        range_bits.append(f"from-{date_from}")
+    if date_to:
+        range_bits.append(f"to-{date_to}")
+    suffix = ('-' + '-'.join(range_bits)) if range_bits else ''
+    filename = f"logistics-orders{suffix}-{get_nepali_now().strftime('%Y%m%d-%H%M%S')}.xlsx"
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
+
+
+@login_required
+@require_http_methods(["GET"])
+def export_logistics_orders_excel(request):
+    """Export logistics orders to Excel, honouring the same filters as the
+    list page plus a custom date range picked just for the export."""
+    if request.user.role != 'administrator' and not request.user.can_export_orders:
+        return HttpResponse("You do not have permission to export orders.", status=403)
+
+    provider = request.GET.get('provider', 'all').strip()
+    search_query = request.GET.get('search', '').strip()
+    branch_filter = request.GET.get('branch', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    orders = _filtered_logistics_orders(
+        provider, search_query, branch_filter, status_filter, date_from, date_to
+    ).select_related('api_config')
+
+    return _export_logistics_orders_excel(orders, provider, date_from, date_to)
+
+
+# These three were login-only while the sidebar links to them were gated on the
+# permissions below, and while their sibling (ncm_orders_trash) enforced its
+# own - so any logged-in account could read every customer's name, phone and
+# address by typing the URL. Gated to match what the menu already declares.
+@login_required
+@permission_required('can_view_ncm_orders')
+def logistics_orders_list(request):
+    """
+    Unified Logistics Orders Page - Shows NCM and/or PND orders with a provider toggle filter
+    """
+    provider = request.GET.get('provider', 'all').strip()
+
+    # Get filter parameters
+    search_query = request.GET.get('search', '').strip()
+    branch_filter = request.GET.get('branch', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    orders = _filtered_logistics_orders(
+        provider, search_query, branch_filter, status_filter, date_from, date_to
+    )
 
     # Get total count before pagination
     total_orders = orders.count()

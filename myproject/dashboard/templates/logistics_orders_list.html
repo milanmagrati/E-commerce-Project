@@ -20,6 +20,11 @@
                     <i class="fas fa-sync-alt" id="syncNowIcon"></i> Sync Now
                 </button>
                 {% endif %}
+                {% if request.user.role == 'administrator' or request.user.can_export_orders %}
+                <button type="button" class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#exportLogisticsModal">
+                    <i class="fas fa-file-excel"></i> Export
+                </button>
+                {% endif %}
                 <a href="{% url 'ncm_orders_trash' %}" class="btn btn-danger btn-lg">
                     <i class="fas fa-trash-alt"></i> Trash
                     {% if trash_count > 0 %}
@@ -33,6 +38,73 @@
         </div>
     </div>
 </div>
+
+{% if request.user.role == 'administrator' or request.user.can_export_orders %}
+<!-- Export Modal -->
+<div class="modal fade" id="exportLogisticsModal" tabindex="-1" aria-labelledby="exportLogisticsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="get" action="{% url 'logistics_orders_export' %}" id="exportLogisticsForm">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exportLogisticsModalLabel">
+                        <i class="fas fa-file-excel text-success"></i> Export Logistics Orders
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">
+                        Exports orders for the <strong>{{ provider|default:"all"|upper }}</strong> provider
+                        {% if search_query or branch_filter or status_filter %}with the search/branch/status filters currently applied on this page{% endif %},
+                        limited to the date range below. Leave both blank to export everything.
+                    </p>
+
+                    {# Carry the page's current provider/search/branch/status filters through to the export. #}
+                    <input type="hidden" name="provider" value="{{ provider }}">
+                    <input type="hidden" name="search" value="{{ search_query }}">
+                    <input type="hidden" name="branch" value="{{ branch_filter }}">
+                    <input type="hidden" name="status" value="{{ status_filter }}">
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="exportDateFrom" class="form-label">From Date</label>
+                            <input type="date" class="form-control" id="exportDateFrom" name="date_from" value="{{ date_from }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="exportDateTo" class="form-label">To Date</label>
+                            <input type="date" class="form-control" id="exportDateTo" name="date_to" value="{{ date_to }}">
+                        </div>
+                    </div>
+                    <div class="invalid-feedback d-block" id="exportDateError" style="display:none !important;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-download"></i> Export to Excel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    var form = document.getElementById('exportLogisticsForm');
+    if (!form) return;
+    form.addEventListener('submit', function (e) {
+        var from = document.getElementById('exportDateFrom').value;
+        var to = document.getElementById('exportDateTo').value;
+        var errEl = document.getElementById('exportDateError');
+        if (from && to && from > to) {
+            e.preventDefault();
+            errEl.textContent = '"From Date" cannot be after "To Date".';
+            errEl.style.display = 'block';
+            return false;
+        }
+        errEl.style.display = 'none';
+    });
+})();
+</script>
+{% endif %}
 
 <!-- Provider Toggle -->
 <div class="card shadow-sm mb-4">
@@ -732,6 +804,22 @@ document.addEventListener('click', function(event) {
         body.appendChild(note);
     }
 
+    function applySyncStatus(syncStatus) {
+        // Independent of the base.html heartbeat's cross-tab leader election
+        // (only one tab per browser actually pings /ncm/api/heartbeat/), so
+        // this tab's "Status Last Synced" card no longer depends on being the
+        // one that happens to hold that lease.
+        if (!syncStatus) return;
+        var el = document.getElementById('lastSyncValue');
+        if (!el) return;
+        if (syncStatus.syncing) {
+            el.textContent = 'Syncing…';
+        } else if (syncStatus.last_sync_display) {
+            el.textContent = syncStatus.last_sync_display === 'Never'
+                ? 'Never' : syncStatus.last_sync_display;
+        }
+    }
+
     function applyStatuses(orders) {
         var changed = 0;
         orders.forEach(function (o) {
@@ -768,7 +856,9 @@ document.addEventListener('click', function(event) {
                 return r.json();
             })
             .then(function (data) {
-                if (!data || !data.success || !data.orders) return;
+                if (!data || !data.success) return;
+                applySyncStatus(data.sync_status);
+                if (!data.orders) return;
                 var n = applyStatuses(data.orders);
                 if (n && typeof alertify !== 'undefined') {
                     alertify.success(n + ' order status' + (n === 1 ? '' : 'es') + ' updated');

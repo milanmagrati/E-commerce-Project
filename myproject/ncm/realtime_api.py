@@ -431,13 +431,33 @@ def api_get_orders_status_batch(request):
                 'updated_at': order['updated_at'].isoformat()
             })
 
+        # Piggyback the background sync's state on this response rather than
+        # only on the base.html heartbeat. The heartbeat elects one leader tab
+        # per browser (see base.html) and only that tab receives
+        # 'ncm-sync-intervals' events - so a non-leader tab that loaded while a
+        # sync was running (or that missed the event some other way) was left
+        # showing "Syncing..." forever, since nothing else ever told it the
+        # sync had finished. This poll already runs independently on every tab
+        # of this page, so it's a reliable place to keep that stat card honest.
+        # Read-only: no sync is claimed or started here.
+        from ncm.scheduler import get_status as _ncm_sync_status
+        from dashboard.timezone_utils import format_nepali_datetime as _fmt_nepali
+        _sync_status = _ncm_sync_status()
+
         return JsonResponse({
             'success': True,
             'count': len(orders_data),
             'orders': orders_data,
-            'timestamp': timezone.now().isoformat()
+            'timestamp': timezone.now().isoformat(),
+            'sync_status': {
+                'syncing': _sync_status['syncing'],
+                'last_sync_display': (
+                    _fmt_nepali(_sync_status['last_sync_finished_at'])
+                    if _sync_status['last_sync_finished_at'] else 'Never'
+                ),
+            },
         })
-        
+
     except ValueError:
         return JsonResponse({
             'success': False,
