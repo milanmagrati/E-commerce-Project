@@ -218,7 +218,32 @@
 
 /* Source filter button + modal */
 .sf-badge { background: var(--sr-purple); color: #fff; border-radius: 10px; padding: 2px 7px; font-size: .7rem; font-weight: 700; margin-left: 4px; }
-.source-filter-toolbar { display: flex; gap: 8px; align-items: center; }
+
+/* Active-selection chips under the filter bar */
+.source-chips {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    margin: -6px 0 16px; padding: 10px 14px;
+    background: #fff; border: 1px solid var(--sr-border); border-radius: 10px;
+}
+.source-chips-label { font-size: .78rem; color: #9ca3af; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.source-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #f8fafc; border: 1px solid var(--sr-border); border-radius: 999px;
+    padding: 4px 6px 4px 10px; font-size: .8rem; color: #374151;
+}
+.source-chip-x {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border: 0; border-radius: 50%;
+    background: transparent; color: #9ca3af; font-size: .7rem; cursor: pointer;
+    transition: background .15s, color .15s;
+}
+.source-chip-x:hover { background: #fee2e2; color: #dc2626; }
+.source-chips-clear {
+    margin-left: auto; border: 0; background: transparent; padding: 0;
+    color: var(--sr-purple); font-size: .8rem; font-weight: 600; cursor: pointer;
+}
+.source-chips-clear:hover { text-decoration: underline; }
+
 .source-filter-row {
     display: flex; align-items: center; justify-content: space-between;
     padding: 9px 10px; border-radius: 8px; cursor: pointer; transition: background .15s;
@@ -278,11 +303,16 @@
             <button type="button" class="btn btn-sm btn-outline-secondary" id="customRangeToggle" data-bs-toggle="collapse" data-bs-target="#customRangeForm">
                 <i class="fas fa-calendar"></i> Custom Range
             </button>
+            <button type="button" class="btn-export no-print" id="sourceFilterBtn" data-bs-toggle="modal" data-bs-target="#sourceFilterModal" title="Choose which sources drive this whole page — cards, charts and both tables">
+                <i class="fas fa-sliders" style="color:var(--sr-purple)"></i> Sources <span class="sf-badge" id="sourceFilterBadge">–/–</span>
+            </button>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
             <span id="rangeLabel" class="text-muted" style="font-size:.82rem;"></span>
         </div>
     </div>
+    <!-- Active source selection, shown only while a subset is selected -->
+    <div class="source-chips no-print" id="sourceChips" style="display:none;"></div>
     <div class="collapse mb-3 no-print" id="customRangeForm">
         <div class="card card-body bg-light">
             <div class="row g-2">
@@ -335,12 +365,7 @@
     <div class="chart-card">
         <div class="chart-header">
             <h5><i class="fas fa-chart-line" style="color:var(--sr-purple)"></i> Orders by Source — Trend</h5>
-            <div class="source-filter-toolbar">
-                <span style="font-size:.8rem;color:#9ca3af;" class="d-none d-md-inline">Daily order count per source over the selected range</span>
-                <button type="button" class="btn-export no-print" id="sourceFilterBtn" data-bs-toggle="modal" data-bs-target="#sourceFilterModal" title="Choose which sources appear on the charts and table">
-                    <i class="fas fa-sliders" style="color:var(--sr-purple)"></i> Sources <span class="sf-badge" id="sourceFilterBadge">–/–</span>
-                </button>
-            </div>
+            <span style="font-size:.8rem;color:#9ca3af;" class="d-none d-md-inline">Daily order count per source over the selected range</span>
         </div>
         <div class="chart-body">
             <div class="chart-canvas-wrap" id="trendChartWrap">
@@ -492,7 +517,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-muted mb-2" style="font-size:.82rem;">Choose which sources appear on the trend, ranking, and share charts below. Changes apply instantly.</p>
+                <p class="text-muted mb-2" style="font-size:.82rem;">Choose which sources drive this report. Summary cards, charts, the ranking table and the order list below all follow this selection. Changes apply instantly.</p>
                 <div class="d-flex gap-2 align-items-center mb-2">
                     <div class="search-box" style="max-width:none;flex:1;">
                         <i class="fas fa-search"></i>
@@ -548,7 +573,8 @@
     // sources (e.g. after switching date range) default to visible.
     let deselectedSources = new Set();
     let allSourcesList = [];
-    let lastChartData = null;
+    let allSourceCounts = {};   // source -> unfiltered order count (for modal labels)
+    let sourceApplyDebounce = null;
 
     function colorFor(source) {
         return colorMap[source] || '#9ca3af';
@@ -556,6 +582,19 @@
 
     function isSourceVisible(source) {
         return !deselectedSources.has(source);
+    }
+
+    // Both checks read through allSourcesList rather than deselectedSources.size,
+    // because that Set keeps entries for sources that don't exist in the current
+    // date range (deliberately — they stay unticked if the range changes back).
+    function isAllSelected() {
+        return allSourcesList.every(isSourceVisible);
+    }
+
+    // True when the user has switched every known source off — lets the empty
+    // states say "no sources selected" rather than "no orders in this period".
+    function isNoneSelected() {
+        return allSourcesList.length > 0 && !allSourcesList.some(isSourceVisible);
     }
 
     function fmtMoney(v) {
@@ -651,25 +690,41 @@
         }
     }
 
+    // Page-wide Sources selection. Nothing is sent while everything is
+    // selected; the explicit flag lets the server tell "all" from "none".
+    function buildSourceParams(params) {
+        if (isAllSelected()) return;
+        params.set('sources_filtered', '1');
+        allSourcesList.filter(isSourceVisible).forEach(s => params.append('sources', s));
+    }
+
     // ---------- Analytics (chart + ranking) ----------
     function fetchAnalytics() {
         const params = new URLSearchParams();
         buildDateParams(params);
+        buildSourceParams(params);
         fetch(ANALYTICS_URL + '?' + params.toString())
             .then(r => r.json())
             .then(data => {
                 rankingData = data.ranking || [];
                 rankingPage = 1;
+                // The source universe comes from all_sources (unfiltered) so the
+                // modal keeps listing sources the user has switched off, and so
+                // colors stay put no matter what is currently selected.
+                allSourceCounts = {};
+                allSourcesList = (data.all_sources || []).map(x => {
+                    allSourceCounts[x.source] = x.count;
+                    return x.source;
+                });
                 colorMap = {};
-                (data.chart.sources || []).forEach((s, i) => { colorMap[s] = palette[i % palette.length]; });
-                allSourcesList = data.chart.sources || [];
-                lastChartData = data.chart;
+                allSourcesList.forEach((s, i) => { colorMap[s] = palette[i % palette.length]; });
                 renderStats(data.totals);
                 renderTrendChart(data.chart);
                 renderRankCharts(rankingData);
                 renderRankingTable();
-                populateSourceFilter(data.chart.sources || []);
+                populateSourceFilter(allSourcesList.filter(isSourceVisible));
                 renderSourceFilterList();
+                renderSourceChips();
             })
             .catch(err => {
                 console.error('Failed to load orders-by-source analytics', err);
@@ -718,7 +773,7 @@
         const allSources = chart.sources || [];
         const sources = allSources.filter(isSourceVisible);
         const hasData = sources.length > 0;
-        toggleEmptyState('trendChartWrap', 'sourceTrendChart', !hasData, (allSources.length && !sources.length) ? 'sources' : null);
+        toggleEmptyState('trendChartWrap', 'sourceTrendChart', !hasData, isNoneSelected() ? 'sources' : null);
         if (trendChart) trendChart.destroy();
         if (!hasData) { trendChart = null; return; }
 
@@ -756,7 +811,7 @@
     function renderRankCharts(ranking) {
         const filtered = ranking.filter(r => isSourceVisible(r.source));
         const hasData = filtered.length > 0;
-        const emptyReason = (ranking.length && !filtered.length) ? 'sources' : null;
+        const emptyReason = isNoneSelected() ? 'sources' : null;
         toggleEmptyState('barChartWrap', 'sourceRankBarChart', !hasData, emptyReason);
         toggleEmptyState('shareChartWrap', 'sourceShareChart', !hasData, emptyReason);
         if (barChart) barChart.destroy();
@@ -848,7 +903,7 @@
         const filtered = rankingData.filter(r => isSourceVisible(r.source));
 
         if (!filtered.length) {
-            const msg = rankingData.length
+            const msg = isNoneSelected()
                 ? '<i class="fas fa-sliders"></i>No sources selected. Open the Sources filter to choose at least one.'
                 : '<i class="fas fa-inbox"></i>No orders found for this period.';
             body.innerHTML = `<tr><td colspan="10"><div class="empty-state">${msg}</div></td></tr>`;
@@ -863,7 +918,7 @@
 
         body.innerHTML = pageRows.map((r, i) => `
             <tr>
-                <td>${rankBadge(startIdx + i + 1)}</td>
+                <td>${rankBadge(r.rank || (startIdx + i + 1))}</td>
                 <td><span class="source-dot" style="background:${colorFor(r.source)}"></span><strong>${escapeHtml(r.source)}</strong></td>
                 <td>${r.count.toLocaleString()}</td>
                 <td>
@@ -895,12 +950,19 @@
         });
     }
 
+    // The Order Details dropdown narrows down *within* the page-wide selection,
+    // so it only ever offers currently-selected sources.
     function populateSourceFilter(sources) {
         const select = document.getElementById('sourceFilterSelect');
         const current = select.value;
         select.innerHTML = '<option value="">All Sources</option>' +
             sources.map(s => `<option value="${escapeAttr(s)}">${escapeHtml(s)}</option>`).join('');
-        if (sources.includes(current)) select.value = current;
+        if (sources.includes(current)) {
+            select.value = current;
+        } else {
+            select.value = '';
+            state.source = '';
+        }
     }
 
     // ---------- Sources filter modal (checkbox-driven chart/table visibility) ----------
@@ -919,8 +981,10 @@
         if (!listEl) return;
         const q = (document.getElementById('sourceFilterSearch').value || '').trim().toLowerCase();
 
-        const countMap = {};
-        rankingData.forEach(r => { countMap[r.source] = r.count; });
+        // Counts come from the unfiltered universe — rankingData is already
+        // narrowed to the current selection, so a switched-off source would
+        // otherwise always read "0 orders".
+        const countMap = allSourceCounts;
         const sorted = allSourcesList.slice().sort((a, b) => (countMap[b] || 0) - (countMap[a] || 0));
         const filtered = q ? sorted.filter(s => s.toLowerCase().includes(q)) : sorted;
 
@@ -943,13 +1007,69 @@
         updateSourceFilterBadge();
     }
 
+    // Chips summarising the active subset, shown under the filter bar.
+    function renderSourceChips() {
+        const el = document.getElementById('sourceChips');
+        if (!el) return;
+        const selected = allSourcesList.filter(isSourceVisible);
+        if (isAllSelected() || !allSourcesList.length) {
+            el.style.display = 'none';
+            el.innerHTML = '';
+            return;
+        }
+        el.style.display = 'flex';
+        const chips = selected.length
+            ? selected.map(s => `
+                <span class="source-chip">
+                    <span class="source-dot" style="background:${colorFor(s)};margin-right:0;"></span>
+                    ${escapeHtml(s)}
+                    <button type="button" class="source-chip-x" data-remove="${escapeHtml(s)}" title="Remove ${escapeHtml(s)}">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </span>`).join('')
+            : '<span class="text-muted" style="font-size:.82rem;">No sources selected — nothing to show below.</span>';
+        el.innerHTML = `
+            <span class="source-chips-label">Filtered</span>
+            ${chips}
+            <button type="button" class="source-chips-clear" data-role="clear-sources">Clear</button>
+        `;
+    }
+
+    // Single choke point for every source-selection change: gives instant UI
+    // feedback, then refetches both endpoints so the cards, charts and both
+    // tables all reflect the new selection.
     function applySourceFilterChange() {
         rankingPage = 1;
-        if (lastChartData) renderTrendChart(lastChartData);
-        renderRankCharts(rankingData);
-        renderRankingTable();
+        state.page = 1;
+        // A narrowed-down source that just got switched off must not linger on
+        // the detail table, or the intersection would return nothing.
+        if (state.source && !isSourceVisible(state.source)) {
+            state.source = '';
+            document.getElementById('sourceFilterSelect').value = '';
+        }
         updateSourceFilterBadge();
+        renderSourceChips();
+        clearTimeout(sourceApplyDebounce);
+        sourceApplyDebounce = setTimeout(() => {
+            fetchAnalytics();
+            fetchTable();
+        }, 300);
     }
+
+    document.getElementById('sourceChips').addEventListener('click', function(e) {
+        const removeBtn = e.target.closest('[data-remove]');
+        if (removeBtn) {
+            deselectedSources.add(removeBtn.dataset.remove);
+            renderSourceFilterList();
+            applySourceFilterChange();
+            return;
+        }
+        if (e.target.closest('[data-role="clear-sources"]')) {
+            deselectedSources.clear();
+            renderSourceFilterList();
+            applySourceFilterChange();
+        }
+    });
 
     document.getElementById('sourceFilterList').addEventListener('change', function(e) {
         if (!e.target.classList.contains('source-filter-checkbox')) return;
@@ -977,6 +1097,7 @@
     function fetchTable() {
         const params = new URLSearchParams();
         buildDateParams(params);
+        buildSourceParams(params);
         if (state.source) params.set('source', state.source);
         if (state.status) params.set('status', state.status);
         if (state.search) params.set('search', state.search);
@@ -1012,7 +1133,10 @@
         const body = document.getElementById('detailTableBody');
         const rows = data.rows || [];
         if (!rows.length) {
-            body.innerHTML = '<tr><td colspan="10"><div class="empty-state"><i class="fas fa-inbox"></i>No orders match your filters.</div></td></tr>';
+            const msg = isNoneSelected()
+                ? '<i class="fas fa-sliders"></i>No sources selected. Open the Sources filter to choose at least one.'
+                : '<i class="fas fa-inbox"></i>No orders match your filters.';
+            body.innerHTML = `<tr><td colspan="10"><div class="empty-state">${msg}</div></td></tr>`;
         } else {
             body.innerHTML = rows.map(o => `
                 <tr>
@@ -1068,9 +1192,19 @@
     };
 
     OBS.viewOrders = function(source) {
+        // Drilling into a source that's currently switched off at the top would
+        // land on an empty table — switch it back on first.
+        if (!isSourceVisible(source)) {
+            deselectedSources.delete(source);
+            renderSourceFilterList();
+            updateSourceFilterBadge();
+            renderSourceChips();
+            fetchAnalytics();
+        }
+        populateSourceFilter(allSourcesList.filter(isSourceVisible));
+        document.getElementById('sourceFilterSelect').value = source;
         state.source = source;
         state.page = 1;
-        document.getElementById('sourceFilterSelect').value = source;
         fetchTable();
         document.getElementById('orderDetailsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
     };

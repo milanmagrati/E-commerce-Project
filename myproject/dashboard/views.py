@@ -15943,6 +15943,23 @@ def _normalize_order_source(raw):
     return source_raw.replace('_', ' ').title()
 
 
+def _orders_by_source_selection(request):
+    """Parse the page-wide Sources filter used by the Orders by Source report.
+
+    Returns None when every source is selected (i.e. no filtering at all), or a
+    set of normalized source names otherwise. The explicit `sources_filtered=1`
+    flag is what distinguishes "all selected" (no param, show everything) from
+    "none selected" (flag with an empty set, show nothing).
+
+    Sources arrive as repeated `sources=` params rather than one comma-joined
+    value because normalized names come from free-text Order.order_from and may
+    legitimately contain commas.
+    """
+    if request.GET.get('sources_filtered') not in ('1', 'true', 'True'):
+        return None
+    return {s.strip() for s in request.GET.getlist('sources') if s.strip()}
+
+
 def _orders_by_source_date_range(request, default_days=30):
     """Shared date-range parser for the Orders by Source report endpoints.
 
@@ -16050,6 +16067,23 @@ def orders_by_source_analytics_data(request):
         creator_name = full_name or o['created_by__username'] or 'Unknown'
         stats['creators'][creator_name] = stats['creators'].get(creator_name, 0) + 1
 
+    # The unfiltered source universe, captured *before* the selection filter is
+    # applied, so the "Filter Sources" modal can still list (and re-tick)
+    # sources the user has currently switched off.
+    all_sources_meta = sorted(
+        [{'source': name, 'count': stats['count']} for name, stats in source_stats.items()],
+        key=lambda x: (-x['count'], x['source'])
+    )
+
+    # Page-wide Sources filter: everything below (KPI totals, trend series,
+    # ranking, shares) is computed over the selected subset only.
+    selection = _orders_by_source_selection(request)
+    if selection is not None:
+        source_stats = {n: s for n, s in source_stats.items() if n in selection}
+        by_date = {d: {n: c for n, c in counts.items() if n in selection}
+                   for d, counts in by_date.items()}
+        all_sources = {s for s in all_sources if s in selection}
+
     # Previous equal-length period counts, per source, for trend/growth
     prev_counts = {}
     if prev_start_dt < prev_end_dt:
@@ -16103,6 +16137,7 @@ def orders_by_source_analytics_data(request):
     return JsonResponse({
         'chart': chart,
         'ranking': ranking,
+        'all_sources': all_sources_meta,
         'totals': {
             'total_orders': total_orders,
             'total_revenue': round(total_revenue, 2),
@@ -16130,13 +16165,25 @@ def orders_by_source_table_data(request):
         created_at__range=(start_dt, end_dt),
     ).select_related('created_by')
 
+    # Two source filters combine here: the page-wide Sources selection at the
+    # top of the report, and the table's own single-source dropdown which
+    # narrows down *within* that selection.
+    selection = _orders_by_source_selection(request)
     source_param = (request.GET.get('source') or '').strip()
+
+    allowed = selection
     if source_param:
-        matching_ids = [
-            oid for oid, raw in qs.values_list('id', 'order_from')
-            if _normalize_order_source(raw) == source_param
-        ]
-        qs = qs.filter(id__in=matching_ids)
+        allowed = {source_param} if allowed is None else (allowed & {source_param})
+
+    if allowed is not None:
+        if not allowed:
+            qs = qs.none()
+        else:
+            matching_ids = [
+                oid for oid, raw in qs.values_list('id', 'order_from')
+                if _normalize_order_source(raw) in allowed
+            ]
+            qs = qs.filter(id__in=matching_ids)
 
     status_param = (request.GET.get('status') or '').strip()
     if status_param:
