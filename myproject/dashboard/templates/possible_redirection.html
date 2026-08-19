@@ -420,21 +420,45 @@
                                                     {% endfor %}
                                                 </td>
                                                 <td class="hide-sm"><span class="badge bg-success">{{ match.order_status }}</span></td>
-                                                <td class="text-end fw-bold">Rs.{{ match.total_amount }}</td>
+                                                {% comment %}
+                                                Show what the courier would actually collect. A partially
+                                                paid order has already taken money up front, so quoting the
+                                                gross total here would have the operator redirect a parcel
+                                                with the wrong COD.
+                                                {% endcomment %}
+                                                <td class="text-end fw-bold">
+                                                    Rs.{{ match.amount_due|floatformat:2 }}
+                                                    {% if match.is_partial_payment %}
+                                                    <div class="small text-muted fw-normal" style="white-space:nowrap;">
+                                                        <span class="badge bg-warning text-dark" style="font-size:0.6rem;">PARTIAL</span>
+                                                        Rs.{{ match.partial_amount_paid|default_if_none:0|floatformat:2 }} paid of Rs.{{ match.total_amount|floatformat:2 }}
+                                                    </div>
+                                                    {% endif %}
+                                                </td>
                                                 <td class="text-center">
+                                                    {% comment %}
+                                                    Details ride on data-* attributes rather than a long
+                                                    onclick argument list — the financials below have to
+                                                    travel with the customer, and positional args were
+                                                    already at the limit of what stays readable.
+                                                    {% endcomment %}
                                                     <button type="button" class="btn btn-success btn-sm py-0"
-                                                        onclick="openRedirectWithNewCustomer(
-                                                            {{ entry.ncm_order_id }},
-                                                            '{{ match.customer_name|escapejs }}',
-                                                            '{{ match.customer_phone|escapejs }}',
-                                                            '{{ match.customer_email|escapejs }}',
-                                                            '{{ match.shipping_address|escapejs }}',
-                                                            '{{ match.landmark|escapejs }}',
-                                                            '{{ match.branch_city|escapejs }}',
-                                                            '{{ match.order_number|escapejs }}',
-                                                            {{ match.id }}
-                                                        )"
-                                                        title="Pre-fill redirect form with this customer's details">
+                                                        data-ncm-id="{{ entry.ncm_order_id }}"
+                                                        data-name="{{ match.customer_name }}"
+                                                        data-phone="{{ match.customer_phone }}"
+                                                        data-email="{{ match.customer_email }}"
+                                                        data-address="{{ match.shipping_address }}"
+                                                        data-landmark="{{ match.landmark }}"
+                                                        data-city="{{ match.branch_city }}"
+                                                        data-order-num="{{ match.order_number }}"
+                                                        data-order-id="{{ match.id }}"
+                                                        data-total="{{ match.total_amount|default_if_none:0|floatformat:'2u' }}"
+                                                        data-discount="{{ match.discount_amount|default_if_none:0|floatformat:'2u' }}"
+                                                        data-shipping="{{ match.shipping_charge|default_if_none:0|floatformat:'2u' }}"
+                                                        data-is-partial="{{ match.is_partial_payment|yesno:'1,0' }}"
+                                                        data-paid="{{ match.partial_amount_paid|default_if_none:0|floatformat:'2u' }}"
+                                                        onclick="openRedirectWithNewCustomer(this)"
+                                                        title="Pre-fill redirect form with this customer's details and amounts">
                                                         <i class="fas fa-user-check me-1"></i>Use
                                                     </button>
                                                 </td>
@@ -617,7 +641,7 @@
             <div class="od-section-header"><i class="fas fa-calculator text-success me-2"></i>Financial Details</div>
             <div class="od-section-body">
               <div class="row g-3">
-                <div class="col-6 col-md-3"><div class="od-field-label">Total / COD Amount</div><div class="od-field-value fw-bold text-success" style="font-size:1.2rem;" id="od_total_amount">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Total Amount</div><div class="od-field-value fw-bold text-success" style="font-size:1.2rem;" id="od_total_amount">—</div></div>
                 <div class="col-6 col-md-3"><div class="od-field-label">NCM COD Charge</div><div class="od-field-value" id="od_cod_charge_ncm">—</div></div>
                 <div class="col-6 col-md-3"><div class="od-field-label">Discount</div><div class="od-field-value text-danger" id="od_discount_amount">—</div></div>
                 <div class="col-6 col-md-3"><div class="od-field-label">Shipping Charge</div><div class="od-field-value" id="od_shipping_charge">—</div></div>
@@ -801,6 +825,7 @@
                                 <i class="fas fa-calculator text-info me-2"></i>Financial Details
                             </div>
                             <div class="section-body">
+                                <div id="rf_amount_source_note" class="alert alert-info py-2 px-3 small mb-3" style="display:none;"></div>
                                 <div class="row g-3">
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold">Discount (Rs.)</label>
@@ -812,7 +837,7 @@
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold">Total Amount (Rs.) <span class="text-danger">*</span></label>
-                                        <input type="number" class="form-control fw-bold" id="rf_total_amount" name="total_amount" step="0.01" min="0" required>
+                                        <input type="number" class="form-control fw-bold" id="rf_total_amount" name="total_amount" step="0.01" min="0" required oninput="calcRemaining()">
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold">Package Weight (kg)</label>
@@ -1262,21 +1287,37 @@ function togglePartialPayment() {
     if (!isPartial) {
         document.getElementById('rf_partial_paid').value = '';
         document.getElementById('rf_remaining').value = '';
-        document.getElementById('rf_cod_display').value = '';
-    } else {
-        calcRemaining();
     }
+    // Always recalc: switching the toggle off still has to push the full total
+    // back into the COD field, which the early return used to skip.
+    calcRemaining();
+}
+
+function currentCodAmount() {
+    const total = safeFloat(document.getElementById('rf_total_amount').value);
+    const paid = safeFloat(document.getElementById('rf_partial_paid').value);
+    const isPartial = document.getElementById('rf_is_partial').checked;
+    return isPartial ? Math.max(0, total - paid) : total;
 }
 
 function calcRemaining() {
     const total = safeFloat(document.getElementById('rf_total_amount').value);
     const paid = safeFloat(document.getElementById('rf_partial_paid').value);
-    const remaining = Math.max(0, total - paid);
-    document.getElementById('rf_remaining').value = remaining.toFixed(2);
-
     const isPartial = document.getElementById('rf_is_partial').checked;
-    const codAmount = isPartial ? remaining : total;
-    document.getElementById('rf_cod_display').value = 'Rs.' + codAmount.toFixed(2);
+    const remaining = Math.max(0, total - paid);
+    const codAmount = currentCodAmount();
+
+    document.getElementById('rf_remaining').value = isPartial ? remaining.toFixed(2) : '';
+    document.getElementById('rf_cod_display').value = isPartial ? 'Rs.' + codAmount.toFixed(2) : '';
+
+    // The NCM redirect COD box is the number NCM actually collects, so it has to
+    // track every edit to total/paid — not just the one value set when the modal
+    // opened.
+    const sendToEl = document.getElementById('rf_send_to');
+    const ncmCodEl = document.getElementById('rf_ncm_cod_charge');
+    if (ncmCodEl && sendToEl && sendToEl.value === 'ncm_redirect') {
+        ncmCodEl.value = codAmount.toFixed(2);
+    }
 }
 
 // ========== ORDER DETAIL MODAL ==========
@@ -1492,6 +1533,7 @@ function openRedirectModal(ncmOrderId) {
         try {
             populateRedirectModal(data.order);
         } catch (e) {
+            _overrideCustomer = null;  // never let a half-applied override arm the next open
             document.getElementById('redirectModalContent').style.display = 'none';
             loadingEl.style.display = 'block';
             loadingEl.innerHTML =
@@ -1722,10 +1764,48 @@ function populateRedirectModal(order) {
         // Store the matched order's ID so the backend can mark it as Redirected
         const matchedEl = _el('rf_matched_order_id');
         if (matchedEl) matchedEl.value = ov.matchedOrderId || '';
+
+        // Financials follow the matched order too. Leaving the returned order's
+        // amounts in place made the modal quote a stale total and, worse, a COD
+        // that ignored what the new customer had already paid up front.
+        const moneyFields = {
+            'rf_total_amount': ov.total,
+            'rf_discount_amount': ov.discount,
+            'rf_shipping_charge': ov.shipping,
+        };
+        for (const [id, val] of Object.entries(moneyFields)) {
+            const el = _el(id);
+            if (el && val !== undefined && val !== null && val !== '') el.value = val;
+        }
+        const ovPartialEl = _el('rf_is_partial');
+        if (ovPartialEl) ovPartialEl.checked = !!ov.isPartial;
+        const ovPaidEl = _el('rf_partial_paid');
+        if (ovPaidEl) ovPaidEl.value = ov.isPartial ? (ov.paid || '0.00') : '';
+        togglePartialPayment();   // shows/hides the partial row and recalcs remaining + COD
+
+        // Note the swap in the modal so the operator can see which order the
+        // numbers came from rather than wondering why the total changed.
+        // Quote the figure the form will actually post, not the stored one —
+        // on a row whose remaining_amount has drifted from total minus paid the
+        // two differ, and the banner must match what NCM is told to collect.
+        const codNow = currentCodAmount().toFixed(2);
+        const srcNote = _el('rf_amount_source_note');
+        if (srcNote) {
+            srcNote.style.display = '';
+            srcNote.innerHTML = ov.isPartial
+                ? `Amounts taken from order <strong>#${escHtml(ov.orderNum)}</strong> — total Rs.${escHtml(ov.total)},
+                   Rs.${escHtml(ov.paid)} already paid, so <strong>Rs.${codNow}</strong> is collected on delivery.`
+                : `Amounts taken from order <strong>#${escHtml(ov.orderNum)}</strong> — <strong>Rs.${codNow}</strong> is collected on delivery.`;
+        }
+
         setTimeout(() => showToast(
-            'Customer pre-filled from order #' + ov.orderNum + ' — verify details before redirecting.',
+            'Customer and amounts pre-filled from order #' + ov.orderNum +
+            ' (COD Rs.' + codNow + ') — verify details before redirecting.',
             'text-bg-info'
         ), 400);
+    } else {
+        const srcNote = _el('rf_amount_source_note');
+        if (srcNote) { srcNote.style.display = 'none'; srcNote.innerHTML = ''; }
     }
 
     toggleLogisticsOptions();
@@ -1998,8 +2078,27 @@ function focusRtvRow(ncmId) {
     setTimeout(() => { row.style.backgroundColor = previous; }, 2200);
 }
 
-function openRedirectWithNewCustomer(ncmId, name, phone, email, address, landmark, city, orderNum, matchedOrderId) {
-    _overrideCustomer = { name, phone, email, address, landmark, city, orderNum, matchedOrderId: matchedOrderId || null };
+function openRedirectWithNewCustomer(btn) {
+    const d = btn.dataset;
+    const ncmId = d.ncmId;
+    // The redirect is fulfilling the MATCHED order, so its money travels with
+    // its customer: total/discount/shipping and the partial-payment state all
+    // come from that order, not from the returned one sitting in the modal.
+    _overrideCustomer = {
+        name: d.name || '',
+        phone: d.phone || '',
+        email: d.email || '',
+        address: d.address || '',
+        landmark: d.landmark || '',
+        city: d.city || '',
+        orderNum: d.orderNum || '',
+        matchedOrderId: d.orderId || null,
+        total: d.total,
+        discount: d.discount,
+        shipping: d.shipping,
+        isPartial: d.isPartial === '1',
+        paid: d.paid,
+    };
     // Collapse the matches row before opening modal
     const matchRow = document.getElementById('matches-row-' + ncmId);
     if (matchRow) matchRow.style.display = 'none';

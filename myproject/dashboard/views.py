@@ -5571,6 +5571,11 @@ def possible_redirection_list(request):
                     'id', 'order_number', 'customer_name', 'customer_phone',
                     'customer_email', 'shipping_address', 'landmark', 'branch_city',
                     'ncm_destination_branch', 'order_status', 'status', 'total_amount',
+                    # Financials the match rows and the "Use Customer" prefill carry
+                    # over to the redirect form. Deferring these would make the
+                    # template fire one extra query per matched order.
+                    'discount_amount', 'shipping_charge', 'package_weight',
+                    'is_partial_payment', 'partial_amount_paid', 'remaining_amount',
                 )
         )
         for _o in _confirmed_orders:
@@ -6456,13 +6461,17 @@ def redirect_order_save(request, order_id):
             if is_partial is not None:
                 order.is_partial_payment = is_partial == 'true'
                 if order.is_partial_payment:
+                    # A blank field means "nothing paid yet", not "keep whatever
+                    # the previous customer had paid". Carrying the old figure
+                    # over left remaining_amount disagreeing with the COD the
+                    # form had already computed and sent to NCM.
                     partial_str = request.POST.get('partial_amount_paid', '').strip()
-                    if partial_str:
-                        try:
-                            order.partial_amount_paid = Decimal(partial_str)
-                            order.remaining_amount = order.total_amount - order.partial_amount_paid
-                        except (InvalidOperation, ValueError):
-                            pass
+                    try:
+                        order.partial_amount_paid = Decimal(partial_str) if partial_str else Decimal('0.00')
+                    except (InvalidOperation, ValueError):
+                        order.partial_amount_paid = Decimal('0.00')
+                    _remaining = (order.total_amount or Decimal('0.00')) - order.partial_amount_paid
+                    order.remaining_amount = _remaining if _remaining > 0 else Decimal('0.00')
                 else:
                     order.partial_amount_paid = None
                     order.remaining_amount = None
@@ -9343,7 +9352,7 @@ def orders_bulk_ncm_send(request):
             customer_name=order.customer_name or '',
             customer_phone=order.customer_phone or '',
             shipping_address=order.shipping_address or '',
-            cod_amount=order.total_amount or 0,
+            cod_amount=order.amount_due or 0,
             destination_branch=order.branch_city or '',
             ncm_order_id=order.ncm_order_id,
             status=log_status,
@@ -9512,7 +9521,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         vendor_ref_id = vendor_ref_id.strip()
 
         # For partial payments, send remaining amount as COD (not full total)
-        cod_amount = order.remaining_amount if order.is_partial_payment and order.remaining_amount is not None else order.total_amount
+        cod_amount = order.amount_due
         payload = {
             "name": str(order.customer_name or "").strip(),
             "phone": phone,
@@ -14530,7 +14539,7 @@ def orders_bulk_ncm_send(request):
                 customer_name=order.customer_name or '',
                 customer_phone=order.customer_phone or '',
                 shipping_address=order.shipping_address or '',
-                cod_amount=order.total_amount or 0,
+                cod_amount=order.amount_due or 0,
                 destination_branch=order.branch_city or '',
                 ncm_order_id=order.ncm_order_id,
                 status=log_status,
@@ -14742,7 +14751,7 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         api_url = f"{base_url}/order/create"
 
         # Build payload - for partial payments, send remaining amount as COD
-        cod_amount = order.remaining_amount if order.is_partial_payment and order.remaining_amount is not None else order.total_amount
+        cod_amount = order.amount_due
         payload = {
             "name": str(order.customer_name)[:50],
             "phone": str(order.customer_phone),
@@ -19786,7 +19795,9 @@ def send_single_order_to_pnd(request, order, default_weight=1.0, api_config_id=N
             "primaryMobileNo": digits_only,
             "destinationBranch": destination_branch,
             "destinationCityArea": str(order.shipping_address or destination_branch)[:200],
-            "codAmount": float(order.total_amount or 0),
+            # Partial payments have already been collected up front —
+            # amount_due is what is left to take on delivery.
+            "codAmount": float(order.amount_due or 0),
             "orderDescription": str(product_name)[:200],
             "vendorTrackingNumber": str(order.order_number),
             "landmark": str(order.landmark or order.shipping_address or 'N/A')[:200],
@@ -20004,7 +20015,7 @@ def orders_bulk_pnd_send(request):
                 customer_name=order.customer_name or '',
                 customer_phone=order.customer_phone or '',
                 shipping_address=order.shipping_address or '',
-                cod_amount=order.total_amount or 0,
+                cod_amount=order.amount_due or 0,
                 destination_branch=order.branch_city or '',
                 pnd_order_id=order.pnd_order_id,
                 status=log_status,

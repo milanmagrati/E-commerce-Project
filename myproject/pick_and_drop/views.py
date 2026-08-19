@@ -119,7 +119,9 @@ def create_pnd_shipment(request, order_id):
             'primaryMobileNo': digits_only,
             'destinationBranch': destination_branch,
             'destinationCityArea': (order.shipping_address or destination_branch),
-            'codAmount': float(order.total_amount or 0),
+            # Partial payments have already been collected up front —
+            # amount_due is what is left to take on delivery.
+            'codAmount': float(order.amount_due or 0),
             'orderDescription': _get_package_description(order),
             'vendorTrackingNumber': str(order.order_number),
             'landmark': order.landmark or order.shipping_address or 'N/A',

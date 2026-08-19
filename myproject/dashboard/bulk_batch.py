@@ -810,7 +810,7 @@ def _record_order_result(adapter, batch, order, result, user):
         'customer_name': order.customer_name or '',
         'customer_phone': order.customer_phone or '',
         'shipping_address': order.shipping_address or '',
-        'cod_amount': order.total_amount or 0,
+        'cod_amount': order.amount_due or 0,
         'status': log_status,
         'message': result.get('message', ''),
     }

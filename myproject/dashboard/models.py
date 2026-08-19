@@ -536,6 +536,31 @@ class Order(models.Model):
     ncm_exchange_ven_order = models.IntegerField(blank=True, null=True, help_text="NCM exchange vendor order ID")
     exchange_status = models.CharField(max_length=20, choices=EXCHANGE_STATUS_CHOICES, blank=True, default='')
 
+    @property
+    def amount_due(self):
+        """Amount still collectible from the customer (the COD figure).
+
+        A partially paid order has already had `partial_amount_paid` collected
+        up front, so what the courier must collect is `remaining_amount`, not
+        `total_amount`. Every place that quotes "what will be collected" — the
+        redirect COD field, the Possible Redirection match list — must use this
+        rather than total_amount, or a partially paid order gets charged twice.
+        """
+        total = self.total_amount or Decimal('0.00')
+        if not self.is_partial_payment:
+            return total
+        # remaining_amount is the field of record, but older rows exist with the
+        # flag set and no figure behind it — derive one rather than quoting the
+        # gross total, which would bill the customer for what they already paid.
+        due = (
+            self.remaining_amount
+            if self.remaining_amount is not None
+            else total - (self.partial_amount_paid or Decimal('0.00'))
+        )
+        # Never quote a negative amount to collect: an overpaid or corrupted row
+        # would otherwise send a negative COD to the courier.
+        return due if due > Decimal('0.00') else Decimal('0.00')
+
     def calculate_totals(self):
         """Calculate order totals based on items, discount, shipping, and tax"""
         from decimal import Decimal

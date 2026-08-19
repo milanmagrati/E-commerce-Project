@@ -225,7 +225,7 @@ def create_ncm_shipment(request, order_id):
         # Prepare NCM data - use branch NAME for NCM API (not code)
         # IMPORTANT: 'name' field is customer/receiver name, NOT admin/staff name
         # For partial payments, send remaining amount as COD (not full total)
-        cod_amount = order.remaining_amount if order.is_partial_payment and order.remaining_amount is not None else order.total_amount
+        cod_amount = order.amount_due
         ncm_data = {
             'name': customer_name,  # This MUST be the customer's name from order.customer_name
             'phone': order.customer_phone,
