@@ -2039,6 +2039,81 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(function () { /* silent fail */ });
     }
 
+    // Reload once the list is known to be out of date — but never while a modal
+    // is open. Staff type a new customer's name and address straight into the
+    // redirect modal, and reloading under them would throw that away; the
+    // reload just waits for them to close it.
+    function statusReload(message, bgClass) {
+        showToast(message, bgClass);
+        var attempt = function () {
+            if (document.querySelector('.modal.show')) {
+                setTimeout(attempt, 5000);
+                return;
+            }
+            location.reload();
+        };
+        setTimeout(attempt, 1500);
+    }
+
+    // Background NCM status refresh for the rows on screen.
+    //
+    // Nothing else keeps these rows honest: the RTV list sync only refreshes
+    // orders NCM still reports as RTVs, and the background bulk sync skips
+    // RTV'd orders entirely (their local status is terminal). That is why a
+    // package that had already been delivered stayed listed here until someone
+    // opened its order detail page — that page's load-time sync was the only
+    // writer of a fresh NCM status. This asks NCM directly for the IDs shown.
+    function statusRefresh() {
+        var rows = document.querySelectorAll('tr.order-row[data-ncm-id]');
+        if (!rows.length) { return; }
+
+        // Background tabs don't ask NCM anything — the visibilitychange handler
+        // below refreshes the moment the tab is looked at instead, which is how
+        // this page is actually used (left open and switched back to).
+        if (document.hidden) { return; }
+
+        // Mid-redirect is the wrong moment to start a refresh that can end in a
+        // reload; the next tick picks it up once the modal is closed.
+        if (document.querySelector('.modal.show')) { return; }
+
+        // Shared across tabs, same as the comment sync above, so several open
+        // tabs don't each fire the request.
+        var lastStatusRefresh = parseInt(localStorage.getItem('pr_last_status_refresh') || '0', 10);
+        if (Date.now() - lastStatusRefresh < 90000) { // 90-second cooldown
+            return;
+        }
+        localStorage.setItem('pr_last_status_refresh', String(Date.now()));
+
+        var ids = Array.prototype.map.call(rows, function (r) { return r.dataset.ncmId; });
+        var body = new URLSearchParams();
+        body.append('ncm_ids', ids.join(','));
+
+        fetch('{% url "possible_redirection_refresh_status" %}', {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': prGetCSRFToken(),
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: body.toString()
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!data || !data.success) { return; }
+            if (data.dropped && data.dropped.length) {
+                statusReload(
+                    data.dropped.length + ' order(s) already delivered/returned — removing from the list',
+                    'text-bg-warning'
+                );
+            } else if (data.rtv_updated || data.orders_updated) {
+                // Statuses moved but the rows are still candidates — reload so
+                // the badges match what NCM just told us.
+                statusReload('NCM status updated', 'text-bg-success');
+            }
+        })
+        .catch(function () { /* silent fail */ });
+    }
+
     // ==================== NCM COMMENTS MODAL ====================
     let _prCurrentOrderId = null;
 
@@ -2151,6 +2226,17 @@ document.addEventListener('DOMContentLoaded', function() {
     // Check once on load, then every 30 minutes
     commentSync();
     setInterval(commentSync, 1800000);
+
+    // Status is the thing that decides whether a row belongs here at all, so
+    // it is checked on every load, every 5 minutes while the tab stays open,
+    // and whenever the tab is brought back to the front. One bulk NCM request
+    // covers the whole page, and the cooldown inside makes the extra triggers
+    // nearly free.
+    statusRefresh();
+    setInterval(statusRefresh, 300000);
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) { statusRefresh(); }
+    });
 });
 </script>
 

@@ -31,6 +31,9 @@ from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
 from .decimal_utils import safe_decimal, validate_decimal_fields
+from services.status_override import (apply_manual_status,
+                                      clear_manual_status_override,
+                                      manual_override_holds)
 from django.db import IntegrityError, transaction, connection
 from django.utils import timezone
 import traceback
@@ -3997,10 +4000,11 @@ def order_detail(request, order_id):
                 if status_setup_id:
                     try:
                         status_setup = Setup.objects.get(id=status_setup_id, setup_type='status')
-                        if order.status_setup != status_setup:
-                            order.status_setup = status_setup
-                            # Also update the string field
-                            order.order_status = status_setup.name.lower().replace(' ', '_')
+                        # Writes status_setup, both string fields and the manual
+                        # hold, so this choice outlives the NCM sync that fires
+                        # on the next load of this page.
+                        if apply_manual_status(order, status_setup.name,
+                                               status_setup=status_setup):
                             changes_made.append('Order Status')
                     except Setup.DoesNotExist:
                         messages.warning(request, 'Selected status not found.')
@@ -4437,9 +4441,11 @@ def order_edit(request, order_id):
                 if status_setup_id:
                     try:
                         status_setup = Setup.objects.get(id=status_setup_id, setup_type='status')
-                        order.status_setup = status_setup
-                        # Sync order_status with the setup name so the NOT NULL field stays valid
-                        order.order_status = status_setup.name.lower().replace(' ', '_')
+                        # apply_manual_status writes status_setup plus BOTH string
+                        # fields and stamps the manual hold, so the choice made here
+                        # isn't undone by the NCM sync that runs when the order page
+                        # loads right after this redirect.
+                        apply_manual_status(order, status_setup.name, status_setup=status_setup)
                     except Setup.DoesNotExist:
                         order.status_setup = None
                 else:
@@ -5361,6 +5367,43 @@ def _iter_matching_orders(match_sources, branch_orders, exclude_ids=frozenset())
                 break
 
 
+# ── Redirectability rules ────────────────────────────────────────────────────
+# A returned package can only be redirected while it is still sitting at the
+# destination branch. Once NCM reports it delivered (to the customer OR back to
+# the vendor) or on its way to/at the vendor warehouse, it is no longer a
+# candidate.
+#
+# These live at module level because two views have to agree on them:
+# possible_redirection_list (which builds the queryset) and
+# possible_redirection_refresh_status (which decides, after pulling fresh
+# statuses from NCM, whether a listed row has just dropped out). They used to be
+# a local list inside the view, so the refresh endpoint had nothing to reuse.
+NON_REDIRECTABLE_RTV_STATUSES = ('returned', 'delivered', 'sent to vendor')
+
+#: Same rule applied to the linked local order's stored NCM status, which can
+#: carry branch-qualified variants ("Returned to Warehouse") rather than an
+#: exact match.
+NON_REDIRECTABLE_NCM_STATUS_REGEX = r'delivered|returned|sent to vendor'
+
+
+def _rtv_is_non_redirectable(rtv_last_status, local_order=None):
+    """Python mirror of the exclusions possible_redirection_list applies in SQL.
+
+    Used after a live NCM refresh to tell whether a row that is currently on
+    screen would still be listed on a reload.
+    """
+    if (rtv_last_status or '').strip().lower() in NON_REDIRECTABLE_RTV_STATUSES:
+        return True
+    if local_order is None:
+        return False
+    if re.search(NON_REDIRECTABLE_NCM_STATUS_REGEX, (local_order.ncm_status or ''), re.IGNORECASE):
+        return True
+    return 'delivered' in (
+        (local_order.status or '').strip().lower(),
+        (local_order.order_status or '').strip().lower(),
+    )
+
+
 @login_required
 @permission_required('can_view_orders')
 def possible_redirection_list(request):
@@ -5380,15 +5423,11 @@ def possible_redirection_list(request):
     # Exclude RTVs whose NCM last_status shows the package has already been
     # returned to vendor warehouse or delivered — redirection is impossible
     # for those orders since the physical package is no longer at the branch.
-    _NON_REDIRECTABLE_STATUSES = [
-        'returned', 'delivered', 'sent to vendor',
-    ]
-
     rtvs = RTVOrder.objects.filter(
         vendor_return=True
     ).select_related('api_config')
 
-    for _nrs in _NON_REDIRECTABLE_STATUSES:
+    for _nrs in NON_REDIRECTABLE_RTV_STATUSES:
         rtvs = rtvs.exclude(last_status__iexact=_nrs)
 
     # Exclude terminal orders using live Order.ncm_status
@@ -5396,7 +5435,7 @@ def possible_redirection_list(request):
     _terminal_ncm_ids = Order.objects.filter(
         ncm_order_id__isnull=False,
         ncm_order_id__in=rtvs.values('order_id'),
-        ncm_status__iregex=r'delivered|returned|sent to vendor',
+        ncm_status__iregex=NON_REDIRECTABLE_NCM_STATUS_REGEX,
     ).values('ncm_order_id')
 
     rtvs = rtvs.exclude(order_id__in=_terminal_ncm_ids)
@@ -5777,6 +5816,206 @@ def possible_redirection_list(request):
     }
 
     return render(request, 'possible_redirection.html', context)
+
+
+#: Cap on how many rows one refresh call checks. The page can be set to 500 per
+#: page; without this a single load could turn into hundreds of NCM requests.
+POSSIBLE_REDIRECTION_REFRESH_MAX = 60
+
+#: Server-side damper so several open tabs (or several staff on the page at the
+#: same time) don't each fire the same refresh. Best-effort only - the cache is
+#: LocMemCache here, so it is per Passenger worker; the page also keeps its own
+#: cooldown in localStorage.
+POSSIBLE_REDIRECTION_REFRESH_THROTTLE_SECONDS = 45
+
+#: How many linked local orders one refresh may write through to NCM-derived
+#: statuses. Each such write costs extra NCM requests (a 'Delivered' is
+#: re-fetched in full, and the activity log asks for the real event time), and
+#: NCMService has no 429 backoff - so an unbounded page could fire a hundred
+#: rapid requests the first time a backlog of stale rows is checked. The RTV
+#: rows' own last_status is refreshed for free from the one bulk response and is
+#: what actually decides whether a row stays listed, so capping this only
+#: spreads the linked-order catch-up over successive refreshes.
+POSSIBLE_REDIRECTION_REFRESH_MAX_ORDER_WRITES = 10
+
+
+@login_required
+@permission_required('can_view_orders')
+@require_POST
+def possible_redirection_refresh_status(request):
+    """Pull live NCM statuses for the RTV rows currently on screen.
+
+    Why this exists: nothing else refreshed these rows. NCM status for an RTV'd
+    order reaches this database by exactly two routes, and neither covers this
+    page:
+
+    * the RTV list sync (ncm_rtvs_sync) only writes ``last_status`` for orders
+      NCM still returns as RTVs - once a package leaves the RTV pipeline it
+      drops out of that response and its ``last_status`` is frozen forever at
+      whatever it last was ("Dispatched");
+    * the background bulk sync (ncm/bulk_sync.py) skips orders whose local
+      status is terminal, and an RTV'd order resolves to 'return', which is in
+      that terminal set.
+
+    So a package that was already delivered kept showing up here as a
+    redirection candidate until somebody happened to open its order detail
+    page, whose load-time sync is the only thing that writes a fresh
+    ``Order.ncm_status``. That is exactly the "it only updates after I open the
+    order" behaviour this endpoint removes.
+
+    One bulk status request per API config covers the whole page; the response
+    is used twice - for the RTV row's own ``last_status`` and for the linked
+    local order (through the same resolution the bulk sync uses, so an RTV
+    "Delivered" back to the vendor is still not mistaken for a delivery to the
+    customer).
+
+    POST ``ncm_ids``: comma-separated NCM order IDs of the rendered rows.
+    Returns ``dropped`` - the IDs that are no longer redirection candidates, so
+    the page knows it is out of date and can reload itself.
+    """
+    from services.ncm_service import NCMService
+    from ncm.bulk_sync import sync_order_status_from_raw
+
+    ncm_ids = []
+    for _raw_id in (request.POST.get('ncm_ids') or '').split(','):
+        _raw_id = _raw_id.strip()
+        if _raw_id.isdigit():
+            ncm_ids.append(int(_raw_id))
+    # dict.fromkeys de-dupes while keeping the page's own order.
+    ncm_ids = list(dict.fromkeys(ncm_ids))[:POSSIBLE_REDIRECTION_REFRESH_MAX]
+
+    _empty = {
+        'success': True, 'checked': 0, 'rtv_updated': 0,
+        'orders_updated': 0, 'dropped': [], 'errors': 0,
+    }
+    if not ncm_ids:
+        return JsonResponse(_empty)
+
+    _throttle_key = 'possible_redirection_status_refresh'
+    if cache.get(_throttle_key):
+        return JsonResponse(dict(_empty, throttled=True))
+    cache.set(_throttle_key, True, POSSIBLE_REDIRECTION_REFRESH_THROTTLE_SECONDS)
+
+    rtvs = list(
+        RTVOrder.objects.filter(order_id__in=ncm_ids).select_related('api_config')
+    )
+    if not rtvs:
+        return JsonResponse(_empty)
+
+    local_orders = {
+        _o.ncm_order_id: _o
+        for _o in Order.objects.filter(
+            is_deleted=False,
+            ncm_order_id__in=[r.order_id for r in rtvs],
+        )
+    }
+
+    # Each RTV carries the API account its shipment lives under; asking the
+    # wrong account for a status returns nothing, so group before requesting.
+    by_config = {}
+    for rtv in rtvs:
+        by_config.setdefault(rtv.api_config_id, []).append(rtv)
+
+    dropped = []
+    rtv_updated = 0
+    orders_updated = 0
+    order_writes_attempted = 0
+    errors = 0
+    # Same chunk size as the bulk sync - NCM caps how many IDs one status
+    # request can carry.
+    _CHUNK = 100
+
+    for config_id, group in by_config.items():
+        try:
+            svc = NCMService(api_config_id=config_id) if config_id else NCMService()
+        except Exception:
+            logger.warning('Possible-redirection refresh: no usable NCM config %s',
+                           config_id, exc_info=True)
+            errors += 1
+            continue
+
+        for _start in range(0, len(group), _CHUNK):
+            chunk = group[_start:_start + _CHUNK]
+            try:
+                result = svc.get_bulk_order_statuses([str(r.order_id) for r in chunk])
+            except Exception:
+                logger.warning('Possible-redirection refresh: NCM status request failed '
+                               'for config %s', config_id, exc_info=True)
+                errors += 1
+                continue
+
+            if not result.get('success'):
+                errors += 1
+                continue
+
+            _data = result.get('data') or {}
+            statuses = _data.get('result') if isinstance(_data, dict) else None
+            if not isinstance(statuses, dict):
+                errors += 1
+                continue
+
+            for rtv in chunk:
+                raw_status = statuses.get(str(rtv.order_id))
+                local = local_orders.get(rtv.order_id)
+
+                if raw_status is not None:
+                    if isinstance(raw_status, dict):
+                        new_status = raw_status.get('status') or raw_status.get('Status') or ''
+                    else:
+                        new_status = raw_status or ''
+                    new_status = str(new_status).strip()
+
+                    # Blank is never written over a known status: NCM
+                    # occasionally answers with an empty entry, and clearing
+                    # last_status would silently re-list a package that had
+                    # already been ruled out.
+                    if new_status and new_status != rtv.last_status:
+                        rtv.last_status = new_status
+                        rtv.save(update_fields=['last_status'])
+                        rtv_updated += 1
+
+                    # The linked local order is only written through when the
+                    # fresh status is one that ends redirectability. The bulk
+                    # endpoint answers with a bare status string, which carries
+                    # no vendor_return flag, so an in-pipeline status like
+                    # "Arrived" would resolve to plain 'in_transit' and quietly
+                    # strip the order's 'return' status. Terminal statuses are
+                    # safe: 'Delivered' is re-fetched in full by the sync (so a
+                    # package delivered back to the vendor is still recognised
+                    # as a return), and the returned/sent-to-vendor texts map
+                    # into the return states either way.
+                    if (local is not None
+                            and order_writes_attempted < POSSIBLE_REDIRECTION_REFRESH_MAX_ORDER_WRITES
+                            and re.search(NON_REDIRECTABLE_NCM_STATUS_REGEX,
+                                          new_status, re.IGNORECASE)):
+                        order_writes_attempted += 1
+                        try:
+                            if sync_order_status_from_raw(svc, local, raw_status, request.user):
+                                orders_updated += 1
+                        except Exception:
+                            logger.warning('Possible-redirection refresh: could not persist '
+                                           'status for order %s', local.order_number,
+                                           exc_info=True)
+                            errors += 1
+
+                if _rtv_is_non_redirectable(rtv.last_status, local):
+                    dropped.append(rtv.order_id)
+
+    if dropped or rtv_updated or orders_updated:
+        logger.info(
+            'Possible-redirection refresh: %d checked, %d RTV status(es) and %d order(s) '
+            'updated, %d no longer redirectable',
+            len(rtvs), rtv_updated, orders_updated, len(dropped),
+        )
+
+    return JsonResponse({
+        'success': True,
+        'checked': len(rtvs),
+        'rtv_updated': rtv_updated,
+        'orders_updated': orders_updated,
+        'dropped': dropped,
+        'errors': errors,
+    })
 
 
 @login_required
@@ -6233,8 +6472,10 @@ def redirect_order_save(request, order_id):
             if status_setup_id:
                 try:
                     status_obj = Setup.objects.get(id=status_setup_id, setup_type='status')
-                    order.status_setup = status_obj
-                    order.order_status = status_obj.name.lower()
+                    # Same treatment as the order edit page: write both status
+                    # fields and stamp the manual hold, so a later NCM sync
+                    # doesn't quietly put the old status back.
+                    apply_manual_status(order, status_obj.name, status_setup=status_obj)
                 except Setup.DoesNotExist:
                     pass
 
@@ -8810,8 +9051,10 @@ def orders_bulk_action(request):
                     # Update orders with the selected status
                     for order in orders:
                         old_status = order.order_status
-                        order.status_setup = status_setup
-                        order.order_status = normalized_status
+                        # Writes status_setup + both string fields and stamps the
+                        # manual hold, so the next NCM sync doesn't undo the choice.
+                        apply_manual_status(order, normalized_status,
+                                            status_setup=status_setup)
 
                         # Set delivered_at timestamp when status changes to delivered
                         if normalized_status == 'delivered' and old_status != 'delivered':
@@ -13895,17 +14138,25 @@ def ncm_sync_all_statuses(request):
                         latest_status = data[0]
                         new_status = latest_status.get('status', '')
 
-                        if new_status and new_status != order.ncm_status:
-                            from dashboard.timezone_utils import parse_ncm_datetime
+                        from dashboard.timezone_utils import parse_ncm_datetime
+                        event_at = parse_ncm_datetime(latest_status.get('added_time'))
 
+                        # A status staff set by hand outranks NCM until the parcel
+                        # really moves - the same guard the per-order sync, the
+                        # webhook and the background bulk sync apply. It is part of
+                        # this condition rather than a `continue` so that a held
+                        # order still gets its delivery charge refreshed below.
+                        if (new_status and new_status != order.ncm_status
+                                and not manual_override_holds(order, new_status, event_at)):
                             system_status, payment_status = svc.resolve_delivered_status(latest_status)
-                            event_at = parse_ncm_datetime(latest_status.get('added_time'))
                             old_ncm_status = order.ncm_status
                             old_system_status = order.status
 
                             order.ncm_status = new_status
                             update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
                             update_fields.extend(['ncm_status', 'updated_at'])
+                            # NCM has moved past the manual choice; retire the hold.
+                            update_fields.extend(clear_manual_status_override(order))
 
                             if system_status == 'delivered' and not order.delivered_at:
                                 order.delivered_at = event_at or timezone.now()

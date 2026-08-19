@@ -335,6 +335,23 @@ class NCMWebhookHandler:
                     'error': 'Order is cancelled; webhook update skipped'
                 }
 
+            # A status staff set by hand outranks NCM until the parcel really
+            # moves. A webhook repeating the status that was already in force
+            # when the choice was made carries no new information about the
+            # parcel, so it must not overwrite that choice; anything newer does.
+            from services.status_override import (clear_manual_status_override,
+                                                  manual_override_holds)
+            if manual_override_holds(order, status, event_at):
+                logger.info(
+                    f"Keeping manually set status on {order.order_number} "
+                    f"(webhook still reports '{status}')"
+                )
+                return {
+                    'success': False,
+                    'order_number': order.order_number,
+                    'error': 'Status was set manually; webhook update skipped'
+                }
+
             old_status = order.status
             old_ncm_status = order.ncm_status
             old_payment_status = order.payment_status
@@ -357,6 +374,8 @@ class NCMWebhookHandler:
             update_fields = NCMService.sync_order_status_fields(order, system_status, payment_status)
             update_fields.append('ncm_status')
             update_fields.append('updated_at')
+            # NCM has moved past whatever was set by hand, so retire the hold.
+            update_fields.extend(clear_manual_status_override(order))
 
             # Set delivered_at timestamp for delivered orders
             if system_status == 'delivered' and not order.delivered_at:

@@ -17,6 +17,8 @@ from dashboard.logistics_status import logistics_badge_class, logistics_status_t
 from dashboard.models import Order, OrderActivityLog
 from dashboard.timezone_utils import format_nepali_datetime, parse_ncm_datetime
 from services.ncm_service import NCMService
+from services.status_override import (clear_manual_status_override,
+                                      manual_override_holds)
 import logging
 import json
 import secrets
@@ -275,6 +277,24 @@ def api_sync_order_status(request, order_id):
         # like it happened just now.
         event_at = parse_ncm_datetime((latest_entry or {}).get('added_time'))
 
+        # A status staff set by hand outranks NCM until the parcel actually
+        # moves. This sync runs on every load of the order detail page, so
+        # without this check it re-derived the status from NCM's answer
+        # seconds after someone chose a different one and the choice vanished.
+        # manual_override_holds only says yes while NCM keeps reporting the
+        # same raw status as when the choice was made.
+        if manual_override_holds(order, latest_status, event_at):
+            held_response = {
+                'success': True,
+                'message': 'Status was set manually; keeping it until NCM reports a change',
+                'order_id': order.id,
+                'order_number': order.order_number,
+                'changed': False,
+                'manual_override': True,
+            }
+            held_response.update(_order_display_fields(order))
+            return JsonResponse(held_response)
+
         # Map to system status using vendor_return-aware resolution
         old_status = order.status
         old_ncm_status = order.ncm_status
@@ -304,6 +324,11 @@ def api_sync_order_status(request, order_id):
             order.ncm_status = latest_status
             update_fields.append('ncm_status')
             update_fields.append('updated_at')
+
+            # Reaching here means the hold (if there was one) has been released
+            # because NCM moved on - so retire it rather than leave a stale
+            # record of a choice NCM has already overtaken.
+            update_fields.extend(clear_manual_status_override(order))
 
             if system_status == 'delivered' and not order.delivered_at:
                 order.delivered_at = event_at or timezone.now()

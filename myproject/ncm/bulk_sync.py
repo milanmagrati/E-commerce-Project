@@ -13,6 +13,8 @@ from django.utils import timezone
 from dashboard.models import Order, OrderActivityLog, APISettings
 from dashboard.timezone_utils import parse_ncm_datetime
 from services.ncm_service import NCMService
+from services.status_override import (clear_manual_status_override,
+                                      manual_override_holds)
 
 logger = logging.getLogger('ncm')
 ncm_service = NCMService()
@@ -194,6 +196,28 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None,
     return summary
 
 
+def sync_order_status_from_raw(svc, order, raw_status, user=None, fetch_event_times=True):
+    """Persist one order's NCM status when the caller already holds NCM's answer.
+
+    Public entry point onto the same resolution used by the bulk run, for
+    callers that fetched statuses themselves and would otherwise have to ask
+    NCM a second time for the same order (see
+    dashboard.views.possible_redirection_refresh_status, which pulls one bulk
+    status response and needs it for both the RTV row and its linked order).
+
+    PROTECTED_STATUSES is enforced here rather than only in the run's queryset:
+    callers that pick their own orders bypass that filter, and a late NCM status
+    must never resurrect an order staff already cancelled locally (the same
+    guard the single-order sync endpoint applies).
+
+    Returns True when the order was updated, False when nothing changed.
+    """
+    if order.status in PROTECTED_STATUSES:
+        return False
+    return _sync_one_order(svc, order, raw_status, user,
+                           fetch_event_times=fetch_event_times)
+
+
 def _sync_one_order(svc, order, raw_status, user, fetch_event_times=True):
     """Resolve one order's NCM status and persist it if it changed.
 
@@ -243,6 +267,17 @@ def _sync_one_order(svc, order, raw_status, user, fetch_event_times=True):
     if order.ncm_status == new_status and order.status == system_status:
         return False
 
+    # A status staff set by hand outranks NCM until the parcel actually moves.
+    # The early return above can't cover this: a manual change deliberately
+    # leaves order.status different from what NCM reports, which reads as
+    # "needs updating" and is exactly what used to overwrite it.
+    if manual_override_holds(order, new_status, event_at):
+        logger.debug(
+            f"Bulk sync: keeping manually set status on {order.order_number} "
+            f"(NCM still reports '{new_status}')"
+        )
+        return False
+
     # Only reached for orders that actually changed, so this costs one request
     # per real change - not one per order in the run.
     if event_at is None and fetch_event_times:
@@ -251,6 +286,8 @@ def _sync_one_order(svc, order, raw_status, user, fetch_event_times=True):
     order.ncm_status = new_status
     update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
     update_fields.extend(['ncm_status', 'updated_at'])
+    # NCM has moved past whatever was set by hand, so retire the hold.
+    update_fields.extend(clear_manual_status_override(order))
 
     if system_status == 'delivered' and not order.delivered_at:
         order.delivered_at = event_at or timezone.now()

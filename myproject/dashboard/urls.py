@@ -90,6 +90,7 @@ urlpatterns = [
 
     # Possible Redirection
     path('orders/possible-redirection/', views.possible_redirection_list, name='possible_redirection_list'),
+    path('api/possible-redirection/refresh-status/', views.possible_redirection_refresh_status, name='possible_redirection_refresh_status'),
     path('orders/redirect-orders/', views.redirect_orders_list, name='redirect_orders_list'),
     path('api/orders/<int:order_id>/redirect-get/', views.redirect_order_get, name='redirect_order_get'),
     path('api/orders/<int:order_id>/get-redirect-details/', views.get_redirect_order_details, name='get_redirect_order_details'),

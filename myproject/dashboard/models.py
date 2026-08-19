@@ -478,6 +478,20 @@ class Order(models.Model):
     ncm_status = models.CharField(max_length=100, blank=True)
     ncm_created_at = models.DateTimeField(blank=True, null=True)
 
+    # Manual status override (see services/status_override.py).
+    # Staff can set an order's status by hand while the parcel is still sitting
+    # at some earlier logistics status. These two fields let the sync paths tell
+    # "staff decided this" apart from "stale value nobody touched", so a hand-set
+    # status survives until the parcel actually moves.
+    manual_status_override_at = models.DateTimeField(
+        blank=True, null=True,
+        help_text="When staff last set this order's status by hand"
+    )
+    manual_status_override_ncm_status = models.CharField(
+        max_length=100, blank=True, default='',
+        help_text="Raw logistics status in force at the time of that manual change"
+    )
+
     # NCM Branch details (use these for API calls)
     ncm_from_branch = models.CharField(max_length=100, blank=True, default='TINKUNE')
     ncm_destination_branch = models.CharField(max_length=100, blank=True)

@@ -8351,3 +8351,57 @@ RuntimeError: NCM exploded
 [DEBUG] 2026-08-14 19:52:39 ncm_service._fetch_comments:151 NCM: 404 returned for order 24629724 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
 [INFO] 2026-08-14 20:00:18 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
 [INFO] 2026-08-14 20:01:46 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 10:46:19 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 10:55:01 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:19:56 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:39:46 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:45:37 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:46:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:48:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:49:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:51:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:52:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:54:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:55:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:57:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 11:58:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:00:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:01:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:03:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:04:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:06:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:07:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:09:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:10:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:12:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:13:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:15:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:16:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:18:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:19:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:21:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:22:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:43:08 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:49:29 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 12:53:23 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 15:45:22 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 15:50:03 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-17 16:08:03 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[ERROR] 2026-08-19 15:12:12 ncm_service.sync_order_status_fields:929 Could not resolve status Setup for 'in_transit'
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\services\ncm_service.py", line 924, in sync_order_status_fields
+    status_setup = NCMService._resolve_setup('status', system_status)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'StubNCMService' has no attribute '_resolve_setup'
+[INFO] 2026-08-19 16:24:00 realtime_api.api_sync_order_status:354 [SUCCESS] API Sync: ZZ-MO-EDIT -> in_transit
+[DEBUG] 2026-08-19 16:24:01 bulk_sync._sync_one_order:275 Bulk sync: keeping manually set status on ZZ-MO-BULK (NCM still reports 'Pickup Order Created')
+[INFO] 2026-08-19 16:24:01 webhook_handler._update_order_from_webhook:345 Keeping manually set status on ZZ-MO-BULK (webhook still reports 'Pickup Order Created')
+[INFO] 2026-08-19 16:24:01 webhook_handler._update_order_from_webhook:408 Updated: ZZ-MO-BULK - Status: confirmed->delivered, NCM: Pickup Order Created->Delivered, Payment: pending->paid
+[INFO] 2026-08-19 16:24:54 realtime_api.api_sync_order_status:354 [SUCCESS] API Sync: ZZ-MO-EDIT -> in_transit
+[DEBUG] 2026-08-19 16:24:54 bulk_sync._sync_one_order:275 Bulk sync: keeping manually set status on ZZ-MO-BULK (NCM still reports 'Pickup Order Created')
+[INFO] 2026-08-19 16:24:54 webhook_handler._update_order_from_webhook:345 Keeping manually set status on ZZ-MO-BULK (webhook still reports 'Pickup Order Created')
+[INFO] 2026-08-19 16:24:54 webhook_handler._update_order_from_webhook:408 Updated: ZZ-MO-BULK - Status: confirmed->delivered, NCM: Pickup Order Created->Delivered, Payment: pending->paid
+[INFO] 2026-08-19 16:26:20 realtime_api.api_sync_order_status:354 [SUCCESS] API Sync: ZZ-MO-EDIT -> in_transit
+[DEBUG] 2026-08-19 16:26:20 bulk_sync._sync_one_order:275 Bulk sync: keeping manually set status on ZZ-MO-BULK (NCM still reports 'Pickup Order Created')
+[INFO] 2026-08-19 16:26:20 webhook_handler._update_order_from_webhook:345 Keeping manually set status on ZZ-MO-BULK (webhook still reports 'Pickup Order Created')
+[INFO] 2026-08-19 16:26:20 webhook_handler._update_order_from_webhook:408 Updated: ZZ-MO-BULK - Status: confirmed->delivered, NCM: Pickup Order Created->Delivered, Payment: pending->paid

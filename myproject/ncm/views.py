@@ -18,6 +18,8 @@ from functools import wraps
 # Import NCM service from services folder
 from accounts.decorators import has_any_permission
 from services.ncm_service import NCMService
+from services.status_override import (clear_manual_status_override,
+                                      manual_override_holds)
 from ncm.webhook_handler import NCMWebhookHandler
 from ncm.bulk_sync import run_bulk_ncm_status_sync
 
@@ -257,6 +259,9 @@ def create_ncm_shipment(request, order_id):
             order.ncm_created_at = timezone.now()
             order.ncm_destination_branch = to_branch_name  # Store the branch name
             order.status = 'processing'
+            # A fresh NCM order restarts the parcel's lifecycle, so any manual
+            # status hold from before it was handed over no longer applies.
+            clear_manual_status_override(order)
             order.save()
             
             # Immediately fetch the actual status from NCM so it shows "Pickup Created"
@@ -343,6 +348,15 @@ def sync_ncm_status(request, order_id):
             # NCM's own timestamp for this status, not the moment we synced.
             event_at = parse_ncm_datetime(latest_status_data.get('added_time'))
 
+            # A status staff set by hand outranks NCM until the parcel really
+            # moves - the same guard the page-load sync and the webhook apply.
+            if manual_override_holds(order, latest_status, event_at):
+                messages.info(
+                    request,
+                    'Status was set manually and NCM still reports the same status; keeping the manual status.'
+                )
+                return redirect('order_detail', order_id=order_id)
+
             # Use resolve_delivered_status to handle vendor_return flag
             system_status, payment_status = svc.resolve_delivered_status(latest_status_data)
 
@@ -352,6 +366,8 @@ def sync_ncm_status(request, order_id):
             update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
             update_fields.append('ncm_status')
             update_fields.append('updated_at')
+            # NCM has moved past whatever was set by hand, so retire the hold.
+            update_fields.extend(clear_manual_status_override(order))
 
             if system_status == 'delivered' and not order.delivered_at:
                 order.delivered_at = event_at or timezone.now()
