@@ -5359,6 +5359,21 @@ def payroll_run_delete(request, pk):
         run = PayrollRun.objects.get(pk=pk)
     except PayrollRun.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Payroll Run not found.'}, status=404)
+    # Deleting a run cascades to its payslips, which would silently destroy
+    # finalized ones that payslip_delete refuses to touch.
+    from .models import Payslip as _Payslip
+    _finalized = _Payslip.objects.filter(payroll_run=run, is_finalized=True).count()
+    if _finalized:
+        return JsonResponse({
+            'success': False,
+            'error': f'This run has {_finalized} finalized payslip(s). Unlock them before deleting the run.',
+        })
+
+    # Same reasoning as payslip_delete: hand back the advance repayments these
+    # payslips charged before the cascade removes the record of them.
+    for _slip in _Payslip.objects.filter(payroll_run=run):
+        _reverse_advance_deductions(_slip)
+
     title = run.title
     run.delete()
     return JsonResponse({'success': True, 'message': f'Payroll Run "{title}" deleted successfully.'})
@@ -5719,6 +5734,76 @@ def _count_sandwich_unpaid(first_day, last_day, weekend_day_nums, holiday_dates,
 
 
 from django.db import transaction
+
+
+def _refresh_payroll_run_totals(run):
+    """Re-derive a PayrollRun's employee_count / gross_pay / net_pay from its
+    payslips.
+
+    These are denormalised columns rendered straight onto the Payroll Runs
+    page. They used to be written only by generate_payslips(), so every later
+    change to a payslip -- a bonus approval, a manual adjustment, an advance
+    sync, a deletion -- left the run showing stale money. Call this after any
+    of those.
+    """
+    from .models import Payslip
+    from django.db.models import Sum as _Sum
+
+    if run is None:
+        return
+    agg = Payslip.objects.filter(payroll_run=run).aggregate(
+        cnt=Count('id'), g=_Sum('gross_salary'), n=_Sum('net_salary'),
+    )
+    run.employee_count = agg['cnt'] or 0
+    run.gross_pay = agg['g'] or Decimal('0')
+    run.net_pay = agg['n'] or Decimal('0')
+    _fields = ['employee_count', 'gross_pay', 'net_pay', 'updated_at']
+    if run.status in ('draft', 'processing') and run.employee_count > 0:
+        run.status = 'completed'
+        _fields.append('status')
+    run.save(update_fields=_fields)
+
+
+def _reverse_advance_deductions(slip):
+    """Hand back the advance repayment that this payslip recorded.
+
+    generate_payslips() advances each active AdvancePayment's amount_repaid /
+    paid_installments when it builds a payslip. Nothing used to undo that, so
+    deleting a payslip and regenerating it -- an ordinary correction workflow
+    -- charged the employee the same installment twice and cleared the advance
+    early. The per-advance amounts are stored on the payslip snapshot at
+    generation so they can be reversed exactly rather than guessed at.
+
+    Returns the number of advances credited back.
+    """
+    from .models import AdvancePayment
+
+    breakdown = (slip.salary_structure or {}).get('advance_breakdown') or {}
+    if not breakdown:
+        return 0
+
+    reversed_count = 0
+    for _adv_id, _amt in breakdown.items():
+        try:
+            amt = Decimal(str(_amt))
+            adv = AdvancePayment.objects.filter(pk=int(_adv_id)).first()
+        except (TypeError, ValueError, ArithmeticError):
+            continue
+        if adv is None or amt <= 0:
+            continue
+        new_repaid = max((adv.amount_repaid or Decimal('0')) - amt, Decimal('0'))
+        new_status = adv.status
+        if adv.status == 'cleared' and new_repaid < (adv.amount or Decimal('0')):
+            new_status = 'repaying'
+        AdvancePayment.objects.filter(pk=adv.pk).update(
+            amount_repaid=new_repaid,
+            paid_installments=max((adv.paid_installments or 0) - 1, 0),
+            status=new_status,
+        )
+        reversed_count += 1
+    return reversed_count
+
+
 @login_required
 @transaction.atomic
 def generate_payslips(request, pk):
@@ -5851,6 +5936,9 @@ def generate_payslips(request, pk):
             status__in=['disbursed', 'repaying']
         )
         advance_deduction = Decimal('0')
+        # Keep each advance's share so the write-back below doesn't recompute
+        # it, and so deleting this payslip can credit back exactly what it took.
+        _adv_breakdown = {}
         for adv in active_advances:
             remaining = max(adv.amount - adv.amount_repaid, Decimal('0'))
             inst = adv.installment_amount or Decimal('0')
@@ -5860,6 +5948,9 @@ def generate_payslips(request, pk):
                 _ded = remaining
             else:
                 _ded = min(inst if inst > 0 else remaining, remaining)
+            _ded = _ded.quantize(Decimal('0.01'))
+            if _ded > 0:
+                _adv_breakdown[str(adv.pk)] = str(_ded)
             advance_deduction += _ded
         advance_deduction = advance_deduction.quantize(Decimal('0.01'))
 
@@ -5884,6 +5975,7 @@ def generate_payslips(request, pk):
                 'earnings_list': _serialize_list(_bd.get('earnings_list', [])),
                 'deductions_list': _serialize_list(_bd.get('deductions_list', [])),
                 'bonus_total_included': str(_bonus_total),
+                'advance_breakdown': _adv_breakdown,
             },
             status='generated',
             generated_on=today,
@@ -5894,17 +5986,12 @@ def generate_payslips(request, pk):
         _bonus_qs.update(status='paid')
 
         # ── Update advance records: apply this period's deductions ──
+        # Reuse the shares computed above rather than deriving them a second
+        # time -- two copies of this arithmetic can drift apart, and the
+        # snapshot written onto the payslip has to match what is charged here.
         from django.db.models import F as _F
         for adv in active_advances:
-            _rem = max(adv.amount - adv.amount_repaid, Decimal('0'))
-            _inst = adv.installment_amount or Decimal('0')
-            if adv.repayment_mode in ('salary_deduction', 'installments') or not adv.repayment_mode:
-                _ded = _inst if _inst > 0 else _rem
-            elif adv.repayment_mode == 'lump_sum':
-                _ded = _rem
-            else:
-                _ded = _inst if _inst > 0 else _rem
-            _ded = min(_ded, _rem)
+            _ded = Decimal(_adv_breakdown.get(str(adv.pk), '0'))
             if _ded > 0:
                 _new_repaid = adv.amount_repaid + _ded
                 _new_status = 'cleared' if _new_repaid >= adv.amount else 'repaying'
@@ -5915,18 +6002,7 @@ def generate_payslips(request, pk):
                 )
 
     # Refresh run totals from all payslips (including previously existing ones)
-    from django.db.models import Sum as _Sum
-    agg = Payslip.objects.filter(payroll_run=run).aggregate(
-        cnt=Count('id'),
-        g=_Sum('gross_salary'),
-        n=_Sum('net_salary'),
-    )
-    run.employee_count = agg['cnt'] or 0
-    run.gross_pay = agg['g'] or Decimal('0')
-    run.net_pay = agg['n'] or Decimal('0')
-    if run.status in ('draft', 'processing') and run.employee_count > 0:
-        run.status = 'completed'
-    run.save(update_fields=['employee_count', 'gross_pay', 'net_pay', 'status', 'updated_at'])
+    _refresh_payroll_run_totals(run)
 
     msg = f'Generated {created_count} payslip(s) successfully.'
     if skipped_count:
@@ -6115,6 +6191,12 @@ def payslip_sync_advances(request):
         for slip in to_update:
             slip.updated_at = now
         Payslip.objects.bulk_update(to_update, ['advance_deduction', 'net_salary', 'updated_at'])
+        # Net salary moved, so the Payroll Runs page totals have to follow.
+        from .models import PayrollRun as _PayrollRun
+        for _run in _PayrollRun.objects.filter(
+            pk__in={s.payroll_run_id for s in to_update}
+        ):
+            _refresh_payroll_run_totals(_run)
 
     return JsonResponse({
         'success': True,
@@ -6312,6 +6394,7 @@ def payslip_download(request, pk):
             # the pre-advance values -- so the printed net salary would
             # disagree with both the payslip list and the database.
             slip.refresh_from_db(fields=['advance_deduction', 'net_salary'])
+            _refresh_payroll_run_totals(run)
         for _adv in all_employee_advances:
             if _adv.status not in ('disbursed', 'repaying'):
                 if not hasattr(_adv, 'deducted_this_month') or _adv.deducted_this_month is None:
@@ -9120,6 +9203,7 @@ def _sync_bonus_to_payslip(employee, month, year):
     slip.gross_salary = (slip.gross_salary + delta).quantize(Decimal('0.01'))
     slip.net_salary = max(slip.net_salary + delta, Decimal('0')).quantize(Decimal('0.01'))
     slip.save(update_fields=['salary_structure', 'gross_salary', 'net_salary', 'updated_at'])
+    _refresh_payroll_run_totals(slip.payroll_run)
     return {'applied': True, 'finalized_skipped': False}
 
 
@@ -9540,6 +9624,7 @@ def _recalculate_payslip(slip):
         slip.net_salary + delta_earnings - delta_deductions, Decimal('0')
     ).quantize(Decimal('0.01'))
     slip.save(update_fields=['salary_structure', 'gross_salary', 'total_deductions', 'net_salary', 'updated_at'])
+    _refresh_payroll_run_totals(slip.payroll_run)
 
 
 @login_required
@@ -9606,5 +9691,16 @@ def payslip_delete(request, pk):
     if slip.is_finalized:
         return JsonResponse({'success': False, 'error': 'Cannot delete a finalized payslip. Unlock it first.'})
         
+    # Give back whatever advance repayment this payslip charged, otherwise
+    # regenerating it deducts the same installment from the employee twice.
+    _run = slip.payroll_run
+    _reverted = _reverse_advance_deductions(slip)
     slip.delete()
-    return JsonResponse({'success': True, 'message': 'Payslip deleted successfully!'})
+    # The run's gross/net/headcount are denormalised onto the Payroll Runs
+    # page -- re-derive them now that a payslip is gone.
+    _refresh_payroll_run_totals(_run)
+
+    msg = 'Payslip deleted successfully!'
+    if _reverted:
+        msg += f' Advance repayment reversed for {_reverted} advance(s).'
+    return JsonResponse({'success': True, 'message': msg})
