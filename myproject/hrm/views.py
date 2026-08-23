@@ -6449,11 +6449,15 @@ def payslip_download(request, pk):
     _bonus_total = sum(_b.amount for _b in _bonus_qs) or Decimal('0')
     _bonus_total = Decimal(str(_bonus_total)).quantize(Decimal('0.01'))
 
+    _adj_earnings_total = Decimal('0')
+    _adj_deductions_total = Decimal('0')
     for _adj in PayslipAdjustment.objects.filter(payslip=slip):
         if _adj.adjustment_type == 'earning':
             earnings_list.append({'name': f"Adjustment ({_adj.description})", 'amount': _adj.amount})
+            _adj_earnings_total += _adj.amount
         elif _adj.adjustment_type == 'deduction':
             deductions_list.append({'name': f"Adjustment ({_adj.description})", 'amount': _adj.amount})
+            _adj_deductions_total += _adj.amount
 
     from .models import AdvancePayment as _AdvPay
     _stored_adv = slip.advance_deduction or Decimal('0')
@@ -6501,12 +6505,17 @@ def payslip_download(request, pk):
                 _adv.deducted_this_month = Decimal('0')
     elif _live_total > 0:
         advance_deduction = _live_total
-        if _stored_adv == Decimal('0'):
+        if _stored_adv != advance_deduction:
             # Base this on the payslip's own persisted gross/deductions (which
             # already include any approved bonuses and manual adjustments),
             # not the bare recalculated bd[] baseline -- otherwise this silently
             # wipes out those amounts the moment an employee has a live advance
-            # that hasn't been recorded on the slip yet.
+            # that hasn't been recorded on the slip yet. Re-sync whenever the
+            # live total has drifted from what's stored (not just from zero) --
+            # e.g. a second advance disbursed, an installment edited, or a
+            # repayment posted elsewhere -- so the footer total below (which
+            # reads slip.advance_deduction) never falls behind the per-advance
+            # rows above it (which read the freshly recomputed amounts).
             _new_net = max(slip.gross_salary - (slip.total_deductions + advance_deduction), Decimal('0'))
             Payslip.objects.filter(pk=slip.pk).update(advance_deduction=advance_deduction, net_salary=_new_net)
             # Re-read what we just wrote. The printed totals below are taken
@@ -6533,8 +6542,13 @@ def payslip_download(request, pk):
         total_earnings = slip.gross_salary
         net_salary = slip.net_salary
     else:
-        total_deductions_comp = bd['other_deductions_total'] + advance_deduction
-        total_earnings = bd['total_earnings'] + _bonus_total
+        # Fallback slips have no snapshot totals to trust, so unlike the
+        # struct branch above (where slip.gross_salary/total_deductions are
+        # already kept current by _recalculate_payslip), manual adjustments
+        # must be folded in here explicitly or they'd show as line items
+        # above while silently dropping out of the totals below.
+        total_deductions_comp = bd['other_deductions_total'] + advance_deduction + _adj_deductions_total
+        total_earnings = bd['total_earnings'] + _bonus_total + _adj_earnings_total
         net_salary = max(total_earnings - total_deductions_comp, Decimal('0'))
 
     max_rows = max(len(earnings_list), len(deductions_list), 1)
