@@ -22,6 +22,45 @@ from django.db import transaction
 logger = logging.getLogger(__name__)
 
 
+def _release_prior_allocation(item, product):
+    """Roll this OrderItem's existing reservation off the product counters.
+
+    allocate_order() *overwrites* the item's own reserved_qty/backordered_qty
+    but *accumulates* onto the product's, so allocating the same order twice --
+    a re-confirmation, a retried checkout, a re-run after an edit -- reserved
+    the stock twice and leaked reserved_qty that nothing ever gave back. That
+    stock then reads as unavailable forever, quietly pushing later orders into
+    backorder. Releasing the previous allocation first makes re-allocation
+    idempotent.
+    """
+    from dashboard.models import Product
+
+    prev_reserved = item.reserved_qty or 0
+    prev_backordered = item.backordered_qty or 0
+    if not prev_reserved and not prev_backordered:
+        return
+
+    if product.is_bundle:
+        for comp in product.bundle_components.select_related('component_product').all():
+            cp = Product.objects.select_for_update().get(pk=comp.component_product.pk)
+            cp.reserved_qty = max(cp.reserved_qty - prev_reserved * comp.quantity_required, 0)
+            cp.save(update_fields=['reserved_qty'])
+
+    product.reserved_qty = max(product.reserved_qty - prev_reserved, 0)
+    product.backordered_qty = max(product.backordered_qty - prev_backordered, 0)
+    product.save(update_fields=['reserved_qty', 'backordered_qty'])
+
+    item.reserved_qty = 0
+    item.backordered_qty = 0
+    item.save(update_fields=['reserved_qty', 'backordered_qty'])
+
+    logger.info(
+        f"_release_prior_allocation: order={item.order.order_number} "
+        f"product={product.name} released reserved={prev_reserved} "
+        f"backordered={prev_backordered} before re-allocating"
+    )
+
+
 def _allocate_bundle(item, product):
     """
     Handle stock reservation for a bundle product.
@@ -98,6 +137,9 @@ def allocate_order(order):
 
             # Lock the product row for the duration of this transaction
             product = Product.objects.select_for_update().get(pk=product.pk)
+
+            # Make re-allocation idempotent (see _release_prior_allocation).
+            _release_prior_allocation(item, product)
 
             if product.is_bundle:
                 _allocate_bundle(item, product)
@@ -313,12 +355,36 @@ def cancel_order_item(item):
         )
 
 
-def restore_order_stock(order):
+def restore_order_stock(order, force=False):
     """
     Restores stock for a dispatched order that is being cancelled, deleted, or moved to trash.
     Correctly handles simple, variable, and bundle products.
+
+    Only gives stock back if it was actually taken. Order stock is deducted in
+    exactly one place -- the dispatch scan in dashboard.views.dispatch_management
+    -- which records a successful DispatchItem for the order. An order can reach
+    order_status='dispatched' by several other routes (a manual status change, the
+    bulk status action, an order edit, a logistics status sync) with no deduction
+    behind it, and every caller here decides to restore purely from that status.
+    Restoring then invents inventory that never left the shelf, and repeating the
+    cycle (dispatched -> processing -> dispatched -> cancelled) inflates it again
+    each time.
+
+    Pass force=True only for a caller that knows stock was deducted without a
+    dispatch record behind it.
+
+    Returns True if stock was restored, False if there was nothing to give back.
     """
-    from dashboard.models import Product, ProductVariation
+    from dashboard.models import Product, ProductVariation, DispatchItem
+
+    if not force and not DispatchItem.objects.filter(
+        order=order, dispatch_status='success'
+    ).exists():
+        logger.info(
+            f"restore_order_stock: skipped order={order.order_number} — no successful "
+            f"dispatch on record, so its stock was never deducted"
+        )
+        return False
     
     with transaction.atomic():
         for item in order.items.all():
@@ -361,6 +427,7 @@ def restore_order_stock(order):
                     product.save(update_fields=['stock', 'stock_status'])
 
         logger.info(f"restore_order_stock: Restored stock for dispatched order={order.order_number}")
+        return True
 
 
 def clear_reservation_on_dispatch(product, quantity):
