@@ -591,6 +591,16 @@ class AttendanceRecord(models.Model):
         related_name='attendance_last_fixes'
     )
     last_fixed_at = models.DateTimeField(null=True, blank=True)
+    # Soft-delete (Attendance Adjustments trash). Kept out of the unique
+    # constraint deliberately — a trashed row still occupies its
+    # (employee, date) slot so a fresh biometric sync for that same day
+    # revives it (see _sync_biometric_to_attendance) instead of colliding.
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='attendance_records_deleted'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -610,6 +620,19 @@ class AttendanceRecord(models.Model):
         if self.status in ('absent', 'on_leave'):
             return False
         return not (self.clock_in and self.clock_out)
+
+    def soft_delete(self, deleted_by_user=None):
+        from django.utils import timezone
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.deleted_by = deleted_by_user
+        self.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by'])
+
+    def restore(self):
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by = None
+        self.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by'])
 
 
 class AttendanceFixLog(models.Model):

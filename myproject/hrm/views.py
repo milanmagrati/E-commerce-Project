@@ -42,7 +42,7 @@ def hrm_dashboard(request):
     branches_count = Branch.objects.filter(status='active').count()
     departments_count = Department.objects.filter(status='active').count()
 
-    today_attendance = AttendanceRecord.objects.filter(date=today)
+    today_attendance = AttendanceRecord.objects.filter(date=today, is_deleted=False)
     present_today = today_attendance.filter(status__in=['present', 'late']).count()
     on_leave_today = today_attendance.filter(status='on_leave').count()
     attendance_rate = round((present_today / active_employees * 100), 1) if active_employees else 0
@@ -2885,6 +2885,12 @@ def _sync_biometric_to_attendance(recent_days=None):
                 'overtime_hours': overtime_hours,
                 'is_late_arrival': is_late,
                 'is_early_departure': is_early,
+                # Fresh biometric data is authoritative — revive a row an
+                # admin previously trashed rather than leaving today's real
+                # punch invisible in the trash.
+                'is_deleted': False,
+                'deleted_at': None,
+                'deleted_by': None,
             }
         )
 
@@ -2950,7 +2956,7 @@ def attendance_list(request):
     # first hit, not left to a second round of debugging in production.
     load_error = False
     try:
-        qs = AttendanceRecord.objects.select_related('employee', 'shift')
+        qs = AttendanceRecord.objects.select_related('employee', 'shift').filter(is_deleted=False)
 
         if filter_date:
             qs = qs.filter(date=filter_date)
@@ -2971,7 +2977,7 @@ def attendance_list(request):
             qs = qs.order_by('-date', 'employee__full_name')
 
         today = dt_date.today()
-        all_records = AttendanceRecord.objects.all()
+        all_records = AttendanceRecord.objects.filter(is_deleted=False)
         total_records = all_records.count()
         # Count anyone who has actually clocked in today as "present", even if
         # their punch is still incomplete (no clock-out yet, e.g. mid-shift) —
@@ -3163,7 +3169,10 @@ def attendance_update(request, pk):
     from .models import AttendanceRecord, Shift, AttendanceFixLog
     from datetime import datetime as dt
 
-    record = get_object_or_404(AttendanceRecord.objects.select_related('employee__shift', 'employee__attendance_policy'), pk=pk)
+    record = get_object_or_404(
+        AttendanceRecord.objects.select_related('employee__shift', 'employee__attendance_policy'),
+        pk=pk, is_deleted=False
+    )
 
     if request.method == 'POST':
         # The Incomplete Attendance modal's "Fix" action posts through this
@@ -3171,7 +3180,7 @@ def attendance_update(request, pk):
         # permission — the general Attendance Records edit flow (which
         # doesn't send this marker) is left untouched.
         source = request.POST.get('source', '').strip()
-        if source == 'incomplete_fix':
+        if source in ('incomplete_fix', 'adjustment_edit'):
             user = request.user
             # Require both flags — the Role Permissions page can save
             # "Fix" without "View" checked (it has no cascade guard like
@@ -3322,12 +3331,52 @@ def attendance_fix_logs(request, pk):
 
 @login_required
 def attendance_delete(request, pk):
+    """Soft-delete — moves the record to the Attendance Adjustments trash
+    instead of destroying it outright, so a wrongly-removed record (or one
+    trashed while double-checking a duplicate/erroneous punch) can still be
+    recovered. Permanent removal only happens via attendance_hard_delete,
+    reachable from the trash. Shared by the plain Attendance Records page
+    delete button and the Attendance Adjustments page."""
+    from .models import AttendanceRecord
+    record = get_object_or_404(AttendanceRecord, pk=pk, is_deleted=False)
+    if request.method == 'POST':
+        record.soft_delete(deleted_by_user=request.user if request.user.is_authenticated else None)
+        return JsonResponse({'success': True})
+    return JsonResponse({'success': False, 'error': 'Invalid request.'})
+
+
+@login_required
+def attendance_adjustment_restore(request, pk):
+    """Restore a trashed AttendanceRecord back to the active views."""
+    from .models import AttendanceRecord
+
+    if not _can_fix_attendance_adjustments(request.user):
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+
+    record = get_object_or_404(AttendanceRecord, pk=pk, is_deleted=True)
+    if request.method == 'POST':
+        record.restore()
+        return JsonResponse({'success': True})
+    return JsonResponse({'success': False, 'error': 'Invalid request.'})
+
+
+@login_required
+def attendance_adjustment_hard_delete(request, pk):
+    """Permanently delete a trashed AttendanceRecord — irreversible, so it's
+    restricted to admins and only reachable from the trash (a record must be
+    soft-deleted first). Also purges the raw biometric punches for that
+    employee/day so a permanently-removed bad record doesn't immediately
+    reappear on the next biometric sync."""
     from .models import AttendanceRecord, BiometricAttendance
-    record = get_object_or_404(AttendanceRecord, pk=pk)
+
+    user = request.user
+    if not (user.is_superuser or user.role == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Only administrators can permanently delete attendance records.'}, status=403)
+
+    record = get_object_or_404(AttendanceRecord, pk=pk, is_deleted=True)
     if request.method == 'POST':
         if record.employee and record.employee.employee_code:
             import pytz
-            from django.utils import timezone
             from datetime import datetime
             local_tz = pytz.timezone('Asia/Kathmandu')
             start_of_day = local_tz.localize(datetime.combine(record.date, datetime.min.time()))
@@ -3368,7 +3417,8 @@ def incomplete_attendance_list_ajax(request):
         adms_logger.exception('incomplete_attendance_list_ajax: auto-sync failed')
 
     qs = AttendanceRecord.objects.exclude(status__in=['absent', 'on_leave']).filter(
-        Q(clock_in__isnull=True) | Q(clock_out__isnull=True)
+        Q(clock_in__isnull=True) | Q(clock_out__isnull=True),
+        is_deleted=False,
     )
 
     search = request.GET.get('search', '').strip()
@@ -3434,6 +3484,182 @@ def incomplete_attendance_list_ajax(request):
             'fixed_by': (rec.last_fixed_by.get_full_name() or rec.last_fixed_by.username) if rec.last_fixed_by else '',
             'fixed_at': format_nepali_datetime(rec.last_fixed_at) if rec.last_fixed_at else '',
             'fix_logs_count': rec.fix_logs_count,
+        })
+
+    return JsonResponse({
+        'success': True,
+        'count': paginator.count,
+        'page': page_obj.number,
+        'total_pages': paginator.num_pages,
+        'has_next': page_obj.has_next(),
+        'has_previous': page_obj.has_previous(),
+        'results': results,
+    })
+
+
+# ==================== Attendance Adjustments ====================
+# A permanent, full-page home for everything that comes out of the
+# Incomplete Attendance "Fix" modal: every record that is currently
+# incomplete OR has ever been fixed, with full detail (remarks, who/when),
+# in-place editing, and a soft-delete/trash/hard-delete lifecycle — the
+# modal itself only ever shows the current incomplete backlog and has no
+# memory of records once they're fixed.
+
+def _can_view_attendance_adjustments(user):
+    # Matches the permission set already used by every other endpoint behind
+    # the Incomplete Attendance modal (incomplete_attendance_list_ajax,
+    # attendance_fix_logs) plus can_view_hrm_attendance, since this page also
+    # surfaces plain Attendance Records-style data (previously-fixed,
+    # now-complete rows) that those don't.
+    return bool(
+        user.is_superuser or user.role == 'administrator'
+        or user.can_view_hrm_incomplete_attendance or user.can_view_dashboard_incomplete_attendance
+        or user.can_view_hrm_attendance
+    )
+
+
+def _can_fix_attendance_adjustments(user):
+    return bool(
+        user.is_superuser or user.role == 'administrator'
+        or (user.can_fix_hrm_incomplete_attendance and user.can_view_hrm_incomplete_attendance)
+    )
+
+
+@login_required
+def attendance_adjustments(request):
+    """Page shell for Attendance Adjustments. All data loads via
+    attendance_adjustments_list_ajax — see that view for the query logic."""
+    from .models import AttendanceRecord, Department
+    from dashboard.timezone_utils import get_nepali_now
+
+    user = request.user
+    if not _can_view_attendance_adjustments(user):
+        messages.error(request, '❌ You do not have permission to access this page.', extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    # Pull in the latest punches first, same as Attendance Records — otherwise
+    # a record landed on directly here (not via the Incomplete Attendance
+    # modal) could show a stale backlog until the next 60s background poll.
+    try:
+        _sync_biometric_to_attendance()
+    except Exception:
+        adms_logger.exception('attendance_adjustments: biometric auto-sync failed, showing existing records')
+
+    base_qs = AttendanceRecord.objects.filter(is_deleted=False)
+    incomplete_q = Q(clock_in__isnull=True) | Q(clock_out__isnull=True)
+    incomplete_q &= ~Q(status__in=['absent', 'on_leave'])
+    fixed_q = Q(last_fixed_at__isnull=False)
+
+    context = {
+        'page_title': 'Attendance Adjustments',
+        'can_fix_adjustments': _can_fix_attendance_adjustments(user),
+        'is_admin_user': bool(user.is_superuser or user.role == 'administrator'),
+        'departments': Department.objects.filter(status='active').order_by('name'),
+        'total_adjustments': base_qs.filter(incomplete_q | fixed_q).count(),
+        'incomplete_count': base_qs.filter(incomplete_q).count(),
+        'fixed_count': base_qs.filter(fixed_q).count(),
+        'trashed_count': AttendanceRecord.objects.filter(is_deleted=True).count(),
+        'today_nepal': str(get_nepali_now().date()),
+    }
+    return render(request, 'hrm/attendance_adjustments.html', context)
+
+
+@login_required
+def attendance_adjustments_list_ajax(request):
+    """Data source for the Attendance Adjustments page: active records
+    (incomplete and/or previously fixed, per status_filter) or the trash
+    (view=trash), searchable/filterable and paginated at the DB level."""
+    from .models import AttendanceRecord
+    from datetime import datetime
+    from dashboard.timezone_utils import format_nepali_datetime
+
+    user = request.user
+    if not _can_view_attendance_adjustments(user):
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+
+    view = request.GET.get('view', 'active')
+    qs = AttendanceRecord.objects.filter(is_deleted=(view == 'trash'))
+
+    if view != 'trash':
+        status_filter = request.GET.get('status_filter', 'all')
+        incomplete_q = Q(clock_in__isnull=True) | Q(clock_out__isnull=True)
+        incomplete_q &= ~Q(status__in=['absent', 'on_leave'])
+        fixed_q = Q(last_fixed_at__isnull=False)
+        if status_filter == 'incomplete':
+            qs = qs.filter(incomplete_q)
+        elif status_filter == 'fixed':
+            qs = qs.filter(fixed_q)
+        else:
+            qs = qs.filter(incomplete_q | fixed_q)
+
+    search = request.GET.get('search', '').strip()
+    if search:
+        qs = qs.filter(
+            Q(employee__full_name__icontains=search) |
+            Q(employee__employee_id__icontains=search)
+        )
+    department = request.GET.get('department', '').strip()
+    if department.isdigit():
+        qs = qs.filter(employee__department_id=department)
+    date_from = request.GET.get('date_from', '').strip()
+    if date_from:
+        try:
+            qs = qs.filter(date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    date_to = request.GET.get('date_to', '').strip()
+    if date_to:
+        try:
+            qs = qs.filter(date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+
+    qs = qs.select_related(
+        'employee', 'employee__department', 'shift', 'last_fixed_by', 'deleted_by'
+    ).annotate(fix_logs_count=Count('fix_logs', distinct=True))
+    qs = qs.order_by('-deleted_at', '-date') if view == 'trash' else qs.order_by('-date', 'employee__full_name')
+
+    try:
+        per_page = int(request.GET.get('per_page', 15))
+    except (ValueError, TypeError):
+        per_page = 15
+    per_page = max(5, min(per_page, 100))
+
+    paginator = Paginator(qs, per_page)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
+    results = []
+    for rec in page_obj:
+        if not rec.clock_in and not rec.clock_out:
+            missing = 'both'
+        elif not rec.clock_in:
+            missing = 'clock_in'
+        elif not rec.clock_out:
+            missing = 'clock_out'
+        else:
+            missing = 'none'
+        results.append({
+            'id': rec.id,
+            'employee_name': rec.employee.full_name,
+            'employee_code': rec.employee.employee_id,
+            'department': rec.employee.department.name if rec.employee.department else '—',
+            'date': str(rec.date),
+            'date_display': rec.date.strftime('%d %b %Y'),
+            'clock_in': rec.clock_in.strftime('%H:%M') if rec.clock_in else '',
+            'clock_out': rec.clock_out.strftime('%H:%M') if rec.clock_out else '',
+            'missing': missing,
+            'status': rec.status,
+            'status_display': rec.get_status_display(),
+            'shift_id': rec.shift_id,
+            'shift_name': rec.shift.name if rec.shift else '—',
+            'is_holiday': rec.is_holiday,
+            'notes': rec.notes,
+            'remarks': rec.last_fix_remarks or '',
+            'fixed_by': (rec.last_fixed_by.get_full_name() or rec.last_fixed_by.username) if rec.last_fixed_by else '',
+            'fixed_at': format_nepali_datetime(rec.last_fixed_at) if rec.last_fixed_at else '',
+            'fix_logs_count': rec.fix_logs_count,
+            'deleted_at': format_nepali_datetime(rec.deleted_at) if rec.deleted_at else '',
+            'deleted_by': (rec.deleted_by.get_full_name() or rec.deleted_by.username) if rec.deleted_by else '',
         })
 
     return JsonResponse({
@@ -4270,7 +4496,7 @@ def employee_attendance_records_api(request):
     employee_id = request.GET.get('employee_id')
     if not employee_id:
         return JsonResponse({'records': []})
-    records = AttendanceRecord.objects.filter(employee_id=employee_id).order_by('-date')[:50]
+    records = AttendanceRecord.objects.filter(employee_id=employee_id, is_deleted=False).order_by('-date')[:50]
     data = []
     for r in records:
         data.append({
@@ -5551,7 +5777,7 @@ def _calculate_payroll_breakdown(employee, cycle_start, cycle_end, salary_record
 
     # Attendance records for cycle
     att_records = AttendanceRecord.objects.filter(
-        employee=employee, date__gte=cycle_start, date__lte=cycle_end
+        employee=employee, date__gte=cycle_start, date__lte=cycle_end, is_deleted=False
     ).order_by('date')
 
     # Merge attendance-flagged holidays
@@ -6822,7 +7048,7 @@ def attendance_report(request):
 
     qs = AttendanceRecord.objects.select_related(
         'employee', 'employee__department', 'employee__branch', 'shift'
-    ).order_by('-date', 'employee__full_name')
+    ).filter(is_deleted=False).order_by('-date', 'employee__full_name')
 
     if search:
         import re
@@ -7315,7 +7541,7 @@ def employee_period_attendance(request):
         date_to = ref_date.replace(day=last_day)
 
     records_qs = AttendanceRecord.objects.filter(
-        employee=employee, date__gte=date_from, date__lte=date_to
+        employee=employee, date__gte=date_from, date__lte=date_to, is_deleted=False
     ).select_related('shift').order_by('date')
 
     records_data = []
@@ -7583,6 +7809,7 @@ def employee_summary_report_ajax(request):
     att_qs = AttendanceRecord.objects.select_related('shift').filter(
         date__gte=_eff_from, date__lte=_eff_to,
         employee__in=emp_qs,
+        is_deleted=False,
     )
 
     total_days_in_range = (_eff_to - _eff_from).days + 1

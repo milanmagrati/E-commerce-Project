@@ -1491,6 +1491,12 @@
                                     class="{% if request.resolver_match.url_name == 'attendance_list' %}active{% endif %}">
                                     <a href="{% url 'hrm:attendance_list' %}">Attendance Records</a>
                                 </li>
+                                {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_incomplete_attendance or user.can_view_dashboard_incomplete_attendance or user.can_view_hrm_attendance %}
+                                <li
+                                    class="{% if request.resolver_match.url_name == 'attendance_adjustments' %}active{% endif %}">
+                                    <a href="{% url 'hrm:attendance_adjustments' %}">Attendance Adjustments</a>
+                                </li>
+                                {% endif %}
                                 <!-- Report nested submenu -->
                                 <li>
                                     <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmAttendanceReport"

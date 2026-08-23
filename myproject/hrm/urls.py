@@ -117,6 +117,12 @@ urlpatterns = [
     path('attendance/sync-settings/', views.attendance_sync_settings, name='attendance_sync_settings'),
     path('attendance/<int:pk>/fix-logs/', views.attendance_fix_logs, name='attendance_fix_logs'),
 
+    # Attendance Adjustments (full-page: incomplete + fixed history, edit, soft/hard delete + trash)
+    path('attendance/adjustments/', views.attendance_adjustments, name='attendance_adjustments'),
+    path('attendance/adjustments/list/', views.attendance_adjustments_list_ajax, name='attendance_adjustments_list_ajax'),
+    path('attendance/<int:pk>/restore/', views.attendance_adjustment_restore, name='attendance_adjustment_restore'),
+    path('attendance/<int:pk>/hard-delete/', views.attendance_adjustment_hard_delete, name='attendance_adjustment_hard_delete'),
+
     # Shifts
     path('shifts/', views.shift_list, name='shift_list'),
     path('shifts/create/', views.shift_create, name='shift_create'),

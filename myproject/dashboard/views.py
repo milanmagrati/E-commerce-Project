@@ -517,6 +517,7 @@ def dashboard_view(request):
         ).filter(
             Q(clock_in__isnull=True) | Q(clock_out__isnull=True),
             date__gte=week_ago, date__lte=yesterday_nepal,
+            is_deleted=False,
         ).select_related('employee', 'employee__department', 'last_fixed_by').annotate(
             fix_logs_count=Count('fix_logs', distinct=True)
         ).order_by('-date', 'employee__full_name')
