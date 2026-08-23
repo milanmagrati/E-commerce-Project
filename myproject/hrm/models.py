@@ -730,6 +730,11 @@ class AttendanceRegularization(models.Model):
         Employee, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='approved_regularizations'
     )
+    pre_regularization_state = models.JSONField(
+        default=dict, blank=True,
+        help_text='Attendance record values captured before this request was '
+                  'applied, so rejecting or deleting it can restore them'
+    )
     is_draft = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1406,13 +1411,15 @@ def update_leave_balance_used_days(sender, instance, **kwargs):
         )
 
     # Recalculate for all balances of this employee to handle changes in year/type
-    from django.utils import timezone
     for balance in LeaveBalance.objects.filter(employee=instance.employee):
+        # No start_date upper bound: leave booked for a future date still
+        # consumes the balance. Stopping the count at "today" meant a booked
+        # future leave looked unused, so an employee could keep booking past
+        # their entitlement and only go negative once the dates arrived.
         used = LeaveRequest.objects.filter(
             employee=balance.employee,
             leave_type=balance.leave_type,
             start_date__year=balance.year,
-            start_date__lte=timezone.now().date(),
             status__in=['approved', 'pending']
         ).aggregate(total=Sum('days'))['total'] or 0
         

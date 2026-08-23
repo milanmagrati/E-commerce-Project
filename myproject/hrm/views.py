@@ -4094,6 +4094,10 @@ def attendance_regularization_delete(request, pk):
     from .models import AttendanceRegularization
     reg = get_object_or_404(AttendanceRegularization, pk=pk)
     if request.method == 'POST':
+        # An approved request has already been written onto the attendance
+        # record; deleting the request must not leave that edit stranded.
+        if reg.status == 'approved':
+            _revert_regularization_from_record(reg)
         reg.delete()
         return JsonResponse({'success': True})
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
@@ -4116,15 +4120,35 @@ def _apply_regularization_to_record(reg):
         # existing record for that employee/date if one exists, otherwise
         # create one, so approval always lands somewhere the attendance
         # report will actually read from.
-        record, _ = AttendanceRecord.objects.select_related(
+        record, _created_now = AttendanceRecord.objects.select_related(
             'employee__shift', 'employee__attendance_policy'
         ).get_or_create(employee=reg.employee, date=reg.date)
+        _reg_record_existed = not _created_now
         reg.attendance_record = record
         reg.save(update_fields=['attendance_record'])
     else:
+        _reg_record_existed = True
         record = AttendanceRecord.objects.select_related(
             'employee__shift', 'employee__attendance_policy'
         ).get(pk=record.pk)
+
+    # Remember what the record looked like before we overwrite it, so
+    # rejecting or deleting this request later can put it back. Only captured
+    # on the first application -- re-approving an already-applied request must
+    # not snapshot the regularized values over the genuine original.
+    if not (reg.pre_regularization_state or {}):
+        reg.pre_regularization_state = {
+            'existed': _reg_record_existed,
+            'clock_in': record.clock_in.strftime('%H:%M:%S') if record.clock_in else None,
+            'clock_out': record.clock_out.strftime('%H:%M:%S') if record.clock_out else None,
+            'status': record.status,
+            'working_hours': str(record.working_hours or 0),
+            'overtime_hours': str(record.overtime_hours or 0),
+            'is_early_departure': record.is_early_departure,
+            'is_late_arrival': record.is_late_arrival,
+            'is_regularized': record.is_regularized,
+        }
+        reg.save(update_fields=['pre_regularization_state'])
 
     # Requested clock_in/out override the existing record's value;
     # a blank request field means "keep what's already there".
@@ -4157,6 +4181,55 @@ def _apply_regularization_to_record(reg):
     record.save()
 
 
+def _revert_regularization_from_record(reg):
+    """Undo what _apply_regularization_to_record() wrote.
+
+    Approving a regularization overwrites the attendance record and sets
+    is_regularized=True, which also tells the biometric auto-sync never to
+    touch that row again. Un-approving or deleting the request used to leave
+    all of that in place, so a rejected correction stayed on the record
+    permanently and the raw punch data could never restore it.
+
+    Restores the snapshot taken at apply time; if the record did not exist
+    before the regularization created it, removes it again. Returns True if
+    anything was reverted.
+    """
+    from datetime import datetime as _dt
+    from decimal import Decimal as _Dec
+
+    state = reg.pre_regularization_state or {}
+    record = reg.attendance_record
+    if not state or record is None:
+        return False
+
+    if not state.get('existed', True):
+        # The approval conjured this row into being -- take it away again.
+        reg.attendance_record = None
+        reg.pre_regularization_state = {}
+        reg.save(update_fields=['attendance_record', 'pre_regularization_state'])
+        record.delete()
+        return True
+
+    def _as_time(v):
+        return _dt.strptime(v, '%H:%M:%S').time() if v else None
+
+    record.clock_in = _as_time(state.get('clock_in'))
+    record.clock_out = _as_time(state.get('clock_out'))
+    record.status = state.get('status') or record.status
+    record.working_hours = _Dec(str(state.get('working_hours') or 0))
+    record.overtime_hours = _Dec(str(state.get('overtime_hours') or 0))
+    record.is_early_departure = bool(state.get('is_early_departure'))
+    record.is_late_arrival = bool(state.get('is_late_arrival'))
+    # Hand the row back to the biometric sync unless it was already pinned
+    # before this regularization touched it.
+    record.is_regularized = bool(state.get('is_regularized'))
+    record.save()
+
+    reg.pre_regularization_state = {}
+    reg.save(update_fields=['pre_regularization_state'])
+    return True
+
+
 @login_required
 def attendance_regularization_update_status(request, pk):
     from .models import AttendanceRegularization
@@ -4177,6 +4250,10 @@ def attendance_regularization_update_status(request, pk):
         with transaction.atomic():
             if new_status == 'approved':
                 _apply_regularization_to_record(reg)
+            elif reg.status == 'approved':
+                # Moving away from approved: take the correction back off the
+                # attendance record instead of leaving it applied forever.
+                _revert_regularization_from_record(reg)
 
             reg.status = new_status
             reg.approved_by = approver
@@ -5421,7 +5498,10 @@ def _calculate_payroll_breakdown(employee, cycle_start, cycle_end, salary_record
     """
     from decimal import Decimal, ROUND_HALF_UP
     from datetime import timedelta as _td
-    from .models import PayrollSetting as _PS, AttendanceRecord, EmployeeWeekend as _EmpWeekend, Holiday
+    from .models import (
+        PayrollSetting as _PS, AttendanceRecord, EmployeeWeekend as _EmpWeekend,
+        Holiday, LeaveRequest,
+    )
 
     if payroll_settings is None:
         payroll_settings = _PS.get_settings()
@@ -5518,6 +5598,39 @@ def _calculate_payroll_breakdown(employee, cycle_start, cycle_end, salary_record
 
     # Half-days: 0.5 present + 0.5 absent
     present_working_days += half_days_count * Decimal('0.5')
+
+    # ── Approved leave with no attendance row of its own ────────────────────
+    # paid_leave_days above only counts AttendanceRecord.status == 'on_leave',
+    # and the only thing that ever writes that status is holiday_apply().
+    # Approving a leave request creates no attendance row at all, so an
+    # approved *paid* leave day fell straight through into absent_days and was
+    # deducted from the employee's salary. Reconcile against LeaveRequest --
+    # the same source the attendance report already reads -- so payroll and
+    # the report agree. Unpaid leave types are deliberately left to fall
+    # through as absent, which is what "unpaid" means.
+    _att_by_date = {_r.date: _r for _r in att_records}
+    _leave_qs = LeaveRequest.objects.filter(
+        employee=employee, status='approved',
+        start_date__lte=cycle_end, end_date__gte=cycle_start,
+    ).select_related('leave_type')
+    for _lr in _leave_qs:
+        _is_paid_leave = _lr.leave_type.is_paid if _lr.leave_type else True
+        if not _is_paid_leave:
+            continue
+        _ld = max(_lr.start_date, cycle_start)
+        _lend = min(_lr.end_date, cycle_end)
+        while _ld <= _lend:
+            # Weekends and holidays are already outside working_days.
+            if _ld.weekday() in weekend_day_nums or _ld in holiday_dates_non_weekend:
+                _ld += _td(days=1)
+                continue
+            _lrec = _att_by_date.get(_ld)
+            # Already accounted for: an explicit on_leave row, or they worked.
+            if _lrec is not None and _lrec.status in ('present', 'late', 'half_day', 'on_leave'):
+                _ld += _td(days=1)
+                continue
+            paid_leave_days += 1
+            _ld += _td(days=1)
 
     # AbsentDays = WorkingDays - PresentWorkingDays - PaidLeaveDays
     absent_days = max(
@@ -8496,7 +8609,8 @@ def leave_balance_resync(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
     try:
-        year = int(request.POST.get('year', timezone.now().year))
+        from dashboard.timezone_utils import get_nepali_now
+        year = int(request.POST.get('year', get_nepali_now().year))
         employees = Employee.objects.filter(employee_status='active')
         leave_types = LeaveType.objects.filter(is_active=True)
         
@@ -8506,11 +8620,14 @@ def leave_balance_resync(request):
         for emp in employees:
             for lt in leave_types:
                 # Calculate used days for this employee and leave type
+                # No start_date upper bound: a leave request booked for a
+                # future date still consumes the balance. Cutting the count off
+                # at "today" let an employee book far more days than they have
+                # and only discover it as the dates arrived.
                 used = LeaveRequest.objects.filter(
                     employee=emp,
                     leave_type=lt,
                     start_date__year=year,
-                    start_date__lte=timezone.now().date(),
                     status__in=['approved', 'pending']
                 ).aggregate(total=Sum('days'))['total'] or 0
                 
