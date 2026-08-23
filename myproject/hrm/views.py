@@ -5877,7 +5877,8 @@ def generate_payslips(request, pk):
             basic_salary=_bd.get('basic_salary', Decimal('0')),
             salary_structure={
                 'earnings_list': _serialize_list(_bd.get('earnings_list', [])),
-                'deductions_list': _serialize_list(_bd.get('deductions_list', []))
+                'deductions_list': _serialize_list(_bd.get('deductions_list', [])),
+                'bonus_total_included': str(_bonus_total),
             },
             status='generated',
             generated_on=today,
@@ -9151,6 +9152,11 @@ def bonus_list(request):
     years = list(range(now.year - 2, now.year + 2))
     is_admin = _is_bonus_admin(request.user)
 
+    if now.month == 1:
+        default_month, default_year = 12, now.year - 1
+    else:
+        default_month, default_year = now.month - 1, now.year
+
     context = {
         'page_title': 'Bonus Management',
         'is_admin': is_admin,
@@ -9169,8 +9175,8 @@ def bonus_list(request):
         'status_choices': Bonus.STATUS_CHOICES,
         'months': [(i, _cal.month_name[i]) for i in range(1, 13)],
         'years': years,
-        'current_year': now.year,
-        'current_month': now.month,
+        'current_year': default_year,
+        'current_month': default_month,
         'employees': Employee.objects.filter(employee_status='active').order_by('full_name'),
     }
     return render(request, 'hrm/bonus_list.html', context)
