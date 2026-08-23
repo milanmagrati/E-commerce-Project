@@ -5826,11 +5826,16 @@ def generate_payslips(request, pk):
 
         # ── Approved Bonuses for this employee/month/year ──
         from .models import Bonus as _Bonus
+        # Must match the filter used by _sync_bonus_to_payslip() and the
+        # print view below -- both count 'approved' AND 'paid'. Counting only
+        # 'approved' here meant a bonus marked paid before the run was left out
+        # of gross at generation, then re-added as a "new" delta on the first
+        # download, inflating the slip.
         _bonus_qs = _Bonus.objects.filter(
             employee=employee,
             month=_month,
             year=_year,
-            status='approved',
+            status__in=['approved', 'paid'],
         )
         _bonus_total = sum(b.amount for b in _bonus_qs) or Decimal('0')
         _bonus_total = Decimal(str(_bonus_total)).quantize(Decimal('0.01'))
@@ -6047,7 +6052,10 @@ def payslip_sync_advances(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required'}, status=405)
 
-    payslips = list(Payslip.objects.select_related('employee').all())
+    # Finalized payslips are locked from edits everywhere else (adjustments,
+    # bonus sync, delete) -- don't let a bulk advance sync quietly rewrite
+    # their net salary.
+    payslips = list(Payslip.objects.select_related('employee').filter(is_finalized=False))
     employee_ids = list({s.employee_id for s in payslips})
 
     # Fetch active advances grouped by employee
@@ -6299,6 +6307,11 @@ def payslip_download(request, pk):
             # that hasn't been recorded on the slip yet.
             _new_net = max(slip.gross_salary - (slip.total_deductions + advance_deduction), Decimal('0'))
             Payslip.objects.filter(pk=slip.pk).update(advance_deduction=advance_deduction, net_salary=_new_net)
+            # Re-read what we just wrote. The printed totals below are taken
+            # from `slip`, and a bare .update() leaves this instance holding
+            # the pre-advance values -- so the printed net salary would
+            # disagree with both the payslip list and the database.
+            slip.refresh_from_db(fields=['advance_deduction', 'net_salary'])
         for _adv in all_employee_advances:
             if _adv.status not in ('disbursed', 'repaying'):
                 if not hasattr(_adv, 'deducted_this_month') or _adv.deducted_this_month is None:
