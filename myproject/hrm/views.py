@@ -5632,13 +5632,13 @@ def _calculate_payroll_breakdown(employee, cycle_start, cycle_end, salary_record
             paid_leave_days += 1
             _ld += _td(days=1)
 
-    # AbsentDays = WorkingDays - PresentWorkingDays - PaidLeaveDays
-    absent_days = max(
-        Decimal(str(working_days)) - present_working_days - paid_leave_days,
-        Decimal('0')
-    )
-
-    # Sandwich rule
+    # Sandwich rule -- must run BEFORE absent_days is derived.
+    # It converts weekend/holiday days sandwiched between absences into working
+    # days, which is the whole point: those days stop being paid. Deriving
+    # absent_days first meant the rule moved working_days and nothing else, so
+    # it never actually deducted anything, and the payslip printed an
+    # attendance summary that contradicted itself -- e.g. Working Days 20,
+    # Present 16, Absent 2, where 20 - 16 should leave 4.
     sandwich_days = 0
     if salary_record and getattr(salary_record, 'sandwich_rule', False):
         _sw = _count_sandwich_unpaid(
@@ -5650,6 +5650,12 @@ def _calculate_payroll_breakdown(employee, cycle_start, cycle_end, salary_record
         weekend_days_in_cycle = max(weekend_days_in_cycle - _sw['wknd_full'], 0)
         holiday_days_in_cycle = max(holiday_days_in_cycle - _sw['hol_full'], 0)
         working_days = max(calendar_days - weekend_days_in_cycle - holiday_days_in_cycle, 0)
+
+    # AbsentDays = WorkingDays - PresentWorkingDays - PaidLeaveDays
+    absent_days = max(
+        Decimal(str(working_days)) - present_working_days - paid_leave_days,
+        Decimal('0')
+    )
 
     # ── LAYER 2: Salary divisor — decoupled from attendance ─────────────────
     basic_salary = Decimal('0')
@@ -9314,6 +9320,13 @@ def heal_payslip_bonus_snapshot(slip, current_bonus_total=None):
     struct = slip.salary_structure or {}
     if struct.get('gross_before_bonus') is not None:
         return 'healthy'          # already reconcilable exactly
+
+    declined = struct.get('bonus_heal_declined') or {}
+    if declined.get('gross') == str(slip.gross_salary):
+        # Already assessed at this gross and deliberately left alone. Without
+        # this the full payroll breakdown would be recomputed, and a warning
+        # logged, on every single download of an unexplained payslip.
+        return 'unexplained'
     if not struct.get('earnings_list') and not struct.get('deductions_list'):
         return 'skipped'          # pre-snapshot slip; download recomputes it live
 
@@ -9361,6 +9374,7 @@ def heal_payslip_bonus_snapshot(slip, current_bonus_total=None):
         # Gross is right; just stamp it so the next sync can't double-add.
         struct['gross_before_bonus'] = str(baseline)
         struct['bonus_total_included'] = str(current_bonus_total)
+        struct.pop('bonus_heal_declined', None)
         slip.salary_structure = struct
         slip.save(update_fields=['salary_structure', 'updated_at'])
         return 'immunised'
@@ -9375,6 +9389,7 @@ def heal_payslip_bonus_snapshot(slip, current_bonus_total=None):
         )
         struct['gross_before_bonus'] = str(baseline)
         struct['bonus_total_included'] = str(current_bonus_total)
+        struct.pop('bonus_heal_declined', None)
         slip.salary_structure = struct
         slip.gross_salary = correct_gross
         slip.net_salary = new_net
@@ -9389,6 +9404,11 @@ def heal_payslip_bonus_snapshot(slip, current_bonus_total=None):
         slip.payslip_number, slip.gross_salary, correct_gross, drift,
         current_bonus_total, marker,
     )
+    # Remember the verdict against this gross so the assessment isn't repeated
+    # on every download. If gross moves later, it gets reassessed.
+    struct['bonus_heal_declined'] = {'gross': str(slip.gross_salary), 'drift': str(drift)}
+    slip.salary_structure = struct
+    slip.save(update_fields=['salary_structure', 'updated_at'])
     return 'unexplained'
 
 

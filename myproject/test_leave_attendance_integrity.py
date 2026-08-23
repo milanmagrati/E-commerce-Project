@@ -255,6 +255,42 @@ try:
         check('invented record removed',
               AttendanceRecord.objects.filter(employee=emp8, date=reg_date).exists(), False)
 
+        # ── 9. The sandwich rule actually deducts, and stays self-consistent ──
+        print("\n9. Sandwich rule deducts the days it converts to working days")
+        # 2026-06-05 is a Friday and 06-08 the following Monday; absent on both
+        # sandwiches Sat 6 / Sun 7, which the rule makes unpaid.
+        emp9 = make_employee('09')
+        d = CYCLE_START
+        while d <= CYCLE_END:
+            if d.weekday() < 5:
+                AttendanceRecord.objects.create(
+                    employee=emp9, date=d,
+                    status=('absent' if d in (date(2026, 6, 5), date(2026, 6, 8))
+                            else 'present'),
+                )
+            d += timedelta(days=1)
+
+        sr9 = EmployeeSalary.objects.get(employee=emp9)
+        sr9.sandwich_rule = False
+        sr9.save(update_fields=['sandwich_rule'])
+        off = breakdown(emp9)
+        check('without sandwich: working days', off['working_days'], 18)
+        check('without sandwich: absent', off['absent_days'], Decimal('2'))
+        check('without sandwich: deduction', off['absent_deduction'], Decimal('2000.00'))
+
+        sr9.sandwich_rule = True
+        sr9.save(update_fields=['sandwich_rule'])
+        on = breakdown(emp9)
+        check('with sandwich: two days sandwiched', on['sandwich_days'], 2)
+        check('with sandwich: working days rise', on['working_days'], 20)
+        check('with sandwich: absent rises too', on['absent_days'], Decimal('4'))
+        check('with sandwich: deduction rises', on['absent_deduction'], Decimal('4000.00'))
+        # The printed attendance summary must add up.
+        check('summary reconciles',
+              Decimal(str(on['working_days'])) - on['present_working_days']
+              - on['paid_leave_days'],
+              on['absent_days'])
+
         raise transaction.TransactionManagementError('__ROLLBACK__')
 
 except transaction.TransactionManagementError as e:

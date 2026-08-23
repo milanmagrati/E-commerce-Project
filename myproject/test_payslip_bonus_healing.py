@@ -179,6 +179,26 @@ try:
         s5.refresh_from_db()
         check('migration repaired the slip', s5.gross_salary, correct5)
 
+        # ── 6. A declined verdict is remembered, not re-derived every time ──
+        print("\n6. An unexplained payslip is assessed once, not on every download")
+        s4.refresh_from_db()
+        check('verdict recorded', 'bonus_heal_declined' in s4.salary_structure, True)
+        check('recorded against its gross',
+              s4.salary_structure['bonus_heal_declined']['gross'], str(odd))
+        check('second call short-circuits', heal_payslip_bonus_snapshot(s4), 'unexplained')
+        s4.refresh_from_db()
+        check('still untouched', s4.gross_salary, odd)
+
+        # ...but a change in gross forces a fresh assessment
+        s4.gross_salary = (base4 + BONUS).quantize(Decimal('0.01'))
+        s4.net_salary = s4.gross_salary
+        s4.save(update_fields=['gross_salary', 'net_salary'])
+        check('reassessed once gross moves',
+              heal_payslip_bonus_snapshot(s4), 'immunised')
+        s4.refresh_from_db()
+        check('stale verdict cleared',
+              'bonus_heal_declined' in s4.salary_structure, False)
+
         raise transaction.TransactionManagementError('__ROLLBACK__')
 
 except transaction.TransactionManagementError as e:
