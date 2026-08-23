@@ -1033,6 +1033,29 @@
         box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
     }
 
+    .sp-orders-toolbar .sp-toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .sp-orders-toolbar .sp-toolbar-btn-export {
+        background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+        border-color: #16a34a;
+    }
+
+    .sp-orders-toolbar .sp-toolbar-btn-export:hover {
+        box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);
+    }
+
+    .sp-orders-toolbar .sp-toolbar-btn-export:disabled {
+        opacity: 0.65;
+        cursor: progress;
+        transform: none;
+        box-shadow: none;
+    }
+
     .sp-orders-toolbar .sp-toolbar-btn-reset {
         background: white;
         color: #6b7280;
@@ -1873,11 +1896,17 @@
                         Showing <strong>{{ staff_orders_page.start_index }}-{{ staff_orders_page.end_index }}</strong> of <strong>{{ staff_orders_page.paginator.count }}</strong>
                     </span>
                 </div>
-                {% if selected_orders_status %}
-                <button class="sp-toolbar-btn sp-toolbar-btn-reset" onclick="clearOrdersFilter()">
-                    <i class="fas fa-times"></i> Clear Filter
-                </button>
-                {% endif %}
+                <div class="sp-toolbar-right">
+                    {% if selected_orders_status %}
+                    <button class="sp-toolbar-btn sp-toolbar-btn-reset" onclick="clearOrdersFilter()">
+                        <i class="fas fa-times"></i> Clear Filter
+                    </button>
+                    {% endif %}
+                    <button class="sp-toolbar-btn sp-toolbar-btn-export" onclick="exportStaffOrders()"
+                            title="Download all {{ staff_orders_page.paginator.count }} filtered order{{ staff_orders_page.paginator.count|pluralize }} as an Excel file">
+                        <i class="fas fa-file-excel"></i> Export Excel
+                    </button>
+                </div>
             </div>
 
             <!-- Orders Table -->
@@ -2738,6 +2767,39 @@
     function clearOrdersFilter() {
         const params = buildParams();
         window.location.href = window.location.pathname + '?' + params.toString() + '#staff-orders-log';
+    }
+
+    function exportStaffOrders() {
+        // Exports every order the current filters match, not just this page.
+        const params = buildParams();
+        const status = document.getElementById('ordersStatusFilter').value;
+        if (status) params.append('orders_status', status);
+        params.append('orders_export', 'xlsx');
+
+        const btn = document.querySelector('.sp-toolbar-btn-export');
+        const original = btn ? btn.innerHTML : null;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
+        }
+
+        // Hidden iframe so the download starts without navigating away from the
+        // page (which would lose the expanded rows / scroll position).
+        const frame = document.createElement('iframe');
+        frame.style.display = 'none';
+        frame.src = window.location.pathname + '?' + params.toString();
+        document.body.appendChild(frame);
+
+        setTimeout(function () {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = original;
+            }
+            if (typeof alertify !== 'undefined') {
+                alertify.success('Export started - check your downloads');
+            }
+        }, 2500);
+        setTimeout(function () { frame.remove(); }, 120000);
     }
 
     function goToOrdersPage(page) {

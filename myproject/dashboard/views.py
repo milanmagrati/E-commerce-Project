@@ -17214,6 +17214,229 @@ def financial_report_data(request):
 
 # ==================== STAFF PERFORMANCE ANALYTICS ====================
 
+def _staff_orders_log_export(orders_qs, request, date_range_text, period,
+                             staff_filter_label, status_filter):
+    """Write the Staff Orders Log to a four-sheet workbook.
+
+    Exports the whole filtered queryset — not just the 15 rows the paginator
+    happens to be showing — so the file matches the period/staff/status filters
+    the page was rendered with.
+    """
+    from collections import OrderedDict
+    from .timezone_utils import convert_to_nepali, get_nepali_now
+
+    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    MONEY_FMT = '#,##0.00'
+    DATE_FMT = 'yyyy-mm-dd hh:mm AM/PM'
+
+    def _local(dt):
+        """Nepali wall-clock, naive — Excel has no concept of tz-aware values."""
+        local = convert_to_nepali(dt)
+        return local.replace(tzinfo=None) if local else None
+
+    def _money(value):
+        return float(safe_decimal(value or 0, max_digits=18, decimal_places=2))
+
+    def write_sheet(ws, headers, data_rows, money_cols=(), date_cols=()):
+        ws.append(headers)
+        for col_num in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        for r in data_rows:
+            ws.append(r)
+        for col_idx in money_cols:
+            for row_idx in range(2, ws.max_row + 1):
+                ws.cell(row=row_idx, column=col_idx).number_format = MONEY_FMT
+        for col_idx in date_cols:
+            for row_idx in range(2, ws.max_row + 1):
+                ws.cell(row=row_idx, column=col_idx).number_format = DATE_FMT
+        for column in ws.columns:
+            width = max(
+                [len(str(headers[column[0].column - 1]))] +
+                [len(str(c.value)) for c in column[1:] if c.value is not None],
+                default=10,
+            )
+            ws.column_dimensions[column[0].column_letter].width = min(width + 3, 55)
+        ws.freeze_panes = 'A2'
+        if ws.max_row > 1:
+            ws.auto_filter.ref = ws.dimensions
+
+    def staff_name(user):
+        if not user:
+            return 'System'
+        full = f"{user.first_name or ''} {user.last_name or ''}".strip()
+        return full or user.username
+
+    order_rows = []
+    item_rows = []
+    staff_stats = OrderedDict()
+    totals = {'orders': 0, 'delivered': 0, 'revenue': 0.0, 'units': 0}
+
+    for order in orders_qs:
+        created_local = _local(order.created_at)
+        who = staff_name(order.created_by)
+        role = order.created_by.get_role_display() if order.created_by else ''
+        # Mirrors the on-screen pill: order_status wins, status is the fallback.
+        effective_status = order.order_status or order.status or ''
+        is_delivered = effective_status.lower() in ('delivered', 'completed')
+
+        items = list(order.items.all())
+        units = sum(item.quantity or 0 for item in items)
+        item_labels = []
+        for item in items:
+            label = item.product_name or ''
+            if item.variation_name:
+                label += f" ({item.variation_name})"
+            item_labels.append(f"{label} x{item.quantity}")
+        items_summary = ' | '.join(item_labels)
+        amount = _money(order.total_amount)
+
+        order_rows.append([
+            order.order_number,
+            who,
+            role,
+            order.customer_name or '',
+            order.customer_phone or '',
+            order.customer_email or '',
+            items_summary,
+            len(items),
+            units,
+            effective_status.title(),
+            (order.order_from or '').upper(),
+            (order.payment_method or '').upper(),
+            (order.payment_status or '').title(),
+            _money(order.discount_amount),
+            _money(order.shipping_charge),
+            _money(order.delivery_charge),
+            amount,
+            _money(order.cod_collected),
+            str(order.branch) if order.branch else '',
+            order.shipping_address or '',
+            order.landmark or '',
+            order.get_logistics_display() if order.logistics else '',
+            order.tracking_number or '',
+            (order.in_out or '').upper(),
+            created_local,
+            _local(order.dispatch_date),
+            _local(order.delivered_at),
+            order.notes or '',
+            order.admin_notes or '',
+        ])
+
+        for item in items:
+            item_rows.append([
+                order.order_number,
+                created_local,
+                who,
+                order.customer_name or '',
+                order.customer_phone or '',
+                item.product_name or '',
+                item.variation_name or '',
+                item.product_sku or '',
+                item.quantity or 0,
+                _money(item.price),
+                _money(item.total),
+                effective_status.title(),
+                (order.order_from or '').upper(),
+            ])
+
+        stat = staff_stats.get(who)
+        if stat is None:
+            stat = staff_stats[who] = {
+                'role': role, 'orders': 0, 'delivered': 0, 'revenue': 0.0, 'units': 0,
+            }
+        stat['orders'] += 1
+        stat['revenue'] += amount
+        stat['units'] += units
+        if is_delivered:
+            stat['delivered'] += 1
+
+        totals['orders'] += 1
+        totals['revenue'] += amount
+        totals['units'] += units
+        if is_delivered:
+            totals['delivered'] += 1
+
+    wb = Workbook()
+    write_sheet(
+        wb.active,
+        ['Order #', 'Created By', 'Role', 'Customer', 'Phone', 'Email',
+         'Items', 'Item Lines', 'Total Qty', 'Status', 'Source',
+         'Payment Method', 'Payment Status', 'Discount', 'Shipping',
+         'Delivery Charge', 'Amount', 'COD Collected', 'Branch',
+         'Shipping Address', 'Landmark', 'Logistics', 'Tracking #',
+         'In/Out', 'Created At', 'Dispatched At', 'Delivered At',
+         'Notes', 'Admin Notes'],
+        order_rows,
+        money_cols=(14, 15, 16, 17, 18),
+        date_cols=(25, 26, 27),
+    )
+    wb.active.title = 'Staff Orders'
+
+    write_sheet(
+        wb.create_sheet('Order Items'),
+        ['Order #', 'Created At', 'Created By', 'Customer', 'Phone',
+         'Product', 'Variation', 'SKU', 'Qty', 'Unit Price', 'Line Total',
+         'Order Status', 'Source'],
+        item_rows,
+        money_cols=(10, 11),
+        date_cols=(2,),
+    )
+
+    total_orders = totals['orders']
+    write_sheet(
+        wb.create_sheet('Staff Summary'),
+        ['Staff', 'Role', 'Orders', 'Share %', 'Delivered', 'Delivery %',
+         'Units Sold', 'Revenue', 'Avg Order Value'],
+        [
+            [
+                name,
+                s['role'],
+                s['orders'],
+                round(s['orders'] * 100.0 / total_orders, 1) if total_orders else 0,
+                s['delivered'],
+                round(s['delivered'] * 100.0 / s['orders'], 1) if s['orders'] else 0,
+                s['units'],
+                round(s['revenue'], 2),
+                round(s['revenue'] / s['orders'], 2) if s['orders'] else 0,
+            ]
+            for name, s in sorted(staff_stats.items(), key=lambda kv: -kv[1]['orders'])
+        ],
+        money_cols=(8, 9),
+    )
+
+    exported_at = get_nepali_now().replace(tzinfo=None)
+    write_sheet(
+        wb.create_sheet('Report Info'),
+        ['Field', 'Value'],
+        [
+            ['Report', 'Staff Orders Log'],
+            ['Period', period],
+            ['Date Range', date_range_text],
+            ['Staff Filter', staff_filter_label],
+            ['Status Filter', status_filter.title() if status_filter else 'All Statuses'],
+            ['Total Orders', total_orders],
+            ['Delivered Orders', totals['delivered']],
+            ['Total Units', totals['units']],
+            ['Total Revenue', round(totals['revenue'], 2)],
+            ['Exported By', staff_name(request.user)],
+            ['Exported At', exported_at.strftime('%Y-%m-%d %I:%M %p') + ' (NPT)'],
+        ],
+    )
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    stamp = exported_at.strftime('%Y%m%d_%H%M%S')
+    response['Content-Disposition'] = f'attachment; filename=staff_orders_log_{stamp}.xlsx'
+    wb.save(response)
+    return response
+
+
+
 @login_required(login_url='login')
 def staff_performance_analytics(request):
     """Staff Performance Analytics Dashboard with Session Persistence"""
@@ -17333,6 +17556,38 @@ def staff_performance_analytics(request):
             orders_qs = orders_qs.filter(created_by_id=staff_id)
         except (ValueError, TypeError):
             pass
+
+    # ========== STAFF ORDERS LOG QUERYSET ==========
+    # Built here (not down with the rest of the log section) so the Excel export
+    # can return before the page's KPI/chart aggregation runs.
+    staff_orders_status = request.GET.get('orders_status', '')
+
+    def _build_staff_orders_qs():
+        qs = orders_qs.select_related(
+            'created_by', 'customer', 'branch'
+        ).prefetch_related('items__product').order_by('-created_at')
+        # Case-insensitive, and checks both status fields, exactly like the pill
+        if staff_orders_status:
+            qs = qs.filter(
+                Q(status__iexact=staff_orders_status) | Q(order_status__iexact=staff_orders_status)
+            )
+        return qs
+
+    if request.GET.get('orders_export') == 'xlsx':
+        staff_filter_label = 'All Staff'
+        if staff_filter != 'all':
+            try:
+                picked = User.objects.filter(pk=int(staff_filter)).first()
+            except (ValueError, TypeError):
+                picked = None
+            if picked:
+                staff_filter_label = (
+                    f"{picked.first_name} {picked.last_name}".strip() or picked.username
+                )
+        return _staff_orders_log_export(
+            _build_staff_orders_qs(), request, date_range_text, period,
+            staff_filter_label, staff_orders_status,
+        )
 
     # ========== KPI CALCULATIONS ==========
     total_orders = orders_qs.count()
@@ -17713,16 +17968,7 @@ def staff_performance_analytics(request):
     ).order_by('-count')
 
     # ========== STAFF ORDERS LOG ==========
-    staff_orders_qs = orders_qs.select_related(
-        'created_by', 'customer', 'branch'
-    ).prefetch_related('items__product').order_by('-created_at')
-
-    # Staff orders status filter (case-insensitive, check both status fields)
-    staff_orders_status = request.GET.get('orders_status', '')
-    if staff_orders_status:
-        staff_orders_qs = staff_orders_qs.filter(
-            Q(status__iexact=staff_orders_status) | Q(order_status__iexact=staff_orders_status)
-        )
+    staff_orders_qs = _build_staff_orders_qs()
 
     # Pagination
     staff_orders_page_num = request.GET.get('orders_page', 1)
