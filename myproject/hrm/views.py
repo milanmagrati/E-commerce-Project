@@ -6088,6 +6088,7 @@ def generate_payslips(request, pk):
                 'earnings_list': _serialize_list(_bd.get('earnings_list', [])),
                 'deductions_list': _serialize_list(_bd.get('deductions_list', [])),
                 'bonus_total_included': str(_bonus_total),
+                'gross_before_bonus': str(_bd['total_earnings'].quantize(Decimal('0.01'))),
                 'advance_breakdown': _adv_breakdown,
             },
             status='generated',
@@ -9279,6 +9280,118 @@ def _validate_bonus_fields(bonus_type, month_str, year_str):
     return month, year, None
 
 
+def heal_payslip_bonus_snapshot(slip, current_bonus_total=None):
+    """Repair a payslip whose bonus accounting predates (or was corrupted by)
+    the bonus_total_included bookkeeping, so no manual data-fix script is
+    needed in production.
+
+    Two populations exist in any database written before that bookkeeping
+    landed:
+
+      AT RISK    generated with a bonus folded into gross_salary but no
+                 marker recorded. _sync_bonus_to_payslip() would read the
+                 missing marker as zero and add the same bonus a second time
+                 on the next download.
+
+      CORRUPTED  that second addition already happened, so gross_salary and
+                 net_salary are inflated by exactly one bonus amount.
+
+    Both are healed here by reconciling against a recomputed baseline, and the
+    payslip is stamped with `gross_before_bonus` so every later reconciliation
+    is exact rather than inferred. A payslip that matches neither shape is left
+    completely alone and logged -- a manual adjustment or an attendance change
+    since generation can move gross legitimately, and guessing at those would
+    do more harm than the bug.
+
+    Safe to call repeatedly; healed payslips short-circuit on the stamp.
+    Returns 'healthy', 'immunised', 'repaired', 'unexplained' or 'skipped'.
+    """
+    from .models import EmployeeSalary, PayrollSetting, Bonus
+    from decimal import Decimal
+    import calendar as _cal
+    from datetime import date as _date
+
+    struct = slip.salary_structure or {}
+    if struct.get('gross_before_bonus') is not None:
+        return 'healthy'          # already reconcilable exactly
+    if not struct.get('earnings_list') and not struct.get('deductions_list'):
+        return 'skipped'          # pre-snapshot slip; download recomputes it live
+
+    run = slip.payroll_run
+    if run.pay_period_start and run.pay_period_end:
+        cycle_start, cycle_end = run.pay_period_start, run.pay_period_end
+    elif run.month and run.year:
+        cycle_start = _date(run.year, run.month, 1)
+        cycle_end = _date(run.year, run.month, _cal.monthrange(run.year, run.month)[1])
+    else:
+        return 'skipped'
+
+    if current_bonus_total is None:
+        current_bonus_total = sum(
+            b.amount for b in Bonus.objects.filter(
+                employee=slip.employee, month=cycle_start.month,
+                year=cycle_start.year, status__in=['approved', 'paid'],
+            )
+        ) or Decimal('0')
+        current_bonus_total = Decimal(str(current_bonus_total)).quantize(Decimal('0.01'))
+
+    try:
+        bd = _calculate_payroll_breakdown(
+            employee=slip.employee, cycle_start=cycle_start, cycle_end=cycle_end,
+            salary_record=(
+                EmployeeSalary.objects.filter(employee=slip.employee, is_active=True)
+                .prefetch_related('components').order_by('-effective_date').first()
+            ),
+            payroll_settings=PayrollSetting.get_settings(),
+        )
+    except Exception as exc:
+        hrm_logger.warning(
+            "heal_payslip_bonus_snapshot: could not recompute %s: %s",
+            slip.payslip_number, exc,
+        )
+        return 'skipped'
+
+    baseline = bd['total_earnings'].quantize(Decimal('0.01'))
+    adj_earnings = Decimal(str(struct.get('adj_earnings_included', '0')))
+    correct_gross = (baseline + adj_earnings + current_bonus_total).quantize(Decimal('0.01'))
+    drift = (slip.gross_salary - correct_gross).quantize(Decimal('0.01'))
+    marker = struct.get('bonus_total_included')
+
+    if drift == 0:
+        # Gross is right; just stamp it so the next sync can't double-add.
+        struct['gross_before_bonus'] = str(baseline)
+        struct['bonus_total_included'] = str(current_bonus_total)
+        slip.salary_structure = struct
+        slip.save(update_fields=['salary_structure', 'updated_at'])
+        return 'immunised'
+
+    if marker is not None and drift == Decimal(str(marker)) and drift > 0:
+        # Inflated by exactly the bonus the buggy sync added a second time.
+        new_net = max(slip.net_salary - drift, Decimal('0')).quantize(Decimal('0.01'))
+        hrm_logger.info(
+            "heal_payslip_bonus_snapshot: repairing %s — gross %s -> %s, net %s -> %s",
+            slip.payslip_number, slip.gross_salary, correct_gross,
+            slip.net_salary, new_net,
+        )
+        struct['gross_before_bonus'] = str(baseline)
+        struct['bonus_total_included'] = str(current_bonus_total)
+        slip.salary_structure = struct
+        slip.gross_salary = correct_gross
+        slip.net_salary = new_net
+        slip.save(update_fields=[
+            'salary_structure', 'gross_salary', 'net_salary', 'updated_at'])
+        _refresh_payroll_run_totals(slip.payroll_run)
+        return 'repaired'
+
+    hrm_logger.warning(
+        "heal_payslip_bonus_snapshot: leaving %s alone — stored gross %s, "
+        "recomputed %s (drift %s), bonus %s, marker %s",
+        slip.payslip_number, slip.gross_salary, correct_gross, drift,
+        current_bonus_total, marker,
+    )
+    return 'unexplained'
+
+
 def _sync_bonus_to_payslip(employee, month, year):
     """Fold approved/paid bonuses for an employee/month/year into that
     employee's already-generated payslip (gross_salary/net_salary), so the
@@ -9308,6 +9421,12 @@ def _sync_bonus_to_payslip(employee, month, year):
         )
     ) or Decimal('0')
     current_bonus_total = Decimal(str(current_bonus_total)).quantize(Decimal('0.01'))
+
+    # Bring pre-bookkeeping payslips up to date before trusting the marker:
+    # without this a slip generated before bonus_total_included existed reads
+    # as "no bonus included" and gets the same bonus added all over again.
+    heal_payslip_bonus_snapshot(slip, current_bonus_total)
+    slip.refresh_from_db(fields=['salary_structure', 'gross_salary', 'net_salary'])
 
     struct = slip.salary_structure or {}
     included_bonus = Decimal(str(struct.get('bonus_total_included', '0')))
