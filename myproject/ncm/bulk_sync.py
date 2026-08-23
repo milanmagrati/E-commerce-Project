@@ -19,6 +19,24 @@ from services.status_override import (clear_manual_status_override,
 logger = logging.getLogger('ncm')
 ncm_service = NCMService()
 
+#: Statuses meaning "this parcel is going back to, or is back with, the vendor".
+#: Used to decide when the bulk endpoint's bare status string is not trustworthy
+#: enough to write through - see _sync_one_order.
+RETURN_PIPELINE_STATUSES = ('return_processing', 'return', 'returned')
+
+
+def _carries_vendor_return(entry):
+    """True when a status entry actually states the vendor_return flag.
+
+    Absence is not the same as False: resolve_delivered_status defaults a
+    missing flag to False, which reads as "not a return". For an order already
+    heading back to the vendor that default is a guess, and the guard in
+    _sync_one_order refuses to act on a guess.
+    """
+    return isinstance(entry, dict) and (
+        'vendor_return' in entry or 'vendorReturn' in entry
+    )
+
 DEFAULT_TERMINAL_STATUSES = [
     'cancelled', 'delivered', 'return', 'returned',
     'return_initiated', 'return_approved',
@@ -235,22 +253,43 @@ def _sync_one_order(svc, order, raw_status, user, fetch_event_times=True):
     old_payment_status = order.payment_status
     event_at = None
 
-    # The bulk endpoint returns only a status string, which can't distinguish
-    # a real delivery from an RTV "delivered back to vendor" - that needs the
-    # vendor_return flag, so re-fetch the full entry for 'Delivered' only.
-    if isinstance(raw_status, str) and raw_status == 'Delivered':
+    # An order travelling back to the vendor. Its remaining hops are worded
+    # exactly like ordinary transit ("Dispatched", "Arrived at BUTWAL"), so the
+    # bulk endpoint's bare status string cannot tell them apart from a delivery
+    # run - only the vendor_return flag on a full status entry can.
+    in_return_pipeline = (
+        (order.status or '').strip().lower() in RETURN_PIPELINE_STATUSES
+    )
+
+    # Re-fetch the full entry in the two cases where the bare string is
+    # ambiguous. `resolved_with_flag` records whether the verdict below is
+    # actually backed by vendor_return, which the guard after it relies on.
+    #
+    #   * 'Delivered'  - delivered to the customer, or back to the vendor?
+    #   * an order in the return pipeline whose status just moved - which way
+    #     did it move? Gated on the status having changed, so an order sitting
+    #     in 'return_processing' for a week costs nothing extra per run.
+    needs_vendor_return_flag = (
+        isinstance(raw_status, str)
+        and (raw_status == 'Delivered'
+             or (in_return_pipeline and raw_status != order.ncm_status))
+    )
+    resolved_with_flag = False
+
+    if needs_vendor_return_flag:
         detail_result = svc.get_order_status(order.ncm_order_id)
+        entry = None
         if detail_result.get('success') and detail_result.get('data'):
             data = detail_result['data']
-            entry = data[0] if isinstance(data, list) else data
-            if isinstance(entry, dict):
-                system_status, payment_status = svc.resolve_delivered_status(entry)
-                new_status = entry.get('status') or entry.get('Status') or raw_status
-                event_at = parse_ncm_datetime(entry.get('added_time'))
-            else:
-                system_status = svc.map_ncm_status_to_system(raw_status)
-                payment_status = None
-                new_status = raw_status
+            candidate = data[0] if isinstance(data, list) else data
+            if isinstance(candidate, dict):
+                entry = candidate
+
+        if entry is not None:
+            system_status, payment_status = svc.resolve_delivered_status(entry)
+            new_status = entry.get('status') or entry.get('Status') or raw_status
+            event_at = parse_ncm_datetime(entry.get('added_time'))
+            resolved_with_flag = _carries_vendor_return(entry)
         else:
             system_status = svc.map_ncm_status_to_system(raw_status)
             payment_status = None
@@ -259,10 +298,24 @@ def _sync_one_order(svc, order, raw_status, user, fetch_event_times=True):
         system_status, payment_status = svc.resolve_delivered_status(raw_status)
         new_status = raw_status.get('status') or raw_status.get('Status') or ''
         event_at = parse_ncm_datetime(raw_status.get('added_time'))
+        resolved_with_flag = _carries_vendor_return(raw_status)
     else:
         new_status = raw_status
         system_status = svc.map_ncm_status_to_system(new_status)
         payment_status = None
+
+    # Nothing but a flag-backed verdict may take an order OUT of the return
+    # pipeline. Without that, "Arrived at BUTWAL" on a parcel heading back
+    # resolves to plain 'in_transit' and the return is lost - and since the
+    # bulk string keeps saying "Arrived", it is lost silently and for good.
+    # Return-worded outcomes are unambiguous and still allowed through.
+    if (in_return_pipeline and not resolved_with_flag
+            and system_status not in RETURN_PIPELINE_STATUSES):
+        logger.debug(
+            f"Bulk sync: '{raw_status}' carries no vendor_return flag; keeping "
+            f"{order.order_number} at '{order.status}'"
+        )
+        return False
 
     if order.ncm_status == new_status and order.status == system_status:
         return False

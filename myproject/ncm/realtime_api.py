@@ -268,8 +268,22 @@ def api_sync_order_status(request, order_id):
             latest_entry = status_data[0]
             latest_status = latest_entry.get('status') or latest_entry.get('Status')
         else:
-            latest_status = order.ncm_status
-            latest_entry = {}
+            # NCM answered, but with no status entries at all. There is nothing
+            # new to apply, and re-deriving the system status from the stored
+            # ncm_status is not harmless: a return-pipeline hop NCM words as
+            # plain transit ("Arrived at BUTWAL") maps back to 'in_transit'
+            # without the vendor_return flag to say otherwise, which would drop
+            # the order out of the return pipeline on a sync that learned
+            # nothing. Report the order as-is instead.
+            empty_response = {
+                'success': True,
+                'message': 'NCM returned no status entries; keeping current status',
+                'order_id': order.id,
+                'order_number': order.order_number,
+                'changed': False,
+            }
+            empty_response.update(_order_display_fields(order))
+            return JsonResponse(empty_response)
 
         # When NCM says this status actually happened. Without it the activity
         # log would be stamped with the moment this sync ran — and this sync

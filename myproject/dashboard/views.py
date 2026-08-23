@@ -5106,6 +5106,7 @@ def return_orders_list(request):
     logistics_filter = request.GET.get('logistics_status', '')
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
+    stage_filter = request.GET.get('stage', '')
 
     # Apply filters
     if search_query:
@@ -5151,6 +5152,22 @@ def return_orders_list(request):
             orders = orders.filter(created_at__gte=nepali_day_start(start_date_obj), created_at__lt=nepali_day_end_exclusive(end_date_obj))
         except ValueError:
             pass
+
+    # Return stage: 'processing' is still travelling back from the customer,
+    # 'completed' has arrived. Staff need them apart - only an arrived parcel
+    # can be inspected, restocked or refunded. Applied last, and counted just
+    # before it is applied, so the dropdown keeps showing both totals for the
+    # search/date/payment selection currently in force.
+    stage_counts = {
+        'processing': orders.filter(order_status__iexact='return_processing').count(),
+        'completed': orders.filter(order_status__iexact='return').count(),
+    }
+    if stage_filter == 'processing':
+        orders = orders.filter(order_status__iexact='return_processing')
+    elif stage_filter == 'completed':
+        orders = orders.filter(order_status__iexact='return')
+    else:
+        stage_filter = ''
 
     # Calculate statistics
     total_return_orders = orders.count()
@@ -5199,6 +5216,8 @@ def return_orders_list(request):
         'per_page': per_page,
         'payment_status_choices': payment_status_choices,
         'page_obj': orders_page,
+        'stage_filter': stage_filter,
+        'stage_counts': stage_counts,
     }
 
     return render(request, 'return_orders.html', context)
@@ -14123,12 +14142,20 @@ def ncm_sync_all_statuses(request):
         ncm_service = NCMService()
 
         # Get all NCM orders
+        # ncm_order_id is an IntegerField, so the `| Q(ncm_order_id='')` this
+        # used to carry raised ValueError before the query could even run -
+        # the whole sync failed with "expected a number but got ''".
+        #
+        # Cancelled orders are excluded for the same reason the webhook, the
+        # per-order sync and the bulk sync (PROTECTED_STATUSES) exclude them: a
+        # cancellation is a local staff decision and NCM can report a stale
+        # status long after it was made.
+        from ncm.bulk_sync import PROTECTED_STATUSES
         ncm_orders = Order.objects.filter(
             is_deleted=False,
-            logistics='ncm'
-        ).exclude(
-            Q(ncm_order_id__isnull=True) | Q(ncm_order_id='')
-        )
+            logistics='ncm',
+            ncm_order_id__isnull=False,
+        ).exclude(status__in=PROTECTED_STATUSES)
 
         total = ncm_orders.count()
         updated = 0
@@ -15162,11 +15189,11 @@ def ncm_orders_empty_trash(request):
 
     try:
         # Get all deleted NCM orders
+        # Same IntegerField-vs-'' crash as ncm_sync_all_statuses had.
         orders = Order.objects.filter(
             is_deleted=True,
-            logistics='ncm'
-        ).exclude(
-            Q(ncm_order_id__isnull=True) | Q(ncm_order_id='')
+            logistics='ncm',
+            ncm_order_id__isnull=False,
         )
 
         count = orders.count()

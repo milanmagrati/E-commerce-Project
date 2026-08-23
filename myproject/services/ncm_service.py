@@ -595,12 +595,60 @@ class NCMService:
     #: exact dict entry below) represents confirmed arrival.
     RETURN_STATUS_KEYWORDS = ('return', 'rtv', 'sent to vendor')
 
+    #: NCM status texts that mean the return leg is FINISHED - the parcel has
+    #: physically arrived back with the vendor/warehouse. Everything else in the
+    #: RTV pipeline ("Order Marked Return", "Sent to Vendor", an "Arrived at
+    #: RETURN (BRANCH)" hop) is still in transit and must stay at the
+    #: intermediate 'return_processing' stage.
+    #:
+    #: 'Delivered'/'Confirmed' only count as a completed return when they carry
+    #: the vendor_return flag - NCM reuses the same words for a delivery to the
+    #: customer, and resolve_delivered_status is the only place that knows the
+    #: difference.
+    RETURN_COMPLETED_STATUSES = frozenset((
+        'delivered',
+        'confirmed',
+        'returned',
+        'returned to warehouse',
+        'return completed',
+    ))
+
+    #: System-side counterparts: the order statuses that mean the return is over.
+    #: 'return' is what NCM's own confirmation resolves to; 'returned' is set by
+    #: Return Management when staff physically scan the parcel back in.
+    COMPLETED_RETURN_SYSTEM_STATUSES = frozenset(('return', 'returned'))
+
+    @staticmethod
+    def is_return_completed(ncm_status) -> bool:
+        """True when an NCM status text means the parcel is back with the vendor.
+
+        Matched on the leading words so branch-qualified variants NCM appends
+        ("Returned to Warehouse (TINKUNE)") still count, while an in-pipeline
+        hop that merely mentions the return branch ("Arrived at RETURN
+        (TINKUNE)", "Dispatched to RETURN (TINKUNE)") does not - those start
+        with a transit verb and are still on the way back.
+        """
+        text = ' '.join((ncm_status or '').strip().lower().split())
+        if not text:
+            return False
+        if text in NCMService.RETURN_COMPLETED_STATUSES:
+            return True
+        return any(text.startswith(done + ' ') for done in NCMService.RETURN_COMPLETED_STATUSES)
+
     @staticmethod
     def map_ncm_status_to_system(ncm_status: str) -> str:
         """Map NCM status to system status.
 
         This mapping is aligned with NCMWebhookHandler.STATUS_MAPPING to ensure
         consistent behavior between webhook updates and manual sync operations.
+
+        Every RTV status other than a confirmed arrival back at the warehouse
+        resolves to 'return_processing'; only 'Returned to Warehouse' (and, via
+        resolve_delivered_status, a vendor_return 'Delivered') ends the pipeline
+        at 'return'. Each value produced here has a matching Setup row so the
+        order's status_setup FK and its status strings never disagree - which is
+        what made the order detail header badge show "RETURN" while the status
+        dropdown still read "Return Processing".
         """
         mapping = {
             'Pickup Order Created': 'Pickup Created',
@@ -615,8 +663,8 @@ class NCMService:
             'Delivered': 'delivered',
             'Confirmed': 'delivered',
             'Returned': 'returned',
-            'Return Initiated': 'return_initiated',
-            'Return Approved': 'return_approved',
+            'Return Initiated': 'return_processing',
+            'Return Approved': 'return_processing',
             'Order Marked Return': 'return_processing',
             'Sent to Vendor': 'return_processing',
             'Returned to Warehouse': 'return',
@@ -648,29 +696,49 @@ class NCMService:
         """Resolve the actual order status and payment status from an NCM status entry.
 
         The NCM API returns status='Delivered' for both successful deliveries and
-        vendor returns (RTV) - the vendor_return flag differentiates them. That
-        flag can also accompany other statuses throughout the RTV pipeline
-        (e.g. "Sent to Vendor", "Order Marked Return", "Returned to
-        Warehouse"), so whenever it's confirmed true the order is treated as
-        returned ('return') regardless of the raw NCM status text - NCM only
-        sets/reports this flag once it has actually confirmed the order is in
-        the RTV pipeline, so the flag itself is treated as sufficient.
-        'return_processing' (the earlier "marked for return, not yet
-        confirmed" stage) is only produced via map_ncm_status_to_system below,
-        for raw statuses like "Order Marked Return"/"Sent to Vendor" seen
-        WITHOUT the vendor_return flag - e.g. the initial `order_marked_rtv`
-        webhook event, whose payload typically doesn't include vendor_return
-        yet.
+        vendor returns (RTV) - the vendor_return flag differentiates them. But
+        that flag says only "this parcel is in the RTV pipeline", not "the RTV
+        pipeline has finished": NCM sets it the moment an order is marked
+        return and keeps reporting it on every hop of the journey back
+        ("Order Marked Return", "Sent to Vendor", "Arrived at RETURN (...)").
+
+        So the flag decides *which* pipeline the status belongs to, and the raw
+        status text decides *how far along* it is:
+
+        * vendor_return + a completed-return text ("Delivered" back to the
+          vendor, "Returned to Warehouse") -> 'return', the parcel is back;
+        * vendor_return + anything else -> 'return_processing', still moving;
+        * no vendor_return -> the ordinary mapping, where "Delivered" is a real
+          delivery to the customer.
+
+        Treating the bare flag as terminal is what marked orders 'return' while
+        they were still in transit back, and - because 'return' is in bulk
+        sync's terminal set - froze them there: the order detail page's
+        load-time sync would flip the header badge to RETURN seconds after the
+        page rendered "Return Processing", and nothing synced the order again
+        to correct it.
 
         Returns:
             (system_status, payment_status) tuple
         """
-        ncm_status = status_entry.get('status') or status_entry.get('Status', '')
+        # 'last_status' is the shape NCM uses when it answers with a single
+        # summary object rather than a timeline list (see the branch in
+        # ncm.realtime_api.api_sync_order_status that passes that object
+        # straight through). Missing it left ncm_status empty, and an empty
+        # status is never a completed return - so a finished RTV would have
+        # been read as still in transit.
+        ncm_status = (status_entry.get('status')
+                      or status_entry.get('Status')
+                      or status_entry.get('last_status')
+                      or '')
         vendor_return_raw = status_entry.get('vendor_return', status_entry.get('vendorReturn', 'False'))
         vendor_return = NCMService.parse_vendor_return(vendor_return_raw)
 
         if vendor_return:
-            return ('return', None)  # Confirmed in the RTV pipeline (vendor_return flag)
+            # In the RTV pipeline - completed only once NCM says it arrived back.
+            if NCMService.is_return_completed(ncm_status):
+                return ('return', None)
+            return ('return_processing', None)
 
         if ncm_status == 'Delivered':
             return ('delivered', 'paid')  # Successful delivery, mark as paid
@@ -889,11 +957,16 @@ class NCMService:
         return should_write
 
     @staticmethod
-    def sync_order_status_fields(order, system_status, payment_status=None):
+    def sync_order_status_fields(order, system_status, payment_status=None,
+                                 allow_return_reopen=False):
         """Update all status-related fields on an order to keep them in sync.
 
         Updates: status, order_status, status_setup (FK),
                  payment_status, payment_status_setup (FK).
+
+        `allow_return_reopen` lifts the "a finished return never reopens" guard
+        below. Only the repair command uses it, to move orders that were marked
+        'return' while still in transit back onto the correct stage.
 
         Only assigns/reports a field when its value actually differs from the
         current one, so callers (e.g. the NCM real-time sync API) can trust
@@ -908,6 +981,17 @@ class NCMService:
         # through would blank the order's status rather than leave it alone.
         if not system_status:
             return update_fields
+
+        # A finished return never goes back to "still on its way". NCM keeps
+        # reporting vendor_return (and can replay in-pipeline hops late or out
+        # of order) after the parcel is already back, and staff scanning it in
+        # on the Return Management page sets 'returned' - a stronger signal
+        # than anything NCM reports. Either way, resolving 'return_processing'
+        # afterwards would be a downgrade, so keep what the order already has.
+        if (not allow_return_reopen
+                and system_status == 'return_processing'
+                and (order.status or '').strip().lower() in NCMService.COMPLETED_RETURN_SYSTEM_STATUSES):
+            system_status = order.status
 
         # Update status and order_status string fields
         if order.status != system_status:
@@ -946,7 +1030,7 @@ class NCMService:
 
     @staticmethod
     def _resolve_setup(setup_type, value):
-        """Find the active Setup row whose name matches a system status value.
+        """Find (or create) the Setup row whose name matches a system status value.
 
         Setup names are human-readable ("Return Processing") while system
         status values are normalized ("return_processing"), so matching
@@ -955,6 +1039,15 @@ class NCMService:
         only reached for names that normalize equal without matching
         literally (e.g. one that already contains underscores), which keeps
         this correct while avoiding a table scan per order during bulk sync.
+
+        When nothing matches, the row is created rather than returning None.
+        Returning None left the order's status_setup FK pointing at the
+        PREVIOUS status while the status strings moved on, and the order detail
+        header badge renders that FK - so the badge showed the stale status
+        (e.g. "RETURN") while the status dropdown, which reads the same FK, and
+        every list page, which reads the strings, disagreed with it. Creating
+        the row is also what dashboard.views.sync_order_status_setup already
+        does for statuses set through the UI, so both paths now behave alike.
         """
         from dashboard.models import Setup
 
@@ -971,4 +1064,24 @@ class NCMService:
         for s in candidates:
             if s.name.lower().replace(' ', '_') == normalized:
                 return s
-        return None
+
+        # An admin may have deactivated the row rather than deleted it. Reuse it:
+        # unique_together(setup_type, name) would reject a duplicate anyway, and a
+        # hidden status is still a truthful place for the FK to point.
+        existing = Setup.objects.filter(
+            setup_type=setup_type, name__iexact=normalized.replace('_', ' ')
+        ).first()
+        if existing:
+            return existing
+
+        # Savepointed: this runs inside the webhook's transaction.atomic(), so a
+        # race with a concurrent sync creating the same row must not leave that
+        # transaction unusable when the caller swallows the error.
+        from django.db import transaction
+        with transaction.atomic():
+            setup, _ = Setup.objects.get_or_create(
+                setup_type=setup_type,
+                name=normalized.replace('_', ' ').title(),
+                defaults={'is_active': True},
+            )
+        return setup

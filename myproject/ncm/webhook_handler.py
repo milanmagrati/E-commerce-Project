@@ -66,12 +66,16 @@ class NCMWebhookHandler:
         'Delivered': 'delivered',
         'Confirmed': 'delivered',
         'Returned': 'returned',
-        'Return Initiated': 'return_initiated',
-        'Return Approved': 'return_approved',
+        'Return Initiated': 'return_processing',
+        'Return Approved': 'return_processing',
         'Order Marked Return': 'return_processing',
         'Sent to Vendor': 'return_processing',
         'Returned to Warehouse': 'return',
     }
+    # Note: a 'Delivered' carrying vendor_return=True is a delivery back to the
+    # vendor, not to the customer - NCMService.resolve_delivered_status is what
+    # tells the two apart and is what actually runs. Every other RTV status,
+    # flagged or not, stays at 'return_processing' until NCM confirms arrival.
 
     PAYMENT_STATUS_MAPPING = {
         'COD Collected': 'paid',
