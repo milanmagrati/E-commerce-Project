@@ -17813,9 +17813,11 @@ def staff_performance_analytics(request):
             'total_revenue': info['total_revenue']
         })
 
-    # Sort by revenue descending and take top 5
+    # Sort by revenue descending. The table paginates client-side, so keep a
+    # deeper slice than the 5 that used to be rendered - the page-size control
+    # is pointless if the server only ever sends 5 rows.
     top_products_data.sort(key=lambda x: x['total_revenue'], reverse=True)
-    top_products_data = top_products_data[:5]
+    top_products_data = top_products_data[:50]
 
     top_products = []
     for i, item in enumerate(top_products_data, 1):
@@ -17966,9 +17968,11 @@ def staff_performance_analytics(request):
 
     # ========== DETAILED RETURNS DATA ==========
     # Recent return requests with items
+    # Deeper slice than the old 20 for the same reason as top_products: the
+    # Recent Returns table pages client-side and needs rows to page through.
     recent_returns = return_requests.select_related(
         'order', 'customer', 'created_by'
-    ).prefetch_related('items').order_by('-created_at')[:20]
+    ).prefetch_related('items').order_by('-created_at')[:100]
 
     # Return stats summary
     return_stats = {
@@ -18010,8 +18014,18 @@ def staff_performance_analytics(request):
     staff_orders_qs = _build_staff_orders_qs()
 
     # Pagination
+    # Page size is user-controllable, but only from a fixed menu — an arbitrary
+    # ?orders_per_page=100000 would render 100k rows of prefetched items.
+    STAFF_ORDERS_PER_PAGE_CHOICES = [15, 25, 50, 100, 200]
+    try:
+        staff_orders_per_page = int(request.GET.get('orders_per_page', 15))
+    except (ValueError, TypeError):
+        staff_orders_per_page = 15
+    if staff_orders_per_page not in STAFF_ORDERS_PER_PAGE_CHOICES:
+        staff_orders_per_page = 15
+
     staff_orders_page_num = request.GET.get('orders_page', 1)
-    staff_orders_paginator = Paginator(staff_orders_qs, 15)
+    staff_orders_paginator = Paginator(staff_orders_qs, staff_orders_per_page)
     staff_orders_page = staff_orders_paginator.get_page(staff_orders_page_num)
 
     # Collect distinct statuses for filter dropdown (merge both status fields)
@@ -18064,6 +18078,8 @@ def staff_performance_analytics(request):
         'return_reason_breakdown': return_reason_breakdown,
         'staff_orders_page': staff_orders_page,
         'staff_orders_statuses': staff_orders_statuses,
+        'staff_orders_per_page': staff_orders_per_page,
+        'staff_orders_per_page_choices': STAFF_ORDERS_PER_PAGE_CHOICES,
         'selected_orders_status': staff_orders_status,
         'staff_order_summary': staff_order_summary,
     }
