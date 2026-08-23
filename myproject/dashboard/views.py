@@ -17215,7 +17215,7 @@ def financial_report_data(request):
 # ==================== STAFF PERFORMANCE ANALYTICS ====================
 
 def _staff_orders_log_export(orders_qs, request, date_range_text, period,
-                             staff_filter_label, status_filter):
+                             staff_filter_label, status_filter, selection_note=None):
     """Write the Staff Orders Log to a four-sheet workbook.
 
     Exports the whole filtered queryset — not just the 15 rows the paginator
@@ -17409,29 +17409,40 @@ def _staff_orders_log_export(orders_qs, request, date_range_text, period,
     )
 
     exported_at = get_nepali_now().replace(tzinfo=None)
-    write_sheet(
-        wb.create_sheet('Report Info'),
-        ['Field', 'Value'],
-        [
-            ['Report', 'Staff Orders Log'],
+    info_rows = [['Report', 'Staff Orders Log']]
+    if selection_note:
+        # A manual checkbox export ignores the ambient filters (see the view),
+        # so say that plainly instead of listing Staff/Status Filter values
+        # that didn't actually scope this file.
+        info_rows.append(['Selection', selection_note])
+        info_rows.append(['Filters active on page at export time', date_range_text])
+    else:
+        info_rows += [
             ['Period', period],
             ['Date Range', date_range_text],
             ['Staff Filter', staff_filter_label],
             ['Status Filter', status_filter.title() if status_filter else 'All Statuses'],
-            ['Total Orders', total_orders],
-            ['Delivered Orders', totals['delivered']],
-            ['Total Units', totals['units']],
-            ['Total Revenue', round(totals['revenue'], 2)],
-            ['Exported By', staff_name(request.user)],
-            ['Exported At', exported_at.strftime('%Y-%m-%d %I:%M %p') + ' (NPT)'],
-        ],
+        ]
+    info_rows += [
+        ['Total Orders', total_orders],
+        ['Delivered Orders', totals['delivered']],
+        ['Total Units', totals['units']],
+        ['Total Revenue', round(totals['revenue'], 2)],
+        ['Exported By', staff_name(request.user)],
+        ['Exported At', exported_at.strftime('%Y-%m-%d %I:%M %p') + ' (NPT)'],
+    ]
+    write_sheet(
+        wb.create_sheet('Report Info'),
+        ['Field', 'Value'],
+        info_rows,
     )
 
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
     stamp = exported_at.strftime('%Y%m%d_%H%M%S')
-    response['Content-Disposition'] = f'attachment; filename=staff_orders_log_{stamp}.xlsx'
+    filename_prefix = 'staff_orders_selection' if selection_note else 'staff_orders_log'
+    response['Content-Disposition'] = f'attachment; filename={filename_prefix}_{stamp}.xlsx'
     wb.save(response)
     return response
 
@@ -17573,6 +17584,12 @@ def staff_performance_analytics(request):
             )
         return qs
 
+    # "Select all N matching filter" (bulk-select toolbar) asks for just the
+    # id list for the current filters, so it can check every row across every
+    # page without downloading the workbook itself.
+    if request.GET.get('orders_ids_only') == '1':
+        return JsonResponse({'ids': list(_build_staff_orders_qs().values_list('id', flat=True))})
+
     if request.GET.get('orders_export') == 'xlsx':
         staff_filter_label = 'All Staff'
         if staff_filter != 'all':
@@ -17584,6 +17601,28 @@ def staff_performance_analytics(request):
                 staff_filter_label = (
                     f"{picked.first_name} {picked.last_name}".strip() or picked.username
                 )
+
+        # A manual checkbox selection (possibly built across several pages,
+        # or across a filter change) always wins over the ambient filters —
+        # it's an explicit "export exactly these" request, so it isn't
+        # re-scoped to the current period/staff/status.
+        order_ids_param = request.GET.get('order_ids', '')
+        if order_ids_param:
+            try:
+                selected_ids = [int(x) for x in order_ids_param.split(',') if x.strip()]
+            except ValueError:
+                selected_ids = []
+            export_qs = Order.objects.filter(
+                id__in=selected_ids, is_deleted=False
+            ).select_related('created_by', 'customer', 'branch').prefetch_related(
+                'items__product'
+            ).order_by('-created_at')
+            return _staff_orders_log_export(
+                export_qs, request, date_range_text, period,
+                staff_filter_label, staff_orders_status,
+                selection_note=f'Manual selection ({len(selected_ids)} order{"s" if len(selected_ids) != 1 else ""} requested)',
+            )
+
         return _staff_orders_log_export(
             _build_staff_orders_qs(), request, date_range_text, period,
             staff_filter_label, staff_orders_status,

@@ -1077,6 +1077,62 @@
         color: #1a1a1a;
     }
 
+    .sp-order-checkbox {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        accent-color: #6366f1;
+    }
+
+    .sp-selection-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        padding: 0.75rem 1.5rem;
+        background: #eef2ff;
+        border-bottom: 1px solid #c7d2fe;
+        animation: sp-selection-in 0.15s ease-out;
+    }
+
+    @keyframes sp-selection-in {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .sp-selection-left {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        flex-wrap: wrap;
+        font-size: 0.85rem;
+        color: #3730a3;
+    }
+
+    .sp-selection-left i {
+        color: #6366f1;
+    }
+
+    .sp-selection-left strong {
+        color: #1a1a1a;
+    }
+
+    .sp-selection-link {
+        background: none;
+        border: none;
+        padding: 0;
+        color: #6366f1;
+        font-size: 0.83rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: underline;
+    }
+
+    .sp-selection-link:hover {
+        color: #4338ca;
+    }
+
     .sp-order-status-pill {
         display: inline-block;
         padding: 0.3rem 0.7rem;
@@ -1902,11 +1958,27 @@
                         <i class="fas fa-times"></i> Clear Filter
                     </button>
                     {% endif %}
-                    <button class="sp-toolbar-btn sp-toolbar-btn-export" onclick="exportStaffOrders()"
+                    <button class="sp-toolbar-btn sp-toolbar-btn-export" id="spExportAllBtn" onclick="exportStaffOrders()"
                             title="Download all {{ staff_orders_page.paginator.count }} filtered order{{ staff_orders_page.paginator.count|pluralize }} as an Excel file">
                         <i class="fas fa-file-excel"></i> Export Excel
                     </button>
                 </div>
+            </div>
+
+            <!-- Bulk Selection Bar (shown once at least one order is checked) -->
+            <div class="sp-selection-bar" id="spSelectionBar" style="display: none;">
+                <div class="sp-selection-left">
+                    <i class="fas fa-check-square"></i>
+                    <span><strong id="spSelectedCount">0</strong> order<span id="spSelectedPlural">s</span> selected</span>
+                    <button class="sp-selection-link" id="spSelectAllMatchingBtn" onclick="selectAllMatchingFilter()">
+                        Select all {{ staff_orders_page.paginator.count }} matching filter
+                    </button>
+                    <button class="sp-selection-link" onclick="clearSelection()">Clear selection</button>
+                </div>
+                <button class="sp-toolbar-btn sp-toolbar-btn-export" id="spExportSelectedBtn" onclick="exportSelectedOrders()"
+                        title="Download only the selected orders as an Excel file">
+                    <i class="fas fa-file-excel"></i> Export Selected (<span id="spSelectedCountBtn">0</span>)
+                </button>
             </div>
 
             <!-- Orders Table -->
@@ -1914,10 +1986,13 @@
                 <table class="sp-table">
                     <thead>
                         <tr>
-                            <th style="width: 11%;">Order #</th>
+                            <th style="width: 3%; text-align: center;">
+                                <input type="checkbox" class="sp-order-checkbox" id="ordersSelectAllHeader" onclick="event.stopPropagation(); toggleSelectAllOnPage(this);" title="Select all on this page">
+                            </th>
+                            <th style="width: 10%;">Order #</th>
                             <th style="width: 13%;">Created By</th>
-                            <th style="width: 14%;">Customer</th>
-                            <th style="width: 22%;">Items</th>
+                            <th style="width: 13%;">Customer</th>
+                            <th style="width: 21%;">Items</th>
                             <th style="width: 9%; text-align: center;">Status</th>
                             <th style="width: 8%; text-align: center;">Source</th>
                             <th style="width: 11%; text-align: right;">Amount</th>
@@ -1927,6 +2002,9 @@
                     <tbody>
                         {% for order in staff_orders_page %}
                         <tr class="sp-order-row" onclick="toggleOrderDetail(this, 'order-detail-{{ order.id }}')">
+                            <td style="text-align: center;" onclick="event.stopPropagation();">
+                                <input type="checkbox" class="sp-order-checkbox" data-order-id="{{ order.id }}" onchange="toggleOrderCheckbox(this);">
+                            </td>
                             <td>
                                 <span class="sp-row-expand-icon"><i class="fas fa-chevron-right"></i></span>
                                 <a href="{% url 'order_detail' order.id %}" style="color: #6366f1; font-weight: 600; text-decoration: none;" onclick="event.stopPropagation();">
@@ -1990,7 +2068,7 @@
                         </tr>
                         <!-- Expandable Detail Row -->
                         <tr class="sp-order-detail-row" id="order-detail-{{ order.id }}">
-                            <td colspan="8" style="padding: 0;">
+                            <td colspan="9" style="padding: 0;">
                                 <div class="sp-order-detail-panel">
                                     <!-- Top Info Grid -->
                                     <div class="sp-detail-grid">
@@ -2132,7 +2210,7 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="8" class="sp-no-data">
+                            <td colspan="9" class="sp-no-data">
                                 <i class="fas fa-shopping-cart"></i>
                                 <div>No orders found for this period</div>
                             </td>
@@ -2769,14 +2847,8 @@
         window.location.href = window.location.pathname + '?' + params.toString() + '#staff-orders-log';
     }
 
-    function exportStaffOrders() {
-        // Exports every order the current filters match, not just this page.
-        const params = buildParams();
-        const status = document.getElementById('ordersStatusFilter').value;
-        if (status) params.append('orders_status', status);
-        params.append('orders_export', 'xlsx');
-
-        const btn = document.querySelector('.sp-toolbar-btn-export');
+    function downloadStaffOrdersExport(params, btnId) {
+        const btn = btnId ? document.getElementById(btnId) : null;
         const original = btn ? btn.innerHTML : null;
         if (btn) {
             btn.disabled = true;
@@ -2784,7 +2856,7 @@
         }
 
         // Hidden iframe so the download starts without navigating away from the
-        // page (which would lose the expanded rows / scroll position).
+        // page (which would lose the expanded rows / scroll position / selection).
         const frame = document.createElement('iframe');
         frame.style.display = 'none';
         frame.src = window.location.pathname + '?' + params.toString();
@@ -2800,6 +2872,132 @@
             }
         }, 2500);
         setTimeout(function () { frame.remove(); }, 120000);
+    }
+
+    function exportStaffOrders() {
+        // Exports every order the current filters match, not just this page.
+        const params = buildParams();
+        const status = document.getElementById('ordersStatusFilter').value;
+        if (status) params.append('orders_status', status);
+        params.append('orders_export', 'xlsx');
+        downloadStaffOrdersExport(params, 'spExportAllBtn');
+    }
+
+    // ========== BULK SELECTION (checkbox export) ==========
+    // Selection persists in sessionStorage (not the URL) so it survives
+    // pagination and filter changes within the same tab, the way Gmail's
+    // "select all" bar does, without bloating every page-nav URL.
+    const SP_SELECTION_KEY = 'sp_staff_orders_selected_ids';
+
+    function spGetSelection() {
+        try {
+            return new Set(JSON.parse(sessionStorage.getItem(SP_SELECTION_KEY) || '[]'));
+        } catch (e) {
+            return new Set();
+        }
+    }
+
+    function spSaveSelection(set) {
+        sessionStorage.setItem(SP_SELECTION_KEY, JSON.stringify(Array.from(set)));
+        spUpdateSelectionUI();
+    }
+
+    function spUpdateSelectionUI() {
+        const set = spGetSelection();
+        const rowCheckboxes = document.querySelectorAll('.sp-order-row .sp-order-checkbox');
+
+        rowCheckboxes.forEach(function (cb) {
+            cb.checked = set.has(cb.dataset.orderId);
+        });
+
+        const headerCb = document.getElementById('ordersSelectAllHeader');
+        if (headerCb) {
+            const pageIds = Array.from(rowCheckboxes).map(function (cb) { return cb.dataset.orderId; });
+            const allChecked = pageIds.length > 0 && pageIds.every(function (id) { return set.has(id); });
+            headerCb.checked = allChecked;
+            headerCb.indeterminate = !allChecked && pageIds.some(function (id) { return set.has(id); });
+        }
+
+        const count = set.size;
+        const countEl = document.getElementById('spSelectedCount');
+        const countBtnEl = document.getElementById('spSelectedCountBtn');
+        const pluralEl = document.getElementById('spSelectedPlural');
+        if (countEl) countEl.textContent = count;
+        if (countBtnEl) countBtnEl.textContent = count;
+        if (pluralEl) pluralEl.textContent = count === 1 ? '' : 's';
+
+        const bar = document.getElementById('spSelectionBar');
+        if (bar) bar.style.display = count > 0 ? 'flex' : 'none';
+    }
+
+    function toggleOrderCheckbox(cb) {
+        const set = spGetSelection();
+        if (cb.checked) {
+            set.add(cb.dataset.orderId);
+        } else {
+            set.delete(cb.dataset.orderId);
+        }
+        spSaveSelection(set);
+    }
+
+    function toggleSelectAllOnPage(headerCb) {
+        const set = spGetSelection();
+        document.querySelectorAll('.sp-order-row .sp-order-checkbox').forEach(function (cb) {
+            if (headerCb.checked) {
+                set.add(cb.dataset.orderId);
+            } else {
+                set.delete(cb.dataset.orderId);
+            }
+        });
+        spSaveSelection(set);
+    }
+
+    function clearSelection() {
+        sessionStorage.removeItem(SP_SELECTION_KEY);
+        spUpdateSelectionUI();
+    }
+
+    function selectAllMatchingFilter() {
+        // Fetches ids for every order the current filters match (across all
+        // pages), then checks them all — same result as clicking every
+        // checkbox on every page, without the clicking.
+        const params = buildParams();
+        const status = document.getElementById('ordersStatusFilter').value;
+        if (status) params.append('orders_status', status);
+        params.append('orders_ids_only', '1');
+
+        const btn = document.getElementById('spSelectAllMatchingBtn');
+        const original = btn ? btn.textContent : null;
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Selecting...';
+        }
+
+        fetch(window.location.pathname + '?' + params.toString())
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                spSaveSelection(new Set((data.ids || []).map(String)));
+            })
+            .catch(function () {
+                if (typeof alertify !== 'undefined') {
+                    alertify.error('Could not select the matching orders. Please try again.');
+                }
+            })
+            .finally(function () {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = original;
+                }
+            });
+    }
+
+    function exportSelectedOrders() {
+        const set = spGetSelection();
+        if (set.size === 0) return;
+        const params = new URLSearchParams();
+        params.append('orders_export', 'xlsx');
+        params.append('order_ids', Array.from(set).join(','));
+        downloadStaffOrdersExport(params, 'spExportSelectedBtn');
     }
 
     function goToOrdersPage(page) {
@@ -2828,6 +3026,7 @@
     document.addEventListener('DOMContentLoaded', function() {
         initCharts();
         setupScrollObserver();
+        spUpdateSelectionUI();
     });
 </script>
 {% endblock %}
