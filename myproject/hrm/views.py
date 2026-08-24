@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
@@ -5673,8 +5674,10 @@ def payroll_run_delete(request, pk):
         })
 
     # Same reasoning as payslip_delete: hand back the advance repayments these
-    # payslips charged before the cascade removes the record of them.
-    for _slip in _Payslip.objects.filter(payroll_run=run):
+    # payslips charged before the cascade removes the record of them. Skip
+    # already-trashed slips -- soft-delete already reversed those once, and
+    # doing it again would credit the employee's advance balance twice.
+    for _slip in _Payslip.objects.filter(payroll_run=run, is_deleted=False):
         _reverse_advance_deductions(_slip)
 
     title = run.title
@@ -6096,7 +6099,7 @@ def _refresh_payroll_run_totals(run):
 
     if run is None:
         return
-    agg = Payslip.objects.filter(payroll_run=run).aggregate(
+    agg = Payslip.objects.filter(payroll_run=run, is_deleted=False).aggregate(
         cnt=Count('id'), g=_Sum('gross_salary'), n=_Sum('net_salary'),
     )
     run.employee_count = agg['cnt'] or 0
@@ -6368,16 +6371,20 @@ def payslip_list(request):
     search_query = request.GET.get('search', '').strip()
     status_filter = request.GET.get('status', '')
     per_page = request.GET.get('per_page', '10')
+    view = request.GET.get('view', 'active')
+    is_trash = (view == 'trash')
 
-    payslips = Payslip.objects.select_related('employee', 'payroll_run').all()
+    payslips = Payslip.objects.select_related('employee', 'payroll_run', 'deleted_by').filter(is_deleted=is_trash)
 
     if search_query:
         payslips = payslips.filter(
             Q(employee__full_name__icontains=search_query) |
             Q(payslip_number__icontains=search_query)
         )
-    if status_filter:
+    if status_filter and not is_trash:
         payslips = payslips.filter(status=status_filter)
+
+    payslips = payslips.order_by('-deleted_at', '-created_at') if is_trash else payslips.order_by('-created_at')
 
     # Pagination — constrain per_page to allowed values only
     VALID_PER_PAGE = [10, 25, 50, 100]
@@ -6455,6 +6462,9 @@ def payslip_list(request):
         or (s.has_rejected_advance and s.advance_deduction > 0)
     )
 
+    user = request.user
+    is_admin_user = bool(user.is_superuser or user.role == 'administrator')
+
     context = {
         'page_title': 'Payslips',
         'payslips': page_obj,
@@ -6462,7 +6472,11 @@ def payslip_list(request):
         'search_query': search_query,
         'status_filter': status_filter,
         'per_page': per_page,
-        'stale_count': stale_count,
+        'stale_count': 0 if is_trash else stale_count,
+        'view': view,
+        'is_trash': is_trash,
+        'trashed_count': Payslip.objects.filter(is_deleted=True).count(),
+        'is_admin_user': is_admin_user,
     }
     return render(request, 'hrm/payslip_list.html', context)
 
@@ -6477,7 +6491,7 @@ def payslip_sync_advances(request):
     # Finalized payslips are locked from edits everywhere else (adjustments,
     # bonus sync, delete) -- don't let a bulk advance sync quietly rewrite
     # their net salary.
-    payslips = list(Payslip.objects.select_related('employee').filter(is_finalized=False))
+    payslips = list(Payslip.objects.select_related('employee').filter(is_finalized=False, is_deleted=False))
     employee_ids = list({s.employee_id for s in payslips})
 
     # Fetch active advances grouped by employee
@@ -6557,7 +6571,7 @@ def payslip_detail(request, pk):
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=405)
     try:
-        slip = Payslip.objects.select_related('employee', 'payroll_run').get(pk=pk)
+        slip = Payslip.objects.select_related('employee', 'payroll_run').get(pk=pk, is_deleted=False)
     except Payslip.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Payslip not found.'}, status=404)
     data = {
@@ -6586,26 +6600,15 @@ def payslip_detail(request, pk):
     return JsonResponse(data)
 
 
-@login_required
-def payslip_download(request, pk):
-    from .models import Payslip, EmployeeSalary, PayrollSetting
+def _build_payslip_print_context(slip):
+    """Build the full print/PDF template context for a single payslip --
+    salary breakdown, attendance summary, advance recovery rows, etc.
+
+    Extracted from payslip_download() so payslip_bulk_print() (combined /
+    bulk-download PDF) can reuse the exact same calculation for each slip in
+    the batch instead of duplicating it."""
+    from .models import EmployeeSalary, PayrollSetting
     from decimal import Decimal
-    from django.http import HttpResponseForbidden
-
-    try:
-        slip = Payslip.objects.select_related(
-            'employee', 'employee__department', 'employee__designation',
-            'employee__attendance_policy', 'payroll_run'
-        ).get(pk=pk)
-    except Payslip.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'Payslip not found.'}, status=404)
-        
-    if not request.user.is_staff and getattr(request.user, 'employee_profile', None) != slip.employee:
-        return HttpResponseForbidden("You are not authorized to view this payslip.")
-
-    if slip.status == 'generated':
-        slip.status = 'downloaded'
-        slip.save(update_fields=['status', 'updated_at'])
 
     employee = slip.employee
     run = slip.payroll_run
@@ -6832,7 +6835,130 @@ def payslip_download(request, pk):
         'all_advances': all_employee_advances,
         'net_salary': net_salary,
     }
+    return context
+
+
+@login_required
+def payslip_download(request, pk):
+    from .models import Payslip
+    from django.http import HttpResponseForbidden
+
+    try:
+        slip = Payslip.objects.select_related(
+            'employee', 'employee__department', 'employee__designation',
+            'employee__attendance_policy', 'payroll_run'
+        ).get(pk=pk, is_deleted=False)
+    except Payslip.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Payslip not found.'}, status=404)
+
+    if not request.user.is_staff and getattr(request.user, 'employee_profile', None) != slip.employee:
+        return HttpResponseForbidden("You are not authorized to view this payslip.")
+
+    if slip.status == 'generated':
+        slip.status = 'downloaded'
+        slip.save(update_fields=['status', 'updated_at'])
+
+    context = _build_payslip_print_context(slip)
     return render(request, 'hrm/payslip_print.html', context)
+
+
+@login_required
+def payslip_bulk_print(request):
+    """Combined multi-payslip print/PDF view. Renders every requested
+    payslip as its own page inside one document so the browser's
+    Print / Save-as-PDF produces a single multi-page file -- used by both
+    the "Bulk Download" and "Generate Combined PDF" bulk actions on the
+    Payslips page (the only difference is whether mark_downloaded=1 is
+    sent, and whether printing auto-starts).
+
+    Accepts POST (from a hidden-form submit with target=_blank, so the
+    combined view opens in a new tab) with:
+      - mode: 'ids' | 'all' | 'custom'
+      - ids: comma-separated Payslip PKs (mode=ids)
+      - search / status: same filters as payslip_list, applied across ALL
+        matching pages, not just the current one (mode=all)
+      - custom_text: newline/comma separated payslip numbers, employee
+        names or employee IDs, resolved to payslips (mode=custom)
+      - mark_downloaded: '1' to flip eligible slips to 'downloaded', like
+        the single-slip download link does
+      - auto_print: '1' to auto-trigger window.print() on load
+    """
+    from .models import Payslip
+    from django.http import HttpResponseForbidden
+
+    if request.method != 'POST':
+        return HttpResponseForbidden('POST required.')
+
+    mode = request.POST.get('mode', 'ids')
+    base_qs = Payslip.objects.select_related(
+        'employee', 'employee__department', 'employee__designation',
+        'employee__attendance_policy', 'payroll_run'
+    ).filter(is_deleted=False)
+
+    if mode == 'all':
+        search_query = request.POST.get('search', '').strip()
+        status_filter = request.POST.get('status', '').strip()
+        qs = base_qs
+        if search_query:
+            qs = qs.filter(
+                Q(employee__full_name__icontains=search_query) |
+                Q(payslip_number__icontains=search_query)
+            )
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        slips = list(qs.order_by('-created_at'))
+    elif mode == 'custom':
+        raw = request.POST.get('custom_text', '')
+        tokens = [t.strip() for t in re.split(r'[,\n]', raw) if t.strip()]
+        if not tokens:
+            return HttpResponse('No payslip numbers or employee names entered.', status=400)
+        q = Q()
+        for tok in tokens:
+            q |= Q(payslip_number__iexact=tok) | Q(payslip_number__icontains=tok) \
+                | Q(employee__full_name__icontains=tok) | Q(employee__employee_id__iexact=tok)
+        slips = list(base_qs.filter(q).order_by('-created_at').distinct())
+    else:
+        ids_raw = request.POST.get('ids', '')
+        ids = [int(x) for x in ids_raw.split(',') if x.strip().isdigit()]
+        if not ids:
+            return HttpResponse('No payslips selected.', status=400)
+        slips = list(base_qs.filter(pk__in=ids))
+        # Preserve the order the caller selected them in.
+        order = {pk_: i for i, pk_ in enumerate(ids)}
+        slips.sort(key=lambda s: order.get(s.pk, 0))
+
+    if not slips:
+        return HttpResponse('No matching payslips found.', status=404)
+
+    MAX_COMBINED = 300
+    truncated = len(slips) > MAX_COMBINED
+    slips = slips[:MAX_COMBINED]
+
+    if not request.user.is_staff:
+        emp = getattr(request.user, 'employee_profile', None)
+        slips = [s for s in slips if s.employee_id == getattr(emp, 'pk', None)]
+        if not slips:
+            return HttpResponseForbidden("You are not authorized to view these payslips.")
+
+    mark_downloaded = request.POST.get('mark_downloaded') == '1'
+    if mark_downloaded:
+        to_flip = [s.pk for s in slips if s.status == 'generated']
+        if to_flip:
+            Payslip.objects.filter(pk__in=to_flip).update(status='downloaded', updated_at=timezone.now())
+            for s in slips:
+                if s.pk in to_flip:
+                    s.status = 'downloaded'
+
+    slip_contexts = [_build_payslip_print_context(s) for s in slips]
+
+    context = {
+        'slip_contexts': slip_contexts,
+        'count': len(slip_contexts),
+        'truncated': truncated,
+        'max_combined': MAX_COMBINED,
+        'auto_print': request.POST.get('auto_print') == '1',
+    }
+    return render(request, 'hrm/payslip_bulk_print.html', context)
 
 
 @login_required
@@ -10179,25 +10305,135 @@ def payslip_unfinalize(request, pk):
 
 
 
+def _is_hrm_admin(user):
+    return bool(user.is_superuser or user.role == 'administrator')
+
+
+def _payslip_soft_delete_one(slip, deleted_by_user):
+    """Move one payslip to the trash and hand back whatever advance
+    repayment it charged (so a regenerate-after-restore-or-purge cycle
+    doesn't double-deduct). Returns the number of advances credited back.
+    Caller is responsible for finalized/already-trashed checks."""
+    _run = slip.payroll_run
+    reverted = _reverse_advance_deductions(slip)
+    slip.soft_delete(deleted_by_user=deleted_by_user)
+    _refresh_payroll_run_totals(_run)
+    return reverted
+
+
 @login_required
 def payslip_delete(request, pk):
-    slip = get_object_or_404(Payslip, pk=pk)
+    """Soft-delete -- moves the payslip to the trash. Permanent removal only
+    happens via payslip_permanent_delete, reachable from the trash."""
+    slip = get_object_or_404(Payslip, pk=pk, is_deleted=False)
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
-    
+
     if slip.is_finalized:
         return JsonResponse({'success': False, 'error': 'Cannot delete a finalized payslip. Unlock it first.'})
-        
-    # Give back whatever advance repayment this payslip charged, otherwise
-    # regenerating it deducts the same installment from the employee twice.
-    _run = slip.payroll_run
-    _reverted = _reverse_advance_deductions(slip)
-    slip.delete()
-    # The run's gross/net/headcount are denormalised onto the Payroll Runs
-    # page -- re-derive them now that a payslip is gone.
-    _refresh_payroll_run_totals(_run)
 
-    msg = 'Payslip deleted successfully!'
-    if _reverted:
-        msg += f' Advance repayment reversed for {_reverted} advance(s).'
+    reverted = _payslip_soft_delete_one(slip, request.user if request.user.is_authenticated else None)
+
+    msg = 'Payslip moved to trash.'
+    if reverted:
+        msg += f' Advance repayment reversed for {reverted} advance(s).'
     return JsonResponse({'success': True, 'message': msg})
+
+
+@login_required
+def payslip_restore(request, pk):
+    slip = get_object_or_404(Payslip, pk=pk, is_deleted=True)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    slip.restore()
+    return JsonResponse({'success': True, 'message': f'Payslip {slip.payslip_number} restored.'})
+
+
+@login_required
+def payslip_permanent_delete(request, pk):
+    """Irreversible -- restricted to admins and only reachable from the
+    trash (a payslip must be soft-deleted first)."""
+    if not _is_hrm_admin(request.user):
+        return JsonResponse({'success': False, 'error': 'Only administrators can permanently delete payslips.'}, status=403)
+    slip = get_object_or_404(Payslip, pk=pk, is_deleted=True)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    slip.delete()
+    return JsonResponse({'success': True, 'message': 'Payslip permanently deleted.'})
+
+
+@login_required
+def payslip_bulk_action(request):
+    """Bulk trash / restore / permanent-delete for the Payslips page
+    checkbox toolbar. One endpoint, dispatched by 'action' so the frontend
+    only has to POST the current selection once."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+
+    action = request.POST.get('action')
+    ids_raw = request.POST.get('ids', '')
+    ids = [int(x) for x in ids_raw.split(',') if x.strip().isdigit()]
+    if not ids:
+        return JsonResponse({'success': False, 'error': 'No payslips selected.'}, status=400)
+
+    if action == 'trash':
+        slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=False))
+        locked = [s for s in slips if s.is_finalized]
+        eligible = [s for s in slips if not s.is_finalized]
+        for s in eligible:
+            _payslip_soft_delete_one(s, request.user if request.user.is_authenticated else None)
+        msg = f'{len(eligible)} payslip(s) moved to trash.'
+        if locked:
+            msg += f' {len(locked)} finalized payslip(s) were skipped -- unlock them first.'
+        missing = len(ids) - len(slips)
+        if missing:
+            msg += f' {missing} payslip(s) were no longer available.'
+        return JsonResponse({'success': True, 'message': msg, 'processed': len(eligible), 'skipped': len(locked) + missing})
+
+    elif action == 'restore':
+        slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=True))
+        for s in slips:
+            s.restore()
+        missing = len(ids) - len(slips)
+        msg = f'{len(slips)} payslip(s) restored.'
+        if missing:
+            msg += f' {missing} were no longer in the trash.'
+        return JsonResponse({'success': True, 'message': msg, 'processed': len(slips), 'skipped': missing})
+
+    elif action == 'permanent_delete':
+        if not _is_hrm_admin(request.user):
+            return JsonResponse({'success': False, 'error': 'Only administrators can permanently delete payslips.'}, status=403)
+        slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=True))
+        count = len(slips)
+        Payslip.objects.filter(pk__in=[s.pk for s in slips]).delete()
+        missing = len(ids) - count
+        msg = f'{count} payslip(s) permanently deleted.'
+        if missing:
+            msg += f' {missing} were not eligible (not in the trash).'
+        return JsonResponse({'success': True, 'message': msg, 'processed': count, 'skipped': missing})
+
+    return JsonResponse({'success': False, 'error': 'Unknown action.'}, status=400)
+
+
+@login_required
+def payslip_filtered_ids(request):
+    """Returns every Payslip PK matching the current search/status/view
+    filters (not just the current page) -- backs the "Select all N matching"
+    bulk-selection option on the Payslips page."""
+    from .models import Payslip
+    view = request.GET.get('view', 'active')
+    is_trash = (view == 'trash')
+    qs = Payslip.objects.filter(is_deleted=is_trash)
+
+    search_query = request.GET.get('search', '').strip()
+    if search_query:
+        qs = qs.filter(
+            Q(employee__full_name__icontains=search_query) |
+            Q(payslip_number__icontains=search_query)
+        )
+    status_filter = request.GET.get('status', '').strip()
+    if status_filter and not is_trash:
+        qs = qs.filter(status=status_filter)
+
+    ids = list(qs.values_list('pk', flat=True))
+    return JsonResponse({'success': True, 'ids': ids, 'count': len(ids)})

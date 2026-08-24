@@ -188,8 +188,13 @@ urlpatterns = [
     path('payroll/runs/<int:pk>/generate-payslips/', views.generate_payslips, name='generate_payslips'),
     path('payroll/payslips/', views.payslip_list, name='payslip_list'),
     path('payroll/payslips/sync-advances/', views.payslip_sync_advances, name='payslip_sync_advances'),
+    path('payroll/payslips/filtered-ids/', views.payslip_filtered_ids, name='payslip_filtered_ids'),
+    path('payroll/payslips/bulk-action/', views.payslip_bulk_action, name='payslip_bulk_action'),
+    path('payroll/payslips/bulk-print/', views.payslip_bulk_print, name='payslip_bulk_print'),
     path('payroll/payslips/<int:pk>/', views.payslip_detail, name='payslip_detail'),
     path('payroll/payslips/<int:pk>/download/', views.payslip_download, name='payslip_download'),
+    path('payroll/payslips/<int:pk>/restore/', views.payslip_restore, name='payslip_restore'),
+    path('payroll/payslips/<int:pk>/permanent-delete/', views.payslip_permanent_delete, name='payslip_permanent_delete'),
 
     # Advance Payments
     path('payroll/advance-payments/', views.advance_payment_list, name='advance_payment_list'),

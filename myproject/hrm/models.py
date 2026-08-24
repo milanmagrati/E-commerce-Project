@@ -1074,6 +1074,17 @@ class Payslip(models.Model):
         null=True, blank=True, related_name='finalized_payslips'
     )
     finalized_at = models.DateTimeField(null=True, blank=True)
+    # Soft-delete (Payslip trash). A trashed payslip still occupies its
+    # (payroll_run, employee) slot so "Generate Payslips" won't silently
+    # create a duplicate for someone whose slip is sitting in the trash --
+    # restore or permanently delete it first. Mirrors AttendanceRecord's
+    # soft-delete pattern (see AttendanceRecord.soft_delete/restore).
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='payslips_deleted'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1082,6 +1093,19 @@ class Payslip(models.Model):
         unique_together = ['payroll_run', 'employee']
         verbose_name = 'Payslip'
         verbose_name_plural = 'Payslips'
+
+    def soft_delete(self, deleted_by_user=None):
+        from django.utils import timezone
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.deleted_by = deleted_by_user
+        self.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by', 'updated_at'])
+
+    def restore(self):
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by = None
+        self.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by', 'updated_at'])
 
     def save(self, *args, **kwargs):
         if not self.payslip_number:

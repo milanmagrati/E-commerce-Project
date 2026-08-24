@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Combined Payslips ({{ count }})</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 12px;
+            color: #000;
+            background: #e5e7eb;
+            line-height: 1.4;
+        }
+
+        @page { size: A4; margin: 8mm; }
+
+        /* ── ACTION BAR (screen only) ── */
+        .action-bar {
+            max-width: 820px;
+            margin: 14px auto 8px;
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,.08);
+        }
+        .ab-title { font-size: 13px; font-weight: 700; color: #000; }
+        .ab-title span { color: #1a7f4b; }
+        .ab-sub { font-size: 11px; color: #6b7280; font-weight: 500; margin-top: 2px; }
+        .ab-btns { display: flex; gap: 8px; }
+        .btn-back {
+            display: inline-block;
+            text-decoration: none;
+            padding: 7px 16px;
+            background: #fff;
+            border: 1px solid #999;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #000;
+            cursor: pointer;
+        }
+        .btn-print {
+            padding: 7px 18px;
+            background: #1a7f4b;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+        }
+        .truncate-note {
+            max-width: 820px;
+            margin: 0 auto 10px;
+            padding: 8px 16px;
+            background: #fff7ed;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            font-size: 11.5px;
+            color: #92400e;
+            font-weight: 600;
+        }
+
+        /* ── SLIP WRAPPER (per-payslip printed page) ── */
+        .print-page {
+            max-width: 820px;
+            margin: 0 auto 24px;
+        }
+        .slip {
+            background: #fff;
+            border: 1px solid #bbb;
+        }
+        .page-break { page-break-after: always; break-after: page; }
+        .print-page:last-child { page-break-after: auto; break-after: auto; }
+
+        /* ── HEADER ── */
+        .slip-header { border-bottom: 2px solid #000; padding: 12px 16px 10px; text-align: center; }
+        .company-name { font-size: 18px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; }
+        .company-sub { font-size: 10px; color: #000; margin-top: 2px; }
+        .slip-meta { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 6px; font-size: 11px; }
+        .slip-meta .slip-num { font-size: 13px; font-weight: 800; }
+        .slip-meta .period-badge { border: 1px solid #000; padding: 2px 8px; font-weight: 700; font-size: 11px; }
+
+        /* ── STATUS ROW ── */
+        .status-row { background: #f7f7f7; border-bottom: 1px solid #ccc; padding: 5px 16px; display: flex; gap: 20px; flex-wrap: wrap; font-size: 11px; }
+        .sr-item { display: flex; gap: 4px; }
+        .sr-label { color: #000; }
+        .sr-value { font-weight: 700; }
+
+        /* ── SECTION HEADING ── */
+        .sec-head { background: #e8e8e8; border-top: 1px solid #999; border-bottom: 1px solid #999; padding: 4px 10px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; }
+
+        /* ── BORDERED TABLE BASE ── */
+        .btbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .btbl td, .btbl th { border: 1px solid #bbb; padding: 5px 8px; }
+        .btbl th { background: #f0f0f0; font-weight: 700; font-size: 11px; text-transform: uppercase; }
+
+        /* ── EMPLOYEE INFO TABLE ── */
+        .info-tbl td { border: 1px solid #ccc; padding: 5px 10px; }
+        .info-tbl td.lbl { font-weight: 600; color: #000; width: 18%; white-space: nowrap; }
+        .info-tbl td.sep { width: 2%; text-align: center; font-weight: 700; color: #000; border-left: none; border-right: none; }
+        .info-tbl td.val { font-weight: 700; width: 30%; }
+
+        /* ── ATTENDANCE TABLE ── */
+        .att-tbl { border-collapse: collapse; width: 100%; }
+        .att-tbl td { border: 1px solid #bbb; text-align: center; padding: 5px 4px; }
+        .att-tbl .av { font-size: 15px; font-weight: 800; line-height: 1; }
+        .att-tbl .al { font-size: 9px; text-transform: uppercase; color: #000; letter-spacing: .3px; margin-top: 2px; }
+
+        /* ── SALARY TABLE ── */
+        .stbl { border-collapse: collapse; width: 100%; }
+        .stbl th { border: 1px solid #999; background: #f0f0f0; padding: 5px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+        .stbl th.earn-col { text-align: left; border-right: 2px solid #999; }
+        .stbl th.amt-col  { text-align: right; border-right: 2px solid #999; width: 14%; }
+        .stbl th.ded-col  { text-align: left; }
+        .stbl th.amt-col2 { text-align: right; width: 14%; }
+        .stbl td { border: 1px solid #ccc; padding: 5px 10px; }
+        .stbl td.earn-col { border-right: 2px solid #ccc; }
+        .stbl td.amt-col  { text-align: right; font-weight: 700; border-right: 2px solid #ccc; font-variant-numeric: tabular-nums; }
+        .stbl td.amt-col2 { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .stbl td.empty-cell { color: #000; }
+        .stbl tr.row-alt td { background: #fafafa; }
+
+        /* ── TOTALS ROW ── */
+        .total-row td { border: 1px solid #999; border-top: 2px solid #000; padding: 6px 10px; font-weight: 800; font-size: 12px; background: #f5f5f5; }
+        .total-row td.earn-col { border-right: 2px solid #999; }
+        .total-row td.amt-col  { text-align: right; border-right: 2px solid #999; font-variant-numeric: tabular-nums; }
+        .total-row td.amt-col2 { text-align: right; font-variant-numeric: tabular-nums; }
+
+        /* ── NET SALARY ROW ── */
+        .net-row { display: flex; border: 2px solid #000; margin: 0; }
+        .net-row .net-label { flex: 1; padding: 8px 12px; font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; border-right: 2px solid #000; }
+        .net-row .net-calc { padding: 8px 12px; font-size: 10px; color: #000; flex: 2; border-right: 2px solid #000; display: flex; align-items: center; }
+        .net-row .net-amount { padding: 8px 14px; font-weight: 900; font-size: 16px; font-variant-numeric: tabular-nums; text-align: right; min-width: 140px; }
+
+        /* ── ADVANCE TABLE ── */
+        .adv-tbl { border-collapse: collapse; width: 100%; }
+        .adv-tbl th { border: 1px solid #999; background: #f0f0f0; padding: 5px 10px; font-size: 10.5px; text-transform: uppercase; }
+        .adv-tbl td { border: 1px solid #ccc; padding: 5px 10px; }
+        .adv-tbl td:not(:first-child) { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .adv-tbl td:last-child { text-align: center; }
+        .adv-status { display: inline-block; padding: 1px 7px; border: 1px solid #999; font-size: 10px; font-weight: 700; border-radius: 2px; }
+
+        /* ── QR ── */
+        .qr-wrap { text-align: center; padding: 10px; border-top: 1px solid #ccc; }
+        .qr-wrap img { width: 100px; height: 100px; object-fit: contain; border: 1px solid #ccc; }
+        .qr-wrap p { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+
+        /* ── SIGNATURES ── */
+        .sig-section { padding: 14px 16px 10px; }
+        .sig-row { display: flex; gap: 16px; justify-content: space-between; }
+        .sig-box { flex: 1; text-align: center; padding-top: 30px; border-top: 1.5px solid #000; font-size: 11px; font-weight: 600; color: #000; }
+
+        /* ── FOOTER ── */
+        .slip-footer { border-top: 1px solid #999; background: #f5f5f5; padding: 6px 16px; font-size: 10px; color: #000; display: flex; justify-content: space-between; }
+
+        /* ── PRINT ── */
+        @media print {
+            body { background: #fff; }
+            .action-bar, .truncate-note { display: none !important; }
+            .print-page { margin: 0; }
+            .slip { margin: 0; border: none; max-width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Action Bar -->
+<div class="action-bar">
+    <div>
+        <div class="ab-title">Combined Payslips &rarr; <span>{{ count }} payslip{{ count|pluralize }}</span></div>
+        <div class="ab-sub">Each payslip prints on its own page &mdash; use Print / Save as PDF to export all of them as one file.</div>
+    </div>
+    <div class="ab-btns">
+        <a class="btn-back" href="{% url 'hrm:payslip_list' %}">&#8592; Back to Payslips</a>
+        <button class="btn-print" onclick="window.print()">&#128438; Print / Save PDF</button>
+    </div>
+</div>
+
+{% if truncated %}
+<div class="truncate-note">
+    &#9888; Only the first {{ max_combined }} matching payslips are included in this combined document. Narrow your selection or filters to include the rest.
+</div>
+{% endif %}
+
+{% for sc in slip_contexts %}
+<div class="print-page{% if not forloop.last %} page-break{% endif %}">
+    {% include 'hrm/_payslip_print_body.html' with payslip=sc.payslip employee=sc.employee company_name=sc.company_name pay_period_start=sc.pay_period_start pay_period_end=sc.pay_period_end pay_date=sc.pay_date basic_salary=sc.basic_salary daily_rate=sc.daily_rate salary_divisor=sc.salary_divisor divisor_label=sc.divisor_label calendar_days=sc.calendar_days weekend_days=sc.weekend_days holiday_days=sc.holiday_days working_days=sc.working_days present_days=sc.present_days paid_leave_days=sc.paid_leave_days absent_days=sc.absent_days half_days=sc.half_days weekend_worked_days=sc.weekend_worked_days holiday_worked_days=sc.holiday_worked_days total_overtime_hours=sc.total_overtime_hours ot_hours=sc.ot_hours sandwich_days=sc.sandwich_days absent_deduction=sc.absent_deduction weekend_pay=sc.weekend_pay holiday_pay=sc.holiday_pay ot_pay=sc.ot_pay pay_ot=sc.pay_ot net_basic=sc.net_basic weekend_multiplier=sc.weekend_multiplier holiday_multiplier=sc.holiday_multiplier ot_multiplier=sc.ot_multiplier earnings_list=sc.earnings_list deductions_list=sc.deductions_list salary_rows=sc.salary_rows total_earnings=sc.total_earnings total_deductions=sc.total_deductions salary_comp_deductions=sc.salary_comp_deductions advance_deduction=sc.advance_deduction all_advances=sc.all_advances net_salary=sc.net_salary %}
+</div>
+{% empty %}
+<div class="print-page">
+    <div class="slip" style="padding:40px;text-align:center;color:#6b7280;">No payslips to display.</div>
+</div>
+{% endfor %}
+
+{% if auto_print %}
+<script>
+window.addEventListener('load', function () {
+    setTimeout(function () { window.print(); }, 350);
+});
+</script>
+{% endif %}
+</body>
+</html>
