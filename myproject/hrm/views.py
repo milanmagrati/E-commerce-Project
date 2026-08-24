@@ -2726,6 +2726,22 @@ def document_list(request):
 # ==================== Attendance Records ====================
 
 
+def _normalize_pin(raw):
+    """Canonical form for a device PIN / employee code.
+
+    ZKTeco devices don't consistently pad the PIN the same way between the
+    realtime push (each punch sent immediately, e.g. '5') and the buffered
+    ATTLOG table push (e.g. '05') — sometimes even between different
+    firmware code paths on the *same* device. If punches for one employee's
+    day land under two differently-padded pin strings, each ends up in its
+    own raw-punch group with just one punch, and the day is wrongly reported
+    as missing a clock-in or clock-out even though both punches exist.
+    Stripping leading zeros collapses all variants back to one PIN.
+    """
+    s = str(raw).strip()
+    return s.lstrip('0') or '0'
+
+
 def _sync_biometric_to_attendance(recent_days=None):
     """
     Aggregate raw BiometricAttendance punches into AttendanceRecord entries.
@@ -2747,9 +2763,7 @@ def _sync_biometric_to_attendance(recent_days=None):
     emp_map = {}
     for emp in Employee.objects.select_related('shift', 'attendance_policy').all():
         if emp.employee_code:
-            code = str(emp.employee_code)
-            emp_map[code] = emp
-            emp_map[code.lstrip('0')] = emp
+            emp_map[_normalize_pin(emp.employee_code)] = emp
 
     if not emp_map:
         return
@@ -2761,10 +2775,14 @@ def _sync_biometric_to_attendance(recent_days=None):
         from django.utils import timezone
         cutoff = timezone.now() - timezone.timedelta(days=recent_days)
         qs = qs.filter(timestamp__gte=cutoff)
-    
+
     raw_punches = qs.values('pin', 'timestamp').order_by('pin', 'timestamp')
 
-    # grouped[(pin, nepal_date)] = [utc_timestamp, ...]
+    # grouped[(normalized_pin, nepal_date)] = [utc_timestamp, ...]
+    # Grouping by the normalized PIN (not the raw stored string) means two
+    # inconsistently-padded punches for the same employee/day (see
+    # _normalize_pin) still land in the same group and pair up correctly,
+    # even for punches saved before ingestion started normalizing.
     grouped = defaultdict(list)
     for rp in raw_punches:
         ts = rp['timestamp']
@@ -2773,7 +2791,7 @@ def _sync_biometric_to_attendance(recent_days=None):
         # Convert UTC → Nepal Standard Time (UTC+5:45) to get the correct local date
         local_ts = ts.astimezone(NPT)
         punch_date = local_ts.date()
-        grouped[(rp['pin'], punch_date)].append(ts)
+        grouped[(_normalize_pin(rp['pin']), punch_date)].append(ts)
 
     for (pin, punch_date), timestamps in grouped.items():
         first_punch = min(timestamps)
@@ -3407,10 +3425,15 @@ def attendance_adjustment_hard_delete(request, pk):
             local_tz = pytz.timezone('Asia/Kathmandu')
             start_of_day = local_tz.localize(datetime.combine(record.date, datetime.min.time()))
             end_of_day = local_tz.localize(datetime.combine(record.date, datetime.max.time()))
-            BiometricAttendance.objects.filter(
-                pin=record.employee.employee_code,
-                timestamp__range=(start_of_day, end_of_day)
-            ).delete()
+            # Match by normalized PIN (see _normalize_pin) so a differently-
+            # padded raw punch for this employee/day doesn't survive the purge
+            # and silently resurrect the record on the next biometric sync.
+            target_pin = _normalize_pin(record.employee.employee_code)
+            purge_ids = [
+                p.id for p in BiometricAttendance.objects.filter(timestamp__range=(start_of_day, end_of_day)).only('id', 'pin')
+                if _normalize_pin(p.pin) == target_pin
+            ]
+            BiometricAttendance.objects.filter(id__in=purge_ids).delete()
         record.delete()
         return JsonResponse({'success': True})
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
@@ -4639,7 +4662,12 @@ def iclock_cdata(request):
                 if len(parts) < 2:
                     continue
                 try:
-                    pin = parts[0].strip()
+                    # Normalize the PIN at ingestion (strip leading zeros) so a
+                    # punch sent zero-padded (e.g. realtime push vs buffered
+                    # ATTLOG push formatting it differently) always lands under
+                    # the same pin string as this employee's other punches —
+                    # see _normalize_pin for why this matters.
+                    pin = _normalize_pin(parts[0].strip())
                     ts_str = parts[1].strip()
                     status = int(parts[2].strip()) if len(parts) > 2 else 0
                     verify = int(parts[3].strip()) if len(parts) > 3 else 0
@@ -4764,11 +4792,11 @@ def biometric_attendance(request):
         date_to   = (date_to_raw or '').strip()
         default_today = False
 
-    # Build employee name lookup
+    # Build employee name lookup, keyed by normalized PIN (see _normalize_pin)
     emp_name_map = {}
     for emp in Employee.objects.all():
         if emp.employee_code:
-            emp_name_map[emp.employee_code] = emp.full_name
+            emp_name_map[_normalize_pin(emp.employee_code)] = emp.full_name
 
     # If the user entered an inverted range (From later than To), swap them
     # instead of silently returning zero results.
@@ -4808,19 +4836,12 @@ def biometric_attendance(request):
         except ValueError:
             pass
 
-    # PIN search at ORM level
-    if search_q:
-        matching_pins = set()
-        sq_lower = search_q.lower()
-        for code, name in emp_name_map.items():
-            if sq_lower in code.lower() or sq_lower in name.lower():
-                matching_pins.add(code)
-        if matching_pins:
-            base_qs = base_qs.filter(pin__in=matching_pins)
-        else:
-            base_qs = base_qs.filter(pin__icontains=search_q)
-
-
+    # NOTE: PIN search is applied after grouping below (against the
+    # normalized pin), not pushed into this queryset — the raw `pin` column
+    # can still hold un-normalized (zero-padded) values from before punches
+    # started being normalized at ingestion, so filtering on the raw column
+    # here would silently miss rows that the grouping below would otherwise
+    # correctly fold into the right employee/day.
 
     # BUG FIX: TruncDate() uses the DATABASE timezone (UTC), not Nepal time.
     # For punches near midnight NPT, this gives the wrong date.
@@ -4831,21 +4852,30 @@ def biometric_attendance(request):
     ).order_by('pin', 'timestamp')
 
     from collections import defaultdict
-    # grouped[(pin, nepal_date)] = {'punches': [ts,...], 'device_sn': str}
+    # grouped[(normalized_pin, nepal_date)] = {'punches': [ts,...], 'device_sn': str}
+    # Grouping by the normalized PIN means two inconsistently-padded punches
+    # for the same employee/day still land in the same group — see
+    # _normalize_pin for why that matters.
     grouped = defaultdict(lambda: {'punches': [], 'device_sn': None})
     for row in raw_qs:
         ts = row['timestamp']
         if ts is None:
             continue
         nepal_date = ts.astimezone(local_tz).date()
-        key = (row['pin'], nepal_date)
+        key = (_normalize_pin(row['pin']), nepal_date)
         grouped[key]['punches'].append(ts)
         if grouped[key]['device_sn'] is None and row['device__serial_number']:
             grouped[key]['device_sn'] = row['device__serial_number']
 
     # Build records list sorted by date desc, pin asc
+    sq_lower = search_q.lower() if search_q else ''
     records = []
     for (pin, punch_date), info in grouped.items():
+        employee_name = emp_name_map.get(pin, f'Employee {pin}')
+
+        if sq_lower and sq_lower not in pin.lower() and sq_lower not in employee_name.lower():
+            continue
+
         punches = info['punches']
         clock_in_dt  = min(punches)
         clock_out_dt = max(punches)
@@ -4856,7 +4886,7 @@ def biometric_attendance(request):
 
         records.append({
             'pin': pin,
-            'employee_name': emp_name_map.get(pin, f'Employee {pin}'),
+            'employee_name': employee_name,
             'date': punch_date,
             'clock_in': clock_in_local,
             'clock_out': clock_out_local,
@@ -4935,12 +4965,21 @@ def biometric_attendance_view(request, pin, date_str):
         start_of_day = local_tz.localize(datetime.combine(punch_date, datetime.min.time()))
         end_of_day = local_tz.localize(datetime.combine(punch_date, datetime.max.time()))
 
-        punches = BiometricAttendance.objects.filter(
-            pin=pin,
-            timestamp__range=(start_of_day, end_of_day),
-        ).select_related('device').order_by('timestamp')
+        # Match by normalized PIN, not an exact string, so this picks up both
+        # punches even if one was saved with different zero-padding than the
+        # other before ingestion started normalizing — see _normalize_pin.
+        target_pin = _normalize_pin(pin)
+        punches = [
+            p for p in BiometricAttendance.objects.filter(
+                timestamp__range=(start_of_day, end_of_day),
+            ).select_related('device').order_by('timestamp')
+            if _normalize_pin(p.pin) == target_pin
+        ]
 
-        emp = Employee.objects.filter(employee_code=pin).first()
+        emp = next(
+            (e for e in Employee.objects.all() if e.employee_code and _normalize_pin(e.employee_code) == target_pin),
+            None,
+        )
         emp_name = emp.full_name if emp else f'Employee {pin}'
 
         punch_list = []
@@ -4984,12 +5023,20 @@ def biometric_sync_all(request):
         return JsonResponse({'success': False, 'error': 'Invalid request method.'})
 
     try:
-        from .models import BiometricAttendance
+        from .models import AttendanceRecord, BiometricAttendance
         count = BiometricAttendance.objects.count()
         _sync_biometric_to_attendance()
+        days_count = AttendanceRecord.objects.filter(is_deleted=False).count()
+        # Deliberately spells out "raw punches" vs "attendance days" — these
+        # are different units (each day is usually 2+ punches), and a bare
+        # "Re-aggregated from {count}..." next to the Attendance Records
+        # page's own "Total Records" stat (which counts days) reads as a
+        # mismatch/bug even when the sync worked correctly.
         return JsonResponse({
             'success': True,
-            'message': f'Re-aggregated from {count} raw punch records and synced to attendance. Table refreshed.',
+            'message': (
+                f'Re-aggregated {count} raw punches into {days_count} attendance-day records. Table refreshed.'
+            ),
         })
     except Exception as e:
         return JsonResponse({'success': False, 'error': f'Sync failed: {str(e)}'})
@@ -5018,9 +5065,16 @@ def biometric_sync_single(request, pin, date_str):
         start_of_day = local_tz.localize(datetime.combine(punch_date, datetime.min.time()))
         end_of_day = local_tz.localize(datetime.combine(punch_date, datetime.max.time()))
 
-        count = BiometricAttendance.objects.filter(pin=pin, timestamp__range=(start_of_day, end_of_day)).count()
-        # Only sync recent 7 days to avoid scanning the entire table on every single-record sync
-        _sync_biometric_to_attendance(recent_days=7)
+        target_pin = _normalize_pin(pin)
+        count = sum(
+            1 for p in BiometricAttendance.objects.filter(timestamp__range=(start_of_day, end_of_day)).only('pin')
+            if _normalize_pin(p.pin) == target_pin
+        )
+        # Only sync back far enough to cover the record being refreshed — a
+        # hardcoded 7-day window silently did nothing (while still reporting
+        # "Synced successfully") when refreshing an older incomplete record.
+        days_ago = (timezone.now().astimezone(local_tz).date() - punch_date).days
+        _sync_biometric_to_attendance(recent_days=max(7, days_ago + 1))
         return JsonResponse({
             'success': True,
             'message': f'Found {count} raw punches for PIN {pin} on {date_str}. Synced successfully.',
@@ -5049,7 +5103,17 @@ def biometric_attendance_delete(request, pin, date_str):
         start_of_day = local_tz.localize(datetime.combine(punch_date, datetime.min.time()))
         end_of_day = local_tz.localize(datetime.combine(punch_date, datetime.max.time()))
 
-        deleted, _ = BiometricAttendance.objects.filter(pin=pin, timestamp__range=(start_of_day, end_of_day)).delete()
+        # Match by normalized PIN so this clears every punch shown in the
+        # grouped row, even ones saved under a differently-padded pin string
+        # (see _normalize_pin) — otherwise a "delete" from the UI could leave
+        # some of that day's raw punches behind, ready to resurrect the record
+        # on the next sync.
+        target_pin = _normalize_pin(pin)
+        ids_to_delete = [
+            p.id for p in BiometricAttendance.objects.filter(timestamp__range=(start_of_day, end_of_day)).only('id', 'pin')
+            if _normalize_pin(p.pin) == target_pin
+        ]
+        deleted, _ = BiometricAttendance.objects.filter(id__in=ids_to_delete).delete()
         return JsonResponse({'success': True, 'message': f'Deleted {deleted} records for PIN {pin} on {date_str}.'})
     except Exception as e:
         return JsonResponse({'success': False, 'error': f'Delete failed: {str(e)}'})
