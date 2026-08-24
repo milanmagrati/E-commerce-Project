@@ -3251,8 +3251,8 @@ def orders_list(request):
 
     # ✅ FETCH DYNAMIC ORDER STATUSES AND PAYMENT STATUSES FROM SETUP MANAGEMENT
     # This ensures filters pull from Setup Management for consistency
-    order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
 
     # Convert Setup names to filter values (lowercase with underscores)
     # Format: [(filter_value, display_name), ...]
@@ -3719,10 +3719,10 @@ def order_create(request):
 
     # NEW: GET PAYMENT AND STATUS SETUPS
     from .models import Setup, FollowUp
-    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
-    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
-    order_source_setups = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('sort_order', 'name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
+    order_source_setups = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('sort_order', 'name')
 
     followup_id = request.GET.get('followup_id')
     follow_up_data = None
@@ -4283,9 +4283,9 @@ def order_detail(request, order_id):
             _log.old_customer_snapshot = None
 
     # Get Setup options for dropdowns
-    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
-    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('sort_order', 'name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
 
     # Calculate subtotal
     subtotal = sum(item.total for item in order_items) or Decimal('0.00')
@@ -4825,10 +4825,10 @@ def order_edit(request, order_id):
     # CRITICAL: GET PAYMENT AND STATUS SETUPS FROM DATABASE
     # These must be fresh to ensure synchronization with order_detail
     from .models import Setup
-    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
-    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
-    order_source_setups = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('sort_order', 'name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
+    order_source_setups = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('sort_order', 'name')
 
     # ✅ SAFE: Handle decimal InvalidOperation errors by deferring problematic decimal fields
     # Some orders have corrupted decimal values in total_amount and other fields
@@ -5197,7 +5197,7 @@ def return_orders_list(request):
             pass
 
     # Get payment statuses for filters
-    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
     payment_status_choices = [
         (setup.name.lower().replace(' ', '_'), setup.name)
         for setup in payment_setups
@@ -5839,9 +5839,9 @@ def possible_redirection_list(request):
     branches = Branch.objects.filter(is_active=True).order_by('name')
     cities = City.objects.all().order_by('name')
     pnd_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True)
-    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
-    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('sort_order', 'name')
 
     context = {
         'rtv_entries': rtv_entries,
@@ -7521,8 +7521,8 @@ def on_hold_orders_list(request):
         }
 
     # Dynamic bulk action options
-    order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
 
     order_status_bulk_options = [
         (f'status_setup_{setup.id}', f'Mark as {setup.name}', '📋')
@@ -10209,7 +10209,7 @@ def dispatch_management(request):
             return redirect('dispatch_management')
 
     # Get status setups for the dropdown
-    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
 
     # Get recent orders from the last 2 days for sidebar
     two_days_ago = timezone.now() - timedelta(days=2)
@@ -15343,10 +15343,10 @@ def setup_management(request):
     from .models import Setup
 
     # Get all setups grouped by type
-    payment_setups = Setup.objects.filter(setup_type='payment').order_by('name')
-    status_setups = Setup.objects.filter(setup_type='status').order_by('name')
-    payment_status_setups = Setup.objects.filter(setup_type='payment_status').order_by('name')
-    order_source_setups = Setup.objects.filter(setup_type='order_source').order_by('name')
+    payment_setups = Setup.objects.filter(setup_type='payment').order_by('sort_order', 'name')
+    status_setups = Setup.objects.filter(setup_type='status').order_by('sort_order', 'name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status').order_by('sort_order', 'name')
+    order_source_setups = Setup.objects.filter(setup_type='order_source').order_by('sort_order', 'name')
 
     context = {
         'payment_setups': payment_setups,
@@ -15381,11 +15381,15 @@ def setup_add(request):
             return redirect('setup_management')
 
         try:
+            last_order = Setup.objects.filter(setup_type=setup_type).aggregate(
+                Max('sort_order')
+            )['sort_order__max']
             setup = Setup.objects.create(
                 setup_type=setup_type,
                 name=name,
                 description=description,
-                is_active=is_active
+                is_active=is_active,
+                sort_order=(last_order + 1) if last_order is not None else 0
             )
             messages.success(request, f'✅ {name} setup created successfully!')
         except Exception as e:
@@ -15471,6 +15475,70 @@ def setup_toggle_default(request, setup_id):
         messages.success(request, f'⭐ {setup.name} is now the default {setup.get_setup_type_display().lower()}.')
 
     return redirect('setup_management')
+
+
+@login_required
+def setup_reorder(request):
+    """Persist drag-and-drop reordering of setup items (Payment/Status/Payment Status/Order Source) via AJAX"""
+    from .models import Setup
+
+    # Checked here rather than with @permission_required: this is called over
+    # AJAX, and that decorator answers a refusal with an HTML redirect plus a
+    # queued message the fetch() call can't parse. See has_any_permission.
+    if not has_any_permission(request.user, 'can_create_orders'):
+        return JsonResponse(
+            {'success': False, 'message': 'You do not have permission to reorder setups.'},
+            status=403,
+        )
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Invalid request method'})
+
+    try:
+        order_data = json.loads(request.body)
+        setup_type = order_data.get('setup_type')
+        raw_ids = order_data.get('order', [])
+
+        if not setup_type or not raw_ids:
+            return JsonResponse({'success': False, 'message': 'Missing setup_type or order'})
+
+        # The browser sends ids as strings (dataset.id), while the DB returns
+        # ints - comparing the two forms directly silently matches nothing, so
+        # normalize to int up front.
+        ordered_ids = []
+        for raw_id in raw_ids:
+            try:
+                ordered_ids.append(int(raw_id))
+            except (TypeError, ValueError):
+                continue
+
+        if not ordered_ids:
+            return JsonResponse({'success': False, 'message': 'No valid setup ids in order'})
+
+        # Only reorder items that actually belong to this setup_type, so a
+        # tampered id list can't move an item into another type's ordering.
+        valid_ids = set(
+            Setup.objects.filter(setup_type=setup_type, id__in=ordered_ids).values_list('id', flat=True)
+        )
+
+        updated = 0
+        with transaction.atomic():
+            for index, setup_id in enumerate(ordered_ids):
+                if setup_id in valid_ids:
+                    updated += Setup.objects.filter(id=setup_id, setup_type=setup_type).update(sort_order=index)
+
+        # Never report success for a no-op: that is what let the ordering
+        # silently revert on the next page load while the UI said "saved".
+        if not updated:
+            return JsonResponse(
+                {'success': False, 'message': 'No matching setups found to reorder'},
+                status=400,
+            )
+
+        return JsonResponse({'success': True, 'updated': updated, 'message': 'Order saved successfully!'})
+    except Exception as e:
+        logger.exception('Setup reorder failed')
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
 
 
 # ==================== NCM BULK ORDER LOG VIEWS ====================
@@ -21835,7 +21903,7 @@ def settings_hub(request):
 
     # Order statuses selectable for the background NCM bulk-sync (Settings -> API Sync Settings).
     # Same Setup-driven source/normalization as the orders-list status filter (see orders_list view).
-    order_status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    order_status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
     included_statuses = set(api_settings.bulk_sync_included_statuses or [])
     bulk_sync_status_choices = [
         {
@@ -24846,9 +24914,9 @@ def follow_ups_list(request):
     page_obj = paginator.get_page(page_number)
     
     products = Product.objects.filter(is_deleted=False, is_active=True).prefetch_related('variations').order_by('name')
-    statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('name')
+    statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('sort_order', 'name')
     action_statuses = statuses.exclude(name__iexact='Converted')
-    order_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
+    order_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('sort_order', 'name')
 
     # Seed the live-sync cursors from the SERVER clock / log head. Seeding them
     # in JS from `new Date()` meant a browser running behind the server replayed
@@ -26809,8 +26877,8 @@ def follow_up_report(request):
 
     # --- Dropdowns for filters ---
     all_staff = User.objects.filter(is_active=True).order_by('first_name', 'username')
-    all_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
-    all_statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('name')
+    all_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('sort_order', 'name')
+    all_statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('sort_order', 'name')
     all_products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
 
     context = {

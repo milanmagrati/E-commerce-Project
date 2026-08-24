@@ -1595,6 +1595,7 @@ class Setup(models.Model):
     color = models.CharField(max_length=50, blank=True, null=True, help_text="Hex color code for badges")
     is_active = models.BooleanField(default=True)
     is_default = models.BooleanField(default=False, help_text="Default selection for this setup type in order forms")
+    sort_order = models.IntegerField(default=0, help_text="Manual drag-and-drop display order within a setup type")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1602,7 +1603,7 @@ class Setup(models.Model):
         verbose_name = 'Setup'
         verbose_name_plural = 'Setups'
         unique_together = ('setup_type', 'name')
-        ordering = ['setup_type', 'name']
+        ordering = ['setup_type', 'sort_order', 'name']
 
     def __str__(self):
         return f"{self.get_setup_type_display()} - {self.name}"
