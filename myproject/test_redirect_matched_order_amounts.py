@@ -127,7 +127,11 @@ def main():
         vendor=user,
         vendor_return=True,
         to_branch=BRANCH,
-        last_status='Pending',
+        # Not 'Pending' — this test exercises the "Use" button's money
+        # data-attributes, which only render once the RTV is redirect-eligible
+        # (see _rtv_is_redirect_eligible in dashboard/views.py). Status gating
+        # itself is covered by test_possible_redirection_status_gate.py.
+        last_status='Returned to Warehouse',
         product_description='1x %s' % PRODUCT,
         rtv_marked_at=get_nepali_now(),
         rtv_marked_at_source=RTVOrder.SOURCE_WEBHOOK,

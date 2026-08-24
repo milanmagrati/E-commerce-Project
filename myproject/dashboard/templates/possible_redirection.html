@@ -295,6 +295,11 @@
                             {% if entry.last_status %}
                                 <div class="small text-muted mt-1" title="NCM delivery status"><i class="fas fa-truck me-1"></i>{{ entry.last_status }}</div>
                             {% endif %}
+                            {% if not entry.redirect_eligible %}
+                                <div class="small text-danger mt-1" title="NCM only allows a redirect once the package is marked Arrived, Pickup Complete, or Returned to Warehouse.">
+                                    <i class="fas fa-truck-loading me-1"></i>Not yet redirectable
+                                </div>
+                            {% endif %}
                         </td>
                         <td class="hide-md">
                             {% with comment=entry.comment|default:"—" %}
@@ -338,9 +343,16 @@
                                 <button type="button" class="pr-comment-btn" title="View NCM Comments" onclick="openPrCommentModal({{ entry.ncm_order_id }})">
                                     <i class="fas fa-comments"></i>
                                 </button>
-                                <button type="button" class="btn btn-outline-success redirect-btn" title="Edit & Redirect" onclick="openRedirectModal({{ entry.ncm_order_id }})">
-                                    <i class="fas fa-random"></i>
-                                </button>
+                                {% if entry.redirect_eligible %}
+                                    <button type="button" class="btn btn-outline-success redirect-btn" title="Edit & Redirect" onclick="openRedirectModal({{ entry.ncm_order_id }})">
+                                        <i class="fas fa-random"></i>
+                                    </button>
+                                {% else %}
+                                    <button type="button" class="btn btn-outline-secondary redirect-btn" disabled
+                                        title="Not yet redirectable — NCM reports this package is still in transit ({{ entry.last_status|default:'unknown status' }}). Redirect unlocks once it's marked Arrived, Pickup Complete, or Returned to Warehouse.">
+                                        <i class="fas fa-random"></i>
+                                    </button>
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
@@ -354,6 +366,11 @@
                                     <span class="badge bg-success ms-2">
                                         <i class="fas fa-check me-1"></i>Products &amp; quantities match exactly
                                     </span>
+                                    {% if not entry.redirect_eligible %}
+                                        <span class="badge bg-danger ms-2" title="NCM only allows a redirect once the package is marked Arrived, Pickup Complete, or Returned to Warehouse.">
+                                            <i class="fas fa-truck-loading me-1"></i>Still in transit ({{ entry.last_status|default:"unknown status" }}) — not yet redirectable
+                                        </span>
+                                    {% endif %}
                                     <button type="button" class="btn-close btn-sm float-end" onclick="toggleMatches({{ entry.ncm_order_id }})" style="font-size:0.6rem;"></button>
                                 </div>
                                 {% if entry.rtv_product_ref_display %}
@@ -442,6 +459,7 @@
                                                     travel with the customer, and positional args were
                                                     already at the limit of what stays readable.
                                                     {% endcomment %}
+                                                    {% if entry.redirect_eligible %}
                                                     <button type="button" class="btn btn-success btn-sm py-0"
                                                         data-ncm-id="{{ entry.ncm_order_id }}"
                                                         data-name="{{ match.customer_name }}"
@@ -461,6 +479,12 @@
                                                         title="Pre-fill redirect form with this customer's details and amounts">
                                                         <i class="fas fa-user-check me-1"></i>Use
                                                     </button>
+                                                    {% else %}
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0" disabled
+                                                        title="Not yet redirectable — the RTV package is still in transit ({{ entry.last_status|default:'unknown status' }}). Redirect unlocks once NCM marks it Arrived, Pickup Complete, or Returned to Warehouse.">
+                                                        <i class="fas fa-user-check me-1"></i>Use
+                                                    </button>
+                                                    {% endif %}
                                                 </td>
                                             </tr>
                                             {% endwith %}
@@ -674,6 +698,9 @@
       </div><!-- /modal-body -->
 
       <div class="modal-footer od-footer">
+        <span id="od_redirect_ineligible_hint" class="text-danger small me-auto" style="display:none;">
+          <i class="fas fa-truck-loading me-1"></i>Not yet redirectable — still in transit
+        </span>
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"><i class="fas fa-times me-1"></i>Close</button>
         <a id="od_local_order_link" class="btn btn-outline-primary btn-sm" style="display:none;" target="_blank" rel="noopener"><i class="fas fa-external-link-alt me-1"></i>View Local Order</a>
         <button type="button" class="btn btn-success btn-sm" id="od_redirect_btn"><i class="fas fa-random me-1"></i>Open Redirect</button>
@@ -1482,11 +1509,24 @@ function populateDetailModal(order, rtv) {
         document.getElementById('od_local_order_link').style.display = 'none';
     }
 
-    // Wire redirect button
-    document.getElementById('od_redirect_btn').onclick = function() {
+    // Wire redirect button — disabled while NCM still reports the package in
+    // transit, same rule the table's own redirect/Use buttons apply, so this
+    // modal can't be used to reach a redirect the server will reject anyway.
+    const odRedirectBtn = document.getElementById('od_redirect_btn');
+    const odIneligibleHint = document.getElementById('od_redirect_ineligible_hint');
+    const isRedirectEligible = !!rtv.redirect_eligible;
+    odRedirectBtn.disabled = !isRedirectEligible;
+    odRedirectBtn.classList.toggle('btn-success', isRedirectEligible);
+    odRedirectBtn.classList.toggle('btn-outline-secondary', !isRedirectEligible);
+    odRedirectBtn.title = isRedirectEligible ? '' :
+        'Not yet redirectable — NCM reports this package is still in transit' +
+        (rtv.last_status ? ' (' + rtv.last_status + ')' : '') +
+        '. Redirect unlocks once it\'s marked Arrived, Pickup Complete, or Returned to Warehouse.';
+    odIneligibleHint.style.display = isRedirectEligible ? 'none' : '';
+    odRedirectBtn.onclick = isRedirectEligible ? function() {
         bootstrap.Modal.getInstance(document.getElementById('orderDetailModal')).hide();
         setTimeout(() => openRedirectModal(_currentDetailNcmId), 400);
-    };
+    } : null;
 
     document.getElementById('odLoading').style.display = 'none';
     document.getElementById('odContent').style.display = 'block';
@@ -1531,7 +1571,7 @@ function openRedirectModal(ncmOrderId) {
         loadingEl.style.display = 'none';
         document.getElementById('redirectModalContent').style.display = 'block';
         try {
-            populateRedirectModal(data.order);
+            populateRedirectModal(data.order, data.rtv || {});
         } catch (e) {
             _overrideCustomer = null;  // never let a half-applied override arm the next open
             document.getElementById('redirectModalContent').style.display = 'none';
@@ -1548,7 +1588,8 @@ function openRedirectModal(ncmOrderId) {
     });
 }
 
-function populateRedirectModal(order) {
+function populateRedirectModal(order, rtv) {
+    rtv = rtv || {};
     _currentOrderData = order;
 
     // Safe element getter — logs warning if element not found
@@ -1715,15 +1756,28 @@ function populateRedirectModal(order) {
 
     // Build dynamic dropdown options based on order state
     const sendToSelect = _el('rf_send_to');
+    const redirectEligible = rtv.redirect_eligible !== false; // default true when unknown (e.g. no RTV record)
     if (sendToSelect) {
         sendToSelect.innerHTML = '<option value="">-- Save Only (Don\'t Send) --</option>';
         if (order.ncm_order_id) {
-            sendToSelect.innerHTML += `<option value="ncm_redirect" selected>NCM — Redirect Order (ID: ${order.ncm_order_id})</option>`;
+            if (redirectEligible) {
+                sendToSelect.innerHTML += `<option value="ncm_redirect" selected>NCM — Redirect Order (ID: ${order.ncm_order_id})</option>`;
+            } else {
+                // NCM only accepts a redirect once the package is actually at the
+                // branch (Arrived / Pickup Complete / Returned to Warehouse) — this
+                // package is still in transit, so the option is offered but disabled
+                // and nothing defaults to it, instead of letting the operator fill
+                // out the whole form only to have NCM reject it at submit time.
+                sendToSelect.innerHTML += `<option value="ncm_redirect" disabled>NCM — Redirect Order (ID: ${order.ncm_order_id}) — not yet, still in transit${rtv.last_status ? ' (' + escHtml(rtv.last_status) + ')' : ''}</option>`;
+            }
             sendToSelect.innerHTML += '<option value="ncm">NCM — Create New Order</option>';
         } else {
             sendToSelect.innerHTML += '<option value="ncm">NCM — Create New Order</option>';
         }
         sendToSelect.innerHTML += '<option value="pnd">Pick and Drop</option>';
+        if (!redirectEligible && order.ncm_order_id) {
+            sendToSelect.value = '';
+        }
     }
 
     // Pre-fill NCM redirect fields

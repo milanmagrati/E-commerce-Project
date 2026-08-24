@@ -5424,6 +5424,27 @@ def _rtv_is_non_redirectable(rtv_last_status, local_order=None):
     )
 
 
+#: Statuses NCM's own redirect endpoint accepts — from its rejection message,
+#: "Order can only be redirected when status is: Arrived, Pickup Complete,
+#: Returned to Warehouse". Matched as a prefix (case-insensitive) so branch-
+#: qualified variants NCM appends ("Arrived at RETURN (TINKUNE)") still count.
+REDIRECT_ELIGIBLE_STATUS_PREFIXES = ('arrived', 'pickup complete', 'returned to warehouse')
+
+
+def _rtv_is_redirect_eligible(rtv_last_status, local_ncm_status=None):
+    """True once NCM reports the package is actually at a branch/warehouse.
+
+    Used to disable the redirect action (not to hide the row) — a package
+    still in transit back ("Dispatched to Return (...)") is a legitimate
+    thing to see coming, just not something NCM will let us redirect yet.
+    """
+    for text in (rtv_last_status, local_ncm_status):
+        normalized = ' '.join((text or '').strip().lower().split())
+        if any(normalized.startswith(p) for p in REDIRECT_ELIGIBLE_STATUS_PREFIXES):
+            return True
+    return False
+
+
 @login_required
 @permission_required('can_view_orders')
 def possible_redirection_list(request):
@@ -5732,6 +5753,9 @@ def possible_redirection_list(request):
             'ncm_status': (local_order.ncm_status or '') if local_order else '',
             'local_order_id': local_order.id if local_order else None,
             'last_status': rtv.last_status or '',
+            'redirect_eligible': _rtv_is_redirect_eligible(
+                rtv.last_status, local_order.ncm_status if local_order else None
+            ),
         }
         rtv_entries.append(entry)
 
@@ -6409,6 +6433,28 @@ def redirect_order_save(request, order_id):
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
 
+        _send_to_logistics = request.POST.get('send_to_logistics', '')
+        if _send_to_logistics == 'ncm_redirect':
+            _rtv_for_check = (
+                RTVOrder.objects.filter(order_id=order.ncm_order_id).first()
+                if order.ncm_order_id else None
+            )
+            if not _rtv_is_redirect_eligible(
+                _rtv_for_check.last_status if _rtv_for_check else '', order.ncm_status
+            ):
+                _current_status = (
+                    (_rtv_for_check.last_status if _rtv_for_check else '')
+                    or order.ncm_status or 'unknown'
+                )
+                return JsonResponse({
+                    'status': 'error',
+                    'message': (
+                        f"This package is still in transit (NCM status: {_current_status}). "
+                        "Redirect becomes available once NCM marks it Arrived, Pickup Complete, "
+                        "or Returned to Warehouse."
+                    ),
+                }, status=400)
+
         # Capture old customer details before any changes
         _old_customer_details = {
             'redirect_role': REDIRECT_ROLE_SOURCE,
@@ -6435,6 +6481,21 @@ def redirect_order_save(request, order_id):
                 if value is None or not value.strip():
                     return getattr(order, field) or ''
                 return value.strip()
+
+            # Fields a redirect submission fills from the NEW (destination)
+            # customer/order — see openRedirectWithNewCustomer's overrideFields
+            # and moneyFields in possible_redirection.html. If this is an
+            # ncm_redirect attempt, none of these may reach the database until
+            # NCM actually confirms the redirect: otherwise a rejected redirect
+            # (wrong status, expired token, etc.) still leaves this order's
+            # identity AND its totals/branch/payment state overwritten with the
+            # new customer's figures even though the package never moved.
+            _REDIRECT_TARGET_FIELDS = (
+                'customer_name', 'customer_phone', 'customer_email', 'shipping_address',
+                'landmark', 'branch_city', 'discount_amount', 'shipping_charge',
+                'total_amount', 'is_partial_payment', 'partial_amount_paid', 'remaining_amount',
+            )
+            _original_redirect_values = {f: getattr(order, f) for f in _REDIRECT_TARGET_FIELDS}
 
             order.customer_name = _keep_if_blank('customer_name', 'customer_name')
             order.customer_phone = _keep_if_blank('customer_phone', 'customer_phone')
@@ -6529,7 +6590,7 @@ def redirect_order_save(request, order_id):
 
             # Clear old NCM/PND IDs so the order can be resent
             # Skip clearing when using ncm_redirect — redirect needs the existing NCM ID
-            send_to = request.POST.get('send_to_logistics', '')
+            send_to = _send_to_logistics
             clear_logistics = request.POST.get('clear_logistics') == 'true'
             if clear_logistics and send_to != 'ncm_redirect':
                 order.ncm_order_id = None
@@ -6547,6 +6608,16 @@ def redirect_order_save(request, order_id):
                     order.package_weight = Decimal(weight_str)
                 except (InvalidOperation, ValueError):
                     pass
+
+            # Capture the fully-resolved redirect-target values, then — for an
+            # ncm_redirect attempt only — put the ORIGINAL values back before
+            # saving. redirect_order_to_ncm re-applies the pending ones (in
+            # memory, for the NCM payload) and persists them itself, but only
+            # once NCM confirms the redirect actually happened.
+            _pending_redirect_values = {f: getattr(order, f) for f in _REDIRECT_TARGET_FIELDS}
+            if _send_to_logistics == 'ncm_redirect':
+                for _f, _v in _original_redirect_values.items():
+                    setattr(order, _f, _v)
 
             order.save()
 
@@ -6607,6 +6678,7 @@ def redirect_order_save(request, order_id):
                 destination=destination,
                 cod_charge=cod_charge,
                 old_customer_details=_old_customer_details,  # Pass old details for activity log
+                new_customer=_pending_redirect_values,
             )
             logistics_result = result
 
@@ -6767,6 +6839,9 @@ def redirect_rtv_get(request, ncm_order_id):
             'items': items,
             'source': 'local',
         }
+        rtv_extra['redirect_eligible'] = _rtv_is_redirect_eligible(
+            rtv_rec.last_status if rtv_rec else '', local_order.ncm_status
+        )
         return JsonResponse({'status': 'success', 'order': data, 'rtv': rtv_extra})
     except Order.DoesNotExist:
         pass
@@ -6843,6 +6918,11 @@ def redirect_rtv_get(request, ncm_order_id):
         'items': [],
         'source': 'ncm',
     }
+    # ncm_data['status'] is whatever NCM just answered with — fresher than the
+    # locally stored rtv_rec.last_status, which only updates on the next sync.
+    rtv_extra['redirect_eligible'] = _rtv_is_redirect_eligible(
+        rtv_rec.last_status if rtv_rec else '', ncm_data.get('status')
+    )
     return JsonResponse({'status': 'success', 'order': data, 'rtv': rtv_extra})
 
 
@@ -6863,6 +6943,26 @@ def redirect_rtv_save(request, ncm_order_id):
         return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
 
     try:
+        _rtv_for_check = RTVOrder.objects.filter(order_id=ncm_order_id).first()
+        _local_for_check = Order.objects.filter(ncm_order_id=ncm_order_id, is_deleted=False).first()
+        if not _rtv_is_redirect_eligible(
+            _rtv_for_check.last_status if _rtv_for_check else '',
+            _local_for_check.ncm_status if _local_for_check else None,
+        ):
+            _current_status = (
+                (_rtv_for_check.last_status if _rtv_for_check else '')
+                or (_local_for_check.ncm_status if _local_for_check else '')
+                or 'unknown'
+            )
+            return JsonResponse({
+                'status': 'error',
+                'message': (
+                    f"This package is still in transit (NCM status: {_current_status}). "
+                    "Redirect becomes available once NCM marks it Arrived, Pickup Complete, "
+                    "or Returned to Warehouse."
+                ),
+            }, status=400)
+
         # Which NCM account owns this order (Order first, then RTVOrder) - an
         # order is invisible to any other account's key.
         api_config_id = request.POST.get('api_config_id')
@@ -7101,12 +7201,23 @@ def redirect_rtv_save(request, ncm_order_id):
         return JsonResponse({'status': 'error', 'message': f'Redirect failed: {str(e)}'}, status=500)
 
 
-def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, cod_charge=None, old_customer_details=None):
+def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, cod_charge=None,
+                           old_customer_details=None, new_customer=None):
     """
     Redirect an existing NCM order to a different address/customer using NCM v2 redirect API.
     Endpoint: POST /api/v2/vendor/order/redirect
     Params: pk (NCM order ID), name, phone, address, vendorOrderid, destination (branch ID), cod_charge
     old_customer_details: Dict with old customer info for activity log
+    new_customer: Dict of {model field name: pending value} for every field the
+        redirect form fills from the destination order (identity, address,
+        and the financial/branch/partial-payment fields that ride along with
+        it — see _REDIRECT_TARGET_FIELDS in redirect_order_save). The caller
+        has NOT saved these onto `order` yet — they're applied here (in
+        memory only, to build the request payload and the activity log) and
+        persisted below, but only once NCM actually confirms the redirect. On
+        any failure `order` keeps its ORIGINAL values, both here and in the
+        database — a rejected redirect must not leave the order half-migrated
+        to a customer/total it was never actually sent to.
     """
     import requests
     from django.conf import settings
@@ -7115,6 +7226,10 @@ def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, 
     try:
         if not order.ncm_order_id:
             return {'status': 'error', 'message': 'Order has no NCM ID. Cannot redirect — use "Create New Order" instead.'}
+
+        if new_customer:
+            for _field, _value in new_customer.items():
+                setattr(order, _field, _value)
 
         # Get API credentials
         base_url_v2 = ''
@@ -7203,6 +7318,12 @@ def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, 
             # Update order fields from NCM response
             update_fields = ['ncm_status']
             order.ncm_status = 'redirected'
+
+            # NCM confirmed the redirect — now, and only now, persist every
+            # redirect-target field (identity, address, totals, branch,
+            # partial-payment state) that was applied in memory above.
+            if new_customer:
+                update_fields += list(new_customer.keys())
 
             if 'delivery_charge' in data:
                 try:
