@@ -522,8 +522,8 @@
                 + '<td><div class="fw-semibold">' + esc(r.employee_name) + '</div><div class="text-muted" style="font-size:.72rem;">' + esc(r.employee_code) + '</div></td>'
                 + '<td>' + esc(r.department) + '</td>'
                 + '<td>' + esc(r.date_display) + '</td>'
-                + '<td>' + (r.clock_in ? esc(r.clock_in) : '<span class="text-danger fw-semibold" style="font-size:.8rem;">Missing</span>') + '</td>'
-                + '<td>' + (r.clock_out ? esc(r.clock_out) : '<span class="text-danger fw-semibold" style="font-size:.8rem;">Missing</span>') + '</td>'
+                + '<td>' + (r.clock_in ? esc(r.clock_in_display) : '<span class="text-danger fw-semibold" style="font-size:.8rem;">Missing</span>') + '</td>'
+                + '<td>' + (r.clock_out ? esc(r.clock_out_display) : '<span class="text-danger fw-semibold" style="font-size:.8rem;">Missing</span>') + '</td>'
                 + '<td>' + statusBadge(r) + '</td>'
                 + '<td>' + (r.remarks ? '<span class="adj-remarks" title="' + escAttr(r.remarks) + '">' + esc(r.remarks) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>';
 

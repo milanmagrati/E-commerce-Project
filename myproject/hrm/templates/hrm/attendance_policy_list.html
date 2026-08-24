@@ -219,6 +219,24 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="col-6">
+                            <div class="policy-detail-item">
+                                <i class="fas fa-user-slash" style="color:#dc2626;font-size:.8rem;margin-top:2px;flex-shrink:0;"></i>
+                                <div>
+                                    <div class="fw-semibold" style="font-size:.85rem;">&le; {{ policy.absent_threshold_hours }} hrs</div>
+                                    <div class="text-muted" style="font-size:.72rem;">Absent Threshold</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="policy-detail-item">
+                                <i class="fas fa-user-clock" style="color:#d97706;font-size:.8rem;margin-top:2px;flex-shrink:0;"></i>
+                                <div>
+                                    <div class="fw-semibold" style="font-size:.85rem;">&le; {{ policy.half_day_threshold_hours }} hrs</div>
+                                    <div class="text-muted" style="font-size:.72rem;">Half Day Threshold</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     {% if policy.description %}
@@ -371,6 +389,39 @@
                                 <input type="number" class="form-control pro-field" id="policyWorkHours" value="8" step="0.5" min="1" max="24">
                                 <span class="pro-input-suffix">hrs</span>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section: Daily Status Thresholds -->
+                <div class="modal-form-section">
+                    <div class="modal-section-label">
+                        <span class="section-dot" style="background:#dc2626;"></span> Daily Status Thresholds
+                    </div>
+                    <div class="text-muted mb-2" style="font-size:.76rem;">
+                        Worked hours (clock out &minus; clock in, minus break) decide the day's status:
+                        at or below the Absent threshold is <strong>Absent</strong>, above that up to the
+                        Half Day threshold is <strong>Half Day</strong>, and anything higher is a
+                        <strong>Full Day</strong>.
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="pro-label">Absent Threshold <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap has-suffix">
+                                <i class="fas fa-user-slash pro-input-icon" style="color:#dc2626;"></i>
+                                <input type="number" class="form-control pro-field" id="policyAbsentThreshold" value="2" min="0.1" step="0.1">
+                                <span class="pro-input-suffix">hrs</span>
+                            </div>
+                            <span class="field-error-text" id="policyAbsentThresholdErr" style="display:none;"></span>
+                        </div>
+                        <div class="col-6">
+                            <label class="pro-label">Half Day Threshold <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap has-suffix">
+                                <i class="fas fa-user-clock pro-input-icon" style="color:#d97706;"></i>
+                                <input type="number" class="form-control pro-field" id="policyHalfDayThreshold" value="4" min="0.1" step="0.1">
+                                <span class="pro-input-suffix">hrs</span>
+                            </div>
+                            <span class="field-error-text" id="policyHalfDayThresholdErr" style="display:none;"></span>
                         </div>
                     </div>
                 </div>
@@ -658,7 +709,7 @@ into that shared instance via IncAttAlert.openModal().
     var editingId = null;
     var deletingId = null;
     var toastTimer = null;
-    var draftFields = ['policyName','policyDescription','policyLateMarkAfter','policyEarlyDeparture','policyOvertimeRate','policyWorkHours','policyStatus'];
+    var draftFields = ['policyName','policyDescription','policyLateMarkAfter','policyEarlyDeparture','policyOvertimeRate','policyWorkHours','policyAbsentThreshold','policyHalfDayThreshold','policyStatus'];
     var hadPendingPolicyToast = !!sessionStorage.getItem('policyToast');
 
     /* ── HTML escape helper (prevent XSS) ── */
@@ -756,8 +807,12 @@ into that shared instance via IncAttAlert.openModal().
         document.getElementById('policyEarlyDeparture').value = '15';
         document.getElementById('policyOvertimeRate').value = '150';
         document.getElementById('policyWorkHours').value = '8';
+        document.getElementById('policyAbsentThreshold').value = '2';
+        document.getElementById('policyHalfDayThreshold').value = '4';
         document.getElementById('policyStatus').value = 'true';
         markField('policyName', false);
+        markField('policyAbsentThreshold', false);
+        markField('policyHalfDayThreshold', false);
         hideFormAlert();
         setSaveLoading(false);
     }
@@ -767,7 +822,8 @@ into that shared instance via IncAttAlert.openModal().
     var DRAFT_DEFAULTS = {
         policyName: '', policyDescription: '',
         policyLateMarkAfter: '15', policyEarlyDeparture: '15',
-        policyOvertimeRate: '150', policyWorkHours: '8', policyStatus: 'true'
+        policyOvertimeRate: '150', policyWorkHours: '8',
+        policyAbsentThreshold: '2', policyHalfDayThreshold: '4', policyStatus: 'true'
     };
     function saveDraft() {
         if (editingId) return;
@@ -854,8 +910,12 @@ into that shared instance via IncAttAlert.openModal().
                 document.getElementById('policyEarlyDeparture').value = data.early_departure_grace;
                 document.getElementById('policyOvertimeRate').value = data.overtime_rate;
                 document.getElementById('policyWorkHours').value = data.work_hours_per_day;
+                document.getElementById('policyAbsentThreshold').value = data.absent_threshold_hours;
+                document.getElementById('policyHalfDayThreshold').value = data.half_day_threshold_hours;
                 document.getElementById('policyStatus').value = data.is_active ? 'true' : 'false';
                 markField('policyName', false);
+                markField('policyAbsentThreshold', false);
+                markField('policyHalfDayThreshold', false);
                 hideFormAlert();
                 setSaveLoading(false);
                 getModal('policyModal').show();
@@ -873,6 +933,8 @@ into that shared instance via IncAttAlert.openModal().
                     + '<dt class="col-6 text-muted small">Early Departure Grace</dt><dd class="col-6 fw-semibold">' + esc(String(data.early_departure_grace)) + ' min</dd>'
                     + '<dt class="col-6 text-muted small">Overtime Rate</dt><dd class="col-6 fw-semibold">Rs. ' + esc(String(data.overtime_rate)) + '/hr</dd>'
                     + '<dt class="col-6 text-muted small">Work Hours/Day</dt><dd class="col-6 fw-semibold">' + esc(String(data.work_hours_per_day)) + ' hrs</dd>'
+                    + '<dt class="col-6 text-muted small">Absent Threshold</dt><dd class="col-6 fw-semibold">&le; ' + esc(String(data.absent_threshold_hours)) + ' hrs</dd>'
+                    + '<dt class="col-6 text-muted small">Half Day Threshold</dt><dd class="col-6 fw-semibold">&le; ' + esc(String(data.half_day_threshold_hours)) + ' hrs</dd>'
                     + '<dt class="col-6 text-muted small">Status</dt><dd class="col-6"><span class="badge ' + (data.is_active ? 'bg-success' : 'bg-danger') + '">' + (data.is_active ? 'Active' : 'Inactive') + '</span></dd>'
                     + (data.description ? '<dt class="col-6 text-muted small">Description</dt><dd class="col-6 small">' + esc(data.description) + '</dd>' : '')
                     + '</dl>';
@@ -891,6 +953,22 @@ into that shared instance via IncAttAlert.openModal().
             return;
         }
         markField('policyName', false);
+
+        var absentTh = parseFloat(document.getElementById('policyAbsentThreshold').value);
+        var halfDayTh = parseFloat(document.getElementById('policyHalfDayThreshold').value);
+        markField('policyAbsentThreshold', false);
+        markField('policyHalfDayThreshold', false);
+        if (!(absentTh > 0) || !(halfDayTh > 0)) {
+            markField('policyAbsentThreshold', true, 'Required, must be greater than 0.');
+            markField('policyHalfDayThreshold', true, 'Required, must be greater than 0.');
+            showFormAlert('danger', 'Validation Error', 'Absent and Half Day thresholds must be positive numbers.');
+            return;
+        }
+        if (absentTh >= halfDayTh) {
+            markField('policyHalfDayThreshold', true, 'Must be greater than the Absent threshold.');
+            showFormAlert('danger', 'Validation Error', 'The Absent threshold must be lower than the Half Day threshold.');
+            return;
+        }
         setSaveLoading(true);
         var url = editingId
             ? '/hrm/attendance-policies/' + editingId + '/update/'
@@ -905,6 +983,8 @@ into that shared instance via IncAttAlert.openModal().
                 early_departure_grace: document.getElementById('policyEarlyDeparture').value,
                 overtime_rate: document.getElementById('policyOvertimeRate').value,
                 work_hours_per_day: document.getElementById('policyWorkHours').value,
+                absent_threshold_hours: document.getElementById('policyAbsentThreshold').value,
+                half_day_threshold_hours: document.getElementById('policyHalfDayThreshold').value,
                 is_active: document.getElementById('policyStatus').value,
             })
         })

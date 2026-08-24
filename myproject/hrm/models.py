@@ -512,7 +512,8 @@ class Shift(models.Model):
     working_hours = models.DecimalField(max_digits=4, decimal_places=1, default=8.0, validators=[MinValueValidator(0), MaxValueValidator(24)])
     half_day_hours = models.DecimalField(
         max_digits=4, decimal_places=2, default=4.0,
-        help_text='Days worked at or below this many hours on this shift are marked Half Day'
+        help_text='Fallback Half Day threshold for this shift, only used when the employee has '
+                   'no effective Attendance Policy (see Attendance Policies for the primary setting).'
     )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -538,6 +539,16 @@ class AttendancePolicy(models.Model):
     late_mark_after = models.PositiveIntegerField(default=15, help_text='Minutes after shift start to mark as late')
     early_departure_grace = models.PositiveIntegerField(default=15, help_text='Minutes before shift end allowed to leave early')
     overtime_rate = models.DecimalField(max_digits=8, decimal_places=2, default=0.00, help_text='Overtime rate per hour')
+    absent_threshold_hours = models.DecimalField(
+        max_digits=4, decimal_places=2, default=2.0,
+        help_text='Worked hours at or below this count as Absent, even when both clock in and '
+                   'clock out were recorded.'
+    )
+    half_day_threshold_hours = models.DecimalField(
+        max_digits=4, decimal_places=2, default=4.0,
+        help_text='Worked hours at or below this (and above the Absent threshold) count as Half '
+                   'Day. Anything above it counts as a Full Day.'
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

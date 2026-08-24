@@ -569,8 +569,8 @@
                     {% for rec in attendance_data %}
                     <tr>
                         <td>{{ rec.date|date:"Y-m-d" }}</td>
-                        <td class="pc-clock-in">{{ rec.clock_in|time:"H:i"|default:"-" }}</td>
-                        <td class="pc-clock-out">{{ rec.clock_out|time:"H:i"|default:"-" }}</td>
+                        <td class="pc-clock-in">{{ rec.clock_in|time:"g:i A"|default:"-" }}</td>
+                        <td class="pc-clock-out">{{ rec.clock_out|time:"g:i A"|default:"-" }}</td>
                         <td>{% if rec.overtime != '-' %}<span class="pc-overtime-val">{{ rec.overtime }}</span>{% else %}-{% endif %}</td>
                         <td>
                             {% for tag_label, tag_class in rec.status_tags %}

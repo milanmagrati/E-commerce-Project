@@ -859,8 +859,8 @@
                         data-emp-id="{{ rec.employee.employee_id }}"
                         data-dept="{{ rec.employee.department.name|default:'—' }}"
                         data-date="{{ rec.date|date:'d M Y' }}"
-                        data-checkin="{% if rec.clock_in %}{{ rec.clock_in|time:'H:i' }}{% else %}—{% endif %}"
-                        data-checkout="{% if rec.clock_out %}{{ rec.clock_out|time:'H:i' }}{% else %}—{% endif %}"
+                        data-checkin="{% if rec.clock_in %}{{ rec.clock_in|time:'g:i A' }}{% else %}—{% endif %}"
+                        data-checkout="{% if rec.clock_out %}{{ rec.clock_out|time:'g:i A' }}{% else %}—{% endif %}"
                         data-checkin-raw="{% if rec.clock_in %}{{ rec.clock_in|time:'H:i' }}{% endif %}"
                         data-checkout-raw="{% if rec.clock_out %}{{ rec.clock_out|time:'H:i' }}{% endif %}"
                         data-working-hrs="{% if rec.working_hours %}{{ rec.working_hours }}h{% else %}—{% endif %}"
@@ -884,8 +884,8 @@
                         </td>
                         <td>{{ rec.employee.department.name|default:"—" }}</td>
                         <td>{{ rec.date|date:"d M Y" }}</td>
-                        <td>{% if rec.clock_in %}{{ rec.clock_in|time:"H:i" }}{% elif rec.is_incomplete_punch %}<span class="text-danger fw-semibold">Missing</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
-                        <td>{% if rec.clock_out %}{{ rec.clock_out|time:"H:i" }}{% elif rec.is_incomplete_punch %}<span class="text-danger fw-semibold">Missing</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>{% if rec.clock_in %}{{ rec.clock_in|time:"g:i A" }}{% elif rec.is_incomplete_punch %}<span class="text-danger fw-semibold">Missing</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>{% if rec.clock_out %}{{ rec.clock_out|time:"g:i A" }}{% elif rec.is_incomplete_punch %}<span class="text-danger fw-semibold">Missing</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                         <td>
                             {% if rec.working_hours %}
                             <span class="fw-semibold">{{ rec.working_hours }}h</span>

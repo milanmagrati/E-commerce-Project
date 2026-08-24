@@ -707,8 +707,8 @@
                 document.getElementById('regEmployee').value = data.employee_id;
                 document.getElementById('regEmployee').disabled = true;
                 loadAttendanceRecords(data.attendance_record_id);
-                document.getElementById('regClockIn').value = data.clock_in;
-                document.getElementById('regClockOut').value = data.clock_out;
+                document.getElementById('regClockIn').value = data.clock_in_raw;
+                document.getElementById('regClockOut').value = data.clock_out_raw;
                 document.getElementById('regReason').value = data.reason;
                 document.getElementById('regDraft').checked = data.is_draft;
                 clearErrors(); hideFormAlert(); setSaveLoading(false);

@@ -2859,12 +2859,18 @@ def _sync_biometric_to_attendance(recent_days=None):
                     if cout_full < shift_end - timedelta(minutes=early_grace):
                         is_early = True
 
-        # Auto-set half-day status based on the shift's threshold. Only
-        # applies when a shift is assigned (the threshold now lives on
-        # Shift, not AttendancePolicy), and overrides 'late' / 'present'
-        # since a short day takes priority over a late mark.
-        if shift and clock_in_time and clock_out_time and working_hours > 0 and working_hours <= float(shift.half_day_hours):
-            status = 'half_day'
+        # Auto-classify the day using the effective Attendance Policy's
+        # Absent/Half Day thresholds (falls back to the shift's own
+        # half_day_hours, then hardcoded defaults, when no policy is
+        # configured) — overrides 'late'/'present' since hours actually
+        # worked take priority over a late mark.
+        if clock_in_time and clock_out_time:
+            absent_th = float(policy.absent_threshold_hours) if (policy and policy.absent_threshold_hours is not None) else 2.0
+            half_th = float(policy.half_day_threshold_hours) if (policy and policy.half_day_threshold_hours is not None) else (float(shift.half_day_hours) if shift else 4.0)
+            if working_hours <= absent_th:
+                status = 'absent'
+            elif working_hours <= half_th:
+                status = 'half_day'
 
         # Flag incomplete punches (only one of clock-in/clock-out recorded)
         # instead of silently marking the day 'Present' — needs manual
@@ -3028,12 +3034,25 @@ def _compute_attendance_metrics(clock_in, clock_out, shift, policy, status):
     """Derive status/working_hours/overtime_hours/is_late/is_early from clock
     in/out strings ('HH:MM'-prefixed) against a shift+policy.
 
-    Shared by attendance create/update and regularization approval so a
-    requested clock time actually produces the same derived state everywhere
-    instead of drifting out of sync (see: regularization approval used to
-    only flip the request's own status and never touched the linked
-    AttendanceRecord at all)."""
+    Status is fully recomputed from worked hours (Absent / Half Day / Late /
+    Present, using the effective policy's Absent/Half Day thresholds —
+    falling back to the shift's own half_day_hours, then hardcoded defaults,
+    when no policy is configured) for every "clock-derived" status. Only
+    'on_leave' is left untouched, since it's a deliberate day-off marker
+    unrelated to punch times, not something worked hours should overwrite.
+
+    Shared by attendance create/update, the Attendance Adjustments quick
+    edit, and regularization approval so a requested clock time actually
+    produces the same derived state everywhere instead of drifting out of
+    sync (see: regularization approval used to only flip the request's own
+    status and never touched the linked AttendanceRecord at all; and the
+    Attendance Adjustments quick edit could leave a record stuck on
+    'incomplete' or a stale 'half_day'/'present' even after both times were
+    filled in, because the old version only re-derived status starting from
+    a bare 'present'/'late')."""
     from datetime import datetime, timedelta
+
+    AUTO_STATUSES = {'present', 'late', 'half_day', 'absent', 'incomplete'}
 
     working_hours = 0
     overtime_hours = 0
@@ -3050,10 +3069,6 @@ def _compute_attendance_metrics(clock_in, clock_out, shift, policy, status):
 
             if cin_full > shift_start + timedelta(minutes=late_grace):
                 is_late = True
-
-            # Auto-set status only if it was left as default 'present'
-            if status == 'present' and is_late:
-                status = 'late'
 
     if clock_out:
         cout = datetime.strptime(clock_out[:5], '%H:%M')
@@ -3095,14 +3110,25 @@ def _compute_attendance_metrics(clock_in, clock_out, shift, policy, status):
             if working_hours > shift_hours:
                 overtime_hours = round(working_hours - shift_hours, 2)
 
-        # Auto-set status only if it was left as default 'present' or 'late'
-        if status in ['present', 'late']:
-            if shift and working_hours > 0 and working_hours <= float(shift.half_day_hours):
+        # Recompute the day's status from actual worked hours whenever it's
+        # one of the clock-derived statuses (covers the default 'present',
+        # an auto-detected 'late', and re-editing an already 'half_day' /
+        # 'absent' / 'incomplete' record's times on the Attendance
+        # Adjustments page — all of those should reflect the new times, not
+        # keep whatever status happened to be stored before the edit).
+        if status in AUTO_STATUSES:
+            absent_th = float(policy.absent_threshold_hours) if (policy and policy.absent_threshold_hours is not None) else 2.0
+            half_th = float(policy.half_day_threshold_hours) if (policy and policy.half_day_threshold_hours is not None) else (float(shift.half_day_hours) if shift else 4.0)
+            if working_hours <= absent_th:
+                status = 'absent'
+            elif working_hours <= half_th:
                 status = 'half_day'
+            else:
+                status = 'late' if is_late else 'present'
 
     # Flag incomplete punches (only one of clock-in/clock-out given)
-    # instead of leaving the day reported as Present/Late/Half Day.
-    if not (clock_in and clock_out) and status in ('present', 'late', 'half_day'):
+    # instead of leaving the day reported as Present/Late/Half Day/Absent.
+    if not (clock_in and clock_out) and status in AUTO_STATUSES:
         status = 'incomplete'
 
     return {
@@ -3204,11 +3230,6 @@ def attendance_update(request, pk):
         if not clock_in and not clock_out:
             return JsonResponse({'success': False, 'error': 'Either Clock In or Clock Out time is required.'})
 
-        # Both times are now supplied — clear a previous 'incomplete' marker
-        # so the late/half-day auto-logic below can recompute it properly.
-        if status == 'incomplete' and clock_in and clock_out:
-            status = 'present'
-
         # Use shift from form, fallback to existing record shift, then employee's assigned shift
         shift = Shift.objects.filter(pk=shift_id).first() if shift_id else (record.shift or record.employee.shift)
         policy = record.employee.effective_attendance_policy
@@ -3266,8 +3287,12 @@ def attendance_update(request, pk):
         'employee_id': record.employee_id,
         'employee_name': record.employee.full_name,
         'date': str(record.date),
+        # Raw 24-hour value for the <input type="time"> edit field;
+        # *_display is the 12-hour Nepal-style AM/PM string for the read-only view.
         'clock_in': record.clock_in.strftime('%H:%M') if record.clock_in else '',
         'clock_out': record.clock_out.strftime('%H:%M') if record.clock_out else '',
+        'clock_in_display': record.clock_in.strftime('%I:%M %p') if record.clock_in else '',
+        'clock_out_display': record.clock_out.strftime('%I:%M %p') if record.clock_out else '',
         'shift_id': record.shift_id,
         'shift_name': record.shift.name if record.shift else '',
         'status': record.status,
@@ -3474,6 +3499,8 @@ def incomplete_attendance_list_ajax(request):
             'date_display': rec.date.strftime('%d %b %Y'),
             'clock_in': rec.clock_in.strftime('%H:%M') if rec.clock_in else '',
             'clock_out': rec.clock_out.strftime('%H:%M') if rec.clock_out else '',
+            'clock_in_display': rec.clock_in.strftime('%I:%M %p') if rec.clock_in else '',
+            'clock_out_display': rec.clock_out.strftime('%I:%M %p') if rec.clock_out else '',
             'missing': missing,
             'status': rec.status,
             'status_display': rec.get_status_display(),
@@ -3646,8 +3673,12 @@ def attendance_adjustments_list_ajax(request):
             'department': rec.employee.department.name if rec.employee.department else '—',
             'date': str(rec.date),
             'date_display': rec.date.strftime('%d %b %Y'),
+            # Raw 24-hour value for the <input type="time"> edit field;
+            # *_display is the 12-hour Nepal-style AM/PM string shown in the table.
             'clock_in': rec.clock_in.strftime('%H:%M') if rec.clock_in else '',
             'clock_out': rec.clock_out.strftime('%H:%M') if rec.clock_out else '',
+            'clock_in_display': rec.clock_in.strftime('%I:%M %p') if rec.clock_in else '',
+            'clock_out_display': rec.clock_out.strftime('%I:%M %p') if rec.clock_out else '',
             'missing': missing,
             'status': rec.status,
             'status_display': rec.get_status_display(),
@@ -4060,6 +4091,36 @@ def attendance_sync_settings(request):
     })
 
 
+def _parse_attendance_policy_form(request):
+    """Shared numeric parsing/validation for the policy create/update forms.
+    Returns (fields_dict, error_message) — error_message is None on success."""
+    try:
+        work_hours = float(request.POST.get('work_hours_per_day', 8) or 8)
+        late_mark = int(request.POST.get('late_mark_after', 15) or 15)
+        early_dep = int(request.POST.get('early_departure_grace', 15) or 15)
+        overtime = float(request.POST.get('overtime_rate', 0) or 0)
+        absent_th = float(request.POST.get('absent_threshold_hours', 2) or 2)
+        half_day_th = float(request.POST.get('half_day_threshold_hours', 4) or 4)
+    except (ValueError, TypeError):
+        return None, 'Invalid numeric values provided.'
+    if late_mark < 0 or early_dep < 0 or overtime < 0 or work_hours <= 0:
+        return None, 'Values must be positive numbers.'
+    if absent_th <= 0 or half_day_th <= 0:
+        return None, 'Absent and Half Day thresholds must be positive numbers.'
+    if absent_th >= half_day_th:
+        return None, 'The Absent threshold must be lower than the Half Day threshold.'
+    if half_day_th > work_hours:
+        return None, 'The Half Day threshold cannot exceed Work Hours / Day.'
+    return {
+        'work_hours_per_day': work_hours,
+        'late_mark_after': late_mark,
+        'early_departure_grace': early_dep,
+        'overtime_rate': overtime,
+        'absent_threshold_hours': absent_th,
+        'half_day_threshold_hours': half_day_th,
+    }, None
+
+
 @login_required
 def attendance_policy_create(request):
     from .models import AttendancePolicy
@@ -4069,23 +4130,14 @@ def attendance_policy_create(request):
             return JsonResponse({'success': False, 'error': 'Policy name is required.'})
         if AttendancePolicy.objects.filter(name__iexact=name).exists():
             return JsonResponse({'success': False, 'error': 'A policy with this name already exists.'})
-        try:
-            work_hours = float(request.POST.get('work_hours_per_day', 8) or 8)
-            late_mark = int(request.POST.get('late_mark_after', 15) or 15)
-            early_dep = int(request.POST.get('early_departure_grace', 15) or 15)
-            overtime = float(request.POST.get('overtime_rate', 0) or 0)
-        except (ValueError, TypeError):
-            return JsonResponse({'success': False, 'error': 'Invalid numeric values provided.'})
-        if late_mark < 0 or early_dep < 0 or overtime < 0 or work_hours <= 0:
-            return JsonResponse({'success': False, 'error': 'Values must be positive numbers.'})
+        fields, error = _parse_attendance_policy_form(request)
+        if error:
+            return JsonResponse({'success': False, 'error': error})
         policy = AttendancePolicy.objects.create(
             name=name,
             description=request.POST.get('description', '').strip(),
-            work_hours_per_day=work_hours,
-            late_mark_after=late_mark,
-            early_departure_grace=early_dep,
-            overtime_rate=overtime,
             is_active=(request.POST.get('is_active', 'true').lower() == 'true'),
+            **fields,
         )
         return JsonResponse({'success': True, 'id': policy.id, 'name': policy.name})
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
@@ -4101,21 +4153,13 @@ def attendance_policy_update(request, pk):
             return JsonResponse({'success': False, 'error': 'Policy name is required.'})
         if AttendancePolicy.objects.filter(name__iexact=name).exclude(pk=pk).exists():
             return JsonResponse({'success': False, 'error': 'A policy with this name already exists.'})
-        try:
-            work_hours = float(request.POST.get('work_hours_per_day', 8) or 8)
-            late_mark = int(request.POST.get('late_mark_after', 15) or 15)
-            early_dep = int(request.POST.get('early_departure_grace', 15) or 15)
-            overtime = float(request.POST.get('overtime_rate', 0) or 0)
-        except (ValueError, TypeError):
-            return JsonResponse({'success': False, 'error': 'Invalid numeric values provided.'})
-        if late_mark < 0 or early_dep < 0 or overtime < 0 or work_hours <= 0:
-            return JsonResponse({'success': False, 'error': 'Values must be positive numbers.'})
+        fields, error = _parse_attendance_policy_form(request)
+        if error:
+            return JsonResponse({'success': False, 'error': error})
         policy.name = name
         policy.description = request.POST.get('description', '').strip()
-        policy.work_hours_per_day = work_hours
-        policy.late_mark_after = late_mark
-        policy.early_departure_grace = early_dep
-        policy.overtime_rate = overtime
+        for field_name, value in fields.items():
+            setattr(policy, field_name, value)
         policy.is_active = (request.POST.get('is_active', 'true').lower() == 'true')
         policy.save()
         return JsonResponse({'success': True})
@@ -4127,6 +4171,8 @@ def attendance_policy_update(request, pk):
         'late_mark_after': policy.late_mark_after,
         'early_departure_grace': policy.early_departure_grace,
         'overtime_rate': str(policy.overtime_rate),
+        'absent_threshold_hours': str(policy.absent_threshold_hours),
+        'half_day_threshold_hours': str(policy.half_day_threshold_hours),
         'is_active': policy.is_active,
     }
     return JsonResponse(data)
@@ -4304,8 +4350,13 @@ def attendance_regularization_update(request, pk):
         'employee_name': reg.employee.full_name,
         'attendance_record_id': reg.attendance_record_id,
         'date': str(reg.date),
+        # 12-hour AM/PM strings for the read-only view-details panel;
+        # *_raw is the 24-hour value the <input type="time"> edit fields need
+        # (an HTML5 time input silently rejects a "09:01 AM"-style value).
         'clock_in': reg.clock_in.strftime('%I:%M %p') if reg.clock_in else '',
         'clock_out': reg.clock_out.strftime('%I:%M %p') if reg.clock_out else '',
+        'clock_in_raw': reg.clock_in.strftime('%H:%M') if reg.clock_in else '',
+        'clock_out_raw': reg.clock_out.strftime('%H:%M') if reg.clock_out else '',
         'original_clock_in': reg.attendance_record.clock_in.strftime('%I:%M %p') if reg.attendance_record and reg.attendance_record.clock_in else '',
         'original_clock_out': reg.attendance_record.clock_out.strftime('%I:%M %p') if reg.attendance_record and reg.attendance_record.clock_out else '',
         'reason': reg.reason,
@@ -4385,11 +4436,6 @@ def _apply_regularization_to_record(reg):
     clock_out_str = new_clock_out.strftime('%H:%M') if new_clock_out else None
 
     status = record.status
-    # Both times now present — clear a stale 'incomplete' marker
-    # so the late/half-day auto-logic can recompute it properly.
-    if status == 'incomplete' and clock_in_str and clock_out_str:
-        status = 'present'
-
     shift = record.shift or record.employee.shift
     policy = record.employee.effective_attendance_policy
     metrics = _compute_attendance_metrics(clock_in_str, clock_out_str, shift, policy, status)
@@ -7678,8 +7724,8 @@ def employee_period_attendance(request):
             'day_name': rec.date.strftime('%A'),
             'day_short': rec.date.strftime('%a'),
             'day_num': rec.date.day,
-            'clock_in': rec.clock_in.strftime('%H:%M') if rec.clock_in else None,
-            'clock_out': rec.clock_out.strftime('%H:%M') if rec.clock_out else None,
+            'clock_in': rec.clock_in.strftime('%I:%M %p') if rec.clock_in else None,
+            'clock_out': rec.clock_out.strftime('%I:%M %p') if rec.clock_out else None,
             'working_hours': float(rec.working_hours) if rec.working_hours else 0,
             'overtime_hours': float(rec.overtime_hours) if rec.overtime_hours else 0,
             'status': rec.status,
