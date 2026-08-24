@@ -1140,7 +1140,11 @@ document.getElementById('confirmGenerateBtn').addEventListener('click', function
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-bolt me-1"></i> Generate';
         if (data.success) {
-            alertify.success('<i class="fas fa-check-circle me-1"></i> ' + data.message);
+            if (data.created > 0) {
+                alertify.success('<i class="fas fa-check-circle me-1"></i> ' + data.message);
+            } else {
+                alertify.warning('<i class="fas fa-exclamation-triangle me-1"></i> ' + data.message);
+            }
             setTimeout(() => location.reload(), 1800);
         } else {
             alertify.error('<i class="fas fa-exclamation-circle me-1"></i> ' + (data.error || 'Failed to generate payslips.'));
