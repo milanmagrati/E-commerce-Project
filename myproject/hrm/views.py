@@ -7925,15 +7925,15 @@ def attendance_report(request):
     date_to    = request.GET.get('date_to', '')
     department = request.GET.get('department', '')
     status     = request.GET.get('status', '')
-    per_page   = request.GET.get('per_page', 25)
+    per_page   = request.GET.get('per_page', 50)
     export     = request.GET.get('export', '')
 
     try:
         per_page = int(per_page)
         if per_page not in [10, 25, 50, 100]:
-            per_page = 25
+            per_page = 50
     except (ValueError, TypeError):
-        per_page = 25
+        per_page = 50
 
     qs = AttendanceRecord.objects.select_related(
         'employee', 'employee__department', 'employee__branch', 'shift'
@@ -8425,9 +8425,21 @@ def employee_period_attendance(request):
         except ValueError:
             date_to = date_from
     else:
-        date_from = ref_date.replace(day=1)
-        _, last_day = calendar.monthrange(ref_date.year, ref_date.month)
-        date_to = ref_date.replace(day=last_day)
+        # A Bikram Sambat month never lines up with an AD calendar month, so
+        # when the client is in BS mode it converts the chosen BS month itself
+        # and sends the resulting AD range explicitly. Without an explicit end
+        # we fall back to the AD calendar month that ref_date lands in.
+        month_to_str = request.GET.get('ref_date_to', '')
+        try:
+            month_to = date.fromisoformat(month_to_str) if month_to_str else None
+        except ValueError:
+            month_to = None
+        if month_to and 28 <= (month_to - ref_date).days + 1 <= 32:
+            date_from, date_to = ref_date, month_to
+        else:
+            date_from = ref_date.replace(day=1)
+            _, last_day = calendar.monthrange(ref_date.year, ref_date.month)
+            date_to = ref_date.replace(day=last_day)
 
     records_qs = AttendanceRecord.objects.filter(
         employee=employee, date__gte=date_from, date__lte=date_to, is_deleted=False
@@ -8590,7 +8602,9 @@ def employee_period_attendance(request):
             _wd_count += 1
         _d += timedelta(days=1)
 
-    _, month_days = calendar.monthrange(ref_date.year, ref_date.month) if period == 'month' else (None, None)
+    # Derived from the resolved range rather than the AD calendar, so a BS
+    # month (29-32 days) renders the right number of cells.
+    month_days = ((date_to - date_from).days + 1) if period == 'month' else None
 
     return JsonResponse({
         'employee': {
