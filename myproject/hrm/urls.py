@@ -159,6 +159,7 @@ urlpatterns = [
     path('biometric-attendance/<str:pin>/<str:date_str>/delete/', views.biometric_attendance_delete, name='biometric_attendance_delete'),
     path('biometric-attendance/<str:pin>/<str:date_str>/sync/', views.biometric_sync_single, name='biometric_sync_single'),
     path('biometric-attendance/sync-all/', views.biometric_sync_all, name='biometric_sync_all'),
+    path('biometric-attendance/upload/', views.biometric_upload_dat, name='biometric_upload_dat'),
 
     # Zekto Settings (device dashboard)
     path('settings/zekto/', views.zekto_settings, name='zekto_settings'),

@@ -7,6 +7,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.http import JsonResponse, HttpResponse
+from django.db import IntegrityError
 from django.db.models import Q, Sum, Count
 from django.core.paginator import Paginator
 from django.contrib import messages
@@ -2742,6 +2743,39 @@ def _normalize_pin(raw):
     return s.lstrip('0') or '0'
 
 
+# A second scan this soon after the first one is an accidental double-tap at the
+# reader, not the employee leaving for the day. Without this guard a staff member
+# who taps twice at 09:00 gets clock_out=09:00 and a 0.00 hr "full" day, which
+# then auto-classifies as Absent and quietly poisons payroll.
+DUPLICATE_PUNCH_WINDOW_SECONDS = 300
+
+
+def _derive_clock_times(timestamps, tzinfo):
+    """Reduce one employee-day's raw punches to (clock_in, clock_out) local times.
+
+    Returns ``clock_out=None`` when every punch of the day falls inside
+    DUPLICATE_PUNCH_WINDOW_SECONDS of the first one — the day is genuinely
+    incomplete and still waiting for the real evening punch, so it is better
+    flagged for correction than reported as a zero-hour shift.
+
+    Shared by the aggregator and both biometric read views so the raw-punch
+    table, the punch-detail modal and AttendanceRecord can never disagree
+    about when someone clocked out.
+    """
+    if not timestamps:
+        return None, None
+
+    first = min(timestamps)
+    last = max(timestamps)
+    clock_in = first.astimezone(tzinfo).time()
+
+    # Covers the single-punch case too (gap of 0 seconds).
+    if (last - first).total_seconds() <= DUPLICATE_PUNCH_WINDOW_SECONDS:
+        return clock_in, None
+
+    return clock_in, last.astimezone(tzinfo).time()
+
+
 def _sync_biometric_to_attendance(recent_days=None):
     """
     Aggregate raw BiometricAttendance punches into AttendanceRecord entries.
@@ -2794,18 +2828,13 @@ def _sync_biometric_to_attendance(recent_days=None):
         grouped[(_normalize_pin(rp['pin']), punch_date)].append(ts)
 
     for (pin, punch_date), timestamps in grouped.items():
-        first_punch = min(timestamps)
-        last_punch = max(timestamps)
-        punch_count = len(timestamps)
-
         pin_str = str(pin)
         employee = emp_map.get(pin_str) or emp_map.get(pin_str.lstrip('0'))
         if not employee:
             continue
 
-        # Convert UTC-stored timestamps to Nepal time
-        clock_in_time = first_punch.astimezone(NPT).time() if first_punch else None
-        clock_out_time = last_punch.astimezone(NPT).time() if last_punch and punch_count > 1 else None
+        # Convert UTC-stored timestamps to Nepal time (double-tap aware)
+        clock_in_time, clock_out_time = _derive_clock_times(timestamps, NPT)
 
         # Calculate working hours
         working_hours = 0
@@ -2952,6 +2981,7 @@ def _maybe_auto_sync_attendance():
 @login_required
 def attendance_list(request):
     from .models import AttendanceRecord, Employee, Shift
+    from dashboard.timezone_utils import get_nepali_now
     from django.core.paginator import Paginator
     from django.db.models import Q, Count, Sum
     from datetime import date as dt_date
@@ -3044,8 +3074,168 @@ def attendance_list(request):
         'employees': employees,
         'shifts': shifts,
         'load_error': load_error,
+        # Caps the Add/Edit date picker at today in Nepal time. The server
+        # rejects future dates regardless (_parse_attendance_date); this just
+        # stops the user picking one in the first place, and uses the Nepal
+        # date rather than whatever the browser's clock says.
+        'today_str': get_nepali_now().date().isoformat(),
     }
     return render(request, 'hrm/attendance_list.html', context)
+
+
+# ==================== Manual attendance entry guards (shared) ====================
+#
+# Raw biometric punches are de-duplicated by the (pin, timestamp) unique
+# constraint and _ingest_attlog_lines. The helpers below are the equivalent
+# guard for the *manual* paths — Attendance Records and Attendance
+# Regularizations — where a person (or a double-clicked Save button) is the
+# source of the duplicate rather than a device.
+
+
+def _parse_attendance_date(value):
+    """Coerce a posted date to a real ``date``. Returns (date, error_message).
+
+    Posted dates arrive as 'YYYY-MM-DD' strings but reach the ORM untyped, so
+    a malformed value used to surface as a ValidationError 500 inside an AJAX
+    call. A date in the future is rejected outright — attendance cannot be
+    recorded for a day that has not happened, and back-dating typos ("2026"
+    keyed as "2062" in a Nepali-calendar habit) are a common way duplicate or
+    orphaned rows get created.
+    """
+    from datetime import date as _date, datetime as _datetime
+
+    from dashboard.timezone_utils import get_nepali_now
+
+    if not value:
+        return None, 'Date is required.'
+
+    if isinstance(value, _date):
+        parsed = value
+    else:
+        try:
+            parsed = _datetime.strptime(str(value).strip()[:10], '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            return None, 'Invalid date. Use the date picker (YYYY-MM-DD).'
+
+    today = get_nepali_now().date()
+    if parsed > today:
+        return None, f'Cannot record attendance for a future date ({parsed}). Today is {today}.'
+
+    return parsed, None
+
+
+def _validate_clock_pair(clock_in, clock_out):
+    """Reject clock in/out combinations that can only be data-entry mistakes.
+
+    Returns an error message, or None when the pair is usable.
+
+    Identical times are the manual-entry twin of the biometric double-tap
+    (see DUPLICATE_PUNCH_WINDOW_SECONDS): they compute to 0.00 worked hours,
+    which _compute_attendance_metrics then auto-classifies as Absent — so a
+    mistyped duplicate time silently books the employee absent for a day they
+    actually worked.
+    """
+    if not clock_in and not clock_out:
+        return 'Either Clock In or Clock Out time is required.'
+
+    if clock_in and clock_out:
+        from datetime import datetime as _datetime
+        try:
+            cin = _datetime.strptime(str(clock_in)[:5], '%H:%M')
+            cout = _datetime.strptime(str(clock_out)[:5], '%H:%M')
+        except (ValueError, TypeError):
+            return 'Invalid time value. Use the time picker (HH:MM).'
+        if cin == cout:
+            return (
+                'Clock In and Clock Out cannot be the same time — that records a '
+                '0-hour day and would mark the employee Absent. Leave Clock Out '
+                'empty if the second punch is still missing.'
+            )
+
+    return None
+
+
+def _find_duplicate_attendance(employee, date_val, exclude_pk=None):
+    """The AttendanceRecord already occupying this employee+date slot, if any.
+
+    Deliberately ignores ``is_deleted``: a trashed row still holds the
+    (employee, date) unique slot, so creating "a new one" would hit an
+    IntegrityError rather than succeed. Callers use the returned row to tell
+    the user *where* the conflicting record is instead of a dead-end
+    "already exists".
+    """
+    from .models import AttendanceRecord
+
+    qs = AttendanceRecord.objects.filter(employee=employee, date=date_val)
+    if exclude_pk:
+        qs = qs.exclude(pk=exclude_pk)
+    return qs.first()
+
+
+def _duplicate_attendance_error(record):
+    """Actionable message for an employee+date slot that is already taken."""
+    who = record.employee.full_name
+    when = record.date
+    if record.is_deleted:
+        return (
+            f'{who} already has a deleted attendance record for {when}, sitting in '
+            f'Attendance Adjustments (Trash). Restore or permanently delete it there '
+            f'before adding a new one.'
+        )
+    times = []
+    if record.clock_in:
+        times.append(f'in {record.clock_in.strftime("%I:%M %p")}')
+    if record.clock_out:
+        times.append(f'out {record.clock_out.strftime("%I:%M %p")}')
+    detail = f' ({", ".join(times)})' if times else ''
+    return (
+        f'{who} already has an attendance record for {when}{detail}. '
+        f'Edit that record instead of adding a duplicate.'
+    )
+
+
+def _find_conflicting_regularization(employee, date_val, exclude_pk=None):
+    """An existing regularization that a new request for this day would clash with.
+
+    Returns (regularization, error_message) or (None, None).
+
+    Two rules, both about corrupting the record rather than mere tidiness:
+
+    * Only one *open* (pending or draft) request may exist per employee+date.
+      Two open requests are both approvable, and the second approval silently
+      overwrites what the first one applied.
+    * A day that already has an *approved* request cannot take a new one,
+      because approval snapshots the record into pre_regularization_state to
+      support restore-on-reject. Approving a second request would capture the
+      already-regularized values, so a later reject would "restore" the day to
+      the wrong times instead of the original ones.
+
+    A *rejected* request is not a conflict — re-requesting after a rejection is
+    a normal thing to do.
+    """
+    from .models import AttendanceRegularization
+
+    qs = AttendanceRegularization.objects.filter(employee=employee, date=date_val)
+    if exclude_pk:
+        qs = qs.exclude(pk=exclude_pk)
+
+    existing = qs.filter(status='approved').first()
+    if existing:
+        return existing, (
+            f'{employee.full_name} already has an approved regularization for {date_val}. '
+            f'Edit that approved request instead — filing a second one would make a later '
+            f'rejection restore the wrong clock times.'
+        )
+
+    existing = qs.filter(status='pending').first()
+    if existing:
+        state = 'draft' if existing.is_draft else 'pending'
+        return existing, (
+            f'{employee.full_name} already has a {state} regularization for {date_val}. '
+            f'Update that request instead of filing a duplicate.'
+        )
+
+    return None, None
 
 
 def _compute_attendance_metrics(clock_in, clock_out, shift, policy, status):
@@ -3161,6 +3351,7 @@ def _compute_attendance_metrics(clock_in, clock_out, shift, policy, status):
 @login_required
 def attendance_create(request):
     from .models import AttendanceRecord, Employee, Shift, AttendancePolicy
+    from django.db import transaction
 
     if request.method == 'POST':
         employee_id = request.POST.get('employee')
@@ -3172,18 +3363,27 @@ def attendance_create(request):
         notes = request.POST.get('notes', '').strip()
         status = request.POST.get('status', 'present')
 
-        if not employee_id or not date_val:
-            return JsonResponse({'success': False, 'error': 'Employee and date are required.'})
+        if not employee_id:
+            return JsonResponse({'success': False, 'error': 'Employee is required.'})
 
-        if not clock_in and not clock_out:
-            return JsonResponse({'success': False, 'error': 'Either Clock In or Clock Out time is required.'})
+        date_val, date_error = _parse_attendance_date(date_val)
+        if date_error:
+            return JsonResponse({'success': False, 'error': date_error})
+
+        clock_error = _validate_clock_pair(clock_in, clock_out)
+        if clock_error:
+            return JsonResponse({'success': False, 'error': clock_error})
 
         employee = Employee.objects.select_related('shift', 'attendance_policy').filter(pk=employee_id).first()
         if not employee:
             return JsonResponse({'success': False, 'error': 'Employee not found.'})
 
-        if AttendanceRecord.objects.filter(employee=employee, date=date_val).exists():
-            return JsonResponse({'success': False, 'error': 'Attendance already exists for this employee on this date.'})
+        # Includes soft-deleted rows: a trashed record still holds this
+        # (employee, date) slot, so "already exists" has to say where it is
+        # rather than leave the user hunting a record they cannot see.
+        clash = _find_duplicate_attendance(employee, date_val)
+        if clash:
+            return JsonResponse({'success': False, 'error': _duplicate_attendance_error(clash)})
 
         # Use shift from form, fallback to employee's assigned shift
         shift = Shift.objects.filter(pk=shift_id).first() if shift_id else employee.shift
@@ -3191,20 +3391,38 @@ def attendance_create(request):
 
         metrics = _compute_attendance_metrics(clock_in, clock_out, shift, policy, status)
 
-        record = AttendanceRecord.objects.create(
-            employee=employee,
-            date=date_val,
-            clock_in=clock_in if clock_in else None,
-            clock_out=clock_out if clock_out else None,
-            shift=shift,
-            status=metrics['status'],
-            working_hours=metrics['working_hours'],
-            overtime_hours=metrics['overtime_hours'],
-            is_holiday=is_holiday,
-            notes=notes,
-            is_early_departure=metrics['is_early'],
-            is_late_arrival=metrics['is_late'],
-        )
+        # The .exists() check above cannot stop a double-clicked Save or two
+        # staff submitting the same day at once — both pass it, then the
+        # second INSERT trips the (employee, date) unique constraint. Catch
+        # that here so the race reports the same friendly message instead of
+        # an HTML 500 inside the AJAX handler.
+        try:
+            # atomic() wraps the INSERT in a savepoint so a constraint failure
+            # is contained — required for the except below to be safe if
+            # ATOMIC_REQUESTS is ever turned on.
+            with transaction.atomic():
+                record = AttendanceRecord.objects.create(
+                    employee=employee,
+                    date=date_val,
+                    clock_in=clock_in if clock_in else None,
+                    clock_out=clock_out if clock_out else None,
+                    shift=shift,
+                    status=metrics['status'],
+                    working_hours=metrics['working_hours'],
+                    overtime_hours=metrics['overtime_hours'],
+                    is_holiday=is_holiday,
+                    notes=notes,
+                    is_early_departure=metrics['is_early'],
+                    is_late_arrival=metrics['is_late'],
+                )
+        except IntegrityError:
+            clash = _find_duplicate_attendance(employee, date_val)
+            error = (
+                _duplicate_attendance_error(clash) if clash
+                else 'Attendance already exists for this employee on this date.'
+            )
+            return JsonResponse({'success': False, 'error': error})
+
         return JsonResponse({'success': True, 'id': record.id})
     return JsonResponse({'success': False, 'error': 'Invalid request.'})
 
@@ -3245,8 +3463,12 @@ def attendance_update(request, pk):
         remarks = request.POST.get('remarks', '').strip()
         status = request.POST.get('status', 'present')
 
-        if not clock_in and not clock_out:
-            return JsonResponse({'success': False, 'error': 'Either Clock In or Clock Out time is required.'})
+        # Same guard as attendance_create — an edit can introduce the identical
+        # clock in/out (0-hour day silently classified Absent) just as easily
+        # as a fresh entry can.
+        clock_error = _validate_clock_pair(clock_in, clock_out)
+        if clock_error:
+            return JsonResponse({'success': False, 'error': clock_error})
 
         # Use shift from form, fallback to existing record shift, then employee's assigned shift
         shift = Shift.objects.filter(pk=shift_id).first() if shift_id else (record.shift or record.employee.shift)
@@ -4304,9 +4526,45 @@ def attendance_regularization_create(request):
             return JsonResponse({'success': False, 'error': 'Employee not found.'})
 
         record = AttendanceRecord.objects.filter(pk=record_id).first() if record_id else None
-        date_val = record.date if record else request.POST.get('date') or None
-        if not date_val:
+        raw_date = record.date if record else (request.POST.get('date') or None)
+        if not raw_date:
             return JsonResponse({'success': False, 'error': 'Please select an attendance record or provide a date.'})
+
+        date_val, date_error = _parse_attendance_date(raw_date)
+        if date_error:
+            return JsonResponse({'success': False, 'error': date_error})
+
+        # A submitted request with neither time applies nothing on approval —
+        # it would sit in the queue, get approved, and change nothing at all.
+        # Drafts are exempt: a draft is explicitly work-in-progress.
+        if not is_draft and not clock_in and not clock_out:
+            return JsonResponse({
+                'success': False,
+                'error': 'Enter the requested Clock In and/or Clock Out time — '
+                         'a regularization with no times has nothing to apply.',
+            })
+
+        if clock_in or clock_out:
+            clock_error = _validate_clock_pair(clock_in, clock_out)
+            if clock_error:
+                return JsonResponse({'success': False, 'error': clock_error})
+
+        # This page had no duplicate guard at all: two open requests for the
+        # same employee+day are both approvable, and the second approval
+        # overwrites the first while snapshotting already-regularized values
+        # as the "pre-regularization" state to restore on reject.
+        conflict, conflict_error = _find_conflicting_regularization(employee, date_val)
+        if conflict:
+            return JsonResponse({'success': False, 'error': conflict_error})
+
+        # Keep the linked record consistent with the resolved date — a request
+        # attached to a record for a different day would apply its times to
+        # that other day on approval.
+        if record and record.employee_id != employee.pk:
+            return JsonResponse({
+                'success': False,
+                'error': 'The selected attendance record belongs to a different employee.',
+            })
 
         reg = AttendanceRegularization.objects.create(
             employee=employee,
@@ -4339,7 +4597,35 @@ def attendance_regularization_update(request, pk):
         if not reason:
             return JsonResponse({'success': False, 'error': 'Reason is required.'})
 
+        if not is_draft and not clock_in and not clock_out:
+            return JsonResponse({
+                'success': False,
+                'error': 'Enter the requested Clock In and/or Clock Out time — '
+                         'a regularization with no times has nothing to apply.',
+            })
+
+        if clock_in or clock_out:
+            clock_error = _validate_clock_pair(clock_in, clock_out)
+            if clock_error:
+                return JsonResponse({'success': False, 'error': clock_error})
+
         record = AttendanceRecord.objects.filter(pk=record_id).first() if record_id else reg.attendance_record
+
+        if record and record.employee_id != reg.employee_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'The selected attendance record belongs to a different employee.',
+            })
+
+        # Re-pointing a request at a different day must not land it on a day
+        # that already has an open or approved request — same rule the create
+        # path enforces, excluding this request itself.
+        target_date = record.date if record else reg.date
+        conflict, conflict_error = _find_conflicting_regularization(
+            reg.employee, target_date, exclude_pk=reg.pk
+        )
+        if conflict:
+            return JsonResponse({'success': False, 'error': conflict_error})
 
         with transaction.atomic():
             reg.clock_in = clock_in if clock_in else None
@@ -4588,13 +4874,220 @@ from datetime import datetime, timedelta
 adms_logger = logging.getLogger('hrm.adms')
 
 
+# ==================== ATTLOG parsing / ingestion (shared) ====================
+#
+# The same rows reach us two ways: pushed live by the device over ADMS
+# (iclock_cdata) and hand-carried on a USB stick as attlog.dat
+# (biometric_upload_dat). Both funnel through the helpers below so PIN
+# normalization, timezone handling and de-duplication can never drift apart
+# between the two paths.
+
+# Matches the timestamp anywhere in a row, tolerating the '/' separator and
+# the missing-seconds form some firmware writes to attlog.dat.
+_ATTLOG_TS_RE = re.compile(
+    r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})[\sT]+(\d{1,2}):(\d{2})(?::(\d{2}))?'
+)
+
+# PIN / trailing flag columns are tab-separated over ADMS, but USB exports show
+# up comma-, semicolon- or space-separated depending on the firmware build.
+_ATTLOG_SEP_RE = re.compile(r'[,;\s]+')
+
+# Limits for the manual attlog.dat upload.
+_MAX_ATTLOG_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB — ~200k punch rows
+_ATTLOG_UPLOAD_SUFFIXES = ('.dat', '.txt', '.csv', '.log')
+
+# How far back a "Sync Device" click asks the device to replay its stored
+# ATTLOG. 60 days comfortably covers a long outage while staying inside the
+# flash buffer most K20-class devices actually retain.
+FORCE_RESYNC_LOOKBACK_DAYS = 60
+
+
+def _parse_attlog_line(line):
+    """Parse one raw ATTLOG row into ``(pin, naive_datetime, status, verify)``.
+
+    Returns None for anything without a usable PIN + timestamp (blank lines,
+    header rows, trailing junk), so callers can count those as skipped rather
+    than aborting the whole batch.
+    """
+    line = line.strip().lstrip('﻿')
+    if not line:
+        return None
+
+    match = _ATTLOG_TS_RE.search(line)
+    if not match:
+        return None
+
+    year, month, day, hour, minute, second = match.groups()
+    try:
+        punch_dt = datetime(
+            int(year), int(month), int(day), int(hour), int(minute), int(second or 0)
+        )
+    except ValueError:
+        # Real calendar-invalid values (month 13, Feb 30, hour 25).
+        return None
+
+    # The PIN is the last token before the timestamp — row numbers or export
+    # labels prefixed by some firmware fall away naturally.
+    head_tokens = [t for t in _ATTLOG_SEP_RE.split(line[:match.start()]) if t]
+    if not head_tokens:
+        return None
+    pin = _normalize_pin(head_tokens[-1])[:50]
+    if not pin:
+        return None
+
+    tail_tokens = [t for t in _ATTLOG_SEP_RE.split(line[match.end():]) if t]
+
+    def _flag(index):
+        if index < len(tail_tokens):
+            try:
+                return int(tail_tokens[index])
+            except ValueError:
+                return 0
+        return 0
+
+    # Column order matches what the device POSTs over ADMS: PIN, datetime,
+    # status, verify mode, [workcode, reserved...].
+    status = _flag(0)
+    # Clamp to the declared STATUS_CHOICES range; an out-of-range value makes
+    # get_status_display() return None and renders as a blank cell.
+    if status not in (0, 1, 2, 3, 4, 5):
+        status = 0
+
+    return pin, punch_dt, status, _flag(1)
+
+
+def _ingest_attlog_lines(lines, device=None, source='device'):
+    """Persist raw ATTLOG rows as BiometricAttendance punches.
+
+    Device rows carry Nepal local time (UTC+5:45) with no offset, so naive
+    values are localized as NST before storage.
+
+    Returns a stats dict: created / duplicates / skipped / pins / first / last.
+    De-duplication is explicit (rather than per-row get_or_create) because
+    ATTLOGStamp=0 makes the device re-push its entire buffer on every
+    reconnect, and a USB attlog.dat is almost always mostly-already-imported.
+    """
+    from .models import BiometricAttendance
+    from django.utils.timezone import is_aware
+    import pytz
+
+    nst = pytz.timezone('Asia/Kathmandu')
+
+    pending = []
+    seen = set()
+    skipped = 0
+    duplicates = 0
+
+    for line in lines:
+        parsed = _parse_attlog_line(line)
+        if parsed is None:
+            if line.strip():
+                skipped += 1
+            continue
+
+        pin, naive_dt, status, verify = parsed
+        punch_dt = naive_dt if is_aware(naive_dt) else nst.localize(naive_dt)
+
+        key = (pin, punch_dt)
+        if key in seen:
+            duplicates += 1
+            continue
+        seen.add(key)
+
+        pending.append(BiometricAttendance(
+            device=device,
+            pin=pin,
+            timestamp=punch_dt,
+            status=status,
+            verify_mode=verify,
+            raw_log=line.strip()[:2000],
+        ))
+
+    stats = {
+        'created': 0,
+        'duplicates': duplicates,
+        'skipped': skipped,
+        'pins': sorted({o.pin for o in pending}),
+        'first': None,
+        'last': None,
+    }
+    if not pending:
+        return stats
+
+    timestamps = [o.timestamp for o in pending]
+    stats['first'] = min(timestamps)
+    stats['last'] = max(timestamps)
+
+    # One bounded query resolves what is already stored, instead of a SELECT
+    # per row. Bounded by the batch's own PINs and time span so it stays cheap
+    # even against a large punch table.
+    already = set(
+        BiometricAttendance.objects.filter(
+            pin__in=stats['pins'],
+            timestamp__gte=stats['first'],
+            timestamp__lte=stats['last'],
+        ).values_list('pin', 'timestamp')
+    )
+
+    to_create = [o for o in pending if (o.pin, o.timestamp) not in already]
+    stats['duplicates'] += len(pending) - len(to_create)
+
+    if to_create:
+        # ignore_conflicts guards the race with a concurrent push of the same
+        # rows; the unique (pin, timestamp) constraint is the real backstop.
+        BiometricAttendance.objects.bulk_create(
+            to_create, batch_size=1000, ignore_conflicts=True
+        )
+        stats['created'] = len(to_create)
+
+    adms_logger.info(
+        f"[ATTLOG:{source}] created={stats['created']} duplicates={stats['duplicates']} "
+        f"skipped={stats['skipped']} pins={len(stats['pins'])}"
+    )
+    return stats
+
+
+def _unmatched_pins(pins):
+    """PINs from a batch that no Employee.employee_code maps to.
+
+    Compared through _normalize_pin on both sides, so a device sending "05"
+    still matches an employee coded "5" and is not reported as unmatched.
+    """
+    from .models import Employee
+
+    if not pins:
+        return []
+    known = {
+        _normalize_pin(code)
+        for code in Employee.objects.exclude(employee_code='').exclude(
+            employee_code__isnull=True
+        ).values_list('employee_code', flat=True)
+    }
+    return sorted(p for p in pins if p not in known)
+
+
+def _refresh_device_counts(device):
+    """Recompute a device's cached transaction/user totals from stored punches."""
+    from .models import BiometricAttendance
+
+    if not device:
+        return
+    try:
+        punches = BiometricAttendance.objects.filter(device=device)
+        device.transaction_count = punches.count()
+        device.user_count = punches.values('pin').distinct().count()
+        device.save(update_fields=['transaction_count', 'user_count'])
+    except Exception as e:
+        adms_logger.error(f"[COUNTS] Failed to update counts for {device.serial_number}: {e}")
+
+
 @csrf_exempt
 def iclock_cdata(request):
     """
     GET  /iclock/cdata?SN=XXXX  → return device options (initial handshake)
     POST /iclock/cdata?SN=XXXX&table=ATTLOG → parse raw attendance, save to DB
     """
-    from .models import ZKDevice, BiometricAttendance
+    from .models import ZKDevice
 
     # Some firmware sends lowercase 'sn' — be case-insensitive
     sn = (
@@ -4625,10 +5118,15 @@ def iclock_cdata(request):
         _nst = pytz.timezone('Asia/Kathmandu')
         _now_nst = timezone.now().astimezone(_nst)
         _date_str = _now_nst.strftime('%Y-%m-%d %H:%M:%S')
+        # ATTLOGStamp/OPERATIONStamp=0 make the device treat its whole flash
+        # buffer as un-uploaded and re-send it on (re)connect, so punches taken
+        # while the internet was down are recovered instead of lost. Re-sending
+        # already-stored rows is harmless: (pin, timestamp) is unique and
+        # _ingest_attlog_lines drops the repeats.
         options = (
             "GET OPTION FROM: {sn}\r\n"
-            "ATTLOGStamp=9999\r\n"
-            "OPERATIONStamp=9999\r\n"
+            "ATTLOGStamp=0\r\n"
+            "OPERATIONStamp=0\r\n"
             "ErrorDelay=60\r\n"
             "Delay=30\r\n"
             "TransTimes=00:00;14:05\r\n"
@@ -4643,8 +5141,6 @@ def iclock_cdata(request):
         return HttpResponse(options, content_type='text/plain')
 
     if request.method == 'POST':
-        import pytz
-        _nst = pytz.timezone('Asia/Kathmandu')
         table = request.GET.get('table', '').strip()
         try:
             body = request.body.decode('utf-8', errors='ignore').strip()
@@ -4653,57 +5149,19 @@ def iclock_cdata(request):
         adms_logger.info(f"[CDATA POST] SN={sn} table={table} body_length={len(body)}")
 
         if table == 'ATTLOG' and body:
-            saved = 0
-            for line in body.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split('\t')
-                if len(parts) < 2:
-                    continue
-                try:
-                    # Normalize the PIN at ingestion (strip leading zeros) so a
-                    # punch sent zero-padded (e.g. realtime push vs buffered
-                    # ATTLOG push formatting it differently) always lands under
-                    # the same pin string as this employee's other punches —
-                    # see _normalize_pin for why this matters.
-                    pin = _normalize_pin(parts[0].strip())
-                    ts_str = parts[1].strip()
-                    status = int(parts[2].strip()) if len(parts) > 2 else 0
-                    verify = int(parts[3].strip()) if len(parts) > 3 else 0
-
-                    # Device sends local Nepal time (NST, UTC+5:45). Explicitly wrap as NST.
-                    naive_dt = datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S')
-                    from django.utils.timezone import is_aware
-                    punch_dt = naive_dt if is_aware(naive_dt) else _nst.localize(naive_dt)
-
-                    BiometricAttendance.objects.get_or_create(
-                        pin=pin,
-                        timestamp=punch_dt,
-                        defaults={
-                            'device': device,
-                            'status': status,
-                            'verify_mode': verify,
-                            'raw_log': line,
-                        }
-                    )
-                    saved += 1
-                except (ValueError, IndexError) as e:
-                    adms_logger.warning(f"[CDATA POST] Parse error: {e} line='{line}'")
-                    continue
-                except Exception as e:
-                    adms_logger.error(f"[CDATA POST] Unexpected error: {e} line='{line}'")
-                    continue
-
-            adms_logger.info(f"[CDATA POST] SN={sn} saved={saved} attendance lines")
-
-            # Update device transaction/user counts
             try:
-                device.transaction_count = BiometricAttendance.objects.filter(device=device).count()
-                device.user_count = BiometricAttendance.objects.filter(device=device).values('pin').distinct().count()
-                device.save(update_fields=['transaction_count', 'user_count'])
+                stats = _ingest_attlog_lines(
+                    body.splitlines(), device=device, source='push:' + sn
+                )
+                adms_logger.info(
+                    f"[CDATA POST] SN={sn} saved={stats['created']} "
+                    f"duplicate={stats['duplicates']} skipped={stats['skipped']}"
+                )
+                _refresh_device_counts(device)
             except Exception as e:
-                adms_logger.error(f"[CDATA POST] Failed to update counts for SN={sn}: {e}")
+                # Never surface an error to the device: it would retry the
+                # same batch forever and treat the server as down.
+                adms_logger.exception(f"[CDATA POST] Ingest failed for SN={sn}: {e}")
 
         # Always return OK so the device doesn't mark the server as down
         return HttpResponse('OK', content_type='text/plain')
@@ -4723,13 +5181,22 @@ def iclock_getrequest(request):
         request.GET.get('Sn') or
         ''
     ).strip()
+    force_resync = False
     if sn:
         ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', '')).split(',')[0].strip()
         try:
             device, created = ZKDevice.objects.get_or_create(serial_number=sn)
             device.ip_address = ip
             device.last_seen = timezone.now()
-            device.save(update_fields=['ip_address', 'last_seen'])
+            update_fields = ['ip_address', 'last_seen']
+            # Claim the pending resync request here (clearing it in the same
+            # save) so only one heartbeat acts on an admin's Sync Device
+            # click, even with several workers serving the device.
+            if device.force_resync_requested_at:
+                force_resync = True
+                device.force_resync_requested_at = None
+                update_fields.append('force_resync_requested_at')
+            device.save(update_fields=update_fields)
             adms_logger.debug(f"[HEARTBEAT] SN={sn} IP={ip} {'REGISTERED' if created else 'SEEN'}")
         except Exception as e:
             adms_logger.error(f"[HEARTBEAT] Failed to update device SN={sn}: {e}")
@@ -4745,13 +5212,31 @@ def iclock_getrequest(request):
     # C:ID:SET TIME  — direct RTC overwrite (most reliable for K20 Pro)
     # C:ID:SET OPTION Date=  — alternative SET OPTION form used by some firmware
     # C:ID:DATE TIME  — legacy compact format fallback
-    sync_cmd = (
-        f'C:{seq}:SET TIME {nst_str}\r\n'
-        f'C:{seq+1}:SET OPTION Date={nst_str}\r\n'
-        f'C:{seq+2}:DATE TIME {compact_str}\r\n'
-        f'OK'
-    )
-    adms_logger.info(f"[HEARTBEAT] Force-writing time to SN={sn}: {nst_str}")
+    if force_resync:
+        # An admin asked for a full pull: ask the device to replay its stored
+        # ATTLOG for the window below. CHECK then makes it re-run its upload
+        # cycle immediately instead of waiting for the next TransInterval.
+        window_start = (now_nst - timedelta(days=FORCE_RESYNC_LOOKBACK_DAYS)).strftime('%Y-%m-%d 00:00:00')
+        sync_cmd = (
+            f'C:{seq}:SET TIME {nst_str}\r\n'
+            f'C:{seq+1}:SET OPTION Date={nst_str}\r\n'
+            f'C:{seq+2}:DATA QUERY ATTLOG StartTime={window_start}\tEndTime={nst_str}\r\n'
+            f'C:{seq+3}:CHECK\r\n'
+            f'OK'
+        )
+        adms_logger.info(
+            f'[HEARTBEAT] Pushing DATA QUERY ATTLOG (since {window_start}) to SN={sn}'
+        )
+    else:
+        sync_cmd = (
+            f'C:{seq}:SET TIME {nst_str}\r\n'
+            f'C:{seq+1}:SET OPTION Date={nst_str}\r\n'
+            f'C:{seq+2}:DATE TIME {compact_str}\r\n'
+            f'C:{seq+3}:CHECK\r\n'
+            f'OK'
+        )
+        adms_logger.debug(f'[HEARTBEAT] Force-writing time to SN={sn}: {nst_str}')
+
     return HttpResponse(sync_cmd, content_type='text/plain')
 
 
@@ -4766,7 +5251,7 @@ def iclock_devicecmd(request):
 @login_required
 def biometric_attendance(request):
     """Per-date attendance view: groups raw punches by (pin, date), defaults to today."""
-    from .models import BiometricAttendance, Employee
+    from .models import BiometricAttendance, Employee, ZKDevice
     from django.utils import timezone as tz
     import pytz
 
@@ -4877,12 +5362,10 @@ def biometric_attendance(request):
             continue
 
         punches = info['punches']
-        clock_in_dt  = min(punches)
-        clock_out_dt = max(punches)
         total = len(punches)
-
-        clock_in_local  = clock_in_dt.astimezone(local_tz).time()  if clock_in_dt else None
-        clock_out_local = clock_out_dt.astimezone(local_tz).time() if clock_out_dt and total > 1 else None
+        # Same double-tap-aware derivation the aggregator uses, so this table
+        # and the AttendanceRecord it produces always show the same times.
+        clock_in_local, clock_out_local = _derive_clock_times(punches, local_tz)
 
         records.append({
             'pin': pin,
@@ -4937,6 +5420,10 @@ def biometric_attendance(request):
         'today_str': today_local.strftime('%Y-%m-%d'),
         'per_page': per_page,
         'per_page_options': [10, 20, 50, 100],
+        # Offered in the attlog.dat upload modal so an imported batch can be
+        # attributed to the device it came off (optional — punches import fine
+        # without one).
+        'devices': ZKDevice.objects.order_by('name', 'serial_number'),
     }
     return render(request, 'hrm/biometric_attendance.html', context)
 
@@ -4983,9 +5470,11 @@ def biometric_attendance_view(request, pin, date_str):
         emp_name = emp.full_name if emp else f'Employee {pin}'
 
         punch_list = []
+        punch_times = []
         for p in punches:
             try:
                 local_ts = p.timestamp.astimezone(local_tz)
+                punch_times.append(p.timestamp)
                 punch_list.append({
                     'time': local_ts.strftime('%I:%M %p'),
                     'status': p.get_status_display() if hasattr(p, 'get_status_display') else str(p.status),
@@ -4997,8 +5486,12 @@ def biometric_attendance_view(request, pin, date_str):
                 continue
 
         punch_count = len(punch_list)
-        clock_in  = punch_list[0]['time']  if punch_count > 0 else ''
-        clock_out = punch_list[-1]['time'] if punch_count > 1 else ''
+        # Derive from the raw timestamps (not the formatted strings) so the
+        # double-tap guard in _derive_clock_times applies here too — otherwise
+        # this modal would claim a clock-out the attendance record doesn't have.
+        cin_t, cout_t = _derive_clock_times(punch_times, local_tz)
+        clock_in  = cin_t.strftime('%I:%M %p')  if cin_t  else ''
+        clock_out = cout_t.strftime('%I:%M %p') if cout_t else ''
 
         return JsonResponse({
             'success': True,
@@ -5081,6 +5574,147 @@ def biometric_sync_single(request, pin, date_str):
         })
     except Exception as e:
         return JsonResponse({'success': False, 'error': f'Sync failed: {str(e)}'})
+
+
+@login_required
+def biometric_upload_dat(request):
+    """POST an attlog.dat exported from a ZKTeco device over USB and ingest it.
+
+    This is the offline recovery path for when the device never reached the
+    server at all (no internet at the branch, ADMS misconfigured, a device
+    that was replaced). The file is parsed with the same helpers the live ADMS
+    push uses, so an uploaded punch is indistinguishable from a pushed one and
+    re-uploading the same file is a no-op.
+    """
+    from .models import ZKDevice
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'})
+
+    upload = request.FILES.get('attlog_file')
+    if not upload:
+        return JsonResponse({'success': False, 'error': 'No file selected. Choose an attlog.dat file to upload.'})
+
+    name = (upload.name or '').strip()
+    if not name.lower().endswith(_ATTLOG_UPLOAD_SUFFIXES):
+        return JsonResponse({
+            'success': False,
+            'error': 'Unsupported file type. Upload the device export (.dat, .txt, .csv or .log).',
+        })
+
+    if upload.size == 0:
+        return JsonResponse({'success': False, 'error': f'"{name}" is empty.'})
+
+    if upload.size > _MAX_ATTLOG_UPLOAD_BYTES:
+        limit_mb = _MAX_ATTLOG_UPLOAD_BYTES // (1024 * 1024)
+        return JsonResponse({
+            'success': False,
+            'error': f'File is too large ({upload.size / (1024 * 1024):.1f} MB). Limit is {limit_mb} MB.',
+        })
+
+    # Devices write these files in whatever the firmware locale uses; latin-1
+    # never raises, so it is the last-resort fallback that keeps a stray byte
+    # in a name column from failing the whole import.
+    raw = upload.read()
+    text = None
+    for encoding in ('utf-8-sig', 'utf-16', 'latin-1'):
+        try:
+            text = raw.decode(encoding)
+            break
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    if text is None:
+        return JsonResponse({'success': False, 'error': 'Could not read the file — it does not look like a text export.'})
+
+    # A binary file (a .dat that is not an ATTLOG text dump) decodes under
+    # latin-1 but is full of NULs; reject it rather than reporting "0 rows".
+    if '\x00' in text[:4096]:
+        return JsonResponse({
+            'success': False,
+            'error': 'That file is binary, not a text attendance log. Export ATTLOG (attlog.dat) from the device.',
+        })
+
+    device = None
+    device_id = (request.POST.get('device_id') or '').strip()
+    if device_id:
+        device = ZKDevice.objects.filter(pk=device_id).first()
+        if device is None:
+            return JsonResponse({'success': False, 'error': 'Selected device no longer exists.'})
+
+    try:
+        stats = _ingest_attlog_lines(text.splitlines(), device=device, source=f'upload:{name}')
+    except Exception as e:
+        adms_logger.exception(f'[UPLOAD] Failed to ingest {name}: {e}')
+        return JsonResponse({'success': False, 'error': f'Import failed while saving punches: {e}'})
+
+    if stats['created'] == 0 and stats['duplicates'] == 0:
+        return JsonResponse({
+            'success': False,
+            'error': (
+                f'No attendance rows found in "{name}". '
+                f'{stats["skipped"]} line(s) had no recognisable PIN and timestamp — '
+                f'check you exported the attendance log rather than user or fingerprint data.'
+            ),
+        })
+
+    _refresh_device_counts(device)
+
+    # Fold the new punches into AttendanceRecord straight away, otherwise the
+    # import looks like it did nothing until the next auto-sync interval.
+    aggregation_error = None
+    try:
+        _sync_biometric_to_attendance()
+    except Exception as e:
+        aggregation_error = str(e)
+        adms_logger.exception(f'[UPLOAD] Aggregation failed after importing {name}: {e}')
+
+    unmatched = _unmatched_pins(stats['pins'])
+
+    import pytz
+    nst = pytz.timezone('Asia/Kathmandu')
+    date_range = ''
+    if stats['first'] and stats['last']:
+        first_d = stats['first'].astimezone(nst).date()
+        last_d = stats['last'].astimezone(nst).date()
+        date_range = str(first_d) if first_d == last_d else f'{first_d} to {last_d}'
+
+    parts = [f'Imported {stats["created"]} new punch(es) from "{name}"']
+    if stats['duplicates']:
+        parts.append(f'{stats["duplicates"]} already on file')
+    if stats['skipped']:
+        parts.append(f'{stats["skipped"]} unreadable line(s) skipped')
+    if date_range:
+        parts.append(f'covering {date_range}')
+    message = ', '.join(parts) + '.'
+
+    if unmatched:
+        shown = ', '.join(unmatched[:10])
+        more = f' and {len(unmatched) - 10} more' if len(unmatched) > 10 else ''
+        # Punches for a PIN with no matching Employee.employee_code are stored
+        # but produce no AttendanceRecord — silently dropping them is exactly
+        # the kind of thing that shows up as "missing days" weeks later.
+        message += f' No employee matches PIN {shown}{more} — those punches will not appear in Attendance Records until an employee has that employee code.'
+
+    if aggregation_error:
+        message += f' Punches were saved, but re-aggregating attendance failed: {aggregation_error}'
+
+    adms_logger.info(
+        f'[UPLOAD] {request.user} imported {name}: created={stats["created"]} '
+        f'duplicates={stats["duplicates"]} skipped={stats["skipped"]} unmatched_pins={len(unmatched)}'
+    )
+
+    return JsonResponse({
+        'success': True,
+        'message': message,
+        'stats': {
+            'created': stats['created'],
+            'duplicates': stats['duplicates'],
+            'skipped': stats['skipped'],
+            'employees': len(stats['pins']) - len(unmatched),
+            'unmatched_pins': unmatched,
+            'date_range': date_range,
+        },
+    })
 
 
 @login_required
@@ -5251,8 +5885,8 @@ def zekto_device_delete(request, pk):
 
 @login_required
 def zekto_device_sync(request, pk):
-    """Recalculate device counts (transactions, users, fingerprints, faces) from DB."""
-    from .models import ZKDevice, BiometricAttendance
+    """Refresh cached device counts and request a full ATTLOG replay from the device."""
+    from .models import ZKDevice
 
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'})
@@ -5262,13 +5896,32 @@ def zekto_device_sync(request, pk):
     except ZKDevice.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Device not found.'})
 
-    device.transaction_count = BiometricAttendance.objects.filter(device=device).count()
-    device.user_count = BiometricAttendance.objects.filter(device=device).values('pin').distinct().count()
-    device.save(update_fields=['transaction_count', 'user_count'])
+    # Ask the device to replay its buffered ATTLOG on its next heartbeat. The
+    # device answers asynchronously (within ~30s), so the rows land after this
+    # response returns — the message below says so rather than implying the
+    # pull already finished.
+    device.force_resync_requested_at = timezone.now()
+    device.save(update_fields=['force_resync_requested_at'])
+
+    _refresh_device_counts(device)
+
+    # Re-aggregate whatever raw punches are already stored so the attendance
+    # table is current immediately, without waiting for the device round-trip.
+    try:
+        _sync_biometric_to_attendance()
+    except Exception:
+        # A stale/corrupt punch row must not turn Sync Device into a 500 — the
+        # resync request above is already queued and is the point of the click.
+        adms_logger.exception(
+            f'zekto_device_sync: aggregation failed for SN={device.serial_number}'
+        )
 
     return JsonResponse({
         'success': True,
-        'message': f'Device {device.serial_number} counts synced.',
+        'message': (
+            f'Device {device.serial_number} synced. Requested a {FORCE_RESYNC_LOOKBACK_DAYS}-day history pull — '
+            f'buffered punches will arrive on the next device heartbeat (~30s).'
+        ),
         'data': {
             'transaction_count': device.transaction_count,
             'user_count': device.user_count,

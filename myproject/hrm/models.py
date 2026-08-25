@@ -836,6 +836,13 @@ class ZKDevice(models.Model):
     transaction_count = models.PositiveIntegerField(default=0)
     user_count = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Set when an admin clicks "Sync Device"; the next ADMS heartbeat from this
+    # serial reads it, pushes a historical DATA QUERY ATTLOG to the device and
+    # clears it. Deliberately a DB column rather than a cache key: the default
+    # cache backend is per-process LocMemCache, so a flag set by the web worker
+    # handling the admin click would be invisible to whichever worker happens
+    # to serve the device's heartbeat.
+    force_resync_requested_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-last_seen']
