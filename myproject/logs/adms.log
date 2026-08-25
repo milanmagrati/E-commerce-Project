@@ -158,3 +158,111 @@ Traceback (most recent call last):
 django.db.utils.ProgrammingError: (1146, "Table 'ecommerce_db.hrm_attendancesyncsettings' doesn't exist")
 [INFO] 2026-08-03 15:53:45 views.iclock_cdata:4243 [CDATA] SN=TEST IP=127.0.0.1 REGISTERED method=POST
 [INFO] 2026-08-03 15:53:45 views.iclock_cdata:4280 [CDATA POST] SN=TEST table= body_length=25
+[INFO] 2026-08-25 10:51:43 views._ingest_attlog_lines:4785 [ATTLOG:test] created=3 duplicates=1 skipped=2 pins=2
+[INFO] 2026-08-25 10:51:43 views._ingest_attlog_lines:4785 [ATTLOG:test] created=0 duplicates=4 skipped=2 pins=2
+[INFO] 2026-08-25 10:55:36 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=4 duplicates=1 skipped=2 pins=2
+[INFO] 2026-08-25 10:55:36 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=4 duplicates=1 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 10:55:36 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=0 duplicates=5 skipped=2 pins=2
+[INFO] 2026-08-25 10:55:36 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=0 duplicates=5 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 10:55:36 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=2 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 10:55:36 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=2 duplicates=0 skipped=0 unmatched_pins=1
+[DEBUG] 2026-08-25 10:55:36 views.iclock_getrequest:4942 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[INFO] 2026-08-25 10:55:36 views.iclock_getrequest:4969 [HEARTBEAT] Pushing DATA QUERY ATTLOG (since 2026-06-26 00:00:00) to SN=TEST-ATTLOG-SN-RESYNC
+[DEBUG] 2026-08-25 10:55:36 views.iclock_getrequest:4942 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[DEBUG] 2026-08-25 10:55:36 views.iclock_getrequest:4980 [HEARTBEAT] Force-writing time to SN=TEST-ATTLOG-SN-RESYNC: 2026-08-25 10:55:36
+[INFO] 2026-08-25 10:55:36 views.iclock_cdata:4851 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=POST
+[INFO] 2026-08-25 10:55:36 views.iclock_cdata:4891 [CDATA POST] SN=TEST-ATTLOG-SN table=ATTLOG body_length=30
+[INFO] 2026-08-25 10:55:36 views._ingest_attlog_lines:4785 [ATTLOG:push:TEST-ATTLOG-SN] created=1 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 10:55:36 views.iclock_cdata:4898 [CDATA POST] SN=TEST-ATTLOG-SN saved=1 duplicate=0 skipped=0
+[INFO] 2026-08-25 10:55:36 views.iclock_cdata:4851 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=GET
+[INFO] 2026-08-25 10:55:36 views.iclock_cdata:4882 [CDATA] Sending handshake to SN=TEST-ATTLOG-SN with Date=2026-08-25 10:55:36
+[INFO] 2026-08-25 10:55:52 views.iclock_cdata:4851 [CDATA] SN=TEST-PUSH IP=127.0.0.1 REGISTERED method=POST
+[INFO] 2026-08-25 10:55:52 views.iclock_cdata:4891 [CDATA POST] SN=TEST-PUSH table=ATTLOG body_length=30
+[INFO] 2026-08-25 10:55:52 views._ingest_attlog_lines:4785 [ATTLOG:push:TEST-PUSH] created=1 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 10:55:52 views.iclock_cdata:4898 [CDATA POST] SN=TEST-PUSH saved=1 duplicate=0 skipped=0
+[INFO] 2026-08-25 10:56:21 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=4 duplicates=1 skipped=2 pins=2
+[INFO] 2026-08-25 10:56:21 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=4 duplicates=1 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 10:56:21 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=0 duplicates=5 skipped=2 pins=2
+[INFO] 2026-08-25 10:56:21 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=0 duplicates=5 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 10:56:21 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=2 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 10:56:21 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=2 duplicates=0 skipped=0 unmatched_pins=1
+[DEBUG] 2026-08-25 10:56:21 views.iclock_getrequest:4942 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[INFO] 2026-08-25 10:56:21 views.iclock_getrequest:4969 [HEARTBEAT] Pushing DATA QUERY ATTLOG (since 2026-06-26 00:00:00) to SN=TEST-ATTLOG-SN-RESYNC
+[DEBUG] 2026-08-25 10:56:21 views.iclock_getrequest:4942 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[DEBUG] 2026-08-25 10:56:21 views.iclock_getrequest:4980 [HEARTBEAT] Force-writing time to SN=TEST-ATTLOG-SN-RESYNC: 2026-08-25 10:56:21
+[INFO] 2026-08-25 10:56:21 views.iclock_cdata:4851 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=POST
+[INFO] 2026-08-25 10:56:21 views.iclock_cdata:4891 [CDATA POST] SN=TEST-ATTLOG-SN table=ATTLOG body_length=30
+[INFO] 2026-08-25 10:56:21 views._ingest_attlog_lines:4785 [ATTLOG:push:TEST-ATTLOG-SN] created=1 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 10:56:21 views.iclock_cdata:4898 [CDATA POST] SN=TEST-ATTLOG-SN saved=1 duplicate=0 skipped=0
+[INFO] 2026-08-25 10:56:21 views.iclock_cdata:4851 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=GET
+[INFO] 2026-08-25 10:56:21 views.iclock_cdata:4882 [CDATA] Sending handshake to SN=TEST-ATTLOG-SN with Date=2026-08-25 10:56:21
+[INFO] 2026-08-25 10:56:48 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=4 duplicates=1 skipped=2 pins=2
+[INFO] 2026-08-25 10:56:48 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=4 duplicates=1 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 10:56:48 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=0 duplicates=5 skipped=2 pins=2
+[INFO] 2026-08-25 10:56:48 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=0 duplicates=5 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 10:56:48 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=2 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 10:56:48 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=2 duplicates=0 skipped=0 unmatched_pins=1
+[DEBUG] 2026-08-25 10:56:48 views.iclock_getrequest:4942 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[INFO] 2026-08-25 10:56:48 views.iclock_getrequest:4969 [HEARTBEAT] Pushing DATA QUERY ATTLOG (since 2026-06-26 00:00:00) to SN=TEST-ATTLOG-SN-RESYNC
+[DEBUG] 2026-08-25 10:56:48 views.iclock_getrequest:4942 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[DEBUG] 2026-08-25 10:56:48 views.iclock_getrequest:4980 [HEARTBEAT] Force-writing time to SN=TEST-ATTLOG-SN-RESYNC: 2026-08-25 10:56:48
+[INFO] 2026-08-25 10:56:48 views.iclock_cdata:4851 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=POST
+[INFO] 2026-08-25 10:56:48 views.iclock_cdata:4891 [CDATA POST] SN=TEST-ATTLOG-SN table=ATTLOG body_length=30
+[INFO] 2026-08-25 10:56:48 views._ingest_attlog_lines:4785 [ATTLOG:push:TEST-ATTLOG-SN] created=1 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 10:56:48 views.iclock_cdata:4898 [CDATA POST] SN=TEST-ATTLOG-SN saved=1 duplicate=0 skipped=0
+[INFO] 2026-08-25 10:56:48 views.iclock_cdata:4851 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=GET
+[INFO] 2026-08-25 10:56:48 views.iclock_cdata:4882 [CDATA] Sending handshake to SN=TEST-ATTLOG-SN with Date=2026-08-25 10:56:48
+[INFO] 2026-08-25 10:57:42 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=4 duplicates=1 skipped=2 pins=2
+[INFO] 2026-08-25 10:57:42 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=4 duplicates=1 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 10:57:42 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=0 duplicates=5 skipped=2 pins=2
+[INFO] 2026-08-25 10:57:42 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=0 duplicates=5 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 10:57:42 views._ingest_attlog_lines:4785 [ATTLOG:upload:attlog.dat] created=2 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 10:57:42 views.biometric_upload_dat:5443 [UPLOAD] engineer (Sales) imported attlog.dat: created=2 duplicates=0 skipped=0 unmatched_pins=1
+[DEBUG] 2026-08-25 10:57:42 views.iclock_getrequest:4942 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[INFO] 2026-08-25 10:57:42 views.iclock_getrequest:4969 [HEARTBEAT] Pushing DATA QUERY ATTLOG (since 2026-06-26 00:00:00) to SN=TEST-ATTLOG-SN-RESYNC
+[DEBUG] 2026-08-25 10:57:42 views.iclock_getrequest:4942 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[DEBUG] 2026-08-25 10:57:42 views.iclock_getrequest:4980 [HEARTBEAT] Force-writing time to SN=TEST-ATTLOG-SN-RESYNC: 2026-08-25 10:57:42
+[INFO] 2026-08-25 10:57:42 views.iclock_cdata:4851 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=POST
+[INFO] 2026-08-25 10:57:42 views.iclock_cdata:4891 [CDATA POST] SN=TEST-ATTLOG-SN table=ATTLOG body_length=30
+[INFO] 2026-08-25 10:57:42 views._ingest_attlog_lines:4785 [ATTLOG:push:TEST-ATTLOG-SN] created=1 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 10:57:42 views.iclock_cdata:4898 [CDATA POST] SN=TEST-ATTLOG-SN saved=1 duplicate=0 skipped=0
+[INFO] 2026-08-25 10:57:42 views.iclock_cdata:4851 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=GET
+[INFO] 2026-08-25 10:57:42 views.iclock_cdata:4882 [CDATA] Sending handshake to SN=TEST-ATTLOG-SN with Date=2026-08-25 10:57:42
+[INFO] 2026-08-25 11:03:53 views._ingest_attlog_lines:5032 [ATTLOG:dup-test] created=2 duplicates=1 skipped=0 pins=1
+[INFO] 2026-08-25 11:03:53 views._ingest_attlog_lines:5032 [ATTLOG:dup-test] created=0 duplicates=3 skipped=0 pins=1
+[INFO] 2026-08-25 11:04:25 views._ingest_attlog_lines:5032 [ATTLOG:dup-test] created=2 duplicates=1 skipped=0 pins=1
+[INFO] 2026-08-25 11:04:25 views._ingest_attlog_lines:5032 [ATTLOG:dup-test] created=0 duplicates=3 skipped=0 pins=1
+[INFO] 2026-08-25 11:04:40 views._ingest_attlog_lines:5032 [ATTLOG:upload:attlog.dat] created=4 duplicates=1 skipped=2 pins=2
+[INFO] 2026-08-25 11:04:40 views.biometric_upload_dat:5690 [UPLOAD] engineer (Sales) imported attlog.dat: created=4 duplicates=1 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 11:04:40 views._ingest_attlog_lines:5032 [ATTLOG:upload:attlog.dat] created=0 duplicates=5 skipped=2 pins=2
+[INFO] 2026-08-25 11:04:40 views.biometric_upload_dat:5690 [UPLOAD] engineer (Sales) imported attlog.dat: created=0 duplicates=5 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 11:04:40 views._ingest_attlog_lines:5032 [ATTLOG:upload:attlog.dat] created=2 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 11:04:40 views.biometric_upload_dat:5690 [UPLOAD] engineer (Sales) imported attlog.dat: created=2 duplicates=0 skipped=0 unmatched_pins=1
+[DEBUG] 2026-08-25 11:04:40 views.iclock_getrequest:5189 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[INFO] 2026-08-25 11:04:40 views.iclock_getrequest:5216 [HEARTBEAT] Pushing DATA QUERY ATTLOG (since 2026-06-26 00:00:00) to SN=TEST-ATTLOG-SN-RESYNC
+[DEBUG] 2026-08-25 11:04:40 views.iclock_getrequest:5189 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[DEBUG] 2026-08-25 11:04:40 views.iclock_getrequest:5227 [HEARTBEAT] Force-writing time to SN=TEST-ATTLOG-SN-RESYNC: 2026-08-25 11:04:40
+[INFO] 2026-08-25 11:04:40 views.iclock_cdata:5098 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=POST
+[INFO] 2026-08-25 11:04:40 views.iclock_cdata:5138 [CDATA POST] SN=TEST-ATTLOG-SN table=ATTLOG body_length=30
+[INFO] 2026-08-25 11:04:40 views._ingest_attlog_lines:5032 [ATTLOG:push:TEST-ATTLOG-SN] created=1 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 11:04:40 views.iclock_cdata:5145 [CDATA POST] SN=TEST-ATTLOG-SN saved=1 duplicate=0 skipped=0
+[INFO] 2026-08-25 11:04:40 views.iclock_cdata:5098 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=GET
+[INFO] 2026-08-25 11:04:40 views.iclock_cdata:5129 [CDATA] Sending handshake to SN=TEST-ATTLOG-SN with Date=2026-08-25 11:04:40
+[INFO] 2026-08-25 11:05:44 views._ingest_attlog_lines:5043 [ATTLOG:dup-test] created=2 duplicates=1 skipped=0 pins=1
+[INFO] 2026-08-25 11:05:44 views._ingest_attlog_lines:5043 [ATTLOG:dup-test] created=0 duplicates=3 skipped=0 pins=1
+[INFO] 2026-08-25 11:05:45 views._ingest_attlog_lines:5043 [ATTLOG:upload:attlog.dat] created=4 duplicates=1 skipped=2 pins=2
+[INFO] 2026-08-25 11:05:45 views.biometric_upload_dat:5701 [UPLOAD] engineer (Sales) imported attlog.dat: created=4 duplicates=1 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 11:05:45 views._ingest_attlog_lines:5043 [ATTLOG:upload:attlog.dat] created=0 duplicates=5 skipped=2 pins=2
+[INFO] 2026-08-25 11:05:45 views.biometric_upload_dat:5701 [UPLOAD] engineer (Sales) imported attlog.dat: created=0 duplicates=5 skipped=2 unmatched_pins=0
+[INFO] 2026-08-25 11:05:45 views._ingest_attlog_lines:5043 [ATTLOG:upload:attlog.dat] created=2 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 11:05:45 views.biometric_upload_dat:5701 [UPLOAD] engineer (Sales) imported attlog.dat: created=2 duplicates=0 skipped=0 unmatched_pins=1
+[DEBUG] 2026-08-25 11:05:46 views.iclock_getrequest:5200 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[INFO] 2026-08-25 11:05:46 views.iclock_getrequest:5227 [HEARTBEAT] Pushing DATA QUERY ATTLOG (since 2026-06-26 00:00:00) to SN=TEST-ATTLOG-SN-RESYNC
+[DEBUG] 2026-08-25 11:05:46 views.iclock_getrequest:5200 [HEARTBEAT] SN=TEST-ATTLOG-SN-RESYNC IP=127.0.0.1 SEEN
+[DEBUG] 2026-08-25 11:05:46 views.iclock_getrequest:5238 [HEARTBEAT] Force-writing time to SN=TEST-ATTLOG-SN-RESYNC: 2026-08-25 11:05:46
+[INFO] 2026-08-25 11:05:46 views.iclock_cdata:5109 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=POST
+[INFO] 2026-08-25 11:05:46 views.iclock_cdata:5149 [CDATA POST] SN=TEST-ATTLOG-SN table=ATTLOG body_length=30
+[INFO] 2026-08-25 11:05:46 views._ingest_attlog_lines:5043 [ATTLOG:push:TEST-ATTLOG-SN] created=1 duplicates=0 skipped=0 pins=1
+[INFO] 2026-08-25 11:05:46 views.iclock_cdata:5156 [CDATA POST] SN=TEST-ATTLOG-SN saved=1 duplicate=0 skipped=0
+[INFO] 2026-08-25 11:05:46 views.iclock_cdata:5109 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=GET
+[INFO] 2026-08-25 11:05:46 views.iclock_cdata:5140 [CDATA] Sending handshake to SN=TEST-ATTLOG-SN with Date=2026-08-25 11:05:46

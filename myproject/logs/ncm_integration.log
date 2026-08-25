@@ -8405,3 +8405,345 @@ AttributeError: type object 'StubNCMService' has no attribute '_resolve_setup'
 [DEBUG] 2026-08-19 16:26:20 bulk_sync._sync_one_order:275 Bulk sync: keeping manually set status on ZZ-MO-BULK (NCM still reports 'Pickup Order Created')
 [INFO] 2026-08-19 16:26:20 webhook_handler._update_order_from_webhook:345 Keeping manually set status on ZZ-MO-BULK (webhook still reports 'Pickup Order Created')
 [INFO] 2026-08-19 16:26:20 webhook_handler._update_order_from_webhook:408 Updated: ZZ-MO-BULK - Status: confirmed->delivered, NCM: Pickup Order Created->Delivered, Payment: pending->paid
+[INFO] 2026-08-23 11:55:54 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:00:00 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:08:23 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[WARNING] 2026-08-23 12:19:54 timezone_utils.parse_ncm_datetime:215 parse_ncm_datetime: unparseable timestamp 'garbage'
+[INFO] 2026-08-23 12:19:54 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Arrived->Delivered, Payment: pending->paid
+[INFO] 2026-08-23 12:19:54 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Delivered->Delivered, Payment: paid->paid
+[INFO] 2026-08-23 12:19:54 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: delivered->in_transit, NCM: Delivered->Arrived, Payment: paid->paid
+[INFO] 2026-08-23 12:19:54 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Arrived->Delivered, Payment: paid->paid
+[WARNING] 2026-08-23 12:19:54 timezone_utils.parse_ncm_datetime:215 parse_ncm_datetime: unparseable timestamp 'not-a-date'
+[INFO] 2026-08-23 12:19:54 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: delivered->in_transit, NCM: Delivered->Arrived, Payment: paid->paid
+[INFO] 2026-08-23 12:19:54 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->return_processing, NCM: Arrived->Order Marked Return, Payment: paid->paid
+[WARNING] 2026-08-23 12:19:54 webhook_handler._record_rtv_marked:463 Could not record RTV mark: bad NCM order id 'not-an-int'
+[INFO] 2026-08-23 12:19:54 realtime_api.api_sync_order_status:368 [SUCCESS] API Sync: TSTEV-1 -> return
+[INFO] 2026-08-23 12:20:00 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:20:00 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:20:00 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-23 12:20:00 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:20:00 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:20:00 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:20:02 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-23 12:20:02 scheduler._run:224 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 208, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 192, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-23 12:20:02 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-23 12:20:02 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-23 12:20:02 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=480s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:20:02 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:20:02 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=1800s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:20:02 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:20:02 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[WARNING] 2026-08-23 12:20:03 views.bulk_sync_ncm_orders_json:607 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[DEBUG] 2026-08-23 12:21:57 bulk_sync._sync_one_order:274 Bulk sync: no status detail for in-return order ZZ-RS-UNKNOWN; keeping 'return_processing'
+[INFO] 2026-08-23 12:21:57 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:21:57 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[DEBUG] 2026-08-23 12:22:18 bulk_sync._sync_one_order:274 Bulk sync: no status detail for in-return order ZZ-RS-UNKNOWN; keeping 'return_processing'
+[INFO] 2026-08-23 12:22:18 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:22:18 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[DEBUG] 2026-08-23 12:23:22 bulk_sync._sync_one_order:274 Bulk sync: no status detail for in-return order ZZ-RS-UNKNOWN; keeping 'return_processing'
+[INFO] 2026-08-23 12:23:22 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:23:22 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[INFO] 2026-08-23 12:23:30 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:23:30 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:23:30 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-23 12:23:30 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:23:30 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:23:30 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:23:32 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-23 12:23:32 scheduler._run:224 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 208, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 192, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-23 12:23:32 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-23 12:23:32 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-23 12:23:32 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=480s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:23:32 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:23:32 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=1800s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:23:32 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:23:32 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[WARNING] 2026-08-23 12:23:33 views.bulk_sync_ncm_orders_json:607 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[WARNING] 2026-08-23 12:23:34 timezone_utils.parse_ncm_datetime:215 parse_ncm_datetime: unparseable timestamp 'garbage'
+[INFO] 2026-08-23 12:23:34 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Arrived->Delivered, Payment: pending->paid
+[INFO] 2026-08-23 12:23:34 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Delivered->Delivered, Payment: paid->paid
+[INFO] 2026-08-23 12:23:34 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: delivered->in_transit, NCM: Delivered->Arrived, Payment: paid->paid
+[INFO] 2026-08-23 12:23:34 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Arrived->Delivered, Payment: paid->paid
+[WARNING] 2026-08-23 12:23:34 timezone_utils.parse_ncm_datetime:215 parse_ncm_datetime: unparseable timestamp 'not-a-date'
+[INFO] 2026-08-23 12:23:34 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: delivered->in_transit, NCM: Delivered->Arrived, Payment: paid->paid
+[INFO] 2026-08-23 12:23:34 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->return_processing, NCM: Arrived->Order Marked Return, Payment: paid->paid
+[WARNING] 2026-08-23 12:23:34 webhook_handler._record_rtv_marked:463 Could not record RTV mark: bad NCM order id 'not-an-int'
+[INFO] 2026-08-23 12:23:34 realtime_api.api_sync_order_status:368 [SUCCESS] API Sync: TSTEV-1 -> return
+[DEBUG] 2026-08-23 12:24:47 bulk_sync._sync_one_order:274 Bulk sync: no status detail for in-return order ZZ-RS-UNKNOWN; keeping 'return_processing'
+[INFO] 2026-08-23 12:24:47 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:24:47 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[DEBUG] 2026-08-23 12:24:48 bulk_sync._sync_one_order:274 Bulk sync: no status detail for in-return order ZZ-RS-UNKNOWN; keeping 'return_processing'
+[INFO] 2026-08-23 12:24:48 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:24:48 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[DEBUG] 2026-08-23 12:39:11 bulk_sync._sync_one_order:301 Bulk sync: 'Arrived' carries no vendor_return flag; keeping ZZ-RS-UNKNOWN at 'return_processing'
+[INFO] 2026-08-23 12:39:11 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:39:11 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[DEBUG] 2026-08-23 12:40:37 bulk_sync._sync_one_order:301 Bulk sync: 'Arrived at BUTWAL' carries no vendor_return flag; keeping ZZ-RS-IDLE at 'return_processing'
+[DEBUG] 2026-08-23 12:40:37 bulk_sync._sync_one_order:301 Bulk sync: 'Arrived' carries no vendor_return flag; keeping ZZ-RS-UNKNOWN at 'return_processing'
+[INFO] 2026-08-23 12:40:37 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:40:37 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[WARNING] 2026-08-23 12:40:40 ncm_service._make_request:112 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-23 12:40:40 order_recovery.verify_ncm_order:139 Order 99000005 not found in NCM
+[DEBUG] 2026-08-23 12:41:02 bulk_sync._sync_one_order:301 Bulk sync: 'Arrived at BUTWAL' carries no vendor_return flag; keeping ZZ-RS-IDLE at 'return_processing'
+[DEBUG] 2026-08-23 12:41:02 bulk_sync._sync_one_order:301 Bulk sync: 'Arrived' carries no vendor_return flag; keeping ZZ-RS-UNKNOWN at 'return_processing'
+[INFO] 2026-08-23 12:41:02 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:41:02 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[INFO] 2026-08-23 12:41:02 order_recovery.verify_ncm_order:134 Order ZZ-RS-VERIFY verified in NCM
+[INFO] 2026-08-23 12:41:11 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:41:11 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:41:11 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-23 12:41:11 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:41:11 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:41:11 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:41:13 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-23 12:41:13 scheduler._run:224 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 208, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 192, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-23 12:41:13 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-23 12:41:13 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-23 12:41:13 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=480s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:41:13 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:41:13 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=1800s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:41:13 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:41:13 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[WARNING] 2026-08-23 12:41:13 views.bulk_sync_ncm_orders_json:607 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[WARNING] 2026-08-23 12:41:14 timezone_utils.parse_ncm_datetime:215 parse_ncm_datetime: unparseable timestamp 'garbage'
+[INFO] 2026-08-23 12:41:14 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Arrived->Delivered, Payment: pending->paid
+[INFO] 2026-08-23 12:41:14 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Delivered->Delivered, Payment: paid->paid
+[INFO] 2026-08-23 12:41:14 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: delivered->in_transit, NCM: Delivered->Arrived, Payment: paid->paid
+[INFO] 2026-08-23 12:41:14 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Arrived->Delivered, Payment: paid->paid
+[WARNING] 2026-08-23 12:41:14 timezone_utils.parse_ncm_datetime:215 parse_ncm_datetime: unparseable timestamp 'not-a-date'
+[INFO] 2026-08-23 12:41:14 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: delivered->in_transit, NCM: Delivered->Arrived, Payment: paid->paid
+[INFO] 2026-08-23 12:41:14 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->return_processing, NCM: Arrived->Order Marked Return, Payment: paid->paid
+[WARNING] 2026-08-23 12:41:14 webhook_handler._record_rtv_marked:463 Could not record RTV mark: bad NCM order id 'not-an-int'
+[INFO] 2026-08-23 12:41:14 realtime_api.api_sync_order_status:368 [SUCCESS] API Sync: TSTEV-1 -> return
+[DEBUG] 2026-08-23 12:42:23 bulk_sync._sync_one_order:314 Bulk sync: 'Arrived at BUTWAL' carries no vendor_return flag; keeping ZZ-RS-IDLE at 'return_processing'
+[DEBUG] 2026-08-23 12:42:23 bulk_sync._sync_one_order:314 Bulk sync: 'Arrived' carries no vendor_return flag; keeping ZZ-RS-UNKNOWN at 'return_processing'
+[INFO] 2026-08-23 12:42:23 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:42:23 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[INFO] 2026-08-23 12:42:23 order_recovery.verify_ncm_order:144 Order ZZ-RS-VERIFY verified in NCM
+[INFO] 2026-08-23 12:42:26 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:42:26 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:42:26 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-23 12:42:26 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:42:26 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:42:26 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:42:28 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-23 12:42:28 scheduler._run:224 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 208, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 192, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-23 12:42:28 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-23 12:42:28 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-23 12:42:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=480s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:42:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:42:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=1800s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:42:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:42:28 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[WARNING] 2026-08-23 12:42:29 views.bulk_sync_ncm_orders_json:607 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[WARNING] 2026-08-23 12:42:30 timezone_utils.parse_ncm_datetime:215 parse_ncm_datetime: unparseable timestamp 'garbage'
+[INFO] 2026-08-23 12:42:30 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Arrived->Delivered, Payment: pending->paid
+[INFO] 2026-08-23 12:42:30 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Delivered->Delivered, Payment: paid->paid
+[INFO] 2026-08-23 12:42:30 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: delivered->in_transit, NCM: Delivered->Arrived, Payment: paid->paid
+[INFO] 2026-08-23 12:42:30 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Arrived->Delivered, Payment: paid->paid
+[WARNING] 2026-08-23 12:42:30 timezone_utils.parse_ncm_datetime:215 parse_ncm_datetime: unparseable timestamp 'not-a-date'
+[INFO] 2026-08-23 12:42:30 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: delivered->in_transit, NCM: Delivered->Arrived, Payment: paid->paid
+[INFO] 2026-08-23 12:42:30 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->return_processing, NCM: Arrived->Order Marked Return, Payment: paid->paid
+[WARNING] 2026-08-23 12:42:30 webhook_handler._record_rtv_marked:463 Could not record RTV mark: bad NCM order id 'not-an-int'
+[INFO] 2026-08-23 12:42:30 realtime_api.api_sync_order_status:368 [SUCCESS] API Sync: TSTEV-1 -> return
+[DEBUG] 2026-08-23 12:42:46 bulk_sync._sync_one_order:314 Bulk sync: 'Arrived at BUTWAL' carries no vendor_return flag; keeping ZZ-RS-IDLE at 'return_processing'
+[DEBUG] 2026-08-23 12:42:46 bulk_sync._sync_one_order:314 Bulk sync: 'Arrived' carries no vendor_return flag; keeping ZZ-RS-UNKNOWN at 'return_processing'
+[DEBUG] 2026-08-23 12:42:46 bulk_sync._sync_one_order:314 Bulk sync: 'Arrived at BUTWAL' carries no vendor_return flag; keeping ZZ-RS-SILENT at 'return_processing'
+[INFO] 2026-08-23 12:42:46 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:42:46 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[INFO] 2026-08-23 12:42:47 order_recovery.verify_ncm_order:144 Order ZZ-RS-VERIFY verified in NCM
+[DEBUG] 2026-08-23 12:42:48 bulk_sync._sync_one_order:314 Bulk sync: 'Arrived at BUTWAL' carries no vendor_return flag; keeping ZZ-RS-IDLE at 'return_processing'
+[DEBUG] 2026-08-23 12:42:48 bulk_sync._sync_one_order:314 Bulk sync: 'Arrived' carries no vendor_return flag; keeping ZZ-RS-UNKNOWN at 'return_processing'
+[DEBUG] 2026-08-23 12:42:48 bulk_sync._sync_one_order:314 Bulk sync: 'Arrived at BUTWAL' carries no vendor_return flag; keeping ZZ-RS-SILENT at 'return_processing'
+[INFO] 2026-08-23 12:42:48 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:42:48 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[INFO] 2026-08-23 12:42:48 order_recovery.verify_ncm_order:144 Order ZZ-RS-VERIFY verified in NCM
+[DEBUG] 2026-08-23 12:43:22 bulk_sync._sync_one_order:314 Bulk sync: 'Arrived at BUTWAL' carries no vendor_return flag; keeping ZZ-RS-IDLE at 'return_processing'
+[DEBUG] 2026-08-23 12:43:22 bulk_sync._sync_one_order:314 Bulk sync: 'Arrived' carries no vendor_return flag; keeping ZZ-RS-UNKNOWN at 'return_processing'
+[DEBUG] 2026-08-23 12:43:22 bulk_sync._sync_one_order:314 Bulk sync: 'Arrived at BUTWAL' carries no vendor_return flag; keeping ZZ-RS-SILENT at 'return_processing'
+[INFO] 2026-08-23 12:43:22 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: in_transit->return_processing, NCM: Arrived at BUTWAL->Order Marked Return, Payment: pending->pending
+[INFO] 2026-08-23 12:43:22 webhook_handler._update_order_from_webhook:412 Updated: ZZ-RS-HOOK - Status: return_processing->return, NCM: Order Marked Return->Delivered, Payment: pending->pending
+[INFO] 2026-08-23 12:43:22 order_recovery.verify_ncm_order:144 Order ZZ-RS-VERIFY verified in NCM
+[INFO] 2026-08-23 12:43:25 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:43:25 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:43:25 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-23 12:43:25 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:43:25 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:43:25 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:43:27 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=False, advance_schedule=True)
+[ERROR] 2026-08-23 12:43:27 scheduler._run:224 NCM bulk sync run failed
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\ncm\scheduler.py", line 208, in _run
+    summary = run_bulk_ncm_status_sync(
+        user=user,
+    ...<2 lines>...
+        deadline=_now() + timedelta(seconds=MAX_RUN_SECONDS),
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\test_ncm_sync_scheduler.py", line 192, in boom
+    raise RuntimeError('NCM exploded')
+RuntimeError: NCM exploded
+[INFO] 2026-08-23 12:43:27 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=False)
+[INFO] 2026-08-23 12:43:27 scheduler._claim:149 NCM bulk sync claimed (interval=600s, effective=600s, force=True, advance_schedule=True)
+[INFO] 2026-08-23 12:43:27 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=480s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:43:27 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:43:27 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=1800s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:43:27 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 12:43:27 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[WARNING] 2026-08-23 12:43:27 views.bulk_sync_ncm_orders_json:607 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
+[WARNING] 2026-08-23 12:43:28 timezone_utils.parse_ncm_datetime:215 parse_ncm_datetime: unparseable timestamp 'garbage'
+[INFO] 2026-08-23 12:43:29 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Arrived->Delivered, Payment: pending->paid
+[INFO] 2026-08-23 12:43:29 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Delivered->Delivered, Payment: paid->paid
+[INFO] 2026-08-23 12:43:29 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: delivered->in_transit, NCM: Delivered->Arrived, Payment: paid->paid
+[INFO] 2026-08-23 12:43:29 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->delivered, NCM: Arrived->Delivered, Payment: paid->paid
+[WARNING] 2026-08-23 12:43:29 timezone_utils.parse_ncm_datetime:215 parse_ncm_datetime: unparseable timestamp 'not-a-date'
+[INFO] 2026-08-23 12:43:29 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: delivered->in_transit, NCM: Delivered->Arrived, Payment: paid->paid
+[INFO] 2026-08-23 12:43:29 webhook_handler._update_order_from_webhook:412 Updated: TSTEV-1 - Status: in_transit->return_processing, NCM: Arrived->Order Marked Return, Payment: paid->paid
+[WARNING] 2026-08-23 12:43:29 webhook_handler._record_rtv_marked:463 Could not record RTV mark: bad NCM order id 'not-an-int'
+[INFO] 2026-08-23 12:43:29 realtime_api.api_sync_order_status:368 [SUCCESS] API Sync: TSTEV-1 -> return
+[INFO] 2026-08-23 12:47:22 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 14:59:17 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 15:09:45 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 15:20:23 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 15:35:02 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 15:44:38 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 17:03:27 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 18:02:16 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 18:08:40 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-23 18:13:40 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 11:36:08 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 11:41:10 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 11:46:34 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 11:47:38 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 12:33:00 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 12:42:00 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[WARNING] 2026-08-24 12:42:47 ncm_service._make_request:112 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-24 12:46:13 ncm_service._make_request:112 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-24 12:48:08 ncm_service._make_request:112 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[INFO] 2026-08-24 12:49:38 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[DEBUG] 2026-08-24 12:49:47 ncm_service._fetch_comments:151 NCM: 404 returned for order 22323459 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:49:50 ncm_service._fetch_comments:151 NCM: 404 returned for order 22272871 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:49:52 ncm_service._fetch_comments:151 NCM: 404 returned for order 22263897 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:49:55 ncm_service._fetch_comments:151 NCM: 404 returned for order 22263889 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:49:57 ncm_service._fetch_comments:151 NCM: 404 returned for order 24997202 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:49:58 ncm_service._fetch_comments:151 NCM: 404 returned for order 22237987 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:00 ncm_service._fetch_comments:151 NCM: 404 returned for order 24928818 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:01 ncm_service._fetch_comments:151 NCM: 404 returned for order 22228052 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:02 ncm_service._fetch_comments:151 NCM: 404 returned for order 24997202 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:02 ncm_service._fetch_comments:151 NCM: 404 returned for order 24886166 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:05 ncm_service._fetch_comments:151 NCM: 404 returned for order 24928818 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:05 ncm_service._fetch_comments:151 NCM: 404 returned for order 24843351 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:08 ncm_service._fetch_comments:151 NCM: 404 returned for order 24886166 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:08 ncm_service._fetch_comments:151 NCM: 404 returned for order 24843338 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:10 ncm_service._fetch_comments:151 NCM: 404 returned for order 24843351 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:11 ncm_service._fetch_comments:151 NCM: 404 returned for order 24776538 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:13 ncm_service._fetch_comments:151 NCM: 404 returned for order 24843338 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:13 ncm_service._fetch_comments:151 NCM: 404 returned for order 24734423 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:16 ncm_service._fetch_comments:151 NCM: 404 returned for order 24776538 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:17 ncm_service._fetch_comments:151 NCM: 404 returned for order 24702747 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:19 ncm_service._fetch_comments:151 NCM: 404 returned for order 24734423 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:20 ncm_service._fetch_comments:151 NCM: 404 returned for order 24676826 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:22 ncm_service._fetch_comments:151 NCM: 404 returned for order 24702747 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:23 ncm_service._fetch_comments:151 NCM: 404 returned for order 24663430 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:25 ncm_service._fetch_comments:151 NCM: 404 returned for order 24676826 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:26 ncm_service._fetch_comments:151 NCM: 404 returned for order 24663388 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:28 ncm_service._fetch_comments:151 NCM: 404 returned for order 24663430 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:29 ncm_service._fetch_comments:151 NCM: 404 returned for order 24663380 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:30 ncm_service._fetch_comments:151 NCM: 404 returned for order 24663388 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:31 ncm_service._fetch_comments:151 NCM: 404 returned for order 24638552 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:31 ncm_service._fetch_comments:151 NCM: 404 returned for order 24638552 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:33 ncm_service._fetch_comments:151 NCM: 404 returned for order 24663380 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:34 ncm_service._fetch_comments:151 NCM: 404 returned for order 24626320 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:34 ncm_service._fetch_comments:151 NCM: 404 returned for order 24626320 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:36 ncm_service._fetch_comments:151 NCM: 404 returned for order 24638552 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:37 ncm_service._fetch_comments:151 NCM: 404 returned for order 24588084 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[ERROR] 2026-08-24 12:50:38 ncm_service._make_request:114 NCM API error: 429 Client Error: Too Many Requests for url: https://portal.nepalcanmove.com/api/v1/order?id=24997202
+[DEBUG] 2026-08-24 12:50:40 ncm_service._fetch_comments:151 NCM: 404 returned for order 24626320 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:40 ncm_service._fetch_comments:151 NCM: 404 returned for order 24588054 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:42 ncm_service._fetch_comments:151 NCM: 404 returned for order 24446756 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:45 ncm_service._fetch_comments:151 NCM: 404 returned for order 24955356 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:53 ncm_service._fetch_comments:151 NCM: 404 returned for order 24843346 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:56 ncm_service._fetch_comments:151 NCM: 404 returned for order 24843329 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:59 ncm_service._fetch_comments:151 NCM: 404 returned for order 24711369 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:50:59 ncm_service._fetch_comments:151 NCM: 404 returned for order 22195575 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:51:02 ncm_service._fetch_comments:151 NCM: 404 returned for order 24702723 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:51:02 ncm_service._fetch_comments:151 NCM: 404 returned for order 22195567 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:51:05 ncm_service._fetch_comments:151 NCM: 404 returned for order 24702714 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:51:05 ncm_service._fetch_comments:151 NCM: 404 returned for order 22195564 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:51:07 ncm_service._fetch_comments:151 NCM: 404 returned for order 24702709 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:51:08 ncm_service._fetch_comments:151 NCM: 404 returned for order 22195548 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:51:10 ncm_service._fetch_comments:151 NCM: 404 returned for order 22167238 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 12:51:12 ncm_service._fetch_comments:151 NCM: 404 returned for order 22158016 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[INFO] 2026-08-24 12:55:00 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[DEBUG] 2026-08-24 13:21:17 ncm_service._fetch_comments:151 NCM: 404 returned for order 22085872 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 13:21:19 ncm_service._fetch_comments:151 NCM: 404 returned for order 22085838 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 13:21:22 ncm_service._fetch_comments:151 NCM: 404 returned for order 21967201 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 13:21:25 ncm_service._fetch_comments:151 NCM: 404 returned for order 21857111 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 13:21:27 ncm_service._fetch_comments:151 NCM: 404 returned for order 21795101 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 13:21:30 ncm_service._fetch_comments:151 NCM: 404 returned for order 22228065 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[INFO] 2026-08-24 13:39:34 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[DEBUG] 2026-08-24 13:51:35 ncm_service._fetch_comments:151 NCM: 404 returned for order 22123541 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 13:51:37 ncm_service._fetch_comments:151 NCM: 404 returned for order 22123534 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 13:51:40 ncm_service._fetch_comments:151 NCM: 404 returned for order 22102112 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 13:51:43 ncm_service._fetch_comments:151 NCM: 404 returned for order 22085832 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 13:51:46 ncm_service._fetch_comments:151 NCM: 404 returned for order 22000208 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 13:51:48 ncm_service._fetch_comments:151 NCM: 404 returned for order 22441823 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 14:21:52 ncm_service._fetch_comments:151 NCM: 404 returned for order 22441815 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 14:21:55 ncm_service._fetch_comments:151 NCM: 404 returned for order 22430947 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 14:21:57 ncm_service._fetch_comments:151 NCM: 404 returned for order 22430926 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 14:22:00 ncm_service._fetch_comments:151 NCM: 404 returned for order 22393821 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 14:22:02 ncm_service._fetch_comments:151 NCM: 404 returned for order 22323473 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-24 14:22:05 ncm_service._fetch_comments:151 NCM: 404 returned for order 22323472 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[INFO] 2026-08-24 14:34:55 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 15:21:03 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 15:28:05 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 16:40:03 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 16:41:51 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 16:45:22 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 17:18:27 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 17:26:13 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 17:35:05 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 17:40:32 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 17:46:09 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 17:56:23 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-24 18:02:06 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-25 11:09:38 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
