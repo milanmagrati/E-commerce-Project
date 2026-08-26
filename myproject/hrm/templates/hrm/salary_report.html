@@ -350,6 +350,32 @@
 }
 .sr-note i { margin-top: 2px; }
 .sr-note-info { background: #f0f9ff; border-color: #bae6fd; color: #075985; }
+
+/* ── Reconciliation strip ───────────────────────────────────────────────── */
+.sr-recon {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid #14b8a6; border-radius: var(--radius);
+    padding: 13px 18px 15px; margin-bottom: 16px; box-shadow: var(--shadow);
+}
+.sr-recon-title {
+    font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--faint); margin-bottom: 10px; display: flex; align-items: center; gap: 7px;
+}
+.sr-recon-row {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 10px;
+}
+.sr-recon-row + .sr-recon-row { margin-top: 9px; }
+.sr-recon-term {
+    font-size: .88rem; font-weight: 700; color: var(--ink); white-space: normal;
+}
+.sr-recon-term small {
+    display: block; font-size: .69rem; font-weight: 600; color: var(--faint);
+    margin-top: 1px; letter-spacing: 0;
+}
+.sr-recon-term.is-warn { color: var(--advance); }
+.sr-recon-term.is-bad  { color: var(--minus); }
+.sr-recon-term.is-net  { color: var(--net); }
+.sr-recon-op { font-size: .95rem; font-weight: 800; color: var(--faint); }
 .sr-drawer-loading, .sr-drawer-error { padding: 46px 10px; text-align: center; color: var(--muted); font-size: .85rem; }
 .sr-spin {
     width: 26px; height: 26px; border-radius: 50%; margin: 0 auto 12px;
@@ -452,7 +478,15 @@
         <div class="sr-kpi" style="--accent:#1d4ed8;">
             <div class="sr-kpi-label"><i class="fas fa-sack-dollar"></i> Gross salary</div>
             <div class="sr-kpi-value"><span class="sr-cur">Rs.</span>{{ totals.gross|floatformat:2|intcomma }}</div>
-            <div class="sr-kpi-foot">Basic <b>Rs. {{ totals.basic|floatformat:2|intcomma }}</b></div>
+            {% comment %}
+            Absence belongs here, not under Deductions: the engine subtracts it
+            from basic *inside* gross, so listing it beside the deductions total
+            invites double-counting.
+            {% endcomment %}
+            <div class="sr-kpi-foot">
+                Basic <b>Rs. {{ totals.basic|floatformat:2|intcomma }}</b>
+                {% if totals.absent %}· less absence <b>Rs. {{ totals.absent|floatformat:2|intcomma }}</b>{% endif %}
+            </div>
         </div>
         <div class="sr-kpi" style="--accent:#7c3aed;">
             <div class="sr-kpi-label"><i class="fas fa-gift"></i> Bonus</div>
@@ -462,12 +496,12 @@
         <div class="sr-kpi" style="--accent:#e11d48;">
             <div class="sr-kpi-label"><i class="fas fa-scissors"></i> Deductions</div>
             <div class="sr-kpi-value"><span class="sr-cur">Rs.</span>{{ totals.deductions|floatformat:2|intcomma }}</div>
-            <div class="sr-kpi-foot">Absent cut <b>Rs. {{ totals.absent|floatformat:2|intcomma }}</b></div>
+            <div class="sr-kpi-foot">Salary components and adjustments</div>
         </div>
         <div class="sr-kpi" style="--accent:#c2410c;">
             <div class="sr-kpi-label"><i class="fas fa-hand-holding-dollar"></i> Advance recovered</div>
             <div class="sr-kpi-value"><span class="sr-cur">Rs.</span>{{ totals.advance|floatformat:2|intcomma }}</div>
-            <div class="sr-kpi-foot">Withheld total <b>Rs. {{ totals.total_withheld|floatformat:2|intcomma }}</b></div>
+            <div class="sr-kpi-foot">Total withheld <b>Rs. {{ totals.total_withheld|floatformat:2|intcomma }}</b></div>
         </div>
         <div class="sr-kpi" style="--accent:#0f766e;">
             <div class="sr-kpi-label"><i class="fas fa-money-check-dollar"></i> Net salary</div>
@@ -479,13 +513,43 @@
         </div>
     </div>
 
+    {% if totals.unwithheld or totals.variance %}
+    <div class="sr-recon">
+        <div class="sr-recon-title"><i class="fas fa-scale-balanced"></i> Why Net is not simply Gross minus Deductions</div>
+        <div class="sr-recon-row">
+            <span class="sr-recon-term">Rs. {{ totals.gross|floatformat:2|intcomma }} <small>gross</small></span>
+            <span class="sr-recon-op">−</span>
+            <span class="sr-recon-term">Rs. {{ totals.deductions|floatformat:2|intcomma }} <small>deductions</small></span>
+            <span class="sr-recon-op">−</span>
+            <span class="sr-recon-term">Rs. {{ totals.advance|floatformat:2|intcomma }} <small>advance</small></span>
+            <span class="sr-recon-op">=</span>
+            <span class="sr-recon-term">Rs. {{ totals.net_base|floatformat:2|intcomma }}</span>
+        </div>
+        <div class="sr-recon-row">
+            {% if totals.unwithheld %}
+            <span class="sr-recon-op">+</span>
+            <span class="sr-recon-term is-warn">Rs. {{ totals.unwithheld|floatformat:2|intcomma }}
+                <small>could not be withheld — deductions exceeded gross, net floored at zero</small></span>
+            {% endif %}
+            {% if totals.variance %}
+            <span class="sr-recon-op">+</span>
+            <span class="sr-recon-term is-bad">Rs. {{ totals.variance|floatformat:2|intcomma }}
+                <small>unexplained variance on flagged payslips</small></span>
+            {% endif %}
+            <span class="sr-recon-op">=</span>
+            <span class="sr-recon-term is-net">Rs. {{ totals.net|floatformat:2|intcomma }} <small>net</small></span>
+        </div>
+    </div>
+    {% endif %}
+
     {% if totals.flagged %}
     <div class="sr-note sr-noprint" style="margin-bottom:16px;">
         <i class="fas fa-triangle-exclamation"></i>
         <div>
             <b>{{ totals.flagged }} payslip{{ totals.flagged|pluralize }}</b> need{{ totals.flagged|pluralize:"s," }} a look —
-            stored totals disagree with the payslip's own snapshot, or bonuses were approved after generation.
-            Flagged rows are marked with <i class="fas fa-triangle-exclamation sr-flag"></i>; open one to see why.
+            the stored totals disagree with the payslip's own figures, deductions could not be fully
+            withheld, or bonuses were approved after generation. Flagged rows are marked with
+            <i class="fas fa-triangle-exclamation sr-flag"></i>; open one to see exactly why.
             This report never edits payroll, so nothing has been changed for you.
         </div>
     </div>
@@ -569,10 +633,17 @@
                             {% endfor %}
                         </select>
                     </div>
-                    {# Column headers carry the sort on desktop, but the header row is
-                       hidden in the stacked mobile layout — so sorting also lives here,
-                       where it is reachable at every width. Both controls render from
-                       the same `filters`, so they can never disagree. #}
+                    {% comment %}
+                    Column headers carry the sort on desktop, but the header row is
+                    hidden in the stacked mobile layout — so sorting also lives here,
+                    where it is reachable at every width. Both controls render from
+                    the same `filters`, so they can never disagree.
+
+                    Written as a comment tag rather than a hash comment on
+                    purpose: Django's hash comment is single-line only, and
+                    spread over several lines it is not recognised as a tag —
+                    it renders as visible page text instead.
+                    {% endcomment %}
                     <div class="sr-field">
                         <label for="srSort">Sort by</label>
                         <select class="sr-input" id="srSort" name="sort">

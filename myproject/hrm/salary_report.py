@@ -662,7 +662,17 @@ def _build_row(record, bonus_lookup):
             (record['employee_id'], period_start.year, period_start.month), ZERO
         )
 
-    expected_net = max(gross - deductions - advance, ZERO)
+    # Three quantities, deliberately distinct:
+    #   raw          what the arithmetic says, which can go negative
+    #   expected_net what the engine stores, since it floors net at zero
+    #   unwithheld   the part of the deductions that floor swallowed
+    # Without `unwithheld` the KPI strip cannot reconcile: a payslip whose
+    # deductions exceed its gross contributes its full deductions to the
+    # Deductions total but nothing to Net, so Gross − Deductions − Advance
+    # silently undershoots the Net total.
+    raw_net = gross - deductions - advance
+    expected_net = max(raw_net, ZERO)
+    unwithheld = (expected_net - raw_net).quantize(CENTS)
     net_variance = (net - expected_net).quantize(CENTS)
 
     has_snapshot = bool(struct.get('earnings_list') or struct.get('deductions_list'))
@@ -675,6 +685,12 @@ def _build_row(record, bonus_lookup):
     # Bonus drift is NOT checked here — it is an employee-month question, not a
     # per-payslip one. See `_flag_bonus_drift`, which runs over the whole batch.
     warnings = []
+    if unwithheld > ZERO:
+        warnings.append(
+            f'Deductions ({deductions:,.2f}) plus advance ({advance:,.2f}) exceed '
+            f'gross ({gross:,.2f}). Net was floored at zero, so {unwithheld:,.2f} '
+            f'was never actually withheld and is still owed.'
+        )
     if net_variance != ZERO:
         warnings.append(
             f'Stored net ({net:,.2f}) differs from gross minus deductions minus advance '
@@ -724,6 +740,7 @@ def _build_row(record, bonus_lookup):
         'advance': advance,
         'net': net,
         'net_variance': net_variance,
+        'unwithheld': unwithheld,
 
         'earnings_list': _component_list(struct, 'earnings_list'),
         'deductions_list': _component_list(struct, 'deductions_list'),
@@ -746,6 +763,7 @@ def _summarise(rows):
         'advance': ZERO, 'absent': ZERO, 'net': ZERO,
         'net_paid': ZERO, 'net_unpaid': ZERO,
         'paid_count': 0, 'unpaid_count': 0, 'flagged': 0,
+        'unwithheld': ZERO, 'variance': ZERO,
     }
     seen = set()
     for row in rows:
@@ -763,10 +781,22 @@ def _summarise(rows):
         else:
             totals['net_unpaid'] += row['net']
             totals['unpaid_count'] += 1
+        totals['unwithheld'] += row['unwithheld']
+        totals['variance'] += row['net_variance']
         if row['has_warning']:
             totals['flagged'] += 1
     totals['employees'] = len(seen)
     totals['total_withheld'] = totals['deductions'] + totals['advance']
+    # The identity the KPI strip is read against:
+    #     net = net_base + unwithheld + variance
+    # `net_base` is the straight subtraction a reader will do in their head;
+    # the other two terms are why it does not land on `net` by itself.
+    totals['net_base'] = (
+        totals['gross'] - totals['deductions'] - totals['advance']
+    ).quantize(CENTS)
+    totals['reconciles'] = (
+        totals['net_base'] + totals['unwithheld'] + totals['variance'] == totals['net']
+    )
     return totals
 
 

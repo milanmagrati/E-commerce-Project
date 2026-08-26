@@ -14,6 +14,7 @@ or the payslip engine it reads from shows up here.
 import csv as csv_module
 import os
 import sys
+from datetime import date
 from decimal import Decimal
 
 import django
@@ -709,6 +710,87 @@ if http_client is not None:
                 pass
     check('the CSV export comes out in the sorted order',
           body_nets == sorted(body_nets), str(body_nets[:5]))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+section('15. The KPI strip reconciles, and says why when it cannot')
+
+# A reader WILL try Gross - Deductions - Advance and expect Net. That lands only
+# when nothing was floored and nothing is broken, so the report has to carry the
+# two correcting terms explicitly:
+#     net = net_base + unwithheld + variance
+for label, probe in (
+    ('unfiltered', make_filters()),
+    ('employees view', make_filters(view='employees')),
+    ('paid only', make_filters(status='paid')),
+    ('wide window', make_filters(date_from=date(2000, 1, 1), date_to=date(2099, 12, 31))),
+    ('empty window', make_filters(date_from=date(2099, 1, 1), date_to=date(2099, 1, 2))),
+):
+    t = sr.build_dataset(probe)['totals']
+    lhs = t['net_base'] + t['unwithheld'] + t['variance']
+    check(f'{label}: net = net_base + unwithheld + variance',
+          lhs == t['net'] and t['reconciles'],
+          f"{t['net_base']} + {t['unwithheld']} + {t['variance']} = {lhs}, net {t['net']}")
+
+check('net_base is the plain subtraction a reader would do',
+      totals['net_base'] == totals['gross'] - totals['deductions'] - totals['advance'])
+
+# A payslip whose deductions swallow its whole gross is money that was never
+# recovered. Its stored net legitimately equals the floored value, so the
+# variance check passes it -- it needs a flag of its own.
+floored = [r for r in rows if r['unwithheld'] > Decimal('0.00')]
+print(f'  ({len(floored)} payslip(s) had deductions exceeding gross)')
+check('every floored payslip is flagged',
+      all(r['has_warning'] for r in floored),
+      str([r['payslip_number'] for r in floored if not r['has_warning']]))
+check('floored payslips explain the shortfall',
+      all(any('never actually withheld' in w for w in r['warnings']) for r in floored))
+check('unwithheld is never negative',
+      all(r['unwithheld'] >= Decimal('0.00') for r in rows))
+check('unwithheld is zero whenever net is positive arithmetic',
+      all(r['unwithheld'] == Decimal('0.00')
+          for r in rows if r['gross'] - r['deductions'] - r['advance'] >= 0))
+check('totals.unwithheld is the sum of the rows',
+      totals['unwithheld'] == sum((r['unwithheld'] for r in rows), Decimal('0.00')))
+check('totals.variance is the sum of the rows',
+      totals['variance'] == sum((r['net_variance'] for r in rows), Decimal('0.00')))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+section('16. No template syntax or developer comments reach the browser')
+
+# A multi-line {# #} shipped to production as visible page text, because the
+# earlier check only looked for '{{' and '{%' -- the one delimiter that leaked
+# was the one not tested. Test all of them, on every view.
+if http_client is not None:
+    LEAKS = ['{#', '#}', '{%', '%}', '{{', '}}', 'endcomment', 'Decimal(']
+    for url in ['/hrm/reports/salary/',
+                '/hrm/reports/salary/?view=employees',
+                '/hrm/reports/salary/?sort=net&dir=asc',
+                '/hrm/reports/salary/?search=zzz-no-match',
+                '/hrm/reports/salary/?status=paid&per_page=100']:
+        page = http_client.get(url).content.decode()
+        try:
+            markup = page[page.index('class="container-fluid py-3 salrep"'):]
+            markup = markup[:markup.index('</aside>')]
+        except ValueError:
+            check(f'{url}: report markup found', False, 'page structure changed')
+            continue
+        found = [needle for needle in LEAKS if needle in markup]
+        check(f'{url} renders no template syntax', not found, str(found))
+
+    # And the source itself: Django hash comments are single-line only, so a
+    # multi-line one is never a comment.
+    import io as _io
+    for path in ('hrm/templates/hrm/salary_report.html',
+                 'hrm/templates/hrm/_salary_report_th.html'):
+        source = _io.open(path, encoding='utf-8').read()
+        bad_lines = [
+            n for n, line in enumerate(source.splitlines(), 1)
+            if '{#' in line and '#}' not in line
+        ]
+        check(f'{path} has no multi-line hash comment',
+              not bad_lines, f'lines {bad_lines}')
 
 
 # ──────────────────────────────────────────────────────────────────────────────
