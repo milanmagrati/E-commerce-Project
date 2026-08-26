@@ -17,7 +17,7 @@ from functools import wraps
 
 # Import NCM service from services folder
 from accounts.decorators import has_any_permission
-from services.ncm_service import NCMService
+from services.ncm_service import NCMService, fetch_order_status_raw
 from services.status_override import (clear_manual_status_override,
                                       manual_override_holds)
 from ncm.webhook_handler import NCMWebhookHandler
@@ -332,11 +332,19 @@ def sync_ncm_status(request, order_id):
 
         logger.info(f"Syncing NCM Order ID: {order.ncm_order_id}")
         
-        # Use order-specific NCM API account
+        # Fetch from the NCM account that owns this order. An order is only
+        # visible to the account that created it, so a missing or stale
+        # api_config_id makes NCM answer 404 - which used to read as "no
+        # status" and leave the order frozen on a status days out of date.
+        result, resolved_config_id = fetch_order_status_raw(
+            order.ncm_order_id, api_config_id=order.api_config_id
+        )
+        if resolved_config_id is not None and resolved_config_id != order.api_config_id:
+            order.api_config_id = resolved_config_id
+            Order.objects.filter(pk=order.pk).update(api_config_id=resolved_config_id)
+
         svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
-        
-        result = svc.get_order_status(order.ncm_order_id)
-        
+
         if result['success'] and result['data']:
             latest_status_data = result['data'][0]
             latest_status = latest_status_data.get('status') or latest_status_data.get('Status', '')
@@ -517,11 +525,19 @@ def track_ncm_order(request, order_id):
             messages.error(request, 'Order not in NCM yet')
             return redirect('order_detail', order_id=order_id)
         
-        # Use order-specific NCM API account
+        # Resolve the owning NCM account off the status call (see
+        # sync_ncm_status above), then read the details with the same account
+        # so the tracking page can't show a timeline without its order.
+        status_result, resolved_config_id = fetch_order_status_raw(
+            order.ncm_order_id, api_config_id=order.api_config_id
+        )
+        if resolved_config_id is not None and resolved_config_id != order.api_config_id:
+            order.api_config_id = resolved_config_id
+            Order.objects.filter(pk=order.pk).update(api_config_id=resolved_config_id)
+
         svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
-        
+
         details_result = svc.get_order_details(order.ncm_order_id)
-        status_result = svc.get_order_status(order.ncm_order_id)
         
         context = {
             'order': order,

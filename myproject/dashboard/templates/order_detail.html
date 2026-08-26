@@ -4107,14 +4107,37 @@
                     });
                     html += '</div></div>';
                     container.innerHTML = html;
+                } else if (data.status_history_error) {
+                    // NCM could not be reached / refused the request. Saying
+                    // "no status history" here would be a lie, and it hid a
+                    // real fault for a long time.
+                    renderHistoryFailure(container, ncmOrderId, data.status_history_error);
                 } else {
                     container.innerHTML = '<div class="alert alert-light border border-gray-200 text-muted" style="margin-bottom:0;"><i class="fas fa-info-circle me-1"></i> No status history found.</div>';
                 }
             })
             .catch(error => {
                 console.error('Error fetching NCM status history:', error);
-                container.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-1"></i> Failed to load status history.</div>';
+                renderHistoryFailure(container, ncmOrderId, 'Could not reach the server.');
             });
+    }
+
+    // Failure state for the status history panel: says what went wrong and
+    // offers a retry, instead of silently looking like an empty timeline.
+    function renderHistoryFailure(container, ncmOrderId, reason) {
+        container.innerHTML =
+            '<div class="alert alert-warning d-flex align-items-center justify-content-between" style="margin-bottom:0; gap:0.75rem;">' +
+            '<span><i class="fas fa-exclamation-triangle me-1"></i> Could not load status history from NCM. ' +
+            escapeHtml(String(reason || '')) + '</span>' +
+            '<button type="button" class="btn btn-sm btn-outline-dark" id="retryNcmHistoryBtn">' +
+            '<i class="fas fa-redo me-1"></i>Retry</button>' +
+            '</div>';
+        const retryBtn = document.getElementById('retryNcmHistoryBtn');
+        if (retryBtn) {
+            retryBtn.addEventListener('click', function () {
+                loadNCMStatusHistory(ncmOrderId);
+            });
+        }
     }
 
     {% if order.ncm_order_id %}

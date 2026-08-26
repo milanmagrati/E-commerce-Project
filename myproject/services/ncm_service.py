@@ -1085,3 +1085,199 @@ class NCMService:
                 defaults={'is_active': True},
             )
         return setup
+
+
+# ---------------------------------------------------------------------------
+# Order status history
+#
+# NCM scopes every order to the account that created it: query order 25098287
+# with the wrong API key and NCM answers 404 {"detail": "Not found."} rather
+# than an empty list. The order detail page's "Status History" panel therefore
+# came up saying "No status history found" for any order whose stored
+# api_config_id was missing or pointed at the wrong account — even though NCM's
+# own portal listed the full timeline for it.
+#
+# The helpers below fetch the timeline against the account the order most
+# likely belongs to and, only if that comes back empty, sweep the remaining
+# active NCM accounts before concluding there is genuinely no history.
+# ---------------------------------------------------------------------------
+
+def normalize_status_entries(raw):
+    """Flatten an /order/status payload into display-ready timeline rows.
+
+    NCM answers with a bare list, but callers have historically also seen the
+    rows wrapped in {"data": [...]} / {"results": [...]} — and a single-entry
+    response wrapped as a lone dict. All four shapes are accepted.
+
+    Rows come back newest-first (NCM's own ordering, re-applied here rather
+    than trusted, since the UI paints row 0 as the current status).
+    """
+    from dashboard.timezone_utils import format_ncm_datetime, parse_ncm_datetime
+
+    if isinstance(raw, list):
+        rows = raw
+    elif isinstance(raw, dict):
+        rows = raw.get('data', raw.get('results', []))
+        if isinstance(rows, dict):
+            rows = [rows]
+    else:
+        rows = []
+
+    entries = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        status = (row.get('status') or row.get('Status') or '').strip()
+        raw_timestamp = (
+            row.get('added_time')
+            or row.get('date')
+            or row.get('timestamp')
+            or row.get('created_at')
+            or ''
+        )
+        if not status and not raw_timestamp:
+            continue
+        entries.append({
+            'status': status,
+            # Raw kept for back-compat; *_display is the formatted Nepal-time
+            # string the UI shows instead of printing NCM's ISO value verbatim.
+            'timestamp': raw_timestamp,
+            'timestamp_display': format_ncm_datetime(raw_timestamp),
+            'remarks': row.get('remarks', row.get('comment', '')) or '',
+            '_sort_key': parse_ncm_datetime(raw_timestamp),
+        })
+
+    # Undated rows keep their original relative position at the bottom rather
+    # than crashing the comparison against aware datetimes.
+    dated = [e for e in entries if e['_sort_key'] is not None]
+    undated = [e for e in entries if e['_sort_key'] is None]
+    dated.sort(key=lambda e: e['_sort_key'], reverse=True)
+
+    ordered = dated + undated
+    for entry in ordered:
+        entry.pop('_sort_key', None)
+    return ordered
+
+
+def candidate_ncm_config_ids(preferred_config_id=None):
+    """Ordered NCM accounts to try for one order, de-duplicated by API key.
+
+    `None` means "the key in settings". Several LogisticsAPIConfig rows can
+    share one key (the same account registered twice); those collapse to a
+    single attempt so a sweep costs one request per distinct account, not one
+    per row.
+    """
+    from django.conf import settings as dj_settings
+    from dashboard.models import LogisticsAPIConfig
+
+    default_key = getattr(dj_settings, 'NCM_API_KEY', '') or ''
+    configs = {
+        c.id: c
+        for c in LogisticsAPIConfig.objects.filter(
+            logistics_provider='ncm', is_active=True
+        )
+    }
+
+    ordered = []
+    seen_keys = set()
+
+    def _add(config_id, api_key):
+        key = (api_key or '').strip()
+        if not key or key in seen_keys:
+            return
+        seen_keys.add(key)
+        ordered.append(config_id)
+
+    if preferred_config_id and preferred_config_id in configs:
+        _add(preferred_config_id, configs[preferred_config_id].api_key)
+    _add(None, default_key)
+    for config_id, config in configs.items():
+        _add(config_id, config.api_key)
+
+    return ordered
+
+
+def fetch_order_status_raw(ncm_order_id, api_config_id=None,
+                           sweep_accounts=True, skip_config_ids=()):
+    """Call /order/status against whichever NCM account actually owns the order.
+
+    Returns (result, resolved_config_id) where `result` is the raw
+    NCMService._make_request envelope, so callers that need NCM's own row shape
+    (added_time, vendor_return, ...) get it untouched.
+
+    `resolved_config_id` is the account that answered with entries, or None
+    when nobody did - callers should persist it so the next call is a single
+    request instead of a sweep.
+
+    Args:
+        ncm_order_id: NCM's order id.
+        api_config_id: LogisticsAPIConfig id believed to own the order, or
+            None for the default account.
+        sweep_accounts: when the preferred account returns nothing, also try
+            every other active NCM account before giving up.
+        skip_config_ids: accounts the caller has already queried itself, so a
+            fallback sweep doesn't repeat a request that just came back empty.
+    """
+    candidates = candidate_ncm_config_ids(api_config_id)
+    if not sweep_accounts:
+        candidates = candidates[:1]
+    if skip_config_ids:
+        skipped = set(skip_config_ids)
+        candidates = [c for c in candidates if c not in skipped]
+
+    first_success = None
+    last_error = None
+
+    for config_id in candidates:
+        result = NCMService(api_config_id=config_id).get_order_status(ncm_order_id)
+        if not result.get('success'):
+            last_error = result.get('error') or 'NCM request failed'
+            continue
+
+        if normalize_status_entries(result.get('data')):
+            if config_id != api_config_id:
+                logger.info(
+                    f"NCM order {ncm_order_id}: status history resolved via "
+                    f"api_config {config_id} (asked for {api_config_id})"
+                )
+            return result, config_id
+
+        # A successful-but-empty answer is authoritative enough to report, but
+        # not authoritative enough to stop looking: an account that does not
+        # own the order can only ever answer empty.
+        if first_success is None:
+            first_success = result
+
+    if first_success is not None:
+        return first_success, None
+
+    if isinstance(last_error, dict):
+        last_error = last_error.get('detail') or str(last_error)
+    return (
+        {'success': False, 'error': str(last_error or 'Could not reach NCM')},
+        None,
+    )
+
+
+def fetch_order_status_history(ncm_order_id, api_config_id=None,
+                               sweep_accounts=True, skip_config_ids=()):
+    """Fetch one NCM order's status timeline, resolving the owning account.
+
+    Returns:
+        (entries, resolved_config_id, error)
+
+        `error` is None whenever at least one account answered successfully -
+        including when the answer was legitimately empty - so callers can tell
+        "NCM has no history for this order" apart from "we could not ask NCM".
+
+    See fetch_order_status_raw() for the arguments.
+    """
+    result, resolved_config_id = fetch_order_status_raw(
+        ncm_order_id,
+        api_config_id=api_config_id,
+        sweep_accounts=sweep_accounts,
+        skip_config_ids=skip_config_ids,
+    )
+    if not result.get('success'):
+        return [], None, str(result.get('error') or 'Could not reach NCM')
+    return normalize_status_entries(result.get('data')), resolved_config_id, None

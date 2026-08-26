@@ -16,7 +16,7 @@ from accounts.decorators import has_any_permission
 from dashboard.logistics_status import logistics_badge_class, logistics_status_text
 from dashboard.models import Order, OrderActivityLog
 from dashboard.timezone_utils import format_nepali_datetime, parse_ncm_datetime
-from services.ncm_service import NCMService
+from services.ncm_service import NCMService, fetch_order_status_raw
 from services.status_override import (clear_manual_status_override,
                                       manual_override_holds)
 import logging
@@ -245,11 +245,20 @@ def api_sync_order_status(request, order_id):
             cancelled_response.update(_order_display_fields(order))
             return JsonResponse(cancelled_response)
 
-        # Use order-specific NCM API account
-        svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
+        # Fetch latest status from the NCM account that owns this order.
+        #
+        # NCM only shows an order to the account that created it - any other
+        # key gets 404 "Not found". So when the stored api_config_id is missing
+        # or stale, this sweeps the other active accounts and writes the answer
+        # back, and every later sync for this order is a single request again.
+        result, resolved_config_id = fetch_order_status_raw(
+            order.ncm_order_id, api_config_id=order.api_config_id
+        )
+        if resolved_config_id is not None and resolved_config_id != order.api_config_id:
+            order.api_config_id = resolved_config_id
+            Order.objects.filter(pk=order.pk).update(api_config_id=resolved_config_id)
 
-        # Fetch latest status from NCM
-        result = svc.get_order_status(order.ncm_order_id)
+        svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
 
         if not result['success']:
             return JsonResponse({

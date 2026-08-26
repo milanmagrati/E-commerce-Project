@@ -23592,6 +23592,50 @@ def _resolve_ncm_api_config_id(ncm_order_id):
     ).values_list('api_config_id', flat=True).first()
 
 
+def _ncm_status_error_text(error):
+    """A staff-readable reason the status history could not be fetched.
+
+    NCM's own wording for "this order isn't yours" is a bare
+    {"detail": "Not found."}, which tells the person looking at the order
+    nothing at all.
+    """
+    if isinstance(error, dict):
+        error = error.get('detail') or error.get('error') or str(error)
+    text = str(error or '').strip()
+    if not text:
+        return 'NCM did not return a status history for this order.'
+    if 'not found' in text.lower():
+        return 'NCM has no record of this order under any configured NCM account.'
+    return text
+
+
+def _remember_ncm_api_config(ncm_order_id, api_config_id):
+    """Record which NCM account actually answered for this order id.
+
+    Discovering the owning account costs an extra HTTP round trip per account
+    tried, so the answer is written back to the local rows: the next request
+    for the same order resolves it in one shot, and every other code path that
+    reads Order.api_config_id (status sync, comments, redirect) stops using the
+    wrong key too.
+
+    Best-effort by design - a failure here must never break the read it was
+    piggybacking on.
+    """
+    from dashboard.models import Order, RTVOrder
+
+    try:
+        Order.objects.filter(ncm_order_id=ncm_order_id).exclude(
+            api_config_id=api_config_id
+        ).update(api_config_id=api_config_id)
+        RTVOrder.objects.filter(order_id=ncm_order_id).exclude(
+            api_config_id=api_config_id
+        ).update(api_config_id=api_config_id)
+    except Exception as e:
+        logger.warning(
+            f"Could not persist NCM api_config {api_config_id} for order {ncm_order_id}: {e}"
+        )
+
+
 @login_required
 @permission_required('can_view_orders')
 def ncm_rtv_get_comments(request, ncm_order_id):
@@ -23623,7 +23667,9 @@ def ncm_rtv_order_detail(request, ncm_order_id):
     - NCM API order comments
     - Local Order data (if linked via ncm_order_id) with items, payment info, etc.
     """
-    from services.ncm_service import NCMService
+    from services.ncm_service import (
+        NCMService, fetch_order_status_history, normalize_status_entries,
+    )
     from dashboard.models import Order, OrderItem
 
     api_config_id = _resolve_ncm_api_config_id(ncm_order_id)
@@ -23636,39 +23682,87 @@ def ncm_rtv_order_detail(request, ncm_order_id):
         'local_order': None,
         'comments': [],
         'status_history': [],
+        # None = NCM answered; a string = we could not ask it. The UI needs the
+        # difference: "this order has no history yet" and "the history could not
+        # be loaded" used to render as the same misleading empty state.
+        'status_history_error': None,
     }
 
     # Fire all 3 NCM API calls in parallel to avoid sequential latency
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    def _fetch_details():
+    def _fetch_details(svc):
         try:
-            return ncm_service.get_order_details(ncm_order_id)
+            return svc.get_order_details(ncm_order_id)
         except Exception as e:
             logger.warning(f"Failed to fetch NCM details for order {ncm_order_id}: {e}")
             return {'success': False}
 
-    def _fetch_status():
+    def _fetch_status(svc):
         try:
-            return ncm_service.get_order_status(ncm_order_id)
+            return svc.get_order_status(ncm_order_id)
         except Exception as e:
             logger.warning(f"Failed to fetch NCM status history for order {ncm_order_id}: {e}")
             return {'success': False}
 
-    def _fetch_comments():
+    def _fetch_comments(svc):
         try:
-            return ncm_service.get_order_comments(ncm_order_id)
+            return svc.get_order_comments(ncm_order_id)
         except Exception as e:
             logger.warning(f"Failed to fetch NCM comments for order {ncm_order_id}: {e}")
             return {'success': False}
 
     with ThreadPoolExecutor(max_workers=3) as executor:
-        fut_details = executor.submit(_fetch_details)
-        fut_status = executor.submit(_fetch_status)
-        fut_comments = executor.submit(_fetch_comments)
+        fut_details = executor.submit(_fetch_details, ncm_service)
+        fut_status = executor.submit(_fetch_status, ncm_service)
+        fut_comments = executor.submit(_fetch_comments, ncm_service)
         details_result = fut_details.result()
         status_result = fut_status.result()
         comments_result = fut_comments.result()
+
+    # NCM scopes an order to the account that created it: ask with any other
+    # key and it answers 404 "Not found", not an empty timeline. When the
+    # account we believed owns this order has nothing to say, try the other
+    # active NCM accounts before reporting an empty history - otherwise an
+    # order whose api_config_id is missing or stale shows "No status history
+    # found" while NCM's own portal lists the full timeline for it.
+    status_history = (
+        normalize_status_entries(status_result.get('data'))
+        if status_result.get('success') else []
+    )
+
+    if not status_history:
+        swept, resolved_config_id, sweep_error = fetch_order_status_history(
+            ncm_order_id,
+            api_config_id=api_config_id,
+            skip_config_ids=(api_config_id,),
+        )
+        if swept:
+            status_history = swept
+            _remember_ncm_api_config(ncm_order_id, resolved_config_id)
+            api_config_id = resolved_config_id
+            ncm_service = NCMService(api_config_id=resolved_config_id)
+
+            # The other two calls went to the same wrong account. Only the ones
+            # that actually failed are worth re-issuing.
+            retry_details = not details_result.get('success')
+            retry_comments = not comments_result.get('success')
+            if retry_details or retry_comments:
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    fut_d = executor.submit(_fetch_details, ncm_service) if retry_details else None
+                    fut_c = executor.submit(_fetch_comments, ncm_service) if retry_comments else None
+                    if fut_d is not None:
+                        details_result = fut_d.result()
+                    if fut_c is not None:
+                        comments_result = fut_c.result()
+        elif not status_result.get('success'):
+            # Every account refused or failed to answer - say so rather than
+            # claiming the order has no history.
+            response_data['status_history_error'] = _ncm_status_error_text(
+                status_result.get('error') or sweep_error
+            )
+
+    response_data['status_history'] = status_history
 
     # 1. Process NCM order details
     if details_result.get('success'):
@@ -23728,37 +23822,11 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                 'items': ncm_items,
             }
 
-    # 2. Process NCM order status history
-    if status_result.get('success'):
-            raw_status = status_result['data']
-            if isinstance(raw_status, list):
-                statuses = raw_status
-            elif isinstance(raw_status, dict):
-                statuses = raw_status.get('data', raw_status.get('results', []))
-                if isinstance(statuses, dict):
-                    statuses = [statuses]
-            else:
-                statuses = []
-
-            for s in statuses:
-                if isinstance(s, dict):
-                    from dashboard.timezone_utils import format_ncm_datetime
-                    raw_timestamp = s.get('date', s.get('timestamp', s.get('added_time', s.get('created_at', ''))))
-                    response_data['status_history'].append({
-                        'status': s.get('status', s.get('Status', '')),
-                        # Raw kept for back-compat; *_display is the formatted
-                        # Nepal-time string the UI should show instead of
-                        # printing NCM's ISO value verbatim.
-                        'timestamp': raw_timestamp,
-                        'timestamp_display': format_ncm_datetime(raw_timestamp),
-                        'remarks': s.get('remarks', s.get('comment', '')),
-                    })
-
-    # 3. Process NCM comments
+    # 2. Process NCM comments
     if comments_result.get('success'):
         response_data['comments'] = comments_result.get('data', [])
 
-    # 4. Try to find matching local Order by ncm_order_id (multiple strategies)
+    # 3. Try to find matching local Order by ncm_order_id (multiple strategies)
     local_order = None
     try:
         # Strategy 1: By ncm_order_id, not deleted
@@ -23888,7 +23956,7 @@ def ncm_rtv_order_detail(request, ncm_order_id):
         except Exception as e:
             logger.warning(f"Error processing local order for NCM ID {ncm_order_id}: {e}")
 
-    # 5. Get RTV record and enrich ncm_data with stored fields
+    # 4. Get RTV record and enrich ncm_data with stored fields
     try:
         from dashboard.timezone_utils import format_nepali_datetime_or_none
         rtv = RTVOrder.objects.get(order_id=ncm_order_id)
