@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import salary_report
 
 app_name = 'hrm'
 
@@ -204,6 +205,11 @@ urlpatterns = [
     path('payroll/advance-payments/<int:pk>/update/', views.advance_payment_update, name='advance_payment_update'),
     path('payroll/advance-payments/<int:pk>/delete/', views.advance_payment_delete, name='advance_payment_delete'),
     path('payroll/advance-payments/<int:pk>/update-status/', views.advance_payment_update_status, name='advance_payment_update_status'),
+
+    # Salary Report (Reports menu) -- read-only payroll analytics.
+    # Lives in hrm/salary_report.py rather than the views.py monolith.
+    path('reports/salary/', salary_report.salary_report, name='salary_report'),
+    path('reports/salary/detail/', salary_report.salary_report_detail, name='salary_report_detail'),
 
     # Attendance Reports
     path('attendance/report/', views.attendance_report, name='attendance_report'),

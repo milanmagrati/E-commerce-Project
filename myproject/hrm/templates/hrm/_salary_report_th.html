@@ -1,0 +1,20 @@
+{% comment %}
+Sortable table header cell for the Salary Report.
+
+Usage:  {% include 'hrm/_salary_report_th.html' with col=sort_links.net align='sr-num' %}
+
+`col` carries its own label, so the header text and the sort key can never drift
+apart — both come from the one definition in salary_report.PAYSLIP_SORTS /
+EMPLOYEE_SORTS.
+{% endcomment %}
+<th class="{{ align }}" {% if col.active %}aria-sort="{% if col.dir == 'asc' %}ascending{% else %}descending{% endif %}"{% endif %}>
+    <a class="sr-sort{% if col.active %} is-on{% endif %}" href="{{ col.href }}"
+       title="Sort by {{ col.label }}">
+        <span>{{ col.label }}</span>
+        {% if col.active %}
+        <i class="fas {% if col.dir == 'asc' %}fa-caret-up{% else %}fa-caret-down{% endif %}" aria-hidden="true"></i>
+        {% else %}
+        <i class="fas fa-sort sr-sort-idle" aria-hidden="true"></i>
+        {% endif %}
+    </a>
+</th>
