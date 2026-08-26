@@ -125,7 +125,8 @@
         </div>
         <p class="text-muted mt-1 mb-0">
             NCM RTV (Return to Vendor) orders that can be redirected to a different customer/branch via NCM Redirect API instead of returning to warehouse.
-            Orders already returned to vendor, delivered, or already redirected are automatically excluded — redirected ones move to <a href="{% url 'redirect_orders_list' %}">Redirect Orders</a>.
+            The table lists only what can be redirected right now — a package still travelling back, one already delivered or returned to vendor, one already redirected, or one with no matching new order is left out; redirected ones move to <a href="{% url 'redirect_orders_list' %}">Redirect Orders</a>.
+            The counts above cover <strong>all</strong> RTV orders, so they can be higher than the number of rows shown.
             {% if linked_count %}<span class="badge bg-info text-dark ms-1">{{ linked_count }} linked to local orders</span>{% endif %}
         </p>
     </div>
@@ -139,7 +140,7 @@
                 <div class="d-flex align-items-center">
                     <div class="flex-grow-1">
                         <h6 class="text-muted mb-1 text-uppercase stat-label">Total RTV Orders</h6>
-                        <h3 class="mb-0 stat-value">{{ total_redirectable }}</h3>
+                        <h3 class="mb-0 stat-value">{{ total_rtv_orders }}</h3>
                     </div>
                     <div class="stat-icon text-primary"><i class="fas fa-random fa-2x"></i></div>
                 </div>

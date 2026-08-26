@@ -159,6 +159,34 @@ def main():
     RTVOrder.objects.filter(order_id=NCM_ID_TRANSIT).update(
         last_status='Dispatched to Return (TINKUNE)')
 
+    print("\n[2b] The KPI tiles still count EVERY RTV order, listed or not")
+    # The tiles are an overview of the RTV pipeline, so narrowing the table to
+    # redirectable packages must not shrink them — the in-transit RTV above is
+    # absent from the table but still has to be counted here.
+    all_rtvs_in_db = RTVOrder.objects.filter(vendor_return=True).count()
+    ctx = resp.context
+    check("Total RTV Orders counts the whole RTV population",
+          ctx['total_rtv_orders'] == all_rtvs_in_db,
+          f"(tile {ctx['total_rtv_orders']} vs db {all_rtvs_in_db})")
+    check("the in-transit RTV is counted even though it is not listed",
+          ctx['total_rtv_orders'] > len(ctx['rtv_entries']),
+          f"(tile {ctx['total_rtv_orders']}, rows {len(ctx['rtv_entries'])})")
+    check("pending + already redirected == total",
+          ctx['pending_redirection'] + ctx['already_redirected'] == ctx['total_rtv_orders'],
+          f"(got {ctx['pending_redirection']} + {ctx['already_redirected']} "
+          f"vs {ctx['total_rtv_orders']})")
+
+    # A filter the user picked must still narrow the tiles, not just the table.
+    resp_filtered = client.get(f'/orders/possible-redirection/?search={NCM_ID_TRANSIT}')
+    check("a search narrows the KPI tiles too",
+          resp_filtered.context['total_rtv_orders'] == 1,
+          f"(got {resp_filtered.context['total_rtv_orders']})")
+    resp_bogus = client.get('/orders/possible-redirection/?start_date=not-a-date')
+    check("a malformed date filters nothing instead of erroring",
+          resp_bogus.status_code == 200
+          and resp_bogus.context['total_rtv_orders'] == all_rtvs_in_db,
+          f"(got {resp_bogus.status_code}, {resp_bogus.context['total_rtv_orders']})")
+
     print("\n[3] The actual redirect is rejected server-side, before anything changes")
     resp2 = client.post(
         f'/api/orders/{linked_transit.id}/redirect-save/',

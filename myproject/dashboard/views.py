@@ -5446,6 +5446,44 @@ def _rtv_is_redirect_eligible(rtv_last_status, local_ncm_status=None):
     return False
 
 
+def _redirected_rtv_ncm_ids(rtv_qs):
+    """NCM order ids within `rtv_qs` whose package has already been redirected.
+
+    Three independent markers, because no single one survives everything:
+
+    * the linked order's ncm_status/order_status — but NCM status polling
+      rewrites ncm_status, so a genuinely redirected order can lose it;
+    * a 'redirected' activity log — local and permanent, and exactly what the
+      Redirect Orders page keys off, so anything listed there is guaranteed to
+      be counted here;
+    * the '[REDIRECTED]' comment tag, the only marker for an RTV with no
+      linked local order at all.
+
+    Written as subqueries rather than Python id lists so it stays cheap over
+    the whole RTV population, which is what the KPI strip counts.
+    """
+    ncm_ids = rtv_qs.values('order_id')
+
+    redirected = set(
+        rtv_qs.filter(comment__contains='[REDIRECTED]').values_list('order_id', flat=True)
+    )
+    redirected |= set(
+        Order.objects.filter(
+            is_deleted=False, ncm_order_id__isnull=False, ncm_order_id__in=ncm_ids,
+        ).filter(
+            Q(ncm_status__iexact='redirected') | Q(order_status__iexact='redirected')
+        ).values_list('ncm_order_id', flat=True)
+    )
+    redirected |= set(
+        OrderActivityLog.objects.filter(
+            action_type='redirected',
+            order__is_deleted=False,
+            order__ncm_order_id__in=ncm_ids,
+        ).values_list('order__ncm_order_id', flat=True)
+    )
+    return redirected
+
+
 @login_required
 @permission_required('can_view_orders')
 def possible_redirection_list(request):
@@ -5468,6 +5506,61 @@ def possible_redirection_list(request):
     rtvs = RTVOrder.objects.filter(
         vendor_return=True
     ).select_related('api_config')
+
+    # GET FILTER PARAMETERS — read up front because they scope two querysets:
+    # the table below (only what can be redirected right now) and the KPI strip
+    # (the whole RTV population). A filter the user picked must narrow both.
+    search_query = request.GET.get('search', '')
+    start_date = request.GET.get('start_date', '')
+    end_date = request.GET.get('end_date', '')
+    api_config_filter = request.GET.get('api_config', '')
+
+    def _apply_rtv_request_filters(qs):
+        """Apply the page's search/portal/date filters to an RTVOrder queryset."""
+        if search_query:
+            qs = qs.annotate(_oid_str=Cast('order_id', output_field=CharField()))
+            qs = qs.filter(
+                Q(_oid_str__icontains=search_query) | Q(comment__icontains=search_query)
+            )
+
+        if api_config_filter:
+            qs = qs.filter(api_config_id=api_config_filter)
+
+        if not (start_date or end_date):
+            return qs
+
+        # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+        # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring),
+        # so we filter on the Coalesce'd datetime directly against UTC day bounds.
+        # Coalesce prefers rtv_marked_at over created_at for date filtering.
+        from django.db.models.functions import Coalesce
+        from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
+
+        _range = {}
+        try:
+            if start_date:
+                _range['_rtv_date__gte'] = nepali_day_start(
+                    datetime.strptime(start_date, '%Y-%m-%d').date()
+                )
+            if end_date:
+                _range['_rtv_date__lt'] = nepali_day_end_exclusive(
+                    datetime.strptime(end_date, '%Y-%m-%d').date()
+                )
+        except ValueError:
+            # A malformed date filters nothing rather than erroring — same as
+            # before, and the form re-renders with what the user typed.
+            return qs
+
+        return qs.annotate(
+            _rtv_date=Coalesce('rtv_marked_at', 'ncm_created_date', 'created_at')
+        ).filter(**_range)
+
+    #: Every RTV order in the user's current filter scope, before any
+    #: redirectability narrowing. The KPI tiles report on this: they are an
+    #: overview of the RTV pipeline, so they must not shrink just because a
+    #: package is not redirectable *yet* (still in transit) or has no matching
+    #: local order. The table below is the actionable worklist and stays narrow.
+    kpi_rtvs = _apply_rtv_request_filters(RTVOrder.objects.filter(vendor_return=True))
 
     for _nrs in NON_REDIRECTABLE_RTV_STATUSES:
         rtvs = rtvs.exclude(last_status__iexact=_nrs)
@@ -5513,6 +5606,7 @@ def possible_redirection_list(request):
     # The linked local order's ncm_status counts too: it is refreshed by the
     # order detail page's load-time sync, which can be ahead of the RTV list sync.
     _eligible_ncm_ids = Order.objects.filter(
+        is_deleted=False,
         ncm_order_id__isnull=False,
         ncm_order_id__in=rtvs.values('order_id'),
     ).filter(_eligible_order_q).values('ncm_order_id')
@@ -5523,53 +5617,7 @@ def possible_redirection_list(request):
         db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at', '-id'
     )
 
-    # GET FILTER PARAMETERS
-    search_query = request.GET.get('search', '')
-    start_date = request.GET.get('start_date', '')
-    end_date = request.GET.get('end_date', '')
-    api_config_filter = request.GET.get('api_config', '')
-
-    # Apply filters on RTVOrder
-    if search_query:
-        rtvs = rtvs.annotate(_oid_str=Cast('order_id', output_field=CharField()))
-        search_q = Q(_oid_str__icontains=search_query) | Q(comment__icontains=search_query)
-        rtvs = rtvs.filter(search_q)
-
-    if api_config_filter:
-        rtvs = rtvs.filter(api_config_id=api_config_filter)
-
-    # NOTE: __date__gte/__lte lookups silently match zero rows on this server
-    # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring),
-    # so we filter on the Coalesce'd datetime directly against UTC day bounds.
-    if start_date and end_date:
-        try:
-            from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
-            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
-            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            # Use Coalesce to prefer rtv_marked_at over created_at for date filtering
-            from django.db.models.functions import Coalesce
-            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'ncm_created_date', 'created_at'))
-            rtvs = rtvs.filter(_rtv_date__gte=nepali_day_start(start_date_obj), _rtv_date__lt=nepali_day_end_exclusive(end_date_obj))
-        except ValueError:
-            pass
-    elif start_date:
-        try:
-            from .timezone_utils import nepali_day_start
-            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
-            from django.db.models.functions import Coalesce
-            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'ncm_created_date', 'created_at'))
-            rtvs = rtvs.filter(_rtv_date__gte=nepali_day_start(start_date_obj))
-        except ValueError:
-            pass
-    elif end_date:
-        try:
-            from .timezone_utils import nepali_day_end_exclusive
-            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            from django.db.models.functions import Coalesce
-            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'ncm_created_date', 'created_at'))
-            rtvs = rtvs.filter(_rtv_date__lt=nepali_day_end_exclusive(end_date_obj))
-        except ValueError:
-            pass
+    rtvs = _apply_rtv_request_filters(rtvs)
 
     # ── Single-pass: fetch confirmed orders once, reuse for pre-filter + display ──
     # Collect (order_id, to_branch, product_description) for all RTVs that
@@ -5700,39 +5748,20 @@ def possible_redirection_list(request):
         ):
             linked_orders[order.ncm_order_id] = order
 
-    # Stats (counted over every candidate, including the ones excluded below)
-    total_redirectable = len(all_rtv_ncm_ids)  # same as rtvs.count() but avoids extra DB query
+    # ── KPI strip ────────────────────────────────────────────────────────────
+    # Counted over EVERY RTV order in scope, not just the redirectable ones
+    # rendered below. The tiles are an overview of the RTV pipeline: a package
+    # still travelling back, or one with no matching local order, is a real RTV
+    # order and still belongs in the totals even though it cannot be actioned
+    # from this table yet.
+    total_rtv_orders = kpi_rtvs.count()
+    already_redirected = len(_redirected_rtv_ncm_ids(kpi_rtvs))
+    pending_redirection = total_rtv_orders - already_redirected
 
-    # Check redirection status from linked order OR RTVOrder comment tag.
-    # ncm_status alone is not enough: NCM status polling rewrites that field, so
-    # a genuinely redirected order can silently lose the marker and reappear here
-    # as a fresh candidate. order_status and the 'redirected' activity log are
-    # local and permanent — and the activity log is exactly what Redirect Orders
-    # keys off, so anything listed there is guaranteed to be absent here.
-    redirected_from_local = set(
-        ncm_id for ncm_id, _lo in linked_orders.items()
-        if (_lo.ncm_status or '').lower() == 'redirected'
-        or (_lo.order_status or '').lower() == 'redirected'
-    )
-    _redirect_logged_order_ids = set(
-        OrderActivityLog.objects.filter(
-            action_type='redirected',
-            order_id__in=[_lo.id for _lo in linked_orders.values()],
-        ).values_list('order_id', flat=True)
-    )
-    redirected_from_activity = set(
-        ncm_id for ncm_id, _lo in linked_orders.items()
-        if _lo.id in _redirect_logged_order_ids
-    )
-    redirected_from_comment = set(
-        rtvs.filter(comment__contains='[REDIRECTED]').values_list('order_id', flat=True)
-    )
-    all_redirected_ids = (
-        redirected_from_local | redirected_from_activity | redirected_from_comment
-    )
-
-    already_redirected = len(all_redirected_ids)
-    pending_redirection = total_redirectable - already_redirected
+    # Redirected RTVs among the rows this table would otherwise show — a
+    # separate, narrower question from the tile above, and the one that decides
+    # what gets dropped from the listing.
+    all_redirected_ids = _redirected_rtv_ncm_ids(rtvs)
 
     # An RTV that has already been redirected is no longer a redirection
     # *candidate* — the package has been re-dispatched to a new customer and the
@@ -5869,7 +5898,7 @@ def possible_redirection_list(request):
     context = {
         'rtv_entries': rtv_entries,
         'rtvs_page': rtvs_page,
-        'total_redirectable': total_redirectable,
+        'total_rtv_orders': total_rtv_orders,
         'already_redirected': already_redirected,
         'pending_redirection': pending_redirection,
         'linked_count': len(linked_orders),
