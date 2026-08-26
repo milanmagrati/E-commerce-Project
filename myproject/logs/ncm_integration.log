@@ -8747,3 +8747,15 @@ RuntimeError: NCM exploded
 [INFO] 2026-08-24 17:56:23 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
 [INFO] 2026-08-24 18:02:06 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
 [INFO] 2026-08-25 11:09:38 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-25 17:49:31 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-25 17:54:02 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-25 18:21:05 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-25 19:38:12 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-26 13:10:57 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-26 13:46:54 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-26 13:54:53 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[WARNING] 2026-08-26 14:02:59 ncm_service._make_request:112 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-26 14:04:47 ncm_service._make_request:112 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-26 14:19:35 ncm_service._make_request:112 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-26 14:20:54 ncm_service._make_request:112 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-26 14:22:25 ncm_service._make_request:112 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
