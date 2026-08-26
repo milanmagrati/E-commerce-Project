@@ -5434,9 +5434,10 @@ REDIRECT_ELIGIBLE_STATUS_PREFIXES = ('arrived', 'pickup complete', 'returned to 
 def _rtv_is_redirect_eligible(rtv_last_status, local_ncm_status=None):
     """True once NCM reports the package is actually at a branch/warehouse.
 
-    Used to disable the redirect action (not to hide the row) — a package
-    still in transit back ("Dispatched to Return (...)") is a legitimate
-    thing to see coming, just not something NCM will let us redirect yet.
+    A parcel still travelling back ("Dispatched to Return (...)") is not a
+    redirection candidate: NCM's redirect endpoint refuses it outright. This
+    gates both what possible_redirection_list shows (its SQL filter mirrors
+    this function) and what the save endpoints accept.
     """
     for text in (rtv_last_status, local_ncm_status):
         normalized = ' '.join((text or '').strip().lower().split())
@@ -5492,6 +5493,31 @@ def possible_redirection_list(request):
     ).values('ncm_order_id')
     
     rtvs = rtvs.exclude(order_id__in=_delivered_ncm_ids)
+
+    # Keep ONLY packages NCM has confirmed are physically sitting at a branch or
+    # warehouse. NCM's redirect endpoint rejects anything else ("Order can only
+    # be redirected when status is: Arrived, Pickup Complete, Returned to
+    # Warehouse"), so a parcel still travelling back ("Dispatched to Return
+    # (TINKUNE)") is not a candidate yet — listing it only invited a redirect
+    # that was always going to fail. It reappears here on its own once NCM
+    # reports the arrival and the RTV sync writes that status through.
+    #
+    # SQL mirror of _rtv_is_redirect_eligible(): istartswith so branch-qualified
+    # variants ("Arrived at RETURN (TINKUNE)") still count.
+    _eligible_rtv_q = Q()
+    _eligible_order_q = Q()
+    for _prefix in REDIRECT_ELIGIBLE_STATUS_PREFIXES:
+        _eligible_rtv_q |= Q(last_status__istartswith=_prefix)
+        _eligible_order_q |= Q(ncm_status__istartswith=_prefix)
+
+    # The linked local order's ncm_status counts too: it is refreshed by the
+    # order detail page's load-time sync, which can be ahead of the RTV list sync.
+    _eligible_ncm_ids = Order.objects.filter(
+        ncm_order_id__isnull=False,
+        ncm_order_id__in=rtvs.values('order_id'),
+    ).filter(_eligible_order_q).values('ncm_order_id')
+
+    rtvs = rtvs.filter(_eligible_rtv_q | Q(order_id__in=_eligible_ncm_ids))
 
     rtvs = rtvs.order_by(
         db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at', '-id'
@@ -5753,9 +5779,6 @@ def possible_redirection_list(request):
             'ncm_status': (local_order.ncm_status or '') if local_order else '',
             'local_order_id': local_order.id if local_order else None,
             'last_status': rtv.last_status or '',
-            'redirect_eligible': _rtv_is_redirect_eligible(
-                rtv.last_status, local_order.ncm_status if local_order else None
-            ),
         }
         rtv_entries.append(entry)
 
@@ -6047,7 +6070,13 @@ def possible_redirection_refresh_status(request):
                                            exc_info=True)
                             errors += 1
 
-                if _rtv_is_non_redirectable(rtv.last_status, local):
+                # Two ways a listed row stops being a candidate: it reached a
+                # terminal status, or NCM moved it back out of the at-branch
+                # statuses the list now requires (the page only shows parcels
+                # NCM will actually accept a redirect for).
+                if _rtv_is_non_redirectable(rtv.last_status, local) or not _rtv_is_redirect_eligible(
+                    rtv.last_status, local.ncm_status if local else None
+                ):
                     dropped.append(rtv.order_id)
 
     if dropped or rtv_updated or orders_updated:

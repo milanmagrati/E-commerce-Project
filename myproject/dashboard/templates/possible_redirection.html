@@ -295,11 +295,6 @@
                             {% if entry.last_status %}
                                 <div class="small text-muted mt-1" title="NCM delivery status"><i class="fas fa-truck me-1"></i>{{ entry.last_status }}</div>
                             {% endif %}
-                            {% if not entry.redirect_eligible %}
-                                <div class="small text-danger mt-1" title="NCM only allows a redirect once the package is marked Arrived, Pickup Complete, or Returned to Warehouse.">
-                                    <i class="fas fa-truck-loading me-1"></i>Not yet redirectable
-                                </div>
-                            {% endif %}
                         </td>
                         <td class="hide-md">
                             {% with comment=entry.comment|default:"—" %}
@@ -343,16 +338,9 @@
                                 <button type="button" class="pr-comment-btn" title="View NCM Comments" onclick="openPrCommentModal({{ entry.ncm_order_id }})">
                                     <i class="fas fa-comments"></i>
                                 </button>
-                                {% if entry.redirect_eligible %}
-                                    <button type="button" class="btn btn-outline-success redirect-btn" title="Edit & Redirect" onclick="openRedirectModal({{ entry.ncm_order_id }})">
-                                        <i class="fas fa-random"></i>
-                                    </button>
-                                {% else %}
-                                    <button type="button" class="btn btn-outline-secondary redirect-btn" disabled
-                                        title="Not yet redirectable — NCM reports this package is still in transit ({{ entry.last_status|default:'unknown status' }}). Redirect unlocks once it's marked Arrived, Pickup Complete, or Returned to Warehouse.">
-                                        <i class="fas fa-random"></i>
-                                    </button>
-                                {% endif %}
+                                <button type="button" class="btn btn-outline-success redirect-btn" title="Edit & Redirect" onclick="openRedirectModal({{ entry.ncm_order_id }})">
+                                    <i class="fas fa-random"></i>
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -366,11 +354,6 @@
                                     <span class="badge bg-success ms-2">
                                         <i class="fas fa-check me-1"></i>Products &amp; quantities match exactly
                                     </span>
-                                    {% if not entry.redirect_eligible %}
-                                        <span class="badge bg-danger ms-2" title="NCM only allows a redirect once the package is marked Arrived, Pickup Complete, or Returned to Warehouse.">
-                                            <i class="fas fa-truck-loading me-1"></i>Still in transit ({{ entry.last_status|default:"unknown status" }}) — not yet redirectable
-                                        </span>
-                                    {% endif %}
                                     <button type="button" class="btn-close btn-sm float-end" onclick="toggleMatches({{ entry.ncm_order_id }})" style="font-size:0.6rem;"></button>
                                 </div>
                                 {% if entry.rtv_product_ref_display %}
@@ -459,7 +442,6 @@
                                                     travel with the customer, and positional args were
                                                     already at the limit of what stays readable.
                                                     {% endcomment %}
-                                                    {% if entry.redirect_eligible %}
                                                     <button type="button" class="btn btn-success btn-sm py-0"
                                                         data-ncm-id="{{ entry.ncm_order_id }}"
                                                         data-name="{{ match.customer_name }}"
@@ -479,12 +461,6 @@
                                                         title="Pre-fill redirect form with this customer's details and amounts">
                                                         <i class="fas fa-user-check me-1"></i>Use
                                                     </button>
-                                                    {% else %}
-                                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0" disabled
-                                                        title="Not yet redirectable — the RTV package is still in transit ({{ entry.last_status|default:'unknown status' }}). Redirect unlocks once NCM marks it Arrived, Pickup Complete, or Returned to Warehouse.">
-                                                        <i class="fas fa-user-check me-1"></i>Use
-                                                    </button>
-                                                    {% endif %}
                                                 </td>
                                             </tr>
                                             {% endwith %}
@@ -544,7 +520,7 @@
         <h6 class="fw-bold mb-2"><i class="fas fa-info-circle text-primary me-2"></i>How Redirection Works</h6>
         <ol class="mb-0 small text-muted">
             <li>Click <strong>"Sync RTV from NCM"</strong> to fetch the latest RTV (Return to Vendor) orders from NCM.</li>
-            <li>All NCM RTV orders appear here. Orders linked to local orders show customer details.</li>
+            <li>Only RTV orders NCM has confirmed are <strong>at a branch or warehouse</strong> (Arrived, Pickup Complete, or Returned to Warehouse) appear here &mdash; NCM refuses to redirect a parcel that is still travelling back, so one still marked "Dispatched to Return" shows up only once its arrival is reported. Orders linked to local orders show customer details.</li>
             <li>Click the <span class="badge bg-success"><i class="fas fa-random"></i></span> button to open the redirect modal &mdash; details are fetched from NCM if no local order exists.</li>
             <li>Use <strong>"NCM — Redirect Order"</strong> to redirect via NCM's redirect API to a new customer/address.</li>
         </ol>
@@ -2255,7 +2231,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!data || !data.success) { return; }
             if (data.dropped && data.dropped.length) {
                 statusReload(
-                    data.dropped.length + ' order(s) already delivered/returned — removing from the list',
+                    data.dropped.length + ' order(s) no longer redirectable — removing from the list',
                     'text-bg-warning'
                 );
             } else if (data.rtv_updated || data.orders_updated) {

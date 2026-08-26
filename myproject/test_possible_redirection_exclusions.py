@@ -93,7 +93,10 @@ def main():
         vendor=user,
         vendor_return=True,
         to_branch=BRANCH,
-        last_status='Pending',
+        # At the branch, so the page lists it at all — this file is about
+        # product matching, not the at-branch status gate (see
+        # test_possible_redirection_status_gate.py for that).
+        last_status='Arrived',
         product_description='2x ZZ Test Serum, 1x ZZ Test Vitamin',
         rtv_marked_at=get_nepali_now(),
         rtv_marked_at_source=RTVOrder.SOURCE_WEBHOOK,
@@ -196,7 +199,7 @@ def main():
         vendor=user,
         vendor_return=True,
         to_branch=BRANCH,
-        last_status='Dispatched',
+        last_status='Arrived',           # at the branch, so it is a listed candidate
         product_description='',          # empty — forces the local-name fallback
         rtv_marked_at=get_nepali_now(),
         rtv_marked_at_source=RTVOrder.SOURCE_WEBHOOK,

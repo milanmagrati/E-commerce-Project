@@ -143,12 +143,15 @@ def main():
     client.force_login(user)
 
     # The stale RTV from the report: NCM has moved on, the local copy has not.
+    # 'Arrived' (at the branch) is what makes it a listed candidate in the
+    # first place — the page only shows packages NCM will accept a redirect
+    # for, so a fixture still in transit would never render.
     delivered_rtv = RTVOrder.objects.create(
         order_id=DELIVERED_NCM_ID,
         vendor=user,
         vendor_return=True,
         to_branch=BRANCH,
-        last_status='Dispatched',
+        last_status='Arrived',
         product_description='1x ZZ Refresh Serum',
         rtv_marked_at=get_nepali_now(),
         rtv_marked_at_source=RTVOrder.SOURCE_WEBHOOK,
@@ -168,7 +171,7 @@ def main():
         vendor=user,
         vendor_return=True,
         to_branch=BRANCH,
-        last_status='Dispatched',
+        last_status='Arrived',
         product_description='1x ZZ Refresh Shampoo',
         rtv_marked_at=get_nepali_now(),
         rtv_marked_at_source=RTVOrder.SOURCE_WEBHOOK,
@@ -193,7 +196,7 @@ def main():
     ids = listed_ids(resp)
     check("already-delivered RTV is listed (the bug's starting state)",
           DELIVERED_NCM_ID in ids, f"(got {ids})")
-    check("still-in-transit RTV is listed", TRANSIT_NCM_ID in ids, f"(got {ids})")
+    check("still-redirectable RTV is listed", TRANSIT_NCM_ID in ids, f"(got {ids})")
 
     print("\n[2] The page's own status refresh, with NCM stubbed")
     cache.delete('possible_redirection_status_refresh')
@@ -214,7 +217,7 @@ def main():
     check("it checked both rows", payload.get('checked') == 2, f"(got {payload.get('checked')})")
     check("the delivered RTV is reported as dropped",
           DELIVERED_NCM_ID in (payload.get('dropped') or []), f"(got {payload.get('dropped')})")
-    check("the in-transit RTV is NOT dropped",
+    check("the still-redirectable RTV is NOT dropped",
           TRANSIT_NCM_ID not in (payload.get('dropped') or []), f"(got {payload.get('dropped')})")
 
     delivered_rtv.refresh_from_db()
@@ -226,7 +229,7 @@ def main():
           delivered_rtv.last_status == 'Delivered', f"(got {delivered_rtv.last_status!r})")
     check("the linked local order's ncm_status was refreshed too",
           delivered_local.ncm_status == 'Delivered', f"(got {delivered_local.ncm_status!r})")
-    check("the in-transit RTV's status was refreshed as well",
+    check("the still-redirectable RTV's status was refreshed as well",
           transit_rtv.last_status == 'Arrived', f"(got {transit_rtv.last_status!r})")
     # The bulk status string carries no vendor_return flag, so a non-terminal
     # status must not be written through to the order — doing so would resolve

@@ -2,9 +2,9 @@
 Verify the Possible Redirection "still in transit" fix in dashboard.views:
 
   1. An RTV whose NCM status shows it's still travelling back (e.g. "Dispatched
-     to RETURN (TINKUNE)") stays LISTED as a candidate (so staff can see it
-     coming) but is flagged `redirect_eligible=False`, and its redirect button
-     / "Use" buttons render disabled in the template.
+     to RETURN (TINKUNE)") is NOT listed as a candidate at all — NCM refuses to
+     redirect a parcel that hasn't arrived, so offering it is only a trap. It
+     appears once NCM reports one of the at-branch statuses.
   2. Attempting the actual redirect (POST to redirect_order_save or
      redirect_rtv_save with send_to_logistics=ncm_redirect) on such an RTV is
      rejected server-side *before* anything is written — the local order's
@@ -133,25 +133,31 @@ def main():
     )
     candidate = make_order('ZZ-GATE-CANDIDATE', [('ZZ Gate Shampoo', 1)], customer_name='New Customer')
 
-    print("\n[2] Still listed, but flagged not-yet-redirectable")
+    print("\n[2] An in-transit RTV is not listed at all")
     resp = client.get('/orders/possible-redirection/')
     check("page renders", resp.status_code == 200, f"(got {resp.status_code})")
-    entry = entry_for(resp, NCM_ID_TRANSIT)
-    check("the in-transit RTV is still listed as a candidate", entry is not None)
-    if entry is not None:
-        check("redirect_eligible is False", entry['redirect_eligible'] is False)
-        matched_numbers = [r['order'].order_number for r in entry['matching_rows']]
-        check("the matching candidate is still shown", 'ZZ-GATE-CANDIDATE' in matched_numbers,
-              f"(got {matched_numbers})")
+    check("the in-transit RTV is NOT listed as a candidate",
+          entry_for(resp, NCM_ID_TRANSIT) is None)
 
     body = resp.content.decode('utf-8', 'replace')
-    check("the disabled redirect button/Use button copy is rendered",
-          'Not yet redirectable' in body)
-    # The enabled "Use" button carries data-order-num; the disabled stand-in
-    # for an ineligible RTV does not — so its absence proves the clickable
-    # version was not rendered for this candidate.
-    check("the enabled 'Use' button is NOT rendered for the matching candidate",
+    check("its matching candidate's 'Use' button is not rendered either",
           'data-order-num="ZZ-GATE-CANDIDATE"' not in body)
+
+    # ...and it appears the moment NCM reports the arrival, with the match intact.
+    RTVOrder.objects.filter(order_id=NCM_ID_TRANSIT).update(last_status='Arrived at RETURN (TINKUNE)')
+    resp_arrived = client.get('/orders/possible-redirection/')
+    entry_arrived = entry_for(resp_arrived, NCM_ID_TRANSIT)
+    check("once NCM reports it arrived, the RTV IS listed", entry_arrived is not None)
+    if entry_arrived is not None:
+        matched_numbers = [r['order'].order_number for r in entry_arrived['matching_rows']]
+        check("and its matching candidate comes with it", 'ZZ-GATE-CANDIDATE' in matched_numbers,
+              f"(got {matched_numbers})")
+    check("the enabled 'Use' button is rendered now",
+          'data-order-num="ZZ-GATE-CANDIDATE"' in resp_arrived.content.decode('utf-8', 'replace'))
+
+    # Put it back in transit for the server-guard checks below.
+    RTVOrder.objects.filter(order_id=NCM_ID_TRANSIT).update(
+        last_status='Dispatched to Return (TINKUNE)')
 
     print("\n[3] The actual redirect is rejected server-side, before anything changes")
     resp2 = client.post(
@@ -222,10 +228,7 @@ def main():
         receiver_phone='9833333333',
     )
     resp4 = client.get('/orders/possible-redirection/')
-    entry4 = entry_for(resp4, NCM_ID_ARRIVED)
-    check("the arrived RTV is listed", entry4 is not None)
-    if entry4 is not None:
-        check("redirect_eligible is True", entry4['redirect_eligible'] is True)
+    check("the arrived RTV is listed", entry_for(resp4, NCM_ID_ARRIVED) is not None)
 
     print("\n[6] The Order Detail modal's own redirect button carries the same flag")
     # This is the third entry point into the redirect flow — clicking the NCM

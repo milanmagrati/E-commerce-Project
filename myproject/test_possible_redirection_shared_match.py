@@ -73,7 +73,9 @@ def main():
             vendor=user,
             vendor_return=True,
             to_branch=BRANCH,
-            last_status='Pending',
+            # At the branch, so both are listed candidates — this file is about
+            # two RTVs contesting one matched order, not the status gate.
+            last_status='Arrived',
             product_description='1x ZZ Shared Serum',
             rtv_marked_at=marked_at,
             rtv_marked_at_source=RTVOrder.SOURCE_WEBHOOK,
