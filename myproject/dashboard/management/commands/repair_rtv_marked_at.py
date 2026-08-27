@@ -21,7 +21,8 @@ from dashboard.timezone_utils import format_nepali_datetime
 from dashboard.views import rtv_needs_date_verification, sync_rtv_from_ncm_comments
 from services.ncm_service import NCMService
 
-# NCMService._make_request has no 429 handling, so backoff lives here.
+# NCMService._make_request now paces and retries around NCM's rate limit;
+# this backoff stays as the outer guard for a long unattended run.
 BACKOFF_STEP = 30
 BACKOFF_MAX = 120
 

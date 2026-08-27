@@ -16,6 +16,13 @@ logger = logging.getLogger('ncm')
 #: in 1 second." Rejected requests are not counted against the window, so a
 #: retry a second later always gets through.
 #:
+#: The limit is scoped to the v1 order endpoints (/order, /order/status,
+#: /order/comment). The v2 vendor endpoints are not throttled at all - 102
+#: concurrent /vendor/orders pages came back 200 across the board, and running
+#: that scan alongside order-status polls did not throttle either one. So the
+#: gate below deliberately covers v1 only; pacing the RTV screen's v2 calls
+#: would cost it seconds for nothing.
+#:
 #: This matters because several code paths fan out deliberately - the order
 #: detail endpoint alone fires details+status+comments in parallel - and a
 #: single page load used to overshoot the window and report the throttle to
@@ -147,6 +154,18 @@ class NCMService:
                 self._timeout = 30
         return self._timeout
 
+    def _rate_scope(self, url: str):
+        """The rate-limit bucket this URL belongs to, or None if unlimited.
+
+        Only the v1 order endpoints are throttled (see NCM_MAX_CALLS_PER_SECOND).
+        When no separate v2 base URL is configured the two are the same string,
+        and everything is treated as v1 - the safe way round.
+        """
+        v2 = self.base_url_v2
+        if v2 and v2 != self.base_url and url.startswith(v2):
+            return None
+        return self.api_key
+
     def _make_request(self, method: str, url: str, data: Dict = None, params: Dict = None, timeout: int = None, _retry: bool = True,
                       _throttle_retries: int = NCM_THROTTLE_RETRIES):
         """Helper to make API requests.
@@ -175,8 +194,11 @@ class NCMService:
 
         try:
             # Stay inside NCM's per-account window rather than spending a
-            # request to be told we are outside it.
-            _await_rate_slot(self.api_key)
+            # request to be told we are outside it. Unthrottled endpoints are
+            # not paced - they answer a hundred at a time quite happily.
+            scope = self._rate_scope(url)
+            if scope is not None:
+                _await_rate_slot(scope)
 
             if method == 'GET':
                 response = requests.get(url, headers=self.headers, params=params, timeout=timeout)
@@ -270,8 +292,10 @@ class NCMService:
                 # swallowed 429 would drop an order's comments on the floor
                 # and report success, so throttling is retried here too.
                 attempts_left = NCM_THROTTLE_RETRIES
+                comment_scope = self._rate_scope(url)
                 while True:
-                    _await_rate_slot(self.api_key)
+                    if comment_scope is not None:
+                        _await_rate_slot(comment_scope)
                     resp = _req.get(url, headers=self.headers, params=params, timeout=timeout)
                     if resp.status_code != 429 or attempts_left <= 0:
                         break
@@ -442,13 +466,22 @@ class NCMService:
         ALL orders (most recent 1500) to catch newly-marked RTVs that may
         still be in "Delivered" status.
 
+        A failed page is reported, never quietly skipped: this feeds an
+        additive sync, so a dropped page does not delete anything, but the RTVs
+        it held simply never reach the screen and the caller used to be told
+        the fetch succeeded. `partial` is True when any request failed, with
+        `error` naming the first one.
+
         Returns:
-            {'success': True, 'data': [<order dict>, ...]}
+            {'success': True, 'data': [<order dict>, ...],
+             'partial': bool, 'error': str|None}
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         rtv_statuses = ['Arrived', 'Dispatched', 'Sent to Vendor', 'Returned to Warehouse']
         rtvs = []
+        #: First error from any page, and whether the result is incomplete.
+        fetch_errors = []
 
         def _fetch_status(status):
             """Fetch all pages for a given status."""
@@ -461,6 +494,11 @@ class NCMService:
                     params={'page': page, 'page_size': page_size, 'status': status},
                 )
                 if not result['success']:
+                    # Distinct from "no more pages": this status is now short
+                    # by however many orders the failed page held.
+                    fetch_errors.append(
+                        f"{status} page {page}: {result.get('error') or 'request failed'}"
+                    )
                     break
                 raw = result['data']
                 results = raw.get('results', []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
@@ -486,6 +524,9 @@ class NCMService:
                     params={'page': page, 'page_size': page_size},
                 )
                 if not result['success']:
+                    fetch_errors.append(
+                        f"recent page {page}: {result.get('error') or 'request failed'}"
+                    )
                     break
                 raw = result['data']
                 results = raw.get('results', []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
@@ -508,10 +549,14 @@ class NCMService:
                 else:
                     futures[executor.submit(_fetch_status, task)] = task
             for future in as_completed(futures):
+                task = futures[future]
                 try:
                     rtvs.extend(future.result())
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Swallowing this silently dropped a whole status' worth of
+                    # RTVs and still reported success.
+                    logger.warning(f"NCM RTV fetch failed for '{task}': {e}")
+                    fetch_errors.append(f"{task}: {e}")
 
         # Deduplicate by orderid
         seen = set()
@@ -522,7 +567,18 @@ class NCMService:
                 seen.add(oid)
                 unique_rtvs.append(o)
 
-        return {'success': True, 'data': unique_rtvs}
+        if fetch_errors:
+            logger.warning(
+                f"NCM RTV fetch incomplete: {len(fetch_errors)} request(s) failed "
+                f"- {fetch_errors[0]}"
+            )
+
+        return {
+            'success': True,
+            'data': unique_rtvs,
+            'partial': bool(fetch_errors),
+            'error': fetch_errors[0] if fetch_errors else None,
+        }
 
     def get_vendor_rtvs(self, max_pages: int = 50, page_size: int = 200,
                          known_ids: set = None, scan_all: bool = False):

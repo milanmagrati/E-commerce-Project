@@ -226,6 +226,58 @@ else:
           payload.get('status_history_throttled'))
 
 
+print('\n6. The rate gate covers the v1 endpoints and leaves v2 alone')
+
+svc_scope = NCMService()
+check('v1 /order/status is paced',
+      svc_scope._rate_scope(svc_scope.base_url + '/order/status') is not None)
+check('v1 /order is paced',
+      svc_scope._rate_scope(svc_scope.base_url + '/order') is not None)
+check('v1 /order/comment is paced',
+      svc_scope._rate_scope(svc_scope.base_url + '/order/comment') is not None)
+if svc_scope.base_url_v2 != svc_scope.base_url:
+    check('v2 /vendor/orders is NOT paced - it absorbs 100 at a time',
+          svc_scope._rate_scope(svc_scope.base_url_v2 + '/vendor/orders') is None,
+          svc_scope._rate_scope(svc_scope.base_url_v2 + '/vendor/orders'))
+    check('the pacing bucket is the API key, so accounts stay independent',
+          svc_scope._rate_scope(svc_scope.base_url + '/order') == svc_scope.api_key)
+else:
+    print('  SKIP  no separate v2 base URL configured')
+
+
+print('\n7. LIVE: a short RTV fetch is reported, not passed off as complete')
+
+if offline:
+    print('  SKIP  no network to NCM')
+else:
+    rtv_svc = NCMService(api_config_id=probe[1])
+
+    real = rtv_svc.get_vendor_rtvs_by_status(include_recent=False)
+    check('RTV fetch succeeds', real.get('success'), real.get('error'))
+    check('a clean fetch is not flagged partial', real.get('partial') is False,
+          real.get('error'))
+    check('a clean fetch carries no error', real.get('error') is None, real.get('error'))
+    print('        -> ' + str(len(real.get('data') or [])) + ' RTVs, partial='
+          + str(real.get('partial')))
+
+    # Force every page to fail and confirm the result says so instead of
+    # quietly returning a short list with success=True.
+    original = NCMService._make_request
+    try:
+        NCMService._make_request = lambda self, *a, **k: {
+            'success': False, 'error': 'Request was throttled. Expected available in 1 second.'
+        }
+        broken = rtv_svc.get_vendor_rtvs_by_status(include_recent=True)
+    finally:
+        NCMService._make_request = original
+
+    check('a fully failed fetch is flagged partial', broken.get('partial') is True, broken)
+    check('a fully failed fetch names the reason',
+          _is_throttle_error(broken.get('error')), broken.get('error'))
+    check('a fully failed fetch returns no rows rather than stale ones',
+          broken.get('data') == [], len(broken.get('data') or []))
+
+
 print('')
 print('ALL CHECKS PASSED' if not failures else str(len(failures)) + ' FAILED: ' + str(failures))
 sys.exit(1 if failures else 0)

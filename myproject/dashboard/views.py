@@ -5931,9 +5931,11 @@ POSSIBLE_REDIRECTION_REFRESH_THROTTLE_SECONDS = 45
 
 #: How many linked local orders one refresh may write through to NCM-derived
 #: statuses. Each such write costs extra NCM requests (a 'Delivered' is
-#: re-fetched in full, and the activity log asks for the real event time), and
-#: NCMService has no 429 backoff - so an unbounded page could fire a hundred
-#: rapid requests the first time a backlog of stale rows is checked. The RTV
+#: re-fetched in full, and the activity log asks for the real event time), so
+#: an unbounded page could fire a hundred rapid requests the first time a
+#: backlog of stale rows is checked. NCMService now paces and retries around
+#: NCM's rate limit, but that turns such a burst into a long wait rather than
+#: a fast page - the cap is still what keeps this snappy. The RTV
 #: rows' own last_status is refreshed for free from the one bulk response and is
 #: what actually decides whether a row stays listed, so capping this only
 #: spreads the linked-order catch-up over successive refreshes.
@@ -22546,10 +22548,12 @@ def rtv_needs_date_verification(queryset):
     ).order_by(F('rtv_marked_at_checked_at').asc(nulls_first=True), 'id')
 
 
-# NCM has no documented rate limit and NCMService._make_request has no 429
-# backoff, so the only thing keeping an interactive sync under it is this cap
-# plus the 1s spacing in ncm_rtvs_sync. It is a budget for the whole request,
-# not per portal — three active configs used to mean 3x this many calls.
+# NCM allows about three v1 requests a second per account.
+# NCMService._make_request now paces itself against that and retries a 429,
+# so this cap is no longer what prevents errors - it is what keeps an
+# interactive sync from queueing behind its own backlog. It is a budget for
+# the whole request, not per portal — three active configs used to mean 3x
+# this many calls.
 RTV_COMMENT_SYNC_BATCH = 6
 
 
@@ -23218,6 +23222,10 @@ def ncm_rtvs_sync(request):
     new_count = 0
     updated_count = 0
     tagged_count = 0
+    #: Set when NCM failed to answer for part of the scan. The sync is additive,
+    #: so nothing is lost from the screen - but RTVs that exist in NCM can be
+    #: missing from it, and reporting a clean sync would hide that.
+    partial_error = None
     existing_ids = set(RTVOrder.objects.values_list('order_id', flat=True))
 
     try:
@@ -23234,6 +23242,9 @@ def ncm_rtvs_sync(request):
                 if not api_result['success']:
                     logger.warning(f"NCM RTV sync: API call failed for config {cfg.id} ({cfg.api_name})")
                     continue
+
+                if api_result.get('partial') and partial_error is None:
+                    partial_error = api_result.get('error') or 'some pages failed'
 
                 new_rtvs = []
                 date_map = {}
@@ -23373,9 +23384,11 @@ def ncm_rtvs_sync(request):
                 # 2. Existing RTVs whose date is missing or untrusted (up to 6)
                 #    — catches re-marked orders and rows still carrying the old
                 #      created_date fallback, least-recently-checked first
-                # Caps + the 1s spacing stay: NCMService._make_request has no
-                # 429 backoff, so this is the only thing keeping us under NCM's
-                # rate limit on an interactive request.
+                # Caps stay: _make_request now paces itself against NCM's
+                # limit and retries a 429, so these no longer prevent errors -
+                # they keep an interactive request from queueing behind its own
+                # backlog. The explicit 1s spacing below is now redundant with
+                # that pacing, but harmless, and it also spaces the DB writes.
                 comment_fetch_oids = [r.order_id for r in new_rtvs[:8]]
                 stale_date_oids = list(
                     rtv_needs_date_verification(
@@ -23509,13 +23522,21 @@ def ncm_rtvs_sync(request):
         qs = qs.filter(api_config=chosen_config)
     total = qs.count()
 
-    return JsonResponse({
+    payload = {
         'success': True,
         'new_count': new_count,
         'updated_count': updated_count,
         'tagged_count': tagged_count,
         'total_count': total,
-    })
+    }
+    if partial_error:
+        payload['partial'] = True
+        payload['message'] = (
+            'Synced, but NCM did not answer for part of the scan - some RTVs '
+            'may be missing. Try again in a moment.'
+        )
+        payload['error'] = partial_error
+    return JsonResponse(payload)
 
 
 @login_required
