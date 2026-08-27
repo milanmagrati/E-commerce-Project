@@ -6,9 +6,10 @@
 
 {% block content %}
 <div class="container-fluid py-4">
-    <!-- Header with Count -->
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-        <div>
+    <!-- Header with Count — actions stay pinned to the top-right of the page,
+         dropping to a full-width pair only once the row can no longer hold both. -->
+    <div class="page-header mb-3">
+        <div class="page-header-title">
             <h2 class="mb-1 h4 h2-md">
                 <i class="bi bi-box-seam"></i> Dispatch List
             </h2>
@@ -23,7 +24,7 @@
                 {% endif %}
             </p>
         </div>
-        <div class="d-flex gap-2 page-header-actions w-100 w-sm-auto">
+        <div class="page-header-actions">
             <a href="{% url 'dispatch_management' %}" class="btn btn-primary">
                 <i class="bi bi-plus-circle"></i> New Dispatch
             </a>
@@ -69,7 +70,8 @@
                 <div class="stat-icon"><i class="bi bi-x-octagon"></i></div>
                 <div class="stat-content">
                     <div class="stat-number">{{ totals.issues }}</div>
-                    <div class="stat-label">Failed{% if totals.not_found %} · {{ totals.not_found }} not found{% endif %}</div>
+                    <div class="stat-label">Failed</div>
+                    {% if totals.not_found %}<div class="stat-sub">{{ totals.not_found }} not found</div>{% endif %}
                 </div>
             </div>
         </a>
@@ -350,21 +352,55 @@
 </form>
 
 <style>
+    /* ==================== PAGE HEADER ====================
+       Grid rather than flex-wrap: the title takes the space it needs and the
+       action buttons stay locked to the top-right corner, which is where the
+       eye looks for them on every other list page. */
+    .page-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        column-gap: 1rem;
+    }
+    .page-header-actions {
+        display: flex;
+        gap: 0.5rem;
+        justify-self: end;
+        align-items: center;
+    }
+    .page-header-actions .btn {
+        white-space: nowrap;
+        border-radius: 8px;
+        padding: 0.45rem 0.95rem;
+        font-weight: 600;
+        box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    /* Below the md breakpoint the two stack: title first, then a full-width
+       button pair, so neither gets squeezed into an unreadable column. */
+    @media (max-width: 767.98px) {
+        .page-header { grid-template-columns: minmax(0, 1fr); row-gap: 0.6rem; }
+        .page-header-actions { justify-self: stretch; }
+        .page-header-actions .btn { flex: 1; }
+    }
+
     /* ==================== STATISTICS CARDS ==================== */
     .stat-card {
         display: flex;
         align-items: center;
-        padding: 0.65rem 0.9rem;
-        border-radius: 10px;
+        gap: 0.7rem;
+        padding: 0.7rem 0.9rem;
+        border-radius: 12px;
         background: white;
-        box-shadow: 0 1px 4px rgba(0,0,0,.08);
+        border: 1px solid rgba(15,23,42,.06);
+        box-shadow: 0 1px 3px rgba(15,23,42,.06);
         transition: box-shadow .2s, transform .2s;
         border-left: 3px solid;
         height: 100%;
+        min-height: 72px;
     }
     .stat-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,.12);
+        box-shadow: 0 6px 16px rgba(15,23,42,.12);
     }
     .stat-card-primary  { border-left-color: #0d6efd; background: linear-gradient(135deg,#fff 0%,#e7f1ff 100%); }
     .stat-card-success  { border-left-color: #198754; background: linear-gradient(135deg,#fff 0%,#d1f4e0 100%); }
@@ -372,10 +408,16 @@
     .stat-card-warning  { border-left-color: #ffc107; background: linear-gradient(135deg,#fff 0%,#fff4d1 100%); }
 
     .stat-icon {
-        font-size: 1.6rem;
-        margin-right: 0.75rem;
-        opacity: 0.75;
+        font-size: 1.25rem;
         flex-shrink: 0;
+        width: 38px;
+        height: 38px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 10px;
+        background: rgba(255,255,255,.75);
+        box-shadow: inset 0 0 0 1px rgba(15,23,42,.06);
     }
     .stat-card-primary .stat-icon { color: #0d6efd; }
     .stat-card-success .stat-icon { color: #198754; }
@@ -398,6 +440,18 @@
         text-transform: uppercase;
         letter-spacing: 0.4px;
         margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    /* Secondary detail (e.g. "648 not found") gets its own line instead of
+       being ellipsized off the end of the label. */
+    .stat-sub {
+        font-size: 0.68rem;
+        color: #94a3b8;
+        font-weight: 500;
+        line-height: 1.2;
+        margin-top: 1px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -679,7 +733,6 @@
         .stat-icon   { font-size: 1.3rem; margin-right: 0.5rem; }
         .stat-card   { padding: 0.5rem 0.65rem; }
         .container-fluid { padding-left: 0.75rem; padding-right: 0.75rem; }
-        .page-header-actions .btn { flex: 1; }
     }
 
     @media (prefers-reduced-motion: reduce) {

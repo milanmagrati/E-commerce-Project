@@ -16,6 +16,56 @@
             </div>
         </div>
         <div class="d-flex gap-2 flex-wrap detail-actions">
+            {% comment %}
+            Export sits first in the action row because it is the one thing
+            staff reach for repeatedly on this page; the scopes mirror the
+            All / Success / Problems tabs on the orders table below.
+            {% endcomment %}
+            <div class="dropdown">
+                <button class="btn btn-success dropdown-toggle" type="button"
+                        id="exportDispatchBtn" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-download"></i> Export
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end export-menu" aria-labelledby="exportDispatchBtn">
+                    <li><h6 class="dropdown-header">Excel workbook</h6></li>
+                    <li>
+                        <a class="dropdown-item" href="{% url 'dispatch_export' dispatch.pk %}?format=xlsx&amp;scope=all">
+                            <i class="bi bi-file-earmark-excel text-success"></i>
+                            <span>All scans <small class="text-muted">({{ dispatch.get_item_count }})</small></span>
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item" href="{% url 'dispatch_export' dispatch.pk %}?format=xlsx&amp;scope=success">
+                            <i class="bi bi-check-circle text-success"></i>
+                            <span>Dispatched only <small class="text-muted">({{ dispatch.get_success_count }})</small></span>
+                        </a>
+                    </li>
+                    {% if dispatch.get_issue_count %}
+                    <li>
+                        <a class="dropdown-item" href="{% url 'dispatch_export' dispatch.pk %}?format=xlsx&amp;scope=problems">
+                            <i class="bi bi-exclamation-triangle text-danger"></i>
+                            <span>Problems only <small class="text-muted">({{ dispatch.get_issue_count }})</small></span>
+                        </a>
+                    </li>
+                    {% endif %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">CSV</h6></li>
+                    <li>
+                        <a class="dropdown-item" href="{% url 'dispatch_export' dispatch.pk %}?format=csv&amp;scope=all">
+                            <i class="bi bi-filetype-csv text-primary"></i>
+                            <span>All scans</span>
+                        </a>
+                    </li>
+                    {% if dispatch.get_issue_count %}
+                    <li>
+                        <a class="dropdown-item" href="{% url 'dispatch_export' dispatch.pk %}?format=csv&amp;scope=problems">
+                            <i class="bi bi-filetype-csv text-danger"></i>
+                            <span>Problems only</span>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
             <a href="{% url 'dispatch_list' %}" class="btn btn-secondary">
                 <i class="bi bi-arrow-left"></i> Back to List
             </a>
@@ -967,6 +1017,34 @@
         .detail-actions, .dfr-copy-btn, .dfr-scope { display: none !important; }
         .dfr-card, .card { break-inside: avoid; }
     }
+
+    /* ==================== EXPORT MENU ==================== */
+    .detail-actions .dropdown-toggle { font-weight: 600; }
+    .export-menu {
+        min-width: 250px;
+        border-radius: 10px;
+        border: 1px solid rgba(15,23,42,.08);
+        box-shadow: 0 10px 28px rgba(15,23,42,.16);
+        padding: 0.35rem;
+    }
+    .export-menu .dropdown-header {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 700;
+        color: #94a3b8;
+        padding: 0.4rem 0.6rem 0.2rem;
+    }
+    .export-menu .dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        border-radius: 7px;
+        padding: 0.45rem 0.6rem;
+        font-size: 0.9rem;
+    }
+    .export-menu .dropdown-item i { font-size: 1rem; flex-shrink: 0; }
+    .export-menu .dropdown-item:active { background: #e2e8f0; color: inherit; }
 </style>
 
 <script>

@@ -189,6 +189,9 @@ urlpatterns = [
     # View single dispatch detail
     path('dispatch/<int:pk>/', views.dispatch_detail, name='dispatch_detail'),
 
+    # Export a single dispatch batch (?format=xlsx|csv & ?scope=all|success|problems)
+    path('dispatch/<int:pk>/export/', views.dispatch_export, name='dispatch_export'),
+
     # Move dispatch to trash (soft delete)
     path('dispatch/<int:pk>/trash/', views.dispatch_move_to_trash, name='dispatch_move_to_trash'),
 

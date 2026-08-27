@@ -10630,6 +10630,177 @@ def dispatch_detail(request, pk):
     return render(request, 'dispatch_detail.html', context)
 
 
+# ==================== SINGLE-BATCH EXPORT ====================
+#: Columns of the per-scan export. Kept as one list so the CSV and the Excel
+#: sheet can never drift apart - a mismatch there is how exports quietly start
+#: shipping the wrong value under the wrong heading.
+DISPATCH_EXPORT_COLUMNS = [
+    '#', 'Scanned Order ID', 'Order Number', 'Customer', 'Phone', 'City',
+    'Order Status', 'Payment Method', 'Total Amount', 'Outcome',
+    'Failure Cause', 'Reason', 'Scanned At', 'Failed At',
+]
+
+#: Export scope -> filename suffix. The keys mirror the All / Success /
+#: Problems tabs on the detail page.
+DISPATCH_EXPORT_SCOPES = {
+    'all': 'all-scans',
+    'success': 'dispatched',
+    'problems': 'problems',
+}
+
+
+def _dispatch_export_rows(dispatch, scope='all'):
+    """Rows for one batch's export, in scan order, filtered by `scope`."""
+    from .timezone_utils import format_nepali_datetime
+
+    cause_labels = dict(DispatchItem.FAILURE_CODE_CHOICES)
+    rows = []
+    index = 0
+
+    for item in dispatch.items.all():
+        if scope == 'success' and item.dispatch_status != 'success':
+            continue
+        if scope == 'problems' and item.dispatch_status == 'success':
+            continue
+
+        index += 1
+        order = item.order
+        rows.append([
+            index,
+            item.scanned_order_id,
+            order.order_number if order else '',
+            order.customer_name if order else '',
+            order.customer_phone if order else '',
+            (order.branch_city or '') if order else '',
+            order.status if order else '',
+            (order.payment_method or '') if order else '',
+            float(order.total_amount) if order and order.total_amount is not None else '',
+            item.get_dispatch_status_display(),
+            cause_labels.get(item.failure_code, ''),
+            item.get_failure_reason_display(),
+            format_nepali_datetime(item.scanned_at),
+            format_nepali_datetime(item.failed_at) if item.failed_at else '',
+        ])
+
+    return rows
+
+
+def _dispatch_export_filename(dispatch, scope, extension):
+    suffix = DISPATCH_EXPORT_SCOPES.get(scope, 'all-scans')
+    return '{}-{}.{}'.format(dispatch.batch_number, suffix, extension)
+
+
+def _dispatch_export_csv(dispatch, scope):
+    import csv
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+        _dispatch_export_filename(dispatch, scope, 'csv')
+    )
+    # Excel on Windows reads a bare UTF-8 CSV as ANSI and mangles Nepali
+    # customer names; the BOM is what makes it pick the right codec.
+    response.write('\ufeff')
+
+    writer = csv.writer(response)
+    writer.writerow(DISPATCH_EXPORT_COLUMNS)
+    for row in _dispatch_export_rows(dispatch, scope):
+        writer.writerow(row)
+    return response
+
+
+def _dispatch_export_excel(dispatch, scope):
+    """Workbook with a batch summary sheet plus the scanned-order rows."""
+    from .timezone_utils import format_nepali_datetime
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', start_color='1E293B')
+    fail_fill = PatternFill('solid', start_color='FFE4E6')
+    warn_fill = PatternFill('solid', start_color='FEF3C7')
+    label_font = Font(bold=True)
+
+    wb = Workbook()
+
+    summary = wb.active
+    summary.title = 'Summary'
+    for label, value in [
+        ('Batch Number', dispatch.batch_number),
+        ('Logistics', dispatch.get_logistics_display()),
+        ('Status', dispatch.get_status_display()),
+        ('Outcome', dispatch.get_outcome().title()),
+        ('Total Orders Scanned', dispatch.total_orders),
+        ('Successfully Dispatched', dispatch.get_success_count()),
+        ('Failed / Rejected', dispatch.get_failed_count()),
+        ('Not Found in System', dispatch.get_not_found_count()),
+        ('Success Rate %', dispatch.get_success_rate()),
+        ('Created By', dispatch.created_by.username if dispatch.created_by else ''),
+        ('Created At', format_nepali_datetime(dispatch.created_at)),
+        ('Rows Exported', DISPATCH_EXPORT_SCOPES.get(scope, 'all-scans').replace('-', ' ').title()),
+    ]:
+        summary.append([label, value])
+        summary.cell(row=summary.max_row, column=1).font = label_font
+    summary.column_dimensions['A'].width = 24
+    summary.column_dimensions['B'].width = 34
+
+    detail = wb.create_sheet('Scanned Orders')
+    detail.append(DISPATCH_EXPORT_COLUMNS)
+    for cell in detail[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    detail.freeze_panes = 'A2'
+
+    outcome_column = DISPATCH_EXPORT_COLUMNS.index('Outcome') + 1
+    for row in _dispatch_export_rows(dispatch, scope):
+        detail.append(row)
+        outcome = detail.cell(row=detail.max_row, column=outcome_column).value
+        if outcome == 'Failed':
+            for cell in detail[detail.max_row]:
+                cell.fill = fail_fill
+        elif outcome == 'Not Found':
+            for cell in detail[detail.max_row]:
+                cell.fill = warn_fill
+
+    for column in detail.columns:
+        width = max((len(str(c.value)) for c in column if c.value is not None), default=10)
+        detail.column_dimensions[column[0].column_letter].width = min(max(width + 2, 10), 60)
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+        _dispatch_export_filename(dispatch, scope, 'xlsx')
+    )
+    wb.save(response)
+    return response
+
+
+@login_required
+@permission_required('can_view_dispatch')
+def dispatch_export(request, pk):
+    """Export one dispatch batch as Excel or CSV.
+
+    `scope` mirrors the All / Success / Problems tabs on the detail page, so
+    whatever the user is looking at is what they can take away.
+    """
+    dispatch = get_object_or_404(
+        Dispatch.objects.select_related('created_by').prefetch_related('items__order'),
+        pk=pk
+    )
+
+    export_format = (request.GET.get('format') or 'xlsx').lower()
+    scope = (request.GET.get('scope') or 'all').lower()
+    if scope not in DISPATCH_EXPORT_SCOPES:
+        scope = 'all'
+
+    try:
+        if export_format == 'csv':
+            return _dispatch_export_csv(dispatch, scope)
+        return _dispatch_export_excel(dispatch, scope)
+    except Exception as e:
+        messages.error(request, 'Could not export this dispatch: {}'.format(e))
+        return redirect('dispatch_detail', pk=pk)
+
+
 @login_required
 @permission_required('can_delete_dispatch')
 def dispatch_delete(request, pk):
