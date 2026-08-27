@@ -9317,3 +9317,8 @@ RuntimeError: NCM exploded
 [WARNING] 2026-08-27 13:56:45 ncm_service._make_request:254 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
 [INFO] 2026-08-27 13:56:49 realtime_api.api_sync_order_status:381 [SUCCESS] API Sync: T158 -> Pickup Created
 [DEBUG] 2026-08-27 13:56:49 ncm_service._fetch_comments:343 NCM: 404 returned for order 22614428 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[INFO] 2026-08-27 14:24:29 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-27 14:27:44 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-27 14:28:46 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-27 14:44:39 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-27 14:47:41 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
