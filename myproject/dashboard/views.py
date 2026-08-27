@@ -23171,9 +23171,11 @@ def ncm_rtvs_sync(request):
 
         batch = select_rtv_comment_sync_batch([c.id for c in configs])
         services = {}
+        # No sleep between these: the calls are sequential, so each already
+        # waits on the previous response, and NCMService now paces itself
+        # against NCM's rate limit. The old 1s spacing just made an
+        # interactive sync a batch-length slower for nothing.
         for i, (oid, cfg_id) in enumerate(batch):
-            if i > 0:
-                time.sleep(1.0)  # spacing between sequential NCM requests
             try:
                 if cfg_id not in services:
                     services[cfg_id] = NCMService(api_config_id=cfg_id)
@@ -23387,8 +23389,7 @@ def ncm_rtvs_sync(request):
                 # Caps stay: _make_request now paces itself against NCM's
                 # limit and retries a 429, so these no longer prevent errors -
                 # they keep an interactive request from queueing behind its own
-                # backlog. The explicit 1s spacing below is now redundant with
-                # that pacing, but harmless, and it also spaces the DB writes.
+                # backlog.
                 comment_fetch_oids = [r.order_id for r in new_rtvs[:8]]
                 stale_date_oids = list(
                     rtv_needs_date_verification(
@@ -23398,9 +23399,7 @@ def ncm_rtvs_sync(request):
                     ).values_list('order_id', flat=True)[:6]
                 )
                 comment_fetch_oids.extend(stale_date_oids)
-                for i, oid in enumerate(comment_fetch_oids):
-                    if i > 0:
-                        time.sleep(1.0)
+                for oid in comment_fetch_oids:
                     try:
                         sync_rtv_from_ncm_comments(ncm_service, oid)
                     except Exception:

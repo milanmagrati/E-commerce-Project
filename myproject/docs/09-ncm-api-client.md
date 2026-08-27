@@ -131,14 +131,16 @@ Callers always check `result['success']` before touching `result['data']`.
 
 | Method | HTTP | URL | Notes | Line |
 |---|---|---|---|---|
-| `get_vendor_rtvs_by_status()` | GET | `{v2}/vendor/orders` | Fetches 4 statuses in parallel + 3 recent pages | `:299` |
-| `get_vendor_rtvs()` | GET | `{v2}/vendor/orders` | Paginated, early-exits after 3 empty pages | `:393` |
-| `get_vendor_rtvs_parallel()` | GET | `{v2}/vendor/orders` | Shared `requests.Session`, `page_size=100` (**NCM's hard cap**, `:488`), up to 300 workers | `:472` |
-| `return_order(id, comment)` | POST | `{v2}/vendor/order/return` | `{'pk': id, 'comment': …}` | `:546` |
-| `create_exchange_order(id)` | POST | `{v2}/vendor/order/exchange-create` | `{'pk': id}` → returns `cust_order`, `ven_order` | `:554` |
+| `get_vendor_rtvs_by_status()` | GET | `{v2}/vendor/orders` | Fetches 4 statuses in parallel + 3 recent pages; reports `partial` when a page fails | `:457` |
+| `return_order(id, comment)` | POST | `{v2}/vendor/order/return` | `{'pk': id, 'comment': …}` | `:583` |
+| `create_exchange_order(id)` | POST | `{v2}/vendor/order/exchange-create` | `{'pk': id}` → returns `cust_order`, `ven_order` | `:591` |
 
 The statuses queried by `get_vendor_rtvs_by_status` are
-`['Arrived', 'Dispatched', 'Sent to Vendor', 'Returned to Warehouse']` (`:316`).
+`['Arrived', 'Dispatched', 'Sent to Vendor', 'Returned to Warehouse']` (`:481`).
+
+`get_vendor_rtvs()` and `get_vendor_rtvs_parallel()` used to sit alongside it —
+a sequential paginator and a 300-worker full scan. Neither had any caller left
+once the status-filtered fetch covered the same ground, so both were removed.
 
 ### Webhook registration
 

@@ -128,21 +128,25 @@ of NCM's shipping status.
 
 `RTVOrder` rows, populated by a sync against NCM's vendor endpoint.
 
-**Sync** — `/api/ncm-rtv/sync/` (`ncm_rtvs_sync`, `views.py:23128`). Calls
-`NCMService.get_vendor_rtvs_by_status()` or `get_vendor_rtvs_parallel()`
-(`services/ncm_service.py:299`, `:472`), which query `{v2}/vendor/orders`.
+**Sync** — `/api/ncm-rtv/sync/` (`ncm_rtvs_sync`, `views.py:23132`). Calls
+`NCMService.get_vendor_rtvs_by_status()` (`services/ncm_service.py:457`), which
+queries `{v2}/vendor/orders`.
 
 | Method | Strategy |
 |---|---|
 | `get_vendor_rtvs_by_status()` | Four statuses in parallel — `Arrived`, `Dispatched`, `Sent to Vendor`, `Returned to Warehouse` — plus 3 recent pages |
-| `get_vendor_rtvs()` | Sequential pagination, early-exits after 3 empty pages |
-| `get_vendor_rtvs_parallel()` | Shared `requests.Session`, `page_size=100` (**NCM's hard cap**), up to 300 workers |
+
+The sync is **additive** — `bulk_create` + `bulk_update`, nothing retires an
+RTV that is missing from the response. So a failed page costs visibility, not
+data: the RTVs it held simply never reach the screen. That used to pass
+silently as a clean sync; the fetch now returns `partial` / `error` and the
+endpoint reports *"some RTVs may be missing"*.
 
 ### Related endpoints
 
 | URL | View | Purpose |
 |---|---|---|
-| `/api/ncm-rtv/<ncm_id>/detail/` | `ncm_rtv_order_detail` (`views.py:23661`) | Detail modal + status history. Also used by the **order detail page** |
+| `/api/ncm-rtv/<ncm_id>/detail/` | `ncm_rtv_order_detail` (`views.py:23685`) | Detail modal + status history. Also used by the **order detail page** |
 | `/api/ncm-rtv/<id>/comment/` | `ncm_rtv_add_comment` | Post a comment to NCM |
 | `/api/ncm-rtv/<id>/comments/` | `ncm_rtv_get_comments` | Read comments |
 | `/api/rtv/<id>/followup/add/`, `/api/rtv/<id>/followups/` | | `RTVFollowUp` thread |
@@ -317,8 +321,9 @@ The keyword fallback triggers on `return`, `rtv`, or `sent to vendor`
   loosening them locally just moves the rejection to NCM.
 - **Redirect eligibility is a prefix match.** `"Arrived at RETURN (TINKUNE)"` passes;
   `"Dispatched to RETURN (TINKUNE)"` does not.
-- The RTV sync can be slow — `get_vendor_rtvs_parallel` uses up to 300 workers precisely
-  because sequential pagination was unusable.
+- The RTV sync's cost is now the per-order comment fetches that follow the bulk
+  fetch, not the bulk fetch itself — the status-filtered query covers all active
+  RTVs in a handful of calls.
 - `'Return to Vendor'` as a literal string appears **only** as a UI toast title
   (`order_detail.html:3802`). It is not an NCM status.
 
