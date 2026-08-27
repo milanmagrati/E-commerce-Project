@@ -994,10 +994,19 @@ into that shared instance via IncAttAlert.openModal().
             if (data.success) {
                 clearDraft();
                 getModal('policyModal').hide();
+                // Saving a policy re-labels the attendance days already
+                // recorded under it (Present / Half Day / Absent follow the
+                // thresholds just saved) — say so, otherwise it looks like
+                // the change only applies to future days.
+                var relabelled = data.records_updated || 0;
+                var relabelMsg = relabelled
+                    ? ' ' + relabelled + ' attendance record' + (relabelled === 1 ? '' : 's')
+                      + ' re-checked against the new thresholds.'
+                    : '';
                 sessionStorage.setItem('policyToast', JSON.stringify({
                     type: 'success',
                     title: editingId ? 'Policy Updated' : 'Policy Created',
-                    msg: editingId ? 'Policy updated successfully.' : '"' + name + '" has been created.'
+                    msg: (editingId ? 'Policy updated successfully.' : '"' + name + '" has been created.') + relabelMsg
                 }));
                 location.reload();
             } else {
