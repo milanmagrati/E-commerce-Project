@@ -1,0 +1,289 @@
+# 22 — Settings & Setup Management
+
+The configuration surface: status vocabularies, cities, company branding, API accounts,
+sync cadence, maintenance mode and notices.
+
+---
+
+## The settings hub
+
+**URL** `/settings/` · **name** `settings_hub` · **Template** `settings_hub.html`
+
+A two-panel launcher for everything below.
+
+---
+
+## Setup Management — the status vocabulary
+
+**URL** `/setup/` · **name** `setup_management` · **Template** `setup_management.html`
+**Permission** `can_view_orders`
+
+This is where the words that appear in every status dropdown are defined.
+
+### `Setup` — `dashboard/models.py:1583-1609`
+
+| Field | Purpose |
+|---|---|
+| `setup_type` | Which vocabulary this row belongs to |
+| `name` | The human-readable name, e.g. `"Pickup Created"` |
+| `description` | Free text |
+| `color` | Hex code for the badge |
+| `is_active` | Hide without deleting |
+| `is_default` | Pre-selected in order forms and used by the Excel importer |
+| `sort_order` | Drag-and-drop ordering |
+
+`unique_together = ('setup_type', 'name')`.
+
+### The five setup types — `:1584-1590`
+
+| `setup_type` | Feeds |
+|---|---|
+| `status` | Order status dropdowns, filters, bulk "Mark as …" options |
+| `payment` | Payment method |
+| `payment_status` | Payment status |
+| `order_source` | `Order.order_from`, and the Orders-by-Source report |
+| `followup_status` | Follow-up statuses ([19](./19-customers-and-followups.md)) |
+
+### Actions
+
+| Action | URL | Permission |
+|---|---|---|
+| Add | `/setup/add/` | `can_create_orders` |
+| Edit | `/setup/<id>/edit/` | `can_create_orders` |
+| Delete | `/setup/<id>/delete/` | `can_delete_orders` |
+| Toggle default | `/setup/<id>/toggle-default/` | `can_create_orders` |
+| Reorder | `/setup/reorder/` | `can_create_orders` |
+
+---
+
+## ⚠️ Setup rows are created automatically
+
+This is the most important thing to know about this table.
+
+```mermaid
+flowchart TD
+    A[Code produces a status name] --> B{A matching Setup row exists?}
+    B -- Yes --> C[Use it]
+    B -- No --> D["CREATE the row<br/>-- silently"]
+    D --> C
+```
+
+Three places do this:
+
+| Where | Line |
+|---|---|
+| `sync_order_status_setup()` | `dashboard/views.py:148` |
+| `order_detail` forced repair | `dashboard/views.py:4118-4147`, `:4233` |
+| `NCMService._resolve_setup()` | `services/ncm_service.py:1082` |
+| Dispatch scan ("Dispatched") | `dashboard/views.py:10173-10178` |
+
+**Consequence:** the `Setup` table drifts toward whatever strings the code has ever
+produced. If you find rows nobody created deliberately, this is why.
+
+`_resolve_setup` also **reuses a deactivated row** rather than creating a duplicate — the
+unique constraint would reject one anyway (`services/ncm_service.py:1068`).
+
+> Deleting a `Setup` row does not change the orders pointing at it — `status_setup` is
+> `SET_NULL`. Those orders fall back to their status **strings**, which is exactly what the
+> `status_setup IS NULL` branch in the orders-list filter handles
+> ([05](./05-orders-list.md)).
+
+Only one status row is seeded by migration: `"Return Processing"`
+(`dashboard/migrations/0077_return_processing_status_setup.py`).
+
+---
+
+## API Sync Settings
+
+Part of the settings hub, backed by the `APISettings` singleton
+(`dashboard/models.py:2083-2157`, pinned to `pk=1`).
+
+| Setting | Default | Effect |
+|---|---|---|
+| `order_sync_interval` | 900s | How often the **server** calls NCM. **Costs API requests** |
+| `page_refresh_interval` | 30s | How often an open page re-reads status from the local DB. Free |
+| `ncm_api_timeout` | 30s | Per-request timeout |
+| `bulk_sync_included_statuses` | `[]` | Which statuses the bulk sync covers. Empty = exclude the default terminal list |
+| `bulk_sync_fetch_event_times` | on | Fetch NCM's real event time per changed order (one extra call each) |
+
+The remaining four columns are scheduler state, written with `queryset.update()` so
+`updated_at` keeps meaning "when an admin last saved these settings":
+`last_bulk_sync_started_at`, `last_bulk_sync_finished_at`, `bulk_sync_running_since`,
+`last_bulk_sync_summary`.
+
+Changes take effect in **already-open tabs** on the next heartbeat — no restart, no reload.
+See [12](./12-ncm-sync-and-scheduler.md).
+
+There is a hard floor of `MIN_SYNC_SECONDS = 60` enforced in `ncm/scheduler.py:56`, in
+addition to the form's own validation.
+
+---
+
+## API Integration — courier accounts
+
+**URL** `/api-integration/` · **name** `api_integration_list` · **Template** `api_integration.html`
+
+Manages `LogisticsAPIConfig` rows (`dashboard/models.py:1540-1579`): the courier API
+credentials and base URLs. Add / edit / delete / toggle / get endpoints.
+
+| Field | Notes |
+|---|---|
+| `api_name` | Descriptive label |
+| `logistics_provider` | `ncm` / `pick_and_drop` / `other` |
+| `api_key` | |
+| `api_secret` | Required for PND only |
+| `base_urls` | **JSON list** — `[0]` is the v1 base, `[1]` the v2 base |
+| `is_active` | |
+
+Multiple accounts per provider are supported and are the reason the NCM sync sweeps
+candidates when an order 404s — see [09](./09-ncm-api-client.md).
+
+---
+
+## Cities
+
+**URL** `/cities/` · **name** `city_management` · **View** `dashboard/views.py:11878`
+**Template** `city_management.html` · **Permission** inline `can_view_cities`
+
+### `City` — `dashboard/models.py:882-906`
+
+| Field | Notes |
+|---|---|
+| `name` | **Unique** |
+| `valley_status` | `valley` (default) / `out_valley` |
+| `is_active` | |
+
+`valley_status` is what drives `Order.in_out` — inside or outside the Kathmandu valley,
+which affects delivery pricing and the courier destination.
+
+Order creation does `City.objects.get_or_create(...)` with the valley status derived from
+the form's IN/OUT choice (`dashboard/views.py:3474-3488`), so the city list grows on its own
+too.
+
+| Page / API | URL | Permission |
+|---|---|---|
+| City management | `/cities/` | `can_view_cities` |
+| Edit | `/cities/edit/<id>/` | `can_edit_cities` |
+| Delete | `/cities/delete/<id>/` | `can_delete_cities` |
+| Quick add / bulk add | `/api/cities/quick_add`, `/api/cities/bulk_add` | `can_add_cities` |
+| City list JSON | `/api/cities/` | |
+| Valley lookup | `/api/cities/get-valley-status/` | |
+
+---
+
+## Company setup & branding
+
+**URL** `/settings/company/` · **name** `company_setup` · **Template** `company_setup.html`
+
+`CompanySetup` (`dashboard/models.py:1878-1918`) holds the company name, logo, contact
+details and **theme colours**.
+
+Surfaced on every page by `dashboard/context_processors.py:12` `company_setup`. Colour
+values pass through `_safe_color()` (`:7`) before reaching CSS — an admin-supplied colour
+string is untrusted input.
+
+---
+
+## Landing page
+
+**URL** `/settings/landing-page/` · **name** `landing_page_setup` · **Template** `landing_page_setup.html`
+
+Drives the public marketing page at `/welcome/` (and `/` for logged-out visitors).
+
+| Model | Lines | Holds |
+|---|---|---|
+| `LandingPageSettings` | `:1920-2012` | Hero copy, sections, toggles |
+| `LandingStatItem` | `:2014-2041` | The stat counters |
+| `LandingBrandLogo` | `:2043-2057` | Partner logos |
+| `LandingFeatureCard` | `:2059-2081` | Feature cards |
+
+---
+
+## Maintenance mode
+
+`MaintenanceMode` (`dashboard/models.py:2334-2370`) — a **singleton** pinned to `pk=1`.
+
+| Field | Purpose |
+|---|---|
+| `is_enabled` | When on, **non-admin** users see a maintenance overlay |
+| `message` | Custom overlay text |
+| `enabled_at`, `enabled_by` | Who turned it on and when |
+
+`save()` deletes the `ctx_maintenance_mode` cache key so the change takes effect
+immediately (`:2365-2366`). Surfaced by `dashboard/context_processors.py:188`.
+
+`MaintenanceLog` (`:2372-2396`) records every enable/disable event.
+
+| API | URL |
+|---|---|
+| Toggle | `/api/maintenance/toggle/` |
+| History | `/api/maintenance/logs/` |
+
+> **Admins bypass the overlay**, so you can turn it on and keep working.
+
+---
+
+## Global notices
+
+`GlobalNotice` (`dashboard/models.py:2398-2421`) — a rich-text banner shown to all staff.
+
+| Field | Purpose |
+|---|---|
+| `content` | Rich text |
+| `is_active` | |
+| `display_from`, `display_until` | Scheduling window |
+| `display_frequency` | How often each user sees it |
+
+`DISPLAY_FREQ_CHOICES`: `every_refresh` (default), `once_per_session`, `once_per_hour`,
+`once_per_day`, `once_per_week`, `once_only`.
+
+| API | URL |
+|---|---|
+| Active notice | `/api/active-notice/` |
+| Create | `/api/create-notice/` |
+| Update | `/api/update-notice/<id>/` |
+| History | `/api/notice-history/` |
+| Stop | `/api/notice/<id>/stop/` |
+
+Polled from `templates/base.html:2881` every 10 seconds.
+
+---
+
+## CMS pages
+
+**URL** `/pages/` · **name** `page_list` · **Views** `dashboard/page_views.py`
+**Templates** `dashboard/pages/page_list.html`, `dashboard/pages/page_form.html`
+
+Creates `store.Page` rows, which the storefront renders at `/store/p/<slug>/` and links from
+its footer. See [24 — Storefront](./24-storefront.md).
+
+---
+
+## Gotchas
+
+- **Setup rows appear on their own.** Four code paths create them.
+- **Deleting a Setup row doesn't break orders** — `SET_NULL`, and the strings remain.
+- **`order_sync_interval` and `page_refresh_interval` are completely different things.**
+  Confusing them is the most common tuning mistake. See
+  [12](./12-ncm-sync-and-scheduler.md).
+- **`base_urls` order matters** — `[0]` is v1, `[1]` is v2. Getting them backwards breaks
+  branches and vendor/RTV endpoints while leaving order creation working.
+- **Cities auto-create too**, from the order form.
+- Maintenance mode does not stop the NCM heartbeat — admins keeping a tab open will still
+  drive background syncs.
+- City management, purchases and several reports check permissions **inline** rather than by
+  decorator ([03](./03-auth-roles-permissions.md)).
+
+---
+
+## Files that own this
+
+- `dashboard/models.py:1583-1609` — `Setup`
+- `dashboard/models.py:882-906` — `City`
+- `dashboard/models.py:1540-1579` — `LogisticsAPIConfig`
+- `dashboard/models.py:1878-2081` — `CompanySetup`, landing-page models
+- `dashboard/models.py:2083-2157` — `APISettings`
+- `dashboard/models.py:2334-2421` — `MaintenanceMode`, `MaintenanceLog`, `GlobalNotice`
+- `dashboard/page_views.py` — CMS pages
+- `dashboard/context_processors.py` — how most of this reaches every page
+- `dashboard/urls.py` — the `/settings/`, `/setup/`, `/cities/`, `/api-integration/` routes

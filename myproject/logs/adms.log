@@ -266,3 +266,5 @@ django.db.utils.ProgrammingError: (1146, "Table 'ecommerce_db.hrm_attendancesync
 [INFO] 2026-08-25 11:05:46 views.iclock_cdata:5156 [CDATA POST] SN=TEST-ATTLOG-SN saved=1 duplicate=0 skipped=0
 [INFO] 2026-08-25 11:05:46 views.iclock_cdata:5109 [CDATA] SN=TEST-ATTLOG-SN IP=127.0.0.1 SEEN method=GET
 [INFO] 2026-08-25 11:05:46 views.iclock_cdata:5140 [CDATA] Sending handshake to SN=TEST-ATTLOG-SN with Date=2026-08-25 11:05:46
+[INFO] 2026-08-27 12:56:42 views._ingest_attlog_lines:5360 [ATTLOG:dup-test] created=2 duplicates=1 skipped=0 pins=1
+[INFO] 2026-08-27 12:56:42 views._ingest_attlog_lines:5360 [ATTLOG:dup-test] created=0 duplicates=3 skipped=0 pins=1
