@@ -35,6 +35,9 @@ NCM_MAX_BACKOFF_SECONDS = 5.0
 #: How many times a throttled GET is re-sent before giving up. Two is enough
 #: for the observed one-second window; more would just queue behind the gate.
 NCM_THROTTLE_RETRIES = 2
+#: How long to remember that a base URL's v2 comment endpoint 404s. Long enough
+#: to stop paying for it on every read, short enough to notice if NCM adds it.
+NCM_V2_COMMENTS_MISSING_SECONDS = 3600
 
 _rate_lock = threading.Lock()
 #: api_key -> timestamps (monotonic) of requests admitted in the last window.
@@ -265,6 +268,27 @@ class NCMService:
                     error_msg = e.response.text if hasattr(e.response, 'text') else str(e)
             return {'success': False, 'error': error_msg, 'status_code': status_code}
 
+    def _v2_comments_cache_key(self):
+        return f'ncm_v2_comments_missing_{self.base_url_v2}'
+
+    def _v2_comments_known_missing(self):
+        """True if v2 has already proved it has no comment endpoint here."""
+        if not self.base_url_v2 or self.base_url_v2 == self.base_url:
+            return False
+        try:
+            from django.core.cache import cache
+            return bool(cache.get(self._v2_comments_cache_key()))
+        except Exception:
+            return False
+
+    def _remember_v2_comments_missing(self):
+        """Note that v2 404s comments here, so later reads can skip straight to v1."""
+        try:
+            from django.core.cache import cache
+            cache.set(self._v2_comments_cache_key(), True, NCM_V2_COMMENTS_MISSING_SECONDS)
+        except Exception:
+            pass
+
     def _fetch_comments(self, ncm_order_id: int):
         """Fetch comments for an NCM order, trying v2 then v1.
 
@@ -278,6 +302,16 @@ class NCMService:
             f"{self.base_url_v2}/order/comment",
             f"{self.base_url}/order/comment",
         ]
+
+        # v2 has no comment endpoint on the accounts seen so far - it 404s for
+        # every order, including ones v1 then answers in full. That wasted a
+        # round trip on every single comment read. Once v1 has proved it can
+        # answer where v2 could not, skip v2 for a while. The record expires so
+        # this heals by itself if NCM ever ships the v2 endpoint.
+        if self._v2_comments_known_missing():
+            urls_to_try = urls_to_try[1:]
+
+        v2_missed = False
         for url in urls_to_try:
             try:
                 if self.base_url_v2 == self.base_url and url == urls_to_try[1]:
@@ -307,9 +341,16 @@ class NCMService:
                 if resp.status_code == 404:
                     # Might be missing endpoint (v2) or no comments. Let's try fallback.
                     logger.debug(f"NCM: 404 returned for order {ncm_order_id} at {url}, trying next...")
+                    if url == urls_to_try[0] and len(urls_to_try) > 1:
+                        v2_missed = True
                     continue
                 resp.raise_for_status()
-                return {'success': True, 'data': resp.json()}
+                data = resp.json()
+                if v2_missed:
+                    # v1 answered where v2 404'd, so that 404 was a missing
+                    # endpoint rather than an order without comments.
+                    self._remember_v2_comments_missing()
+                return {'success': True, 'data': data}
             except _req.exceptions.Timeout:
                 logger.warning(f"NCM comment fetch timeout: {url}")
                 continue
@@ -1241,6 +1282,57 @@ def candidate_ncm_config_ids(preferred_config_id=None):
 #: on the next refresh; only populated answers are ever stored.
 NCM_STATUS_CACHE_SECONDS = 20
 
+#: Longest a coalesced caller waits for the request it joined before giving up
+#: and issuing its own. Generous enough to cover a slow NCM round trip, bounded
+#: so one hung request cannot pin every thread waiting behind it.
+NCM_SINGLE_FLIGHT_TIMEOUT = 30
+
+_inflight_lock = threading.Lock()
+#: key -> {'event', 'result', 'error'} for a request currently in progress.
+_inflight = {}
+
+
+def single_flight(key, fn):
+    """Run `fn` once for `key`, even when several threads ask at the same time.
+
+    Six browser tabs opening one order fire six identical NCM reads within the
+    same instant. A cache does not help - none of them has returned yet, so
+    every one is a miss - and against a three-per-second budget they queue up
+    behind each other. Here the first caller does the work and the rest wait on
+    its answer.
+
+    Only concurrent callers share a result; once the request finishes the entry
+    is gone, so this never serves anything stale - a later caller always starts
+    a fresh request. In-process only, like the rate gate.
+    """
+    with _inflight_lock:
+        entry = _inflight.get(key)
+        leader = entry is None
+        if leader:
+            entry = {'event': threading.Event(), 'result': None, 'error': None}
+            _inflight[key] = entry
+
+    if not leader:
+        if entry['event'].wait(timeout=NCM_SINGLE_FLIGHT_TIMEOUT):
+            if entry['error'] is not None:
+                raise entry['error']
+            return entry['result']
+        # The request we joined is overdue. Doing our own is worse than
+        # waiting, but better than hanging on it indefinitely.
+        logger.warning(f"NCM single-flight wait timed out for {key}; fetching separately")
+        return fn()
+
+    try:
+        entry['result'] = fn()
+    except BaseException as e:
+        entry['error'] = e
+        raise
+    finally:
+        with _inflight_lock:
+            _inflight.pop(key, None)
+        entry['event'].set()
+    return entry['result']
+
 
 def _status_cache_key(ncm_order_id):
     return f'ncm_order_status_raw_{ncm_order_id}'
@@ -1313,6 +1405,20 @@ def fetch_order_status_raw(ncm_order_id, api_config_id=None,
         if cached is not None:
             return cached[0], cached[1]
 
+    # Tabs opening the same order at the same moment all miss the cache - none
+    # of them has an answer yet - so collapse the identical lookups into one.
+    return single_flight(
+        ('ncm-status', ncm_order_id, api_config_id, sweep_accounts,
+         tuple(sorted(skip_config_ids, key=lambda c: (c is not None, c)))),
+        lambda: _fetch_order_status_uncoalesced(
+            ncm_order_id, api_config_id, sweep_accounts, skip_config_ids
+        ),
+    )
+
+
+def _fetch_order_status_uncoalesced(ncm_order_id, api_config_id,
+                                    sweep_accounts, skip_config_ids):
+    """The account sweep behind fetch_order_status_raw(). Call that instead."""
     candidates = candidate_ncm_config_ids(api_config_id)
     if not sweep_accounts:
         candidates = candidates[:1]

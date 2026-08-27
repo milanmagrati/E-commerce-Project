@@ -279,5 +279,140 @@ else:
 
 
 print('')
+print('8. Concurrent callers share one request instead of queueing')
+
+import threading as _threading
+from services.ncm_service import single_flight
+
+runs = []
+gate = _threading.Event()
+
+
+def _slow_work():
+    gate.wait(timeout=5)
+    runs.append(1)
+    return 'answer'
+
+
+with ThreadPoolExecutor(max_workers=5) as ex:
+    futures = [ex.submit(single_flight, 'shared-key', _slow_work) for _ in range(5)]
+    time.sleep(0.2)   # let all five arrive before the leader finishes
+    gate.set()
+    answers = [f.result() for f in futures]
+
+check('five concurrent callers ran the work once', len(runs) == 1, len(runs))
+check('every caller got the answer', answers == ['answer'] * 5, answers)
+
+# Sequential callers must NOT share - that would be a cache, and this is not one.
+runs.clear()
+gate.set()
+single_flight('later-key', _slow_work)
+single_flight('later-key', _slow_work)
+check('sequential callers each do their own work', len(runs) == 2, len(runs))
+
+runs.clear()
+with ThreadPoolExecutor(max_workers=4) as ex:
+    list(ex.map(lambda k: single_flight(k, _slow_work), ['k1', 'k2', 'k3', 'k4']))
+check('different keys do not share a result', len(runs) == 4, len(runs))
+
+
+def _boom():
+    raise ValueError('upstream exploded')
+
+
+errs = []
+with ThreadPoolExecutor(max_workers=3) as ex:
+    futs = [ex.submit(single_flight, 'boom-key', _boom) for _ in range(3)]
+    for f in futs:
+        try:
+            f.result()
+        except ValueError as e:
+            errs.append(str(e))
+check('a failure reaches every waiter, not just the leader',
+      errs == ['upstream exploded'] * 3, errs)
+check('a failed key is not left behind blocking the next caller',
+      single_flight('boom-key', lambda: 'recovered') == 'recovered')
+
+
+print('')
+print('9. LIVE: six tabs cost no more NCM requests than one')
+
+if offline or not user:
+    print('  SKIP  no network to NCM or no superuser')
+else:
+    import requests as _requests
+    seen = []
+    seen_lock = _threading.Lock()
+    _real_get = _requests.get
+
+    def _counting_get(url, *a, **k):
+        with seen_lock:
+            seen.append(url)
+        return _real_get(url, *a, **k)
+
+    def _load(_):
+        c = Client(SERVER_NAME='localhost')
+        c.force_login(user)
+        r = c.get('/api/ncm-rtv/' + str(PROBE_ORDER_ID) + '/detail/')
+        return r.status_code, json.loads(r.content)
+
+    _requests.get = _counting_get
+    try:
+        invalidate_order_status_cache(PROBE_ORDER_ID)
+        seen.clear()
+        one_result = _load(0)
+        one_count = len(seen)
+
+        invalidate_order_status_cache(PROBE_ORDER_ID)
+        seen.clear()
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            six = list(ex.map(_load, range(6)))
+        six_count = len(seen)
+    finally:
+        _requests.get = _real_get
+
+    check('six concurrent loads all return the timeline',
+          all(code == 200 and len(p.get('status_history') or []) > 0 for code, p in six),
+          [(c, len(p.get('status_history') or [])) for c, p in six])
+    check('six concurrent loads cost no more requests than one',
+          six_count <= one_count, str(six_count) + ' vs ' + str(one_count))
+    print('        -> 1 load = ' + str(one_count) + ' NCM requests; '
+          '6 concurrent loads = ' + str(six_count))
+
+
+print('')
+print('10. LIVE: the wrong account never leaves the page looking empty')
+
+if offline or not user:
+    print('  SKIP  no network to NCM or no superuser')
+else:
+    # get_order_comments answers success-with-empty-list when every URL 404s,
+    # which is indistinguishable from "this order has no comments". Asked with
+    # an account that does not own the order, that emptiness is a lie - and the
+    # detail endpoint used to pass it straight through to the page.
+    owner = NCMService(api_config_id=probe[1])
+    truth = owner.get_order_comments(PROBE_ORDER_ID)
+    truth_count = len(truth.get('data') or [])
+
+    wrong = NCMService().get_order_comments(PROBE_ORDER_ID)
+    check('a wrong-account comment fetch still claims success',
+          wrong.get('success') and not wrong.get('data'),
+          'this is the trap the endpoint has to see through')
+
+    invalidate_order_status_cache(PROBE_ORDER_ID)
+    c = Client(SERVER_NAME='localhost')
+    c.force_login(user)
+    payload = json.loads(c.get('/api/ncm-rtv/' + str(PROBE_ORDER_ID) + '/detail/').content)
+    served = len(payload.get('comments') or [])
+    if truth_count:
+        check('the page is served the comments the owning account holds',
+              served == truth_count, str(served) + ' of ' + str(truth_count))
+    else:
+        print('  SKIP  probe order has no comments to check against')
+    check('the page is served the order details too',
+          bool(payload.get('ncm_data')), payload.get('ncm_data'))
+
+
+print('')
 print('ALL CHECKS PASSED' if not failures else str(len(failures)) + ' FAILED: ' + str(failures))
 sys.exit(1 if failures else 0)

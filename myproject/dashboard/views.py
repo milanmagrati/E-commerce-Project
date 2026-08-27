@@ -23693,7 +23693,7 @@ def ncm_rtv_order_detail(request, ncm_order_id):
     """
     from services.ncm_service import (
         NCMService, fetch_order_status_history, normalize_status_entries,
-        peek_order_status_cache, _is_throttle_error,
+        peek_order_status_cache, single_flight, _is_throttle_error,
     )
     from dashboard.models import Order, OrderItem
 
@@ -23719,23 +23719,39 @@ def ncm_rtv_order_detail(request, ncm_order_id):
     # Fire all 3 NCM API calls in parallel to avoid sequential latency
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
+    # Several tabs (or several staff) opening the same order fire these reads
+    # at the same instant. They are identical requests, so only one of each
+    # actually goes to NCM and the rest wait on its answer - otherwise six
+    # tabs meant twelve rate-limited calls queueing three per second.
+    def _flight_key(kind, svc):
+        return ('ncm-detail', kind, ncm_order_id, svc.api_key)
+
     def _fetch_details(svc):
         try:
-            return svc.get_order_details(ncm_order_id)
+            return single_flight(
+                _flight_key('details', svc),
+                lambda: svc.get_order_details(ncm_order_id),
+            )
         except Exception as e:
             logger.warning(f"Failed to fetch NCM details for order {ncm_order_id}: {e}")
             return {'success': False}
 
     def _fetch_status(svc):
         try:
-            return svc.get_order_status(ncm_order_id)
+            return single_flight(
+                _flight_key('status', svc),
+                lambda: svc.get_order_status(ncm_order_id),
+            )
         except Exception as e:
             logger.warning(f"Failed to fetch NCM status history for order {ncm_order_id}: {e}")
             return {'success': False}
 
     def _fetch_comments(svc):
         try:
-            return svc.get_order_comments(ncm_order_id)
+            return single_flight(
+                _flight_key('comments', svc),
+                lambda: svc.get_order_comments(ncm_order_id),
+            )
         except Exception as e:
             logger.warning(f"Failed to fetch NCM comments for order {ncm_order_id}: {e}")
             return {'success': False}
@@ -23798,10 +23814,19 @@ def ncm_rtv_order_detail(request, ncm_order_id):
             api_config_id = resolved_config_id
             ncm_service = NCMService(api_config_id=resolved_config_id)
 
-            # The other two calls went to the same wrong account. Only the ones
-            # that actually failed are worth re-issuing.
-            retry_details = not details_result.get('success')
-            retry_comments = not comments_result.get('success')
+            # The other two calls went to the same wrong account, so an empty
+            # answer from either is worthless - re-issue those too, not just
+            # the ones that reported failure. get_order_comments in particular
+            # reports success with an empty list when every URL 404s, which is
+            # indistinguishable from "this order has no comments"; trusting it
+            # meant an order on a non-default account showed no comments at
+            # all while NCM held a dozen.
+            retry_details = (
+                not details_result.get('success') or not details_result.get('data')
+            )
+            retry_comments = (
+                not comments_result.get('success') or not comments_result.get('data')
+            )
             if retry_details or retry_comments:
                 with ThreadPoolExecutor(max_workers=2) as executor:
                     fut_d = executor.submit(_fetch_details, ncm_service) if retry_details else None
