@@ -6690,6 +6690,9 @@ def payroll_run_list(request):
     page_number = request.GET.get('page', 1)
     page_obj = paginator.get_page(page_number)
 
+    page_runs = list(page_obj)
+    bonus_stale_runs, totals_stale_runs = _attach_run_reflection(page_runs)
+
     context = {
         'page_title': 'Payroll Runs',
         'runs': page_obj,
@@ -6698,6 +6701,9 @@ def payroll_run_list(request):
         'status_filter': status_filter,
         'frequency_filter': frequency_filter,
         'per_page': per_page,
+        'bonus_stale_runs': bonus_stale_runs,
+        'totals_stale_runs': totals_stale_runs,
+        'bonus_stale_slips': sum(getattr(r, 'bonus_stale_count', 0) for r in page_runs),
     }
     return render(request, 'hrm/payroll_run_list.html', context)
 
@@ -6711,6 +6717,8 @@ def payroll_run_detail(request, pk):
         run = PayrollRun.objects.get(pk=pk)
     except PayrollRun.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Payroll Run not found.'}, status=404)
+
+    _attach_run_reflection([run])
     data = {
         'success': True,
         'run': {
@@ -6726,6 +6734,15 @@ def payroll_run_detail(request, pk):
             'gross_pay': str(run.gross_pay),
             'net_pay': str(run.net_pay),
             'total_amount': str(run.total_amount),
+            'bonus_total': str(run.bonus_total),
+            'bonus_pending': str(run.bonus_pending),
+            'bonus_stale_count': run.bonus_stale_count,
+            'bonus_locked_count': run.bonus_locked_count,
+            'advance_total': str(run.advance_total),
+            'live_gross': str(run.live_gross),
+            'live_net': str(run.live_net),
+            'live_count': run.live_count,
+            'totals_stale': run.totals_stale,
             'notes': run.notes,
             'created_by': str(run.created_by) if run.created_by else '-',
             'created_at': run.created_at.strftime('%b %d, %Y %I:%M %p'),
@@ -7738,6 +7755,113 @@ def payslip_sync_advances(request):
     })
 
 
+def _attach_run_reflection(runs):
+    """Annotate payroll runs with what their own payslips actually add up to.
+
+    A run's `employee_count` / `gross_pay` / `net_pay` are denormalised columns
+    written when payslips are generated and refreshed by
+    `_refresh_payroll_run_totals()`. Anything that edits a payslip without
+    calling that leaves the run showing money its payslips no longer hold, so
+    the live aggregate is computed here and the difference is surfaced rather
+    than papered over.
+
+    Also carries the bonus picture down to the run: what its payslips already
+    include, and how much approved bonus is still waiting for a sync.
+
+    One query for the payslips plus one for the bonus totals, whatever the page
+    size. Returns ``(bonus_stale_runs, totals_stale_runs)``.
+    """
+    from .models import Payslip
+
+    run_ids = [run.pk for run in runs]
+    slips = []
+    if run_ids:
+        slips = list(
+            Payslip.objects
+            .filter(payroll_run_id__in=run_ids, is_deleted=False)
+            .select_related('payroll_run')
+            .only(
+                'id', 'employee_id', 'payroll_run_id', 'salary_structure',
+                'gross_salary', 'net_salary', 'advance_deduction', 'is_finalized',
+                'payroll_run__pay_period_start', 'payroll_run__month',
+                'payroll_run__year',
+            )
+        )
+    _attach_bonus_state(slips)
+
+    by_run = {}
+    for slip in slips:
+        by_run.setdefault(slip.payroll_run_id, []).append(slip)
+
+    bonus_stale_runs = 0
+    totals_stale_runs = 0
+    for run in runs:
+        rows = by_run.get(run.pk, [])
+        run.live_count = len(rows)
+        cents = Decimal('0.01')
+        run.live_gross = sum((r.gross_salary for r in rows), Decimal('0')).quantize(cents)
+        run.live_net = sum((r.net_salary for r in rows), Decimal('0')).quantize(cents)
+        run.advance_total = sum((r.advance_deduction for r in rows), Decimal('0')).quantize(cents)
+        run.bonus_total = sum((r.bonus_amount for r in rows), Decimal('0')).quantize(cents)
+        run.bonus_stale_count = sum(
+            1 for r in rows if r.bonus_stale and not r.is_finalized)
+        run.bonus_locked_count = sum(
+            1 for r in rows if r.bonus_stale and r.is_finalized)
+        # What syncing would add (or take back, if a bonus was withdrawn).
+        run.bonus_pending = sum(
+            ((r.bonus_live - r.bonus_amount) for r in rows
+             if r.bonus_stale and not r.is_finalized),
+            Decimal('0'),
+        ).quantize(cents)
+        run.totals_stale = (
+            run.employee_count != run.live_count
+            or run.gross_pay != run.live_gross
+            or run.net_pay != run.live_net
+        )
+        if run.bonus_stale_count:
+            bonus_stale_runs += 1
+        if run.totals_stale:
+            totals_stale_runs += 1
+
+    return bonus_stale_runs, totals_stale_runs
+
+
+def _refresh_stale_run_totals(run_ids=None):
+    """Re-derive the stored totals of every payroll run that no longer matches
+    its payslips. Returns how many were rewritten.
+
+    Deliberately aggregate-only: the comparison needs counts and sums, not the
+    payslip rows themselves, so a whole-database reconciliation stays one query
+    plus one save per genuinely stale run.
+    """
+    from .models import Payslip, PayrollRun
+
+    runs = PayrollRun.objects.all()
+    if run_ids is not None:
+        runs = runs.filter(pk__in=run_ids)
+    runs = list(runs)
+    if not runs:
+        return 0
+
+    live = {
+        row['payroll_run_id']: row
+        for row in Payslip.objects
+        .filter(is_deleted=False, payroll_run_id__in=[r.pk for r in runs])
+        .values('payroll_run_id')
+        .annotate(cnt=Count('id'), g=Sum('gross_salary'), n=Sum('net_salary'))
+    }
+
+    refreshed = 0
+    for run in runs:
+        row = live.get(run.pk) or {}
+        if (run.employee_count != (row.get('cnt') or 0)
+                or run.gross_pay != (row.get('g') or Decimal('0'))
+                or run.net_pay != (row.get('n') or Decimal('0'))):
+            _refresh_payroll_run_totals(run)
+            refreshed += 1
+    return refreshed
+
+
 @login_required
 def payslip_sync_bonuses(request):
     """Fold approved/paid bonuses into every payslip whose stored bonus has
@@ -7761,9 +7885,19 @@ def payslip_sync_bonuses(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required'}, status=405)
 
+    # The Payroll Runs page syncs one run at a time; the Payslips page syncs
+    # everything. Same routine either way, only the scope differs.
+    run_id = request.POST.get('run') or request.GET.get('run')
+    scope = Payslip.objects.filter(is_deleted=False)
+    if run_id:
+        try:
+            run_id = int(run_id)
+        except (TypeError, ValueError):
+            return JsonResponse({'success': False, 'error': 'Invalid payroll run.'}, status=400)
+        scope = scope.filter(payroll_run_id=run_id)
+
     slips = list(
-        Payslip.objects.select_related('employee', 'payroll_run')
-        .filter(is_deleted=False)
+        scope.select_related('employee', 'payroll_run')
         .order_by('is_finalized', '-created_at')
     )
     _attach_bonus_state(slips)
@@ -7806,6 +7940,12 @@ def payslip_sync_bonuses(request):
         else:
             verified += 1
 
+    # A payslip's gross moving pulls its run's denormalised totals out of date.
+    # `_sync_bonus_to_payslip` refreshes the runs it touches, but a run can also
+    # be stale for reasons this sync never looked at, so every run in scope is
+    # reconciled here -- and only saved when it actually differs.
+    runs_refreshed = _refresh_stale_run_totals([run_id] if run_id else None)
+
     parts = []
     if updated:
         parts.append(f'{updated} payslip(s) updated')
@@ -7813,12 +7953,15 @@ def payslip_sync_bonuses(request):
         parts.append(f'{verified} already correct and now confirmed')
     if locked:
         parts.append(f'{locked} finalized payslip(s) skipped')
+    if runs_refreshed:
+        parts.append(f'{runs_refreshed} payroll run total(s) refreshed')
 
     return JsonResponse({
         'success': True,
         'updated': updated,
         'verified': verified,
         'locked': locked,
+        'runs_refreshed': runs_refreshed,
         'message': ', '.join(parts) + '.' if parts else 'All payslips already match their bonuses.',
     })
 

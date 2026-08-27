@@ -1,4 +1,4 @@
-"""Standalone verification for the Payslips page's bonus sync.
+"""Standalone verification for the bonus sync on Payslips and Payroll Runs.
 
 Follows this repo's convention for verification scripts (manual django.setup(),
 real models, real DB) rather than a pytest/TestCase harness.
@@ -13,6 +13,11 @@ payslip's stored gross behind the live bonus total. The Payslips page has to
 show that as a stale bonus (badge + count + banner), the Sync Bonus Data button
 has to fold it into gross and net, and after that sync the page must show the
 bonus as included with nothing left stale.
+
+The Payroll Runs page reflects the same drift one level up: a run's stored
+employees/gross/net are denormalised columns, so the page also has to notice
+when they no longer match the payslips underneath them, and the run-scoped sync
+has to re-derive them.
 """
 
 import os
@@ -30,8 +35,10 @@ from django.contrib.auth import get_user_model  # noqa: E402
 from django.db import transaction  # noqa: E402
 from django.test import Client  # noqa: E402
 
-from hrm.models import Bonus, Payslip  # noqa: E402
-from hrm.views import _attach_bonus_state, _payslip_period_key  # noqa: E402
+from hrm.models import Bonus, PayrollRun, Payslip  # noqa: E402
+from hrm.views import (  # noqa: E402
+    _attach_bonus_state, _attach_run_reflection, _payslip_period_key,
+)
 
 if 'testserver' not in settings.ALLOWED_HOSTS:
     settings.ALLOWED_HOSTS = list(settings.ALLOWED_HOSTS) + ['testserver']
@@ -40,6 +47,7 @@ PASSED = []
 FAILED = []
 
 LIST_URL = '/hrm/payroll/payslips/?per_page=100'
+RUNS_URL = '/hrm/payroll/runs/?per_page=100'
 SYNC_URL = '/hrm/payroll/payslips/sync-bonuses/'
 
 
@@ -194,6 +202,105 @@ check('the verification left no bonus behind',
 check('the payslip is back to its original figures',
       restored.gross_salary == gross_before and restored.net_salary == net_before,
       f'{restored.gross_salary}/{restored.net_salary} vs {gross_before}/{net_before}')
+
+# ──────────────────────────────────────────────────────────────────────────────
+section('3. The Payroll Runs page reflects the same drift')
+
+runs_response = client.get(RUNS_URL)
+runs_body = runs_response.content.decode('utf-8', 'replace')
+check('payroll runs page loads', runs_response.status_code == 200,
+      str(runs_response.status_code))
+check('runs page has a bonus column', '>Bonus</th>' in runs_body)
+check('runs page has a sync button', 'btnSyncBonuses' in runs_body)
+check('runs page leaks no unrendered template syntax',
+      '{{' not in runs_body and '{%' not in runs_body,
+      next(iter(re.findall(r'\{[{%].{0,60}', runs_body)), ''))
+
+run = target.payroll_run
+with transaction.atomic():
+    sid = transaction.savepoint()
+
+    stored = (run.employee_count, run.gross_pay, run.net_pay)
+    bonus = Bonus.objects.create(
+        employee=target.employee, bonus_type='performance',
+        amount=Decimal('500.00'), month=month, year=year, status='approved',
+        remarks='run-sync verification (rolled back)',
+    )
+
+    fresh_run = PayrollRun.objects.get(pk=run.pk)
+    _attach_run_reflection([fresh_run])
+    check('the run reports the unsynced bonus',
+          fresh_run.bonus_stale_count >= 1,
+          f'stale={fresh_run.bonus_stale_count}')
+    check('the run reports what syncing would add',
+          fresh_run.bonus_pending >= Decimal('500.00'),
+          str(fresh_run.bonus_pending))
+
+    body = client.get(RUNS_URL).content.decode('utf-8', 'replace')
+    check('the runs page shows the bonus banner', 'bonusStaleBanner' in body)
+    check('the stale run offers a row-level sync', 'pr-act-sync' in body)
+
+    detail = client.get(f'/hrm/payroll/runs/{run.pk}/').json()['run']
+    check('the run detail reports the unsynced bonus',
+          detail['bonus_stale_count'] >= 1, str(detail))
+
+    # Run-scoped sync: only this run's payslips, and its totals re-derived.
+    payload = client.post(SYNC_URL, {'run': run.pk}).json()
+    check('run-scoped sync succeeds', payload.get('success') is True, str(payload))
+    check('run-scoped sync updated a payslip',
+          payload.get('updated', 0) >= 1, str(payload))
+
+    after_run = PayrollRun.objects.get(pk=run.pk)
+    _attach_run_reflection([after_run])
+    check('the run has no unsynced bonus left', not after_run.bonus_stale_count,
+          f'stale={after_run.bonus_stale_count}')
+    check('the run totals match its payslips again',
+          not after_run.totals_stale,
+          f'{after_run.gross_pay}/{after_run.net_pay} vs '
+          f'{after_run.live_gross}/{after_run.live_net}')
+    check('the run gross grew by the bonus',
+          after_run.gross_pay == (stored[1] + Decimal('500.00')).quantize(Decimal('0.01')),
+          f'{stored[1]} -> {after_run.gross_pay}')
+
+    transaction.savepoint_rollback(sid)
+
+back = PayrollRun.objects.get(pk=run.pk)
+check('the run is back to its original totals',
+      (back.employee_count, back.gross_pay, back.net_pay) == stored,
+      f'{(back.employee_count, back.gross_pay, back.net_pay)} vs {stored}')
+
+# ──────────────────────────────────────────────────────────────────────────────
+section('4. Stale run totals are noticed and refreshed')
+
+with transaction.atomic():
+    sid = transaction.savepoint()
+
+    slip = Payslip.objects.filter(
+        payroll_run=run, is_deleted=False).order_by('pk').first()
+    if slip is None:
+        check('the run has a payslip to disturb', False, 'no payslips')
+    else:
+        # Write straight past _refresh_payroll_run_totals, which is exactly how
+        # a run's denormalised totals drift in the first place.
+        Payslip.objects.filter(pk=slip.pk).update(
+            net_salary=slip.net_salary + Decimal('77.00'))
+
+        drifted = PayrollRun.objects.get(pk=run.pk)
+        _attach_run_reflection([drifted])
+        check('the run notices its totals drifted', drifted.totals_stale,
+              f'{drifted.net_pay} vs {drifted.live_net}')
+
+        body = client.get(RUNS_URL).content.decode('utf-8', 'replace')
+        check('the runs page shows the totals banner', 'totalsStaleBanner' in body)
+        check('the drifted row carries a warning marker', 'pr-drift' in body)
+
+        client.post(SYNC_URL, {'run': run.pk})
+        healed = PayrollRun.objects.get(pk=run.pk)
+        _attach_run_reflection([healed])
+        check('syncing re-derives the run totals', not healed.totals_stale,
+              f'{healed.net_pay} vs {healed.live_net}')
+
+    transaction.savepoint_rollback(sid)
 
 # ──────────────────────────────────────────────────────────────────────────────
 print('\n' + '=' * 66)
