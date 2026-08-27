@@ -25618,7 +25618,11 @@ def get_notice_history(request):
                 status = 'Active'
                 
             from django.utils.html import strip_tags
-            snippet = strip_tags(n.content)[:50] + ('...' if len(strip_tags(n.content)) > 50 else '')
+            plain = strip_tags(n.content or '').replace('&nbsp;', ' ').strip()
+            snippet = plain[:50] + ('...' if len(plain) > 50 else '')
+            if not snippet:
+                # Image-only notice: strip_tags leaves nothing to show.
+                snippet = 'Image notice' if '<img' in (n.content or '') else '(empty)'
             
             display_from_val = getattr(n, 'display_from', None)
             
@@ -25643,6 +25647,9 @@ def get_notice_history(request):
                 'raw_display_from': raw_display_from,
                 'display_until': display_until_str,
                 'raw_display_until': raw_display_until,
+                # The edit dialog repopulates the Display Frequency select from this;
+                # without it the select always fell back to 'every_refresh'.
+                'display_frequency': getattr(n, 'display_frequency', 'every_refresh') or 'every_refresh',
                 'created_by': n.created_by.get_full_name() or n.created_by.username if n.created_by else 'Admin'
             })
             

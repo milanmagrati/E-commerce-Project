@@ -771,7 +771,8 @@
                         <form id="throwNoticeForm">
                             <div class="mb-2">
                                 <label class="form-label fw-bold text-muted mb-1">Notice Content</label>
-                                <div id="noticeEditor" style="height:200px; background: white;"></div>
+                                <div id="noticeEditor" style="height:240px; background: white;"></div>
+                                <small class="text-muted" style="font-size: 0.7rem; line-height: 1;">Images are framed and scaled to fit automatically when the notice is shown.</small>
                             </div>
                             <div class="row mb-1">
                                 <div class="col-md-6 mb-1">
@@ -847,6 +848,32 @@
     #noticeTabs .nav-link { transition: all 0.3s; }
     #noticeTabs .nav-link.active { color: #b91c1c !important; }
     #noticeTabs .nav-link:not(.active):hover { color: #ef4444 !important; border-bottom: 3px solid #fca5a5 !important; }
+
+    /* Composer: show inserted images framed and scaled down, so the editor stays
+       usable instead of being filled by one full-resolution photo. Mirrors the
+       .global-notice-body rules in base.html that style the notice when it fires. */
+    #noticeEditor .ql-editor { word-wrap: break-word; overflow-wrap: break-word; }
+    #noticeEditor .ql-editor img {
+        display: block;
+        max-width: 100%;
+        max-height: 170px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        margin: 10px auto;
+        padding: 4px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, .10);
+        cursor: default;
+    }
+    #noticeEditor .ql-editor .ql-align-center img { margin-left: auto; margin-right: auto; }
+    #noticeEditor .ql-editor .ql-align-right img { margin-left: auto; margin-right: 0; }
+    #noticeEditor .ql-editor .ql-align-left img { margin-left: 0; margin-right: auto; }
+    #noticeEditor .ql-editor blockquote {
+        border-left: 4px solid #ef4444; padding-left: 1rem; color: #475569; font-style: italic;
+    }
 </style>
 
 <!-- Quill Editor CSS & JS -->
@@ -879,6 +906,93 @@
             placeholder: 'Write your global notice here...'
         });
         window.quill = quill;
+
+        // Images are embedded inline (base64) in the notice body, and every logged-in
+        // user's poller re-fetches that body every 10s — so a straight phone photo
+        // would be several MB on the wire each time. Downscale before embedding.
+        var MAX_NOTICE_IMAGE_DIM = 1200;
+
+        function downscaleNoticeImage(file) {
+            return new Promise(function(resolve, reject) {
+                var reader = new FileReader();
+                reader.onerror = function() { reject(new Error('read failed')); };
+                reader.onload = function() {
+                    var dataUrl = reader.result;
+                    if (typeof dataUrl !== 'string' || dataUrl.indexOf('data:image/') !== 0) {
+                        reject(new Error('not an image'));
+                        return;
+                    }
+                    // Leave GIFs alone — a canvas redraw would drop the animation.
+                    if (dataUrl.indexOf('data:image/gif') === 0) { resolve(dataUrl); return; }
+
+                    var img = new Image();
+                    img.onerror = function() { resolve(dataUrl); };
+                    img.onload = function() {
+                        var longest = Math.max(img.width, img.height);
+                        var scale = longest > MAX_NOTICE_IMAGE_DIM ? (MAX_NOTICE_IMAGE_DIM / longest) : 1;
+                        // Small file that already fits — keep the original bytes.
+                        if (scale === 1 && dataUrl.length < 400000) { resolve(dataUrl); return; }
+                        try {
+                            var canvas = document.createElement('canvas');
+                            canvas.width = Math.round(img.width * scale);
+                            canvas.height = Math.round(img.height * scale);
+                            var ctx = canvas.getContext('2d');
+                            // JPEG has no alpha, so flatten onto white instead of black.
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            var out = canvas.toDataURL('image/jpeg', 0.85);
+                            resolve(out.length < dataUrl.length ? out : dataUrl);
+                        } catch (e) {
+                            resolve(dataUrl);
+                        }
+                    };
+                    img.src = dataUrl;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function insertNoticeImage(file) {
+            if (!file || file.type.indexOf('image/') !== 0) return;
+            downscaleNoticeImage(file).then(function(dataUrl) {
+                var range = quill.getSelection(true) || { index: quill.getLength() };
+                quill.insertEmbed(range.index, 'image', dataUrl, 'user');
+                quill.insertText(range.index + 1, '\n', 'user');
+                quill.setSelection(range.index + 2, 0, 'user');
+            }).catch(function() {
+                alertify.error('Could not read that image');
+            });
+        }
+
+        quill.getModule('toolbar').addHandler('image', function() {
+            var input = document.createElement('input');
+            input.setAttribute('type', 'file');
+            input.setAttribute('accept', 'image/*');
+            input.onchange = function() {
+                if (input.files && input.files[0]) insertNoticeImage(input.files[0]);
+            };
+            input.click();
+        });
+
+        // Pasted / dropped images go through the same downscale + framing path.
+        quill.root.addEventListener('paste', function(e) {
+            var items = (e.clipboardData && e.clipboardData.items) || [];
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].type && items[i].type.indexOf('image/') === 0) {
+                    e.preventDefault();
+                    insertNoticeImage(items[i].getAsFile());
+                    return;
+                }
+            }
+        });
+        quill.root.addEventListener('drop', function(e) {
+            var files = (e.dataTransfer && e.dataTransfer.files) || [];
+            if (files.length && files[0].type.indexOf('image/') === 0) {
+                e.preventDefault();
+                insertNoticeImage(files[0]);
+            }
+        });
 
         const throwNoticeForm = document.getElementById('throwNoticeForm');
         if (throwNoticeForm) {
@@ -1280,7 +1394,12 @@
         
         const durationVal = document.getElementById('noticeDurationValue');
         if (durationVal) durationVal.value = '';
-        
+
+        // Back to a blank compose form — otherwise the next new notice silently
+        // inherits the frequency of the notice that was being edited.
+        const freqReset = document.getElementById('noticeDisplayFrequency');
+        if (freqReset) freqReset.value = 'every_refresh';
+
         const submitBtn = document.getElementById('btnSubmitNotice');
         if (submitBtn) {
             submitBtn.innerHTML = '<i class="fas fa-paper-plane me-2"></i> Throw Notice Now';
