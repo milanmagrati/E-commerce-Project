@@ -15889,46 +15889,59 @@ def _bulk_log_export_csv(bulk_log, rows, columns, scope):
     return response
 
 
-def _bulk_log_export_excel(bulk_log, rows, columns, scope, summary_rows):
-    """Workbook with a batch summary sheet plus the per-order rows."""
+def _bulk_log_write_summary_sheet(ws, summary_rows):
+    """Label/value sheet saying what an export actually contains."""
+    label_font = Font(bold=True)
+    for label, value in summary_rows:
+        ws.append([label, _bulk_log_excel_value(value)])
+        ws.cell(row=ws.max_row, column=1).font = label_font
+    ws.column_dimensions['A'].width = 26
+    ws.column_dimensions['B'].width = 48
+
+
+def _bulk_log_write_export_sheet(ws, columns, rows):
+    """Header + rows on `ws`, styled the way every bulk-log export is.
+
+    Dark frozen header, failed rows tinted red and skipped ones amber, columns
+    sized to their contents. The single-batch export and the Bulk Logs list
+    export share this so the same row cannot come out looking one way from the
+    batch page and another way from the list.
+    """
     header_font = Font(bold=True, color='FFFFFF')
     header_fill = PatternFill('solid', start_color='1E293B')
     fail_fill = PatternFill('solid', start_color='FFE4E6')
     skip_fill = PatternFill('solid', start_color='FEF3C7')
-    label_font = Font(bold=True)
 
-    wb = Workbook()
-
-    summary = wb.active
-    summary.title = 'Summary'
-    for label, value in summary_rows:
-        summary.append([label, _bulk_log_excel_value(value)])
-        summary.cell(row=summary.max_row, column=1).font = label_font
-    summary.column_dimensions['A'].width = 26
-    summary.column_dimensions['B'].width = 36
-
-    detail = wb.create_sheet('Orders')
-    detail.append(columns)
-    for cell in detail[1]:
+    ws.append(columns)
+    for cell in ws[1]:
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal='center', vertical='center')
-    detail.freeze_panes = 'A2'
+    ws.freeze_panes = 'A2'
 
-    status_column = columns.index('Status') + 1
+    status_column = columns.index('Status') + 1 if 'Status' in columns else None
     for row in rows:
-        detail.append([_bulk_log_excel_value(value) for value in row])
-        status = detail.cell(row=detail.max_row, column=status_column).value
-        if status == 'Failed':
-            for cell in detail[detail.max_row]:
-                cell.fill = fail_fill
-        elif status == 'Skipped':
-            for cell in detail[detail.max_row]:
-                cell.fill = skip_fill
+        ws.append([_bulk_log_excel_value(value) for value in row])
+        if status_column is None:
+            continue
+        status = ws.cell(row=ws.max_row, column=status_column).value
+        fill = fail_fill if status == 'Failed' else skip_fill if status == 'Skipped' else None
+        if fill:
+            for cell in ws[ws.max_row]:
+                cell.fill = fill
 
-    for column in detail.columns:
+    for column in ws.columns:
         width = max((len(str(c.value)) for c in column if c.value is not None), default=10)
-        detail.column_dimensions[column[0].column_letter].width = min(max(width + 2, 10), 60)
+        ws.column_dimensions[column[0].column_letter].width = min(max(width + 2, 10), 60)
+
+
+def _bulk_log_export_excel(bulk_log, rows, columns, scope, summary_rows):
+    """Workbook with a batch summary sheet plus the per-order rows."""
+    wb = Workbook()
+    summary = wb.active
+    summary.title = 'Summary'
+    _bulk_log_write_summary_sheet(summary, summary_rows)
+    _bulk_log_write_export_sheet(wb.create_sheet('Orders'), columns, rows)
 
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -21591,6 +21604,123 @@ def logistics_orders_list(request):
     return render(request, 'logistics_orders_list.html', context)
 
 
+# ==================== BULK LOGS LIST: SHARED BATCH LOOKUP ====================
+#: The list filters with nothing set - what the export uses when it is asked
+#: for everything rather than for the view currently on screen.
+BULK_LOG_LIST_NO_FILTERS = {
+    'search': '', 'branch': '', 'status': '', 'date_from': '', 'date_to': '',
+}
+
+
+def _bulk_log_list_filters(request):
+    """The Bulk Logs list filters, read off the querystring."""
+    return {key: request.GET.get(key, '').strip() for key in BULK_LOG_LIST_NO_FILTERS}
+
+
+def _bulk_log_list_batches(provider, filters):
+    """The batches the Bulk Logs list shows for `provider`, newest first.
+
+    Returns (batches, branches, all_ncm, all_pnd): the batches carrying the
+    `log_provider` / `branch_display` attributes the template and the export
+    both read, the branch choices for the filter box, and the unfiltered
+    querysets the header statistics aggregate.
+
+    The page and its export go through this one function on purpose - a filter
+    applied on only one side would hand staff a file that quietly disagrees
+    with the table they were looking at when they asked for it.
+    """
+    from ncm.models import NCMBulkLog
+    from pick_and_drop.models import PNDBulkLog
+    from itertools import chain
+    from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
+
+    def apply_filters(qs, branch_field):
+        if filters['search']:
+            qs = qs.filter(
+                Q(batch_number__icontains=filters['search']) |
+                Q(orders__order_number__icontains=filters['search']) |
+                Q(orders__customer_name__icontains=filters['search'])
+            ).distinct()
+        if filters['branch']:
+            qs = qs.filter(**{branch_field: filters['branch']})
+        if filters['status']:
+            qs = qs.filter(status=filters['status'])
+        # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+        # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
+        if filters['date_from']:
+            try:
+                qs = qs.filter(created_at__gte=nepali_day_start(
+                    datetime.strptime(filters['date_from'], '%Y-%m-%d').date()))
+            except ValueError:
+                pass
+        if filters['date_to']:
+            try:
+                qs = qs.filter(created_at__lt=nepali_day_end_exclusive(
+                    datetime.strptime(filters['date_to'], '%Y-%m-%d').date()))
+            except ValueError:
+                pass
+        return qs.select_related('created_by')
+
+    def tag(logs, name, branch_field):
+        for log in logs:
+            log.log_provider = name
+            log.branch_display = getattr(log, branch_field)
+        return logs
+
+    ncm_all = NCMBulkLog.objects.filter(is_deleted=False)
+    pnd_all = PNDBulkLog.objects.filter(is_deleted=False)
+
+    if provider == 'ncm':
+        batches = tag(list(apply_filters(ncm_all, 'from_branch').order_by('-created_at')),
+                      'ncm', 'from_branch')
+        branches = list(ncm_all.values_list('from_branch', flat=True)
+                        .distinct().order_by('from_branch'))
+        return batches, branches, ncm_all, PNDBulkLog.objects.none()
+
+    if provider == 'pnd':
+        batches = tag(list(apply_filters(pnd_all, 'destination_branch').order_by('-created_at')),
+                      'pnd', 'destination_branch')
+        branches = list(pnd_all.values_list('destination_branch', flat=True)
+                        .distinct().order_by('destination_branch'))
+        return batches, branches, NCMBulkLog.objects.none(), pnd_all
+
+    ncm_list = tag(list(apply_filters(ncm_all, 'from_branch')), 'ncm', 'from_branch')
+    pnd_list = tag(list(apply_filters(pnd_all, 'destination_branch')), 'pnd', 'destination_branch')
+    branches = sorted(set(
+        list(ncm_all.values_list('from_branch', flat=True).distinct()) +
+        list(pnd_all.values_list('destination_branch', flat=True).distinct())
+    ))
+    batches = sorted(chain(ncm_list, pnd_list), key=lambda x: x.created_at, reverse=True)
+    return batches, branches, ncm_all, pnd_all
+
+
+def _bulk_log_list_order_counts(batches):
+    """Order-row counts per status across `batches`.
+
+    Counted from the order rows themselves rather than the batches' stored
+    counters, for the same reason the single-batch menu does it (see
+    _bulk_log_export_counts): a drifted counter would offer staff a "Failed
+    only" download that comes back empty.
+    """
+    from ncm.models import NCMBulkLogOrder
+    from pick_and_drop.models import PNDBulkLogOrder
+
+    counts = {'success': 0, 'failed': 0, 'skipped': 0}
+    for name, model in (('ncm', NCMBulkLogOrder), ('pnd', PNDBulkLogOrder)):
+        batch_ids = [b.id for b in batches if b.log_provider == name]
+        if not batch_ids:
+            continue
+        rows = (model.objects.filter(batch_id__in=batch_ids)
+                .values('status').order_by().annotate(n=Count('id')))
+        for row in rows:
+            if row['status'] in counts:
+                counts[row['status']] += row['n']
+
+    counts['all'] = sum(counts.values())
+    counts['batches'] = len(batches)
+    return counts
+
+
 @login_required
 @permission_required('can_view_ncm_bulk_logs')
 def logistics_bulk_logs_list(request):
@@ -21598,9 +21728,8 @@ def logistics_bulk_logs_list(request):
     Unified Bulk Logs Page - Shows NCM and/or PND bulk logs with a provider toggle filter.
     Supports provider=all (default), ncm, or pnd.
     """
-    from ncm.models import NCMBulkLog, NCMBulkLogOrder
-    from pick_and_drop.models import PNDBulkLog, PNDBulkLogOrder
-    from itertools import chain
+    from ncm.models import NCMBulkLogOrder
+    from pick_and_drop.models import PNDBulkLogOrder
 
     provider = request.GET.get('provider', 'all').strip()
     if provider not in ('all', 'ncm', 'pnd'):
@@ -21654,106 +21783,14 @@ def logistics_bulk_logs_list(request):
         except Exception:
             return JsonResponse({'orders': []})
 
-    # Filters
-    search_query = request.GET.get('search', '').strip()
-    branch_filter = request.GET.get('branch', '').strip()
-    status_filter = request.GET.get('status', '').strip()
-    date_from = request.GET.get('date_from', '').strip()
-    date_to = request.GET.get('date_to', '').strip()
+    filters = _bulk_log_list_filters(request)
+    search_query = filters['search']
+    branch_filter = filters['branch']
+    status_filter = filters['status']
+    date_from = filters['date_from']
+    date_to = filters['date_to']
 
-    def apply_filters(qs, branch_field):
-        """Apply common filters to a queryset."""
-        nonlocal search_query, branch_filter, status_filter, date_from, date_to
-        if search_query:
-            qs = qs.filter(
-                Q(batch_number__icontains=search_query) |
-                Q(orders__order_number__icontains=search_query) |
-                Q(orders__customer_name__icontains=search_query)
-            ).distinct()
-        if branch_filter:
-            qs = qs.filter(**{branch_field: branch_filter})
-        if status_filter:
-            qs = qs.filter(status=status_filter)
-        # NOTE: __date__gte/__lte lookups silently match zero rows on this server
-        # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
-        from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
-        if date_from:
-            try:
-                qs = qs.filter(created_at__gte=nepali_day_start(datetime.strptime(date_from, '%Y-%m-%d').date()))
-            except ValueError:
-                pass
-        if date_to:
-            try:
-                qs = qs.filter(created_at__lt=nepali_day_end_exclusive(datetime.strptime(date_to, '%Y-%m-%d').date()))
-            except ValueError:
-                pass
-        return qs
-
-    branches = []
-
-    if provider == 'ncm':
-        ncm_logs = apply_filters(NCMBulkLog.objects.filter(is_deleted=False), 'from_branch')
-        all_logs_ncm = NCMBulkLog.objects.filter(is_deleted=False)
-        all_logs_pnd = PNDBulkLog.objects.none()
-        branches = list(
-            NCMBulkLog.objects.filter(is_deleted=False)
-            .values_list('from_branch', flat=True)
-            .distinct().order_by('from_branch')
-        )
-        # Annotate provider for template
-        combined_logs = list(ncm_logs.order_by('-created_at'))
-        for log in combined_logs:
-            log.log_provider = 'ncm'
-            log.branch_display = log.from_branch
-
-    elif provider == 'pnd':
-        pnd_logs = apply_filters(PNDBulkLog.objects.filter(is_deleted=False), 'destination_branch')
-        all_logs_ncm = NCMBulkLog.objects.none()
-        all_logs_pnd = PNDBulkLog.objects.filter(is_deleted=False)
-        branches = list(
-            PNDBulkLog.objects.filter(is_deleted=False)
-            .values_list('destination_branch', flat=True)
-            .distinct().order_by('destination_branch')
-        )
-        combined_logs = list(pnd_logs.order_by('-created_at'))
-        for log in combined_logs:
-            log.log_provider = 'pnd'
-            log.branch_display = log.destination_branch
-
-    else:
-        # ALL - combine both
-        ncm_logs = apply_filters(NCMBulkLog.objects.filter(is_deleted=False), 'from_branch')
-        pnd_logs = apply_filters(PNDBulkLog.objects.filter(is_deleted=False), 'destination_branch')
-        all_logs_ncm = NCMBulkLog.objects.filter(is_deleted=False)
-        all_logs_pnd = PNDBulkLog.objects.filter(is_deleted=False)
-
-        ncm_branches = list(
-            NCMBulkLog.objects.filter(is_deleted=False)
-            .values_list('from_branch', flat=True)
-            .distinct()
-        )
-        pnd_branches = list(
-            PNDBulkLog.objects.filter(is_deleted=False)
-            .values_list('destination_branch', flat=True)
-            .distinct()
-        )
-        branches = sorted(set(ncm_branches + pnd_branches))
-
-        ncm_list = list(ncm_logs)
-        for log in ncm_list:
-            log.log_provider = 'ncm'
-            log.branch_display = log.from_branch
-
-        pnd_list = list(pnd_logs)
-        for log in pnd_list:
-            log.log_provider = 'pnd'
-            log.branch_display = log.destination_branch
-
-        combined_logs = sorted(
-            chain(ncm_list, pnd_list),
-            key=lambda x: x.created_at,
-            reverse=True
-        )
+    combined_logs, branches, all_logs_ncm, all_logs_pnd = _bulk_log_list_batches(provider, filters)
 
     # Statistics (across the selected provider scope, unfiltered)
     ncm_stats = all_logs_ncm.aggregate(
@@ -21798,9 +21835,263 @@ def logistics_bulk_logs_list(request):
         'date_from': date_from,
         'date_to': date_to,
         'provider': provider,
+        'has_filters': any(filters.values()),
+        'filtered_batches': paginator.count,
+        'export_counts': _bulk_log_list_order_counts(combined_logs),
         'can_manage_batches': has_any_permission(request.user, 'can_manage_ncm_bulk_logs'),
     }
     return render(request, 'logistics_bulk_logs.html', context)
+
+
+# ==================== BULK LOGS LIST EXPORT ====================
+#: What a list export can carry. 'batches' is one row per batch, 'orders'
+#: flattens every order row inside those batches, 'both' is a workbook holding
+#: the two sheets. A CSV can only carry one table, so a CSV asking for 'both'
+#: gets the batch list.
+BULK_LOG_LIST_INCLUDE = ('batches', 'orders', 'both')
+
+#: Which batches to take: the current filtered view, only the rows ticked on
+#: the page, or every batch in the provider view regardless of the filters.
+BULK_LOG_LIST_SCOPES = ('view', 'selected', 'all')
+
+#: Ceiling on flattened order rows. A year of batches is tens of thousands of
+#: rows and openpyxl holds every one of them in memory; when the cut actually
+#: happens the Summary sheet says so, so a truncated file can never pass for a
+#: complete one.
+BULK_LOG_LIST_MAX_ORDER_ROWS = 20000
+
+#: A ticked page holds 20 rows; the cap only bounds a hand-made URL.
+BULK_LOG_LIST_MAX_SELECTED = 500
+
+BULK_LOG_PROVIDER_LABELS = {'ncm': 'Nepal Can Move', 'pnd': 'Pick & Drop'}
+
+
+def _bulk_log_list_batch_columns():
+    """Columns of the batch sheet - the list table, plus what it has no room for."""
+    return [
+        'S.N.', 'Batch Number', 'Provider', 'Status', 'Total Orders', 'Success',
+        'Failed', 'Skipped', 'Branch', 'Delivery Type', 'Sent By', 'Sent At',
+        'Completed At',
+    ]
+
+
+def _bulk_log_list_order_columns():
+    """The single-batch order columns, told which batch each row came from.
+
+    Built from _bulk_log_export_columns so the flattened sheet and the
+    per-batch export stay the same shape; only the tracking-ID heading is
+    generic here, since one file can hold both providers' rows.
+    """
+    base = _bulk_log_export_columns('Tracking ID')
+    return base[:1] + ['Batch Number', 'Provider'] + base[1:]
+
+
+def _bulk_log_list_batch_rows(batches):
+    """One row per batch, in the order the list shows them."""
+    from .timezone_utils import format_nepali_datetime
+
+    rows = []
+    for index, log in enumerate(batches, start=1):
+        rows.append([
+            index,
+            log.batch_number,
+            BULK_LOG_PROVIDER_LABELS.get(log.log_provider, log.log_provider),
+            log.get_status_display(),
+            log.total_orders,
+            log.success_count,
+            log.failed_count,
+            log.skipped_count,
+            log.branch_display or '',
+            # Pick & Drop batches carry no delivery type.
+            getattr(log, 'delivery_type', '') or '',
+            log.created_by.username if log.created_by else 'System',
+            format_nepali_datetime(log.created_at),
+            format_nepali_datetime(log.completed_at),
+        ])
+    return rows
+
+
+def _bulk_log_list_order_rows(batches, statuses):
+    """Every order row inside `batches`, batch by batch, numbered across the file.
+
+    The rows are fetched one query per provider rather than one per batch: a
+    filtered list can hold hundreds of batches, and a per-batch query there is
+    what turns an export into a timeout. Returns (rows, truncated).
+    """
+    from collections import defaultdict
+    from ncm.models import NCMBulkLogOrder
+    from pick_and_drop.models import PNDBulkLogOrder
+
+    entries = defaultdict(list)
+    for name, model in (('ncm', NCMBulkLogOrder), ('pnd', PNDBulkLogOrder)):
+        batch_ids = [b.id for b in batches if b.log_provider == name]
+        if not batch_ids:
+            continue
+        qs = model.objects.filter(batch_id__in=batch_ids).select_related('order__api_config')
+        if statuses:
+            qs = qs.filter(status__in=statuses)
+        for entry in qs.order_by('batch_id', 'created_at', 'id'):
+            entries[(name, entry.batch_id)].append(entry)
+
+    rows = []
+    for log in batches:
+        id_field = 'ncm_order_id' if log.log_provider == 'ncm' else 'pnd_order_id'
+        label = BULK_LOG_PROVIDER_LABELS.get(log.log_provider, log.log_provider)
+        for row in _bulk_log_export_rows(entries.get((log.log_provider, log.id), []),
+                                         'all', id_field):
+            if len(rows) >= BULK_LOG_LIST_MAX_ORDER_ROWS:
+                return rows, True
+            # The per-batch S.N. restarts at 1; renumber across the whole file.
+            rows.append([len(rows) + 1, log.batch_number, label] + row[1:])
+
+    return rows, False
+
+
+def _bulk_log_list_filter_summary(filters):
+    """The active filters in words, for the Summary sheet."""
+    labels = (
+        ('search', 'Search "{}"'),
+        ('branch', 'Branch: {}'),
+        ('status', 'Batch status: {}'),
+        ('date_from', 'From: {}'),
+        ('date_to', 'To: {}'),
+    )
+    parts = [text.format(filters[key]) for key, text in labels if filters.get(key)]
+    return ', '.join(parts)
+
+
+def _bulk_log_list_export_filename(provider, include, extension):
+    from .timezone_utils import get_nepali_now
+
+    return 'bulk-logs-{}-{}-{}.{}'.format(
+        provider, include, get_nepali_now().strftime('%Y%m%d'), extension
+    )
+
+
+def _bulk_log_list_export_csv(provider, include, columns, rows):
+    import csv
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+        _bulk_log_list_export_filename(provider, include, 'csv')
+    )
+    # Excel on Windows reads a bare UTF-8 CSV as ANSI and mangles Nepali
+    # receiver names and addresses; the BOM is what makes it pick the right codec.
+    response.write('﻿')
+
+    writer = csv.writer(response)
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow(row)
+    return response
+
+
+@login_required
+@permission_required('can_view_ncm_bulk_logs')
+def logistics_bulk_logs_export(request):
+    """Export the Bulk Logs list: the batches, their order rows, or both.
+
+    Reads the list's own filters (?provider/search/branch/status/date_from/
+    date_to) through the same helpers the page does, so what downloads is what
+    the page was showing. ?scope=selected takes only the batches whose ids are
+    passed in ?ids (as "<provider>:<id>"), and ?scope=all ignores the filters
+    and takes the whole provider view.
+    """
+    from .timezone_utils import format_nepali_datetime, get_nepali_now
+
+    provider = request.GET.get('provider', 'all').strip()
+    if provider not in ('all', 'ncm', 'pnd'):
+        provider = 'all'
+
+    include = (request.GET.get('include') or 'batches').lower()
+    if include not in BULK_LOG_LIST_INCLUDE:
+        include = 'batches'
+
+    export_format = 'csv' if (request.GET.get('format') or '').lower() == 'csv' else 'xlsx'
+
+    scope = (request.GET.get('scope') or 'view').lower()
+    if scope not in BULK_LOG_LIST_SCOPES:
+        scope = 'view'
+
+    # Order-row statuses to keep. Named apart from the list's own `status`,
+    # which filters batches, not the rows inside them.
+    statuses = [s for s in request.GET.getlist('order_status')
+                if s in ('success', 'failed', 'skipped')]
+
+    filters = _bulk_log_list_filters(request) if scope == 'view' else dict(BULK_LOG_LIST_NO_FILTERS)
+
+    try:
+        batches, _branches, _ncm, _pnd = _bulk_log_list_batches(provider, filters)
+
+        if scope == 'selected':
+            keys = [k.strip() for k in request.GET.get('ids', '').split(',') if k.strip()]
+            keys = set(keys[:BULK_LOG_LIST_MAX_SELECTED])
+            batches = [b for b in batches if '{}:{}'.format(b.log_provider, b.id) in keys]
+
+        batch_rows = _bulk_log_list_batch_rows(batches) if include in ('batches', 'both') else []
+        order_rows, truncated = (_bulk_log_list_order_rows(batches, statuses)
+                                 if include in ('orders', 'both') else ([], False))
+
+        if export_format == 'csv':
+            # One table per file; 'both' falls back to the batch list.
+            if include == 'orders':
+                return _bulk_log_list_export_csv(
+                    provider, 'orders', _bulk_log_list_order_columns(), order_rows)
+            return _bulk_log_list_export_csv(
+                provider, 'batches', _bulk_log_list_batch_columns(), batch_rows)
+
+        scope_label = {
+            'view': 'Current view',
+            'selected': 'Selected batches',
+            'all': 'All batches in this view',
+        }[scope]
+        summary_rows = [
+            ('Export', 'Logistics Bulk Logs'),
+            ('Provider', BULK_LOG_PROVIDER_LABELS.get(provider, 'All providers')),
+            ('Scope', scope_label),
+            ('Filters', _bulk_log_list_filter_summary(filters) or 'None'),
+            ('Batches', len(batches)),
+        ]
+        if include in ('orders', 'both'):
+            summary_rows += [
+                ('Order Rows', len(order_rows)),
+                ('Order Statuses', ', '.join(s.title() for s in statuses) if statuses else 'All'),
+            ]
+        if truncated:
+            summary_rows.append((
+                'Truncated',
+                'Cut at {} order rows - narrow the filters and export again'.format(
+                    BULK_LOG_LIST_MAX_ORDER_ROWS),
+            ))
+        summary_rows += [
+            ('Generated At', format_nepali_datetime(get_nepali_now())),
+            ('Generated By', request.user.get_username()),
+        ]
+
+        wb = Workbook()
+        summary = wb.active
+        summary.title = 'Summary'
+        _bulk_log_write_summary_sheet(summary, summary_rows)
+        if include in ('batches', 'both'):
+            _bulk_log_write_export_sheet(
+                wb.create_sheet('Batches'), _bulk_log_list_batch_columns(), batch_rows)
+        if include in ('orders', 'both'):
+            _bulk_log_write_export_sheet(
+                wb.create_sheet('Orders'), _bulk_log_list_order_columns(), order_rows)
+
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+            _bulk_log_list_export_filename(provider, include, 'xlsx')
+        )
+        wb.save(response)
+        return response
+    except Exception as e:
+        logger.exception('Bulk logs list export failed (provider=%s, include=%s)',
+                         provider, include)
+        messages.error(request, 'Could not export the bulk logs: {}'.format(e))
+        return redirect('logistics_bulk_logs_list')
 
 
 # ==================== BULK BATCH CONTROL (terminate / resume) ====================
