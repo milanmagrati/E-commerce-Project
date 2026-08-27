@@ -1,0 +1,465 @@
+{% extends 'base.html' %}
+{% block title %}{{ page_title }} - HRM{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   Payslip record page — scoped under .psdet so nothing here can leak into the
+   rest of the admin. Same tokens as the Salary Report it is opened from, so a
+   payslip looks like the row it came out of.
+   ══════════════════════════════════════════════════════════════════════════ */
+.psdet {
+    --ink:        #0f172a;
+    --ink-2:      #334155;
+    --muted:      #64748b;
+    --faint:      #94a3b8;
+    --line:       #e2e8f0;
+    --line-soft:  #f1f5f9;
+    --surface:    #ffffff;
+    --canvas:     #f8fafc;
+
+    --net:        #0f766e;
+    --net-soft:   #ccfbf1;
+    --gross:      #1d4ed8;
+    --gross-soft: #dbeafe;
+    --bonus:      #7c3aed;
+    --bonus-soft: #ede9fe;
+    --minus:      #e11d48;
+    --minus-soft: #ffe4e6;
+    --advance:    #c2410c;
+    --advance-soft:#ffedd5;
+    --ok:         #15803d;
+    --ok-soft:    #dcfce7;
+
+    --radius:     14px;
+    --shadow:     0 1px 2px rgba(15,23,42,.04), 0 6px 20px rgba(15,23,42,.06);
+
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+}
+.psdet *, .psdet *::before, .psdet *::after { box-sizing: border-box; }
+
+/* ── Back link ──────────────────────────────────────────────────────────── */
+.ps-back {
+    display: inline-flex; align-items: center; gap: 7px; margin-bottom: 12px;
+    font-size: .78rem; font-weight: 600; color: var(--muted); text-decoration: none;
+}
+.ps-back:hover { color: var(--net); }
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.ps-head {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 18px 20px; margin-bottom: 16px;
+    display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px;
+}
+.ps-avatar {
+    width: 52px; height: 52px; border-radius: 14px; flex: 0 0 auto;
+    display: grid; place-items: center; font-size: .95rem; font-weight: 800;
+    color: #0f766e; background: var(--net-soft); letter-spacing: .02em;
+}
+.ps-id { min-width: 0; flex: 1 1 260px; }
+.ps-name {
+    margin: 0; font-size: 1.3rem; font-weight: 800; color: var(--ink);
+    letter-spacing: -.02em; line-height: 1.2;
+}
+.ps-sub { font-size: .82rem; color: var(--muted); margin-top: 5px; }
+.ps-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.ps-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+
+.ps-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: .82rem; font-weight: 600; line-height: 1;
+    padding: 9px 15px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink-2); text-decoration: none;
+    cursor: pointer; transition: all .15s ease; white-space: nowrap;
+}
+.ps-btn:hover { border-color: #cbd5e1; background: var(--canvas); color: var(--ink); }
+.ps-btn-primary {
+    background: linear-gradient(135deg, #0f766e, #14b8a6);
+    border-color: transparent; color: #fff;
+    box-shadow: 0 4px 12px rgba(15,118,110,.24);
+}
+.ps-btn-primary:hover { color: #fff; filter: brightness(1.06); }
+
+.ps-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: .7rem; font-weight: 700; white-space: nowrap;
+}
+.ps-pill::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.ps-pill-paid       { background: var(--ok-soft);    color: var(--ok); }
+.ps-pill-generated  { background: var(--gross-soft); color: var(--gross); }
+.ps-pill-downloaded { background: var(--bonus-soft); color: var(--bonus); }
+.ps-pill-draft      { background: #f1f5f9;           color: var(--muted); }
+.ps-pill-lock       { background: #eef2ff;           color: #3730a3; }
+.ps-pill-flag       { background: #fffbeb;           color: #b45309; }
+
+/* ── Notes ──────────────────────────────────────────────────────────────── */
+.ps-note {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius);
+    padding: 12px 15px; font-size: .82rem; color: #92400e; margin-bottom: 12px;
+}
+.ps-note i { margin-top: 2px; }
+.ps-note-info { background: #f0f9ff; border-color: #bae6fd; color: #075985; }
+
+/* ── Amount tiles ───────────────────────────────────────────────────────── */
+.ps-figs {
+    display: grid; gap: 12px; margin-bottom: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+}
+.ps-fig {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 13px 15px 14px; box-shadow: var(--shadow);
+}
+.ps-fig-label {
+    font-size: .67rem; font-weight: 800; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--faint);
+}
+.ps-fig-value {
+    font-size: 1.2rem; font-weight: 800; color: var(--ink);
+    margin-top: 7px; line-height: 1.15; letter-spacing: -.02em; word-break: break-word;
+}
+.ps-fig-value .ps-cur { font-size: .72rem; font-weight: 700; color: var(--faint); margin-right: 3px; }
+.ps-fig[data-tone="good"] .ps-fig-value { color: var(--gross); }
+.ps-fig[data-tone="bad"]  .ps-fig-value { color: var(--minus); }
+.ps-fig[data-tone="warn"] .ps-fig-value { color: var(--advance); }
+.ps-fig[data-tone="net"]  { background: var(--net-soft); border-color: #99f6e4; }
+.ps-fig[data-tone="net"]  .ps-fig-value { color: var(--net); }
+.ps-fig[data-tone="net"]  .ps-fig-label { color: #0d9488; }
+
+/* ── Reconciliation strip ───────────────────────────────────────────────── */
+.ps-recon {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid #14b8a6; border-radius: var(--radius);
+    padding: 14px 18px 16px; margin-bottom: 16px; box-shadow: var(--shadow);
+}
+.ps-recon-title {
+    font-size: .67rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--faint); margin-bottom: 11px; display: flex; align-items: center; gap: 7px;
+}
+.ps-recon-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; }
+.ps-recon-op { font-size: 1rem; font-weight: 800; color: var(--faint); }
+.ps-recon-term { font-size: .95rem; font-weight: 800; color: var(--ink); }
+.ps-recon-term small {
+    display: block; font-size: .68rem; font-weight: 700; color: var(--faint);
+    margin-top: 2px; letter-spacing: .04em; text-transform: uppercase;
+}
+.ps-recon-term[data-tone="bad"]  { color: var(--minus); }
+.ps-recon-term[data-tone="warn"] { color: var(--advance); }
+.ps-recon-term[data-tone="net"]  { color: var(--net); }
+
+/* ── Cards ──────────────────────────────────────────────────────────────── */
+.ps-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.ps-card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 16px;
+    break-inside: avoid;
+}
+.ps-grid .ps-card { margin-bottom: 0; }
+.ps-card-head {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 13px 18px; border-bottom: 1px solid var(--line-soft);
+}
+.ps-card-title {
+    font-size: .85rem; font-weight: 700; color: var(--ink); margin: 0;
+    display: flex; align-items: center; gap: 8px;
+}
+.ps-card-title i { color: var(--faint); font-size: .8rem; }
+.ps-card-total { font-size: .8rem; font-weight: 800; color: var(--ink); white-space: nowrap; }
+.ps-card-body { padding: 14px 18px 16px; }
+
+/* ── Meta grid ──────────────────────────────────────────────────────────── */
+.ps-meta { display: grid; gap: 13px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.ps-meta-label { font-size: .66rem; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+.ps-meta-value { font-size: .84rem; font-weight: 600; color: var(--ink-2); margin-top: 3px; word-break: break-word; }
+
+/* ── Line rows ──────────────────────────────────────────────────────────── */
+.ps-line {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 9px 0; border-bottom: 1px dashed var(--line); font-size: .84rem;
+}
+.ps-line:first-child { padding-top: 0; }
+.ps-line:last-child { border-bottom: none; padding-bottom: 0; }
+.ps-line-name { color: var(--ink-2); min-width: 0; }
+.ps-line-name small { display: block; color: var(--faint); font-size: .72rem; margin-top: 3px; line-height: 1.4; }
+.ps-line-value { font-weight: 700; color: var(--ink); white-space: nowrap; }
+.ps-line-value[data-tone="bad"]  { color: var(--minus); }
+.ps-line-value[data-tone="good"] { color: var(--bonus); }
+.ps-sum {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    margin-top: 12px; padding-top: 11px; border-top: 2px solid var(--line);
+    font-size: .84rem; font-weight: 800; color: var(--ink);
+}
+
+/* ── Activity ───────────────────────────────────────────────────────────── */
+.ps-log { position: relative; padding-left: 20px; }
+.ps-log::before { content: ''; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+.ps-log-item { position: relative; padding: 0 0 14px; }
+.ps-log-item:last-child { padding-bottom: 0; }
+.ps-log-item::before {
+    content: ''; position: absolute; left: -20px; top: 5px;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--surface); border: 2px solid #14b8a6;
+}
+.ps-log-action { font-size: .83rem; font-weight: 700; color: var(--ink); }
+.ps-log-meta { font-size: .73rem; color: var(--faint); margin-top: 2px; }
+.ps-log-detail { font-size: .78rem; color: var(--muted); margin-top: 3px; }
+
+.ps-empty { padding: 26px 6px; text-align: center; color: var(--faint); font-size: .8rem; }
+.ps-empty i { display: block; font-size: 1.4rem; margin-bottom: 8px; color: #cbd5e1; }
+
+@media (max-width: 640px) {
+    .ps-actions { margin-left: 0; width: 100%; }
+    .ps-actions .ps-btn { flex: 1 1 auto; justify-content: center; }
+    .ps-name { font-size: 1.12rem; }
+}
+
+@media print {
+    #sidebar, .navbar, header, footer, .ps-noprint { display: none !important; }
+    #content { margin: 0 !important; max-width: 100% !important; }
+    .psdet .ps-card, .psdet .ps-head, .psdet .ps-fig, .psdet .ps-recon { box-shadow: none; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 psdet">
+
+    <a class="ps-back ps-noprint" href="{% url 'hrm:salary_report' %}">
+        <i class="fas fa-arrow-left"></i> Back to Salary Report
+    </a>
+
+    <!-- ══ Header ══════════════════════════════════════════════════════════ -->
+    <div class="ps-head">
+        <div class="ps-avatar">{{ p.initials }}</div>
+        <div class="ps-id">
+            <h1 class="ps-name">{{ p.title }}</h1>
+            <div class="ps-sub">{{ p.subtitle }}</div>
+            <div class="ps-tags">
+                <span class="ps-pill ps-pill-{{ p.status_key|default:'draft' }}">{{ p.status }}</span>
+                {% if slip.is_finalized %}
+                    <span class="ps-pill ps-pill-lock"><i class="fas fa-lock"></i> Finalized</span>
+                {% endif %}
+                {% if p.warnings %}
+                    <span class="ps-pill ps-pill-flag"><i class="fas fa-triangle-exclamation"></i> Needs review</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="ps-actions ps-noprint">
+            <a class="ps-btn" href="{% url 'hrm:employee_detail' p.employee_pk %}">
+                <i class="fas fa-user"></i> Employee
+            </a>
+            {% if can_adjust %}
+            <a class="ps-btn" href="{% url 'hrm:payslip_adjust' p.payslip_id %}">
+                <i class="fas fa-sliders"></i> Adjust
+            </a>
+            {% endif %}
+            <a class="ps-btn ps-btn-primary" href="{% url 'hrm:payslip_download' p.payslip_id %}">
+                <i class="fas fa-file-invoice-dollar"></i> Payslip PDF
+            </a>
+        </div>
+    </div>
+
+    <!-- ══ Reconciliation warnings / notes ═════════════════════════════════ -->
+    {% for text in p.warnings %}
+        <div class="ps-note"><i class="fas fa-triangle-exclamation"></i><div>{{ text }}</div></div>
+    {% endfor %}
+    {% for text in p.notes %}
+        <div class="ps-note ps-note-info"><i class="fas fa-circle-info"></i><div>{{ text }}</div></div>
+    {% endfor %}
+
+    <!-- ══ Amounts ═════════════════════════════════════════════════════════ -->
+    <div class="ps-figs">
+        {% for fig in p.figures %}
+        <div class="ps-fig" data-tone="{{ fig.tone }}">
+            <div class="ps-fig-label">{{ fig.label }}</div>
+            <div class="ps-fig-value"><span class="ps-cur">Rs.</span>{{ fig.value }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- ══ How the net was reached ═════════════════════════════════════════ -->
+    <div class="ps-recon">
+        <div class="ps-recon-title"><i class="fas fa-calculator"></i> How this net salary was reached</div>
+        <div class="ps-recon-row">
+            {% for term in equation %}
+                {% if term.op %}<span class="ps-recon-op">{{ term.op }}</span>{% endif %}
+                <span class="ps-recon-term" {% if term.tone %}data-tone="{{ term.tone }}"{% endif %}>
+                    Rs. {{ term.value }}
+                    <small>{{ term.label }}</small>
+                </span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- ══ Breakdown ═══════════════════════════════════════════════════════ -->
+    <div class="ps-grid">
+        <div class="ps-card">
+            <div class="ps-card-head">
+                <h2 class="ps-card-title"><i class="fas fa-arrow-trend-up"></i> Earnings</h2>
+                <span class="ps-card-total">Rs. {{ amounts.gross }}</span>
+            </div>
+            <div class="ps-card-body">
+                {% for item in earning_rows %}
+                    <div class="ps-line">
+                        <div class="ps-line-name">
+                            {{ item.name }}
+                            {% if item.sub %}<small>{{ item.sub }}</small>{% endif %}
+                        </div>
+                        <div class="ps-line-value" {% if item.tone %}data-tone="{{ item.tone }}"{% endif %}>Rs. {{ item.amount }}</div>
+                    </div>
+                {% endfor %}
+                <div class="ps-sum"><span>Gross salary</span><span>Rs. {{ amounts.gross }}</span></div>
+            </div>
+        </div>
+
+        <div class="ps-card">
+            <div class="ps-card-head">
+                <h2 class="ps-card-title"><i class="fas fa-arrow-trend-down"></i> Withheld</h2>
+                <span class="ps-card-total">Rs. {{ withheld }}</span>
+            </div>
+            <div class="ps-card-body">
+                {% for item in deduction_rows %}
+                    <div class="ps-line">
+                        <div class="ps-line-name">
+                            {{ item.name }}
+                            {% if item.sub %}<small>{{ item.sub }}</small>{% endif %}
+                        </div>
+                        <div class="ps-line-value" data-tone="bad">Rs. {{ item.amount }}</div>
+                    </div>
+                {% empty %}
+                    <div class="ps-line">
+                        <div class="ps-line-name">
+                            No deductions
+                            <small>Nothing was deducted from gross on this payslip</small>
+                        </div>
+                        <div class="ps-line-value">Rs. 0.00</div>
+                    </div>
+                {% endfor %}
+                <div class="ps-line">
+                    <div class="ps-line-name">
+                        Advance recovered
+                        <small>{% if p.advances %}Repaid against {{ p.advances|length }} advance{{ p.advances|length|pluralize }}{% else %}No advance repayment on this payslip{% endif %}</small>
+                    </div>
+                    <div class="ps-line-value" data-tone="bad">Rs. {{ amounts.advance }}</div>
+                </div>
+                <div class="ps-sum"><span>Total withheld</span><span>Rs. {{ withheld }}</span></div>
+                <div class="ps-sum" style="border-top:none;margin-top:4px;padding-top:0">
+                    <span style="color:#0f766e">Net salary</span>
+                    <span style="color:#0f766e">Rs. {{ amounts.net }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ Record details ══════════════════════════════════════════════════ -->
+    <div class="ps-card">
+        <div class="ps-card-head">
+            <h2 class="ps-card-title"><i class="fas fa-circle-info"></i> Payslip details</h2>
+        </div>
+        <div class="ps-card-body">
+            <div class="ps-meta">
+                {% for item in p.meta %}
+                <div>
+                    <div class="ps-meta-label">{{ item.label }}</div>
+                    <div class="ps-meta-value">{{ item.value }}</div>
+                </div>
+                {% endfor %}
+                <div>
+                    <div class="ps-meta-label">Payslip number</div>
+                    <div class="ps-meta-value">{{ p.payslip_number }}</div>
+                </div>
+                <div>
+                    <div class="ps-meta-label">Generated on</div>
+                    <div class="ps-meta-value">{{ slip.generated_on|date:"d M Y"|default:"—" }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ Bonuses ═════════════════════════════════════════════════════════ -->
+    {% if p.bonuses %}
+    <div class="ps-card">
+        <div class="ps-card-head">
+            <h2 class="ps-card-title"><i class="fas fa-gift"></i> Bonuses in this period</h2>
+            <span class="ps-card-total">Rs. {{ amounts.bonus }}</span>
+        </div>
+        <div class="ps-card-body">
+            {% for item in p.bonuses %}
+            <div class="ps-line">
+                <div class="ps-line-name">
+                    {{ item.label }}
+                    <small>{{ item.status }}{% if item.remarks %} · {{ item.remarks }}{% endif %}</small>
+                </div>
+                <div class="ps-line-value" data-tone="good">Rs. {{ item.amount }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ══ Advance recovery ════════════════════════════════════════════════ -->
+    {% if p.advances %}
+    <div class="ps-card">
+        <div class="ps-card-head">
+            <h2 class="ps-card-title"><i class="fas fa-hand-holding-dollar"></i> Advances recovered</h2>
+            <span class="ps-card-total">Rs. {{ amounts.advance }}</span>
+        </div>
+        <div class="ps-card-body">
+            {% for item in p.advances %}
+            <div class="ps-line">
+                <div class="ps-line-name">
+                    {{ item.label }}
+                    <small>Of Rs. {{ item.total }} · outstanding Rs. {{ item.outstanding }} · {{ item.status }}{% if item.reason %} · {{ item.reason }}{% endif %}</small>
+                </div>
+                <div class="ps-line-value" data-tone="bad">Rs. {{ item.recovered }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ══ Manual adjustments ══════════════════════════════════════════════ -->
+    {% if p.adjustments %}
+    <div class="ps-card">
+        <div class="ps-card-head">
+            <h2 class="ps-card-title"><i class="fas fa-sliders"></i> Manual adjustments</h2>
+        </div>
+        <div class="ps-card-body">
+            {% for item in p.adjustments %}
+            <div class="ps-line">
+                <div class="ps-line-name">
+                    {{ item.description }}
+                    <small>{{ item.type }} · {{ item.category }}{% if item.reason %} · {{ item.reason }}{% endif %}</small>
+                </div>
+                <div class="ps-line-value">Rs. {{ item.amount }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ══ Activity ════════════════════════════════════════════════════════ -->
+    {% if p.audit %}
+    <div class="ps-card">
+        <div class="ps-card-head">
+            <h2 class="ps-card-title"><i class="fas fa-clock-rotate-left"></i> Activity</h2>
+        </div>
+        <div class="ps-card-body">
+            <div class="ps-log">
+                {% for item in p.audit %}
+                <div class="ps-log-item">
+                    <div class="ps-log-action">{{ item.action }}</div>
+                    <div class="ps-log-meta">{{ item.at }}{% if item.by %} · {{ item.by }}{% endif %}</div>
+                    {% if item.detail %}<div class="ps-log-detail">{{ item.detail }}</div>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

@@ -1180,6 +1180,26 @@ def _payslip_detail_payload(payslip_id):
         'initials': row['initials'],
         'status': row['status_label'],
         'status_key': row['status'],
+        # Identity + named amounts for the full-page payslip view, which needs
+        # to address individual figures (and link to the employee / run) rather
+        # than just render the flat `figures` list the drawer walks.
+        'payslip_id': row['id'],
+        'payslip_number': row['payslip_number'],
+        'period_label': row['period_label'],
+        'employee_pk': row['employee_pk'],
+        'employee_code': row['employee_code'],
+        'run_id': row['run_id'],
+        'run_title': row['run_title'],
+        'amounts': {
+            'basic': _fmt_money(row['basic']),
+            'absent': _fmt_money(row['absent_deduction']),
+            'bonus': _fmt_money(row['bonus']),
+            'gross': _fmt_money(row['gross']),
+            'deductions': _fmt_money(row['deductions']),
+            'advance': _fmt_money(row['advance']),
+            'net': _fmt_money(row['net']),
+            'unwithheld': _fmt_money(row['unwithheld']),
+        },
         'meta': [
             {'label': 'Employee code', 'value': row['employee_code'] or '—'},
             {'label': 'Department', 'value': row['department']},

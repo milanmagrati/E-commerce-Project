@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, Http404
 from django.db import IntegrityError
 from django.db.models import Q, Sum, Count
 from django.core.paginator import Paginator
@@ -7647,13 +7647,31 @@ def payslip_sync_advances(request):
 
 @login_required
 def payslip_detail(request, pk):
+    """One payslip, as a page.
+
+    A browser landing here (from the Salary Report drawer, an employee's
+    payslip history, or a pasted URL) gets the rendered record; only callers
+    that ask for JSON -- ``?format=json`` or an XHR -- get the raw payload,
+    which is what this endpoint used to return to everybody.
+    """
     from .models import Payslip
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=405)
+
+    wants_json = (
+        request.GET.get('format') == 'json'
+        or request.headers.get('x-requested-with') == 'XMLHttpRequest'
+    )
+
     try:
         slip = Payslip.objects.select_related('employee', 'payroll_run').get(pk=pk, is_deleted=False)
     except Payslip.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'Payslip not found.'}, status=404)
+        if wants_json:
+            return JsonResponse({'success': False, 'error': 'Payslip not found.'}, status=404)
+        raise Http404('Payslip not found.')
+
+    if not wants_json:
+        return _render_payslip_detail_page(request, slip)
     data = {
         'success': True,
         'payslip': {
@@ -7678,6 +7696,128 @@ def payslip_detail(request, pk):
         }
     }
     return JsonResponse(data)
+
+
+def _render_payslip_detail_page(request, slip):
+    """Render the full payslip record page.
+
+    Amounts, warnings and history come from the Salary Report's payload builder
+    rather than a second calculation here, so this page, the report table and
+    the drawer can never disagree about the same payslip.
+
+    The earnings/deductions columns are assembled from the payslip's own
+    ``salary_structure`` snapshot and are built to reconcile: the earnings rows
+    always sum to gross and the deduction rows to what was actually withheld,
+    so a slip whose snapshot only stored salary components (basic, overtime,
+    weekend and holiday pay are not components) still shows a column that adds
+    up instead of one that silently undershoots the total above it.
+    """
+    from .salary_report import _payslip_detail_payload, _as_dict, _component_list, money, _fmt_money
+
+    payload = _payslip_detail_payload(slip.pk)
+    if payload is None:
+        raise Http404('Payslip not found.')
+
+    amounts = payload.get('amounts') or {}
+    struct = _as_dict(slip.salary_structure)
+
+    basic = money(slip.basic_salary)
+    absent = money(slip.absent_deduction)
+    gross = money(slip.gross_salary)
+    deduction_total = money(slip.total_deductions)
+    advance = money(slip.advance_deduction)
+    bonus = money(struct.get('bonus_total_included'))
+    # `net_basic` in the payroll engine: the absent deduction comes off basic
+    # before gross is built, which is why it is not part of `total_deductions`.
+    base_pay = max(basic - absent, Decimal('0'))
+
+    components = _component_list(struct, 'earnings_list')
+    component_total = sum((c['amount'] for c in components), Decimal('0'))
+
+    # Older rows never stored `basic_salary`; a 0.00 basic line on those is
+    # noise, and the pay it stands for surfaces in the remainder row below.
+    earning_rows = []
+    if base_pay > 0 or absent > 0:
+        earning_rows.append({
+            'name': 'Basic salary',
+            'sub': (f'Rs. {_fmt_money(basic)} basic less Rs. {_fmt_money(absent)} absent deduction'
+                    if absent > 0 else 'Monthly basic for this pay period'),
+            'amount': _fmt_money(base_pay),
+        })
+    earning_rows += [
+        {'name': c['name'], 'sub': None, 'amount': _fmt_money(c['amount'])}
+        for c in components
+    ]
+    if bonus > 0:
+        earning_rows.append({
+            'name': 'Bonus', 'sub': 'Approved bonus folded into this payslip',
+            'amount': _fmt_money(bonus), 'tone': 'good',
+        })
+
+    # Overtime, weekend and holiday pay are computed at generation but never
+    # stored as components, so they only exist as the gap between gross and the
+    # rows above. Show that gap rather than leaving the column short of gross.
+    remainder = (gross - base_pay - component_total - bonus).quantize(Decimal('0.01'))
+    if remainder != 0:
+        if not earning_rows and not components:
+            # Nothing itemised at all: the remainder *is* the pay, so don't
+            # label it as overtime it may well not be.
+            name, sub = ('Recorded earnings',
+                         'This payslip stored no itemised earnings — shown as the gross total')
+        elif remainder > 0:
+            name, sub = ('Overtime, weekend & holiday pay',
+                         'Earned outside the fixed salary components')
+        else:
+            name, sub = ('Other pay adjustment',
+                         'Applied outside the fixed salary components')
+        earning_rows.append({'name': name, 'sub': sub, 'amount': _fmt_money(remainder)})
+
+    deduction_components = _component_list(struct, 'deductions_list')
+    if deduction_components:
+        deduction_rows = [
+            {'name': c['name'], 'sub': None, 'amount': _fmt_money(c['amount'])}
+            for c in deduction_components
+        ]
+        component_deductions = sum((c['amount'] for c in deduction_components), Decimal('0'))
+        unlisted = (deduction_total - component_deductions).quantize(Decimal('0.01'))
+        if unlisted != 0:
+            deduction_rows.append({
+                'name': 'Other deductions', 'sub': 'Recorded on the payslip total, not itemised',
+                'amount': _fmt_money(unlisted),
+            })
+    elif deduction_total > 0:
+        deduction_rows = [{
+            'name': 'Recorded deductions',
+            'sub': 'This payslip predates component snapshots, so no itemised list was stored',
+            'amount': _fmt_money(deduction_total),
+        }]
+    else:
+        deduction_rows = []
+
+    withheld = (deduction_total + advance).quantize(Decimal('0.01'))
+
+    # Deductions and advance are shown as what they take away, so the strip
+    # reads Gross - Deductions - Advance = Net the way the report's KPI row does.
+    equation = [
+        {'label': 'Gross salary', 'value': amounts.get('gross', '0.00'), 'tone': 'good', 'op': None},
+        {'label': 'Deductions', 'value': amounts.get('deductions', '0.00'), 'tone': 'bad', 'op': '−'},
+        {'label': 'Advance recovered', 'value': amounts.get('advance', '0.00'), 'tone': 'warn', 'op': '−'},
+        {'label': 'Net salary', 'value': amounts.get('net', '0.00'), 'tone': 'net', 'op': '='},
+    ]
+
+    context = {
+        'page_title': f"Payslip {payload.get('payslip_number') or slip.pk}",
+        'slip': slip,
+        'p': payload,
+        'amounts': amounts,
+        'equation': equation,
+        'earning_rows': earning_rows,
+        'deduction_rows': deduction_rows,
+        'withheld': _fmt_money(withheld),
+        'employee': slip.employee,
+        'can_adjust': not slip.is_finalized,
+    }
+    return render(request, 'hrm/payslip_detail.html', context)
 
 
 def _build_payslip_print_context(slip):
