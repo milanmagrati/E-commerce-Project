@@ -5,6 +5,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST, require_http_methods
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from django.contrib import messages
 from django.db.models import Sum, Count, Q, F, Prefetch, Min, Max, Avg, IntegerField, Case, When, Value, OuterRef, Subquery
 from django.db.models.functions import TruncDate, Cast, Substr, Coalesce
@@ -15788,8 +15789,237 @@ def ncm_bulk_log_detail(request, log_id):
         'bulk_log': bulk_log,
         'batch_orders': batch_orders,
         'log_details': log_details,
+        'export_counts': _bulk_log_export_counts(batch_orders),
     }
     return render(request, 'ncm_bulk_log_detail.html', context)
+
+
+# ==================== BULK LOG BATCH EXPORT ====================
+#: Export scope -> filename suffix. 'all' plus the three per-order statuses a
+#: batch table can show, so staff can take away exactly the rows they are
+#: chasing instead of the whole batch every time.
+BULK_LOG_EXPORT_SCOPES = {
+    'all': 'all-orders',
+    'success': 'success',
+    'failed': 'failed',
+    'skipped': 'skipped',
+}
+
+
+def _bulk_log_export_columns(id_label):
+    """Columns of a batch export, mirroring the on-screen orders table.
+
+    Only the tracking-ID heading differs between providers (NCM ID / PND ID).
+    Both the CSV and the Excel sheet read this one list so they cannot drift
+    apart - a mismatch there is how exports quietly start shipping the wrong
+    value under the wrong heading.
+    """
+    return [
+        'S.N.', 'Order Number', 'Receiver', 'Phone', 'Address', 'COD Amount',
+        'Branch', 'API Account', id_label, 'Status', 'Message', 'Logged At',
+    ]
+
+
+def _bulk_log_export_rows(batch_orders, scope, id_field):
+    """Rows for one batch's export, in table order, filtered by `scope`."""
+    from .timezone_utils import format_nepali_datetime
+
+    rows = []
+    index = 0
+
+    for entry in batch_orders:
+        if scope != 'all' and entry.status != scope:
+            continue
+
+        index += 1
+        order = entry.order
+        api_config = order.api_config if order else None
+        rows.append([
+            index,
+            entry.order_number,
+            entry.customer_name,
+            entry.customer_phone,
+            entry.shipping_address,
+            float(safe_decimal(entry.cod_amount)),
+            entry.destination_branch,
+            api_config.api_name if api_config else '',
+            getattr(entry, id_field, None) or '',
+            entry.get_status_display(),
+            entry.message,
+            format_nepali_datetime(entry.created_at),
+        ])
+
+    return rows
+
+
+def _bulk_log_export_filename(bulk_log, scope, extension):
+    suffix = BULK_LOG_EXPORT_SCOPES.get(scope, 'all-orders')
+    return '{}-{}.{}'.format(bulk_log.batch_number, suffix, extension)
+
+
+def _bulk_log_excel_value(value):
+    """Make a cell value safe for openpyxl.
+
+    API error messages land in the Message column verbatim; a stray control
+    character in one of them makes openpyxl raise IllegalCharacterError and
+    kills the whole download, and anything past 32,767 characters is rejected
+    outright by the format.
+    """
+    if isinstance(value, str):
+        return ILLEGAL_CHARACTERS_RE.sub('', value)[:32000]
+    return value
+
+
+def _bulk_log_export_csv(bulk_log, rows, columns, scope):
+    import csv
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+        _bulk_log_export_filename(bulk_log, scope, 'csv')
+    )
+    # Excel on Windows reads a bare UTF-8 CSV as ANSI and mangles Nepali
+    # receiver names and addresses; the BOM is what makes it pick the right
+    # codec.
+    response.write('﻿')
+
+    writer = csv.writer(response)
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow(row)
+    return response
+
+
+def _bulk_log_export_excel(bulk_log, rows, columns, scope, summary_rows):
+    """Workbook with a batch summary sheet plus the per-order rows."""
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', start_color='1E293B')
+    fail_fill = PatternFill('solid', start_color='FFE4E6')
+    skip_fill = PatternFill('solid', start_color='FEF3C7')
+    label_font = Font(bold=True)
+
+    wb = Workbook()
+
+    summary = wb.active
+    summary.title = 'Summary'
+    for label, value in summary_rows:
+        summary.append([label, _bulk_log_excel_value(value)])
+        summary.cell(row=summary.max_row, column=1).font = label_font
+    summary.column_dimensions['A'].width = 26
+    summary.column_dimensions['B'].width = 36
+
+    detail = wb.create_sheet('Orders')
+    detail.append(columns)
+    for cell in detail[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    detail.freeze_panes = 'A2'
+
+    status_column = columns.index('Status') + 1
+    for row in rows:
+        detail.append([_bulk_log_excel_value(value) for value in row])
+        status = detail.cell(row=detail.max_row, column=status_column).value
+        if status == 'Failed':
+            for cell in detail[detail.max_row]:
+                cell.fill = fail_fill
+        elif status == 'Skipped':
+            for cell in detail[detail.max_row]:
+                cell.fill = skip_fill
+
+    for column in detail.columns:
+        width = max((len(str(c.value)) for c in column if c.value is not None), default=10)
+        detail.column_dimensions[column[0].column_letter].width = min(max(width + 2, 10), 60)
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+        _bulk_log_export_filename(bulk_log, scope, 'xlsx')
+    )
+    wb.save(response)
+    return response
+
+
+def _bulk_log_export_response(request, bulk_log, batch_orders, id_label, id_field,
+                              summary_rows, detail_url_name):
+    """Shared body of the NCM / PND batch exports.
+
+    The two providers keep separate models and permissions but identical batch
+    tables, so everything below the model lookup is one implementation.
+    """
+    export_format = (request.GET.get('format') or 'xlsx').lower()
+    scope = (request.GET.get('scope') or 'all').lower()
+    if scope not in BULK_LOG_EXPORT_SCOPES:
+        scope = 'all'
+
+    try:
+        columns = _bulk_log_export_columns(id_label)
+        rows = _bulk_log_export_rows(batch_orders, scope, id_field)
+
+        if export_format == 'csv':
+            return _bulk_log_export_csv(bulk_log, rows, columns, scope)
+
+        summary_rows = list(summary_rows) + [
+            ('Rows Exported', '{} ({} rows)'.format(
+                BULK_LOG_EXPORT_SCOPES[scope].replace('-', ' ').title(), len(rows)
+            )),
+        ]
+        return _bulk_log_export_excel(bulk_log, rows, columns, scope, summary_rows)
+    except Exception as e:
+        logger.exception('Bulk log export failed for batch %s', bulk_log.batch_number)
+        messages.error(request, 'Could not export this batch: {}'.format(e))
+        return redirect(detail_url_name, log_id=bulk_log.id)
+
+
+def _bulk_log_export_counts(batch_orders):
+    """Per-status row counts taken from the batch rows themselves.
+
+    The header cards read the batch's stored counters; the export menu must
+    read what is actually exportable, or a drifted counter offers a "Failed
+    only" download that comes back empty.
+    """
+    counts = {row['status']: row['n'] for row in
+              batch_orders.values('status').order_by().annotate(n=Count('id'))}
+    return {
+        'all': sum(counts.values()),
+        'success': counts.get('success', 0),
+        'failed': counts.get('failed', 0),
+        'skipped': counts.get('skipped', 0),
+    }
+
+
+@login_required
+@permission_required('can_view_ncm_bulk_logs')
+def ncm_bulk_log_export(request, log_id):
+    """Export one NCM batch as Excel or CSV (?format=xlsx|csv & ?scope=...)."""
+    from ncm.models import NCMBulkLog, NCMBulkLogOrder
+    from .timezone_utils import format_nepali_datetime
+
+    bulk_log = get_object_or_404(NCMBulkLog, id=log_id, is_deleted=False)
+    batch_orders = NCMBulkLogOrder.objects.filter(batch=bulk_log).select_related('order__api_config')
+
+    summary_rows = [
+        ('Batch Number', bulk_log.batch_number),
+        ('Logistics', 'Nepal Can Move'),
+        ('Status', bulk_log.get_status_display()),
+        ('Total Orders', bulk_log.total_orders),
+        ('Success', bulk_log.success_count),
+        ('Failed', bulk_log.failed_count),
+        ('Skipped', bulk_log.skipped_count),
+        ('From Branch', bulk_log.from_branch),
+        ('Delivery Type', bulk_log.delivery_type),
+        ('Sent By', bulk_log.created_by.username if bulk_log.created_by else 'System'),
+        ('Sent At', format_nepali_datetime(bulk_log.created_at)),
+        ('Completed At', format_nepali_datetime(bulk_log.completed_at)),
+    ]
+
+    return _bulk_log_export_response(
+        request, bulk_log, batch_orders,
+        id_label='NCM ID',
+        id_field='ncm_order_id',
+        summary_rows=summary_rows,
+        detail_url_name='ncm_bulk_log_detail',
+    )
 
 
 @login_required
@@ -20860,8 +21090,41 @@ def pnd_bulk_log_detail(request, log_id):
         'bulk_log': bulk_log,
         'batch_orders': batch_orders,
         'log_details': log_details,
+        'export_counts': _bulk_log_export_counts(batch_orders),
     }
     return render(request, 'pnd_bulk_log_detail.html', context)
+
+
+@login_required
+def pnd_bulk_log_export(request, log_id):
+    """Export one Pick and Drop batch as Excel or CSV (?format= & ?scope=)."""
+    from pick_and_drop.models import PNDBulkLog, PNDBulkLogOrder
+    from .timezone_utils import format_nepali_datetime
+
+    bulk_log = get_object_or_404(PNDBulkLog, id=log_id, is_deleted=False)
+    batch_orders = PNDBulkLogOrder.objects.filter(batch=bulk_log).select_related('order__api_config')
+
+    summary_rows = [
+        ('Batch Number', bulk_log.batch_number),
+        ('Logistics', 'Pick and Drop'),
+        ('Status', bulk_log.get_status_display()),
+        ('Total Orders', bulk_log.total_orders),
+        ('Success', bulk_log.success_count),
+        ('Failed', bulk_log.failed_count),
+        ('Skipped', bulk_log.skipped_count),
+        ('Destination Branch', bulk_log.destination_branch),
+        ('Sent By', bulk_log.created_by.username if bulk_log.created_by else 'System'),
+        ('Sent At', format_nepali_datetime(bulk_log.created_at)),
+        ('Completed At', format_nepali_datetime(bulk_log.completed_at)),
+    ]
+
+    return _bulk_log_export_response(
+        request, bulk_log, batch_orders,
+        id_label='PND ID',
+        id_field='pnd_order_id',
+        summary_rows=summary_rows,
+        detail_url_name='pnd_bulk_log_detail',
+    )
 
 
 @login_required

@@ -313,6 +313,8 @@ urlpatterns = [
     # ✅ NCM BULK ORDER LOGS
     # ncm_bulk_logs_list removed - use logistics/bulk-logs/?provider=ncm instead
     path('ncm-bulk-logs/<int:log_id>/', views.ncm_bulk_log_detail, name='ncm_bulk_log_detail'),
+    # Export one batch (?format=xlsx|csv & ?scope=all|success|failed|skipped)
+    path('ncm-bulk-logs/<int:log_id>/export/', views.ncm_bulk_log_export, name='ncm_bulk_log_export'),
     path('ncm-bulk-logs/<int:log_id>/trash/', views.ncm_bulk_log_trash, name='ncm_bulk_log_trash'),
     path('ncm-bulk-logs/bulk-action/', views.ncm_bulk_logs_bulk_action, name='ncm_bulk_logs_bulk_action'),
 
@@ -322,6 +324,7 @@ urlpatterns = [
     # ✅ PND BULK ORDER LOGS
     # pnd_bulk_logs_list removed - use logistics/bulk-logs/?provider=pnd instead
     path('pnd-bulk-logs/<int:log_id>/', views.pnd_bulk_log_detail, name='pnd_bulk_log_detail'),
+    path('pnd-bulk-logs/<int:log_id>/export/', views.pnd_bulk_log_export, name='pnd_bulk_log_export'),
     path('pnd-bulk-logs/<int:log_id>/trash/', views.pnd_bulk_log_trash, name='pnd_bulk_log_trash'),
     path('pnd-bulk-logs/bulk-action/', views.pnd_bulk_logs_bulk_action, name='pnd_bulk_logs_bulk_action'),
 

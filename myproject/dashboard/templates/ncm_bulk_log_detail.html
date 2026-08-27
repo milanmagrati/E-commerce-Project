@@ -16,6 +16,68 @@
             </p>
         </div>
         <div class="d-flex gap-2">
+            {% comment %}
+            Export sits left of "Back to Bulk Logs" - it is the one thing staff
+            reach for repeatedly here. The scopes are the statuses the table
+            below can show, and each count comes from the batch rows themselves
+            (export_counts), not the batch's stored counters, so a scope is only
+            offered when it really has rows to give.
+            {% endcomment %}
+            <div class="dropdown">
+                <button class="btn btn-success dropdown-toggle" type="button"
+                        id="exportBatchBtn" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-file-export"></i> Export
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end export-menu" aria-labelledby="exportBatchBtn">
+                    <li><h6 class="dropdown-header">Excel workbook</h6></li>
+                    <li>
+                        <a class="dropdown-item" href="{% url 'ncm_bulk_log_export' bulk_log.id %}?format=xlsx&amp;scope=all">
+                            <i class="fas fa-file-excel text-success"></i>
+                            <span>All orders <small class="text-muted">({{ export_counts.all }})</small></span>
+                        </a>
+                    </li>
+                    {% if export_counts.success %}
+                    <li>
+                        <a class="dropdown-item" href="{% url 'ncm_bulk_log_export' bulk_log.id %}?format=xlsx&amp;scope=success">
+                            <i class="fas fa-check-circle text-success"></i>
+                            <span>Success only <small class="text-muted">({{ export_counts.success }})</small></span>
+                        </a>
+                    </li>
+                    {% endif %}
+                    {% if export_counts.failed %}
+                    <li>
+                        <a class="dropdown-item" href="{% url 'ncm_bulk_log_export' bulk_log.id %}?format=xlsx&amp;scope=failed">
+                            <i class="fas fa-times-circle text-danger"></i>
+                            <span>Failed only <small class="text-muted">({{ export_counts.failed }})</small></span>
+                        </a>
+                    </li>
+                    {% endif %}
+                    {% if export_counts.skipped %}
+                    <li>
+                        <a class="dropdown-item" href="{% url 'ncm_bulk_log_export' bulk_log.id %}?format=xlsx&amp;scope=skipped">
+                            <i class="fas fa-forward text-warning"></i>
+                            <span>Skipped only <small class="text-muted">({{ export_counts.skipped }})</small></span>
+                        </a>
+                    </li>
+                    {% endif %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">CSV</h6></li>
+                    <li>
+                        <a class="dropdown-item" href="{% url 'ncm_bulk_log_export' bulk_log.id %}?format=csv&amp;scope=all">
+                            <i class="fas fa-file-csv text-primary"></i>
+                            <span>All orders</span>
+                        </a>
+                    </li>
+                    {% if export_counts.failed %}
+                    <li>
+                        <a class="dropdown-item" href="{% url 'ncm_bulk_log_export' bulk_log.id %}?format=csv&amp;scope=failed">
+                            <i class="fas fa-file-csv text-danger"></i>
+                            <span>Failed only</span>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
             <a href="{% url 'logistics_bulk_logs_list' %}?provider=ncm" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Bulk Logs
             </a>
@@ -339,6 +401,34 @@
         margin-top: 4px;
     }
     .log-user i { color: #667eea; }
+
+    /* ==================== EXPORT MENU ==================== */
+    .export-menu {
+        min-width: 250px;
+        border-radius: 10px;
+        padding: 6px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        border: 1px solid #e5e7eb;
+    }
+    .export-menu .dropdown-header {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: #94a3b8;
+        font-weight: 700;
+        padding: 6px 12px 2px;
+    }
+    .export-menu .dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 0.87rem;
+    }
+    .export-menu .dropdown-item i { width: 16px; text-align: center; }
+    .export-menu .dropdown-item:active { background: #f1f5f9; color: inherit; }
+    .export-menu .dropdown-item:active small { color: #64748b !important; }
 
     /* Table styling */
     .table thead th {
