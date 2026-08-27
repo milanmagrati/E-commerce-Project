@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
@@ -7445,6 +7445,93 @@ def generate_payslips(request, pk):
     })
 
 
+BONUS_COUNTED_STATUSES = ('approved', 'paid')
+
+
+def _payslip_period_key(slip):
+    """The (month, year) a payslip's bonuses are filed under.
+
+    Bonuses are recorded per employee-month, and generation files a payslip
+    under its *cycle start* -- `pay_period_start` when the run carries one,
+    otherwise the run's own month/year. A Shrawan run spanning 17 Jul - 16 Aug
+    is a July payslip here, which is exactly what `_sync_bonus_to_payslip`
+    matches on, so both sides agree on which bonuses belong to which slip.
+    """
+    run = slip.payroll_run
+    if run is None:
+        return None, None
+    if run.pay_period_start:
+        return run.pay_period_start.month, run.pay_period_start.year
+    if run.month and run.year:
+        return run.month, run.year
+    return None, None
+
+
+def _attach_bonus_state(slips):
+    """Annotate payslips with their stored vs. live bonus totals.
+
+    ``salary_structure['bonus_total_included']`` is the payroll engine's record
+    of how much bonus is already inside `gross_salary`. Comparing it with the
+    live approved/paid bonus total for the same employee-month is what makes a
+    bonus approved *after* the run visible on this page instead of silently
+    absent from the payslip.
+
+    A slip with no marker at all predates that bookkeeping: it cannot prove it
+    included anything, so it counts as stale whenever a bonus exists. Syncing
+    such a slip runs the healer, which either stamps it (no money moves) or
+    repairs it. Read-only and query-cheap -- no payroll recomputation here.
+
+    Returns the number of stale slips.
+    """
+    from .models import Bonus
+
+    keys = {}
+    for slip in slips:
+        month, year = _payslip_period_key(slip)
+        keys[slip.pk] = (slip.employee_id, month, year)
+
+    employee_ids = {eid for eid, m, _y in keys.values() if m}
+    live = {}
+    if employee_ids:
+        rows = (
+            Bonus.objects
+            .filter(employee_id__in=employee_ids, status__in=BONUS_COUNTED_STATUSES)
+            .values('employee_id', 'month', 'year')
+            .annotate(total=Sum('amount'))
+        )
+        for row in rows:
+            live[(row['employee_id'], row['month'], row['year'])] = (
+                row['total'] or Decimal('0')
+            ).quantize(Decimal('0.01'))
+
+    stale_count = 0
+    for slip in slips:
+        key = keys[slip.pk]
+        slip.bonus_live = live.get(key, Decimal('0')) if key[1] else Decimal('0')
+
+        struct = slip.salary_structure if isinstance(slip.salary_structure, dict) else {}
+        marker = struct.get('bonus_total_included')
+        if marker is None:
+            slip.bonus_included = None
+        else:
+            try:
+                slip.bonus_included = Decimal(str(marker)).quantize(Decimal('0.01'))
+            except (InvalidOperation, ValueError):
+                slip.bonus_included = None
+
+        if slip.bonus_included is None:
+            slip.bonus_stale = slip.bonus_live > 0
+        else:
+            slip.bonus_stale = slip.bonus_included != slip.bonus_live
+        # What the payslip is actually paying out right now, which is the
+        # marker when there is one -- never the live figure, or the column
+        # would show money the slip has not been credited with yet.
+        slip.bonus_amount = slip.bonus_included if slip.bonus_included is not None else Decimal('0')
+        if slip.bonus_stale and not slip.is_finalized:
+            stale_count += 1
+    return stale_count
+
+
 @login_required
 def payslip_list(request):
     from .models import Payslip, AdvancePayment
@@ -7542,6 +7629,11 @@ def payslip_list(request):
         or (s.has_rejected_advance and s.advance_deduction > 0)
     )
 
+    # Bonuses approved after the run was generated live in the Bonus table but
+    # not yet in the payslip's gross -- same shape of drift the advance sync
+    # fixes, and shown the same way.
+    bonus_stale_count = _attach_bonus_state(page_slips)
+
     user = request.user
     is_admin_user = bool(user.is_superuser or user.role == 'administrator')
 
@@ -7553,6 +7645,7 @@ def payslip_list(request):
         'status_filter': status_filter,
         'per_page': per_page,
         'stale_count': 0 if is_trash else stale_count,
+        'bonus_stale_count': 0 if is_trash else bonus_stale_count,
         'view': view,
         'is_trash': is_trash,
         'trashed_count': Payslip.objects.filter(is_deleted=True).count(),
@@ -7646,6 +7739,91 @@ def payslip_sync_advances(request):
 
 
 @login_required
+def payslip_sync_bonuses(request):
+    """Fold approved/paid bonuses into every payslip whose stored bonus has
+    drifted -- the bonus counterpart of ``payslip_sync_advances``.
+
+    The per-employee-month work is delegated to ``_sync_bonus_to_payslip()``,
+    the same routine a bonus approval and a payslip download already run, so a
+    bulk sync can never reach a different answer than those paths do. Each
+    employee-month is synced once no matter how many payslips it covers.
+
+    The outcome is reported in three buckets, because "0 updated" on a page
+    that showed ten stale badges reads like a failure when it is really the
+    healer confirming the money was already right:
+
+      updated   gross/net actually moved
+      verified  the slip was stale-looking but already carried the bonus; it
+                is now stamped, so it stops showing as stale
+      locked    a finalized payslip the bonus could not be written into
+    """
+    from .models import Payslip
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'}, status=405)
+
+    slips = list(
+        Payslip.objects.select_related('employee', 'payroll_run')
+        .filter(is_deleted=False)
+        .order_by('is_finalized', '-created_at')
+    )
+    _attach_bonus_state(slips)
+
+    updated = 0
+    verified = 0
+    locked = 0
+    seen = set()
+
+    for slip in slips:
+        # Only the drifting employee-months are worth walking: where the stored
+        # marker already equals the live bonus total the sync is a guaranteed
+        # no-op, and skipping those keeps a bulk run off the healer's payroll
+        # recomputation for every healthy payslip in the database.
+        if not slip.bonus_stale:
+            continue
+        month, year = _payslip_period_key(slip)
+        if not month:
+            continue
+        key = (slip.employee_id, month, year)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        before = (slip.gross_salary, slip.net_salary)
+
+        result = _sync_bonus_to_payslip(slip.employee, month, year)
+
+        if result['finalized_skipped']:
+            locked += 1
+            continue
+        if result['applied']:
+            updated += 1
+            continue
+        # The healer may have moved the money itself (a slip inflated by a
+        # double-added bonus), which `applied` does not report.
+        slip.refresh_from_db(fields=['gross_salary', 'net_salary'])
+        if (slip.gross_salary, slip.net_salary) != before:
+            updated += 1
+        else:
+            verified += 1
+
+    parts = []
+    if updated:
+        parts.append(f'{updated} payslip(s) updated')
+    if verified:
+        parts.append(f'{verified} already correct and now confirmed')
+    if locked:
+        parts.append(f'{locked} finalized payslip(s) skipped')
+
+    return JsonResponse({
+        'success': True,
+        'updated': updated,
+        'verified': verified,
+        'locked': locked,
+        'message': ', '.join(parts) + '.' if parts else 'All payslips already match their bonuses.',
+    })
+
+
+@login_required
 def payslip_detail(request, pk):
     """One payslip, as a page.
 
@@ -7672,6 +7850,11 @@ def payslip_detail(request, pk):
 
     if not wants_json:
         return _render_payslip_detail_page(request, slip)
+
+    # Bonus is part of gross but has no column of its own on the model, so the
+    # JSON callers (the Payslips list modal) get both the amount folded in and
+    # whether a newer approved bonus is still waiting for a sync.
+    _attach_bonus_state([slip])
     data = {
         'success': True,
         'payslip': {
@@ -7687,6 +7870,9 @@ def payslip_detail(request, pk):
             'total_deductions': str(slip.total_deductions),
             'advance_deduction': str(slip.advance_deduction),
             'absent_deduction': str(slip.absent_deduction),
+            'bonus': str(slip.bonus_amount),
+            'bonus_live': str(slip.bonus_live),
+            'bonus_stale': slip.bonus_stale,
             'net_salary': str(slip.net_salary),
             'status': slip.get_status_display(),
             'status_key': slip.status,

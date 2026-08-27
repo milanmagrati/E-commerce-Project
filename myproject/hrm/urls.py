@@ -190,6 +190,7 @@ urlpatterns = [
     path('payroll/runs/<int:pk>/generate-payslips/', views.generate_payslips, name='generate_payslips'),
     path('payroll/payslips/', views.payslip_list, name='payslip_list'),
     path('payroll/payslips/sync-advances/', views.payslip_sync_advances, name='payslip_sync_advances'),
+    path('payroll/payslips/sync-bonuses/', views.payslip_sync_bonuses, name='payslip_sync_bonuses'),
     path('payroll/payslips/filtered-ids/', views.payslip_filtered_ids, name='payslip_filtered_ids'),
     path('payroll/payslips/bulk-action/', views.payslip_bulk_action, name='payslip_bulk_action'),
     path('payroll/payslips/bulk-print/', views.payslip_bulk_print, name='payslip_bulk_print'),

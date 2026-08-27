@@ -448,7 +448,7 @@
 /* Summary card inside detail modal */
 .ps-detail-summary {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
     gap: 10px;
     margin: 16px 0 8px;
     padding: 16px;
@@ -478,6 +478,9 @@
     font-weight: 700;
 }
 .ps-sum-val.gross { color: #2563eb; }
+.ps-sum-val.bonus { color: #6d28d9; }
+.ps-detail-summary-item.has-bonus-stale { background: #fff7ed; border: 1px solid #fed7aa; }
+.ps-detail-summary-item.has-bonus-stale .ps-sum-val.bonus { color: #c2410c; font-size: 12px; }
 .ps-sum-val.deduction { color: #dc2626; }
 .ps-sum-val.advance { color: #dc2626; }
 .ps-sum-val.net { color: #059669; }
@@ -500,7 +503,24 @@
 .adv-badge-rejected { background: #fafafa; color: #6b7280; border: 1px solid #e5e7eb; }
 .adv-badge-none     { color: #d1d5db; font-size: 16px; }
 
-/* ── Stale Alert Banner ────────────────────────────────── */
+/* ── Bonus cell badges ─────────────────────────────────── */
+.bonus-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 11px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.bonus-badge i { font-size: 10px; }
+.bonus-badge-active { background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; }
+.bonus-badge-stale  { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+.bonus-badge-locked { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
+
+/* ── Attention banners (advance + bonus drift) ─────────── */
+.ps-alerts { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
 .ps-stale-banner {
     display: flex;
     align-items: center;
@@ -509,31 +529,56 @@
     background: linear-gradient(135deg, #fff7ed, #fef3c7);
     border: 1.5px solid #fcd34d;
     border-radius: 12px;
-    margin-bottom: 14px;
 }
-.ps-stale-banner i { color: #d97706; font-size: 16px; flex-shrink: 0; }
-.ps-stale-banner p { margin: 0; font-size: 13px; color: #92400e; flex: 1; }
+.ps-stale-banner > i { color: #d97706; font-size: 16px; flex-shrink: 0; }
+.ps-stale-banner p { margin: 0; font-size: 13px; color: #92400e; flex: 1; min-width: 0; }
 .ps-stale-banner strong { color: #78350f; }
+.ps-stale-banner-bonus {
+    background: linear-gradient(135deg, #faf5ff, #ede9fe);
+    border-color: #c4b5fd;
+}
+.ps-stale-banner-bonus > i { color: #7c3aed; }
+.ps-stale-banner-bonus p { color: #5b21b6; }
+.ps-stale-banner-bonus strong { color: #4c1d95; }
 
-/* ── Sync Button ───────────────────────────────────────── */
-.btn-sync-advances {
+/* ── Sync buttons ──────────────────────────────────────── */
+.ps-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+.btn-sync {
     display: inline-flex;
     align-items: center;
     gap: 7px;
     padding: 9px 18px;
     border: none;
     border-radius: 10px;
-    background: linear-gradient(135deg, #d97706, #f59e0b);
     color: #fff;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     transition: opacity .2s, transform .15s;
-    box-shadow: 0 3px 10px rgba(217,119,6,.3);
     flex-shrink: 0;
+    white-space: nowrap;
 }
-.btn-sync-advances:hover { opacity: .9; transform: translateY(-1px); }
-.btn-sync-advances:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.btn-sync:hover { opacity: .9; transform: translateY(-1px); }
+.btn-sync:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.btn-sync-advance { background: linear-gradient(135deg, #d97706, #f59e0b); box-shadow: 0 3px 10px rgba(217,119,6,.3); }
+.btn-sync-bonus   { background: linear-gradient(135deg, #6d28d9, #8b5cf6); box-shadow: 0 3px 10px rgba(109,40,217,.3); }
+/* Nothing stale: still clickable, but it shouldn't compete with the data. */
+.btn-sync.is-idle { background: #f3f4f6; color: #4b5563; box-shadow: none; border: 1.5px solid #e5e7eb; }
+.btn-sync.is-idle:hover { background: #e5e7eb; }
+.btn-sync-count {
+    background: rgba(255,255,255,.25);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+}
+.btn-sync.is-idle .btn-sync-count { background: #e5e7eb; }
+.btn-sync-sm { padding: 6px 14px; font-size: 12px; }
 /* ── Gross / Net amount cells ──────────────────────────── */
 .ps-cell-gross  { font-weight: 700; color: #1d4ed8; font-size: 13px; }
 .ps-cell-deduct { font-weight: 600; color: #b91c1c; font-size: 13px; }
@@ -612,6 +657,11 @@
         flex-wrap: wrap;
         gap: 8px;
     }
+    .ps-stale-banner p { flex: 1 1 100%; order: 2; }
+    .ps-stale-banner .btn-sync { order: 3; margin-left: auto; }
+    .ps-header-actions { width: 100%; justify-content: flex-start; }
+    .ps-header-actions .btn-sync,
+    .ps-header-actions .btn-trash-toggle { flex: 1 1 auto; justify-content: center; }
 }
 
 @media (max-width: 576px) {
@@ -627,10 +677,13 @@
     .ps-detail-summary {
         grid-template-columns: repeat(2, 1fr);
     }
-    .btn-sync-advances {
+    .btn-sync {
         padding: 7px 12px;
         font-size: 12px;
     }
+    /* Label out, icon and count in: two sync buttons still fit one row. */
+    .ps-header-actions .btn-sync .btn-sync-label { display: none; }
+    .ps-header-actions .btn-sync { flex: 0 1 auto; }
 }
 
 /* ── Trash toggle button ──────────────────────────────────── */
@@ -776,18 +829,22 @@
                 {% if is_trash %}Deleted payslips &mdash; restore them or remove permanently{% else %}Employee salary payslips with earnings, deductions &amp; advance recovery{% endif %}
             </p>
         </div>
-        <div style="display:flex;gap:10px;align-items:center">
+        <div class="ps-header-actions">
             {% if not is_trash %}
-                {% if stale_count > 0 %}
-                <button class="btn-sync-advances" id="btnSyncAdvances" onclick="syncAdvances()">
-                    <i class="fas fa-sync-alt" id="syncIcon"></i> Sync Advance Data
-                    <span style="background:rgba(255,255,255,.25);padding:1px 7px;border-radius:10px;font-size:11px">{{ stale_count }} stale</span>
+                <button class="btn-sync btn-sync-advance{% if not stale_count %} is-idle{% endif %}"
+                        id="btnSyncAdvances" onclick="syncAdvances()"
+                        title="Recalculate every payslip's advance deduction from the live advance records">
+                    <i class="fas fa-hand-holding-usd"></i>
+                    <span class="btn-sync-label">Sync Advance Data</span>
+                    {% if stale_count %}<span class="btn-sync-count">{{ stale_count }} stale</span>{% endif %}
                 </button>
-                {% else %}
-                <button class="btn-sync-advances" id="btnSyncAdvances" onclick="syncAdvances()" style="background:linear-gradient(135deg,#6b7280,#9ca3af);box-shadow:none">
-                    <i class="fas fa-sync-alt" id="syncIcon"></i> Sync Advances
+                <button class="btn-sync btn-sync-bonus{% if not bonus_stale_count %} is-idle{% endif %}"
+                        id="btnSyncBonuses" onclick="syncBonuses()"
+                        title="Fold approved bonuses into every payslip that does not carry them yet">
+                    <i class="fas fa-gift"></i>
+                    <span class="btn-sync-label">Sync Bonus Data</span>
+                    {% if bonus_stale_count %}<span class="btn-sync-count">{{ bonus_stale_count }} stale</span>{% endif %}
                 </button>
-                {% endif %}
                 <a class="btn-trash-toggle" href="?view=trash">
                     <i class="fas fa-trash-alt"></i> Trash
                     {% if trashed_count > 0 %}<span class="tt-badge">{{ trashed_count }}</span>{% endif %}
@@ -800,13 +857,26 @@
         </div>
     </div>
 
-    {% if stale_count > 0 %}
-    <div class="ps-stale-banner" id="staleBanner">
-        <i class="fas fa-exclamation-triangle"></i>
-        <p><strong>{{ stale_count }} payslip(s)</strong> have active advance payments not yet reflected in the stored deduction. Click <strong>”Sync Advance Data”</strong> to recalculate and save the correct values.</p>
-        <button class="btn-sync-advances" onclick="syncAdvances()" style="padding:6px 14px;font-size:12px">
-            <i class="fas fa-sync-alt"></i> Fix Now
-        </button>
+    {% if stale_count > 0 or bonus_stale_count > 0 %}
+    <div class="ps-alerts">
+        {% if stale_count > 0 %}
+        <div class="ps-stale-banner" id="staleBanner">
+            <i class="fas fa-exclamation-triangle"></i>
+            <p><strong>{{ stale_count }} payslip(s)</strong> have active advance payments not yet reflected in the stored deduction. Click <strong>&ldquo;Sync Advance Data&rdquo;</strong> to recalculate and save the correct values.</p>
+            <button class="btn-sync btn-sync-advance btn-sync-sm" onclick="syncAdvances()">
+                <i class="fas fa-sync-alt"></i> Fix Now
+            </button>
+        </div>
+        {% endif %}
+        {% if bonus_stale_count > 0 %}
+        <div class="ps-stale-banner ps-stale-banner-bonus" id="bonusStaleBanner">
+            <i class="fas fa-gift"></i>
+            <p><strong>{{ bonus_stale_count }} payslip(s)</strong> do not carry the bonus approved for their pay period. Click <strong>&ldquo;Sync Bonus Data&rdquo;</strong> to fold it into gross and net pay.</p>
+            <button class="btn-sync btn-sync-bonus btn-sync-sm" onclick="syncBonuses()">
+                <i class="fas fa-sync-alt"></i> Fix Now
+            </button>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 
@@ -890,6 +960,7 @@
                         <th class="d-none d-xl-table-cell">Pay Period</th>
                         <th class="d-none d-lg-table-cell">Pay Date</th>
                         <th style="color:#1d4ed8">Gross Pay</th>
+                        <th class="d-none d-lg-table-cell" style="color:#6d28d9">Bonus</th>
                         <th style="color:#b91c1c">Deductions</th>
                         <th class="d-none d-xl-table-cell" style="color:#b45309">Advance Deduction</th>
                         <th class="d-none d-xl-table-cell" style="color:#dc2626">Absent Deduction</th>
@@ -936,6 +1007,26 @@
                         </td>
                         <td class="d-none d-lg-table-cell">{{ slip.payroll_run.pay_date|date:"Y-m-d"|default:"-" }}</td>
                         <td><span class="ps-cell-gross">रू {{ slip.gross_salary|floatformat:2 }}</span></td>
+                        <td class="d-none d-lg-table-cell">
+                            {% if slip.bonus_stale and not slip.is_finalized %}
+                                <span class="bonus-badge bonus-badge-stale" title="रू {{ slip.bonus_live|floatformat:2 }} of approved bonus is not in this payslip yet. Click Sync Bonus Data.">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    Needs Sync
+                                </span>
+                            {% elif slip.bonus_stale %}
+                                <span class="bonus-badge bonus-badge-locked" title="Finalized payslip — locked at रू {{ slip.bonus_amount|floatformat:2 }} while the live bonus total is रू {{ slip.bonus_live|floatformat:2 }}. Unlock it to sync.">
+                                    <i class="fas fa-lock"></i>
+                                    रू {{ slip.bonus_amount|floatformat:2 }}
+                                </span>
+                            {% elif slip.bonus_amount > 0 %}
+                                <span class="bonus-badge bonus-badge-active" title="Bonus already included in this payslip&#39;s gross pay">
+                                    <i class="fas fa-gift"></i>
+                                    + रू {{ slip.bonus_amount|floatformat:2 }}
+                                </span>
+                            {% else %}
+                                <span class="adv-badge-none">&mdash;</span>
+                            {% endif %}
+                        </td>
                         <td><span class="ps-cell-deduct">− रू {{ slip.total_deductions|floatformat:2 }}</span></td>
                         <td class="d-none d-xl-table-cell">
                             {% if slip.has_rejected_advance %}
@@ -1186,43 +1277,78 @@ function downloadAndReload(url) {
     });
 })();
 
-// Sync all advance deductions
-function syncAdvances() {
-    const btn = document.getElementById('btnSyncAdvances');
-    const icon = document.getElementById('syncIcon');
-    if (!btn) return;
-    btn.disabled = true;
-    icon.className = 'fas fa-spinner fa-spin';
-    btn.childNodes[2] && (btn.childNodes[2].textContent = ' Syncing...');
+// ── Sync runners ────────────────────────────────────────────────────────
+// Advances and bonuses drift for the same reason (records changed after the
+// payroll run was generated) and are fixed the same way, so one runner drives
+// both buttons: disable it, spin its own icon, report into its own banner.
+function runSync(opts) {
+    const btn = document.getElementById(opts.buttonId);
+    if (!btn || btn.disabled) return;
+    const icon = btn.querySelector('i');
+    const label = btn.querySelector('.btn-sync-label');
+    const iconClass = icon ? icon.className : '';
+    const labelText = label ? label.textContent : '';
 
-    fetch('{% url "hrm:payslip_sync_advances" %}', {
+    // Both syncs walk every payslip -- never let a second run start on top.
+    document.querySelectorAll('.btn-sync').forEach(b => { b.disabled = true; });
+    if (icon) icon.className = 'fas fa-spinner fa-spin';
+    if (label) label.textContent = 'Syncing...';
+
+    fetch(opts.url, {
         method: 'POST',
         headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/json' },
     })
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            // Show success banner then reload
-            const banner = document.getElementById('staleBanner');
+            const banner = document.getElementById(opts.bannerId);
             if (banner) {
                 banner.style.background = 'linear-gradient(135deg,#f0fdf4,#dcfce7)';
                 banner.style.borderColor = '#86efac';
-                banner.querySelector('i').className = 'fas fa-check-circle';
-                banner.querySelector('i').style.color = '#16a34a';
-                banner.querySelector('p').innerHTML = '<strong>Done!</strong> ' + data.message;
+                const bi = banner.querySelector('i');
+                if (bi) { bi.className = 'fas fa-check-circle'; bi.style.color = '#16a34a'; }
+                const bp = banner.querySelector('p');
+                if (bp) {
+                    bp.style.color = '#166534';
+                    bp.innerHTML = '<strong>Done!</strong> ' + data.message;
+                }
                 banner.querySelectorAll('button').forEach(b => b.remove());
+            } else if (typeof alertify !== 'undefined') {
+                alertify.success(data.message);
             }
             setTimeout(() => location.reload(), 1200);
         } else {
             alert('Error: ' + (data.error || 'Sync failed'));
-            btn.disabled = false;
-            icon.className = 'fas fa-sync-alt';
+            resetSyncButtons(btn, icon, label, iconClass, labelText);
         }
     })
     .catch(() => {
         alert('Network error. Please try again.');
-        btn.disabled = false;
-        icon.className = 'fas fa-sync-alt';
+        resetSyncButtons(btn, icon, label, iconClass, labelText);
+    });
+}
+
+function resetSyncButtons(btn, icon, label, iconClass, labelText) {
+    document.querySelectorAll('.btn-sync').forEach(b => { b.disabled = false; });
+    if (icon) icon.className = iconClass;
+    if (label) label.textContent = labelText;
+}
+
+// Recalculate every payslip's advance deduction from the live advances
+function syncAdvances() {
+    runSync({
+        url: '{% url "hrm:payslip_sync_advances" %}',
+        buttonId: 'btnSyncAdvances',
+        bannerId: 'staleBanner',
+    });
+}
+
+// Fold approved/paid bonuses into the payslips that don't carry them yet
+function syncBonuses() {
+    runSync({
+        url: '{% url "hrm:payslip_sync_bonuses" %}',
+        buttonId: 'btnSyncBonuses',
+        bannerId: 'bonusStaleBanner',
     });
 }
 
@@ -1235,7 +1361,10 @@ function viewPayslipDetail(pk) {
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('viewSlipModal'));
     modal.show();
 
-    fetch("{% url 'hrm:payslip_list' %}" + pk + "/")
+    // This endpoint renders a full payslip page for browsers; the modal has to
+    // say it wants the JSON payload.
+    fetch("{% url 'hrm:payslip_list' %}" + pk + "/?format=json",
+          { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(r => r.json())
         .then(data => {
             if (data.success) {
@@ -1251,6 +1380,14 @@ function viewPayslipDetail(pk) {
                         <div class="ps-detail-summary-item">
                             <div class="ps-sum-label">Gross Salary</div>
                             <div class="ps-sum-val gross">रू${parseFloat(s.gross_salary).toLocaleString('en-IN', {minimumFractionDigits:2})}</div>
+                        </div>
+                        <div class="ps-detail-summary-item ${s.bonus_stale ? 'has-bonus-stale' : ''}">
+                            <div class="ps-sum-label">Bonus</div>
+                            <div class="ps-sum-val bonus">${s.bonus_stale
+                                ? '\u26a0 \u0930\u0942' + parseFloat(s.bonus_live).toLocaleString('en-IN', {minimumFractionDigits:2}) + ' unsynced'
+                                : (parseFloat(s.bonus) > 0
+                                    ? '+ \u0930\u0942' + parseFloat(s.bonus).toLocaleString('en-IN', {minimumFractionDigits:2})
+                                    : '\u2014')}</div>
                         </div>
                         <div class="ps-detail-summary-item">
                             <div class="ps-sum-label">Deductions</div>
