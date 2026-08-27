@@ -1,12 +1,14 @@
-"""Re-label existing attendance rows against the current Attendance Policy /
-Shift thresholds.
+"""Re-derive existing attendance rows from their stored clock times.
 
-The Attendance Report reads AttendanceRecord.status, which is written once
-when the row is saved. Changing a Half Day / Absent threshold on the
-Attendance Policies page now re-labels affected rows automatically, but rows
-saved before that fix (in particular hand-fixed ones, which the biometric
-auto-sync skips on purpose) still carry their old label. Run this once after
-deploying to bring the whole table in line:
+Working hours, overtime, the late / early-departure flags and the
+Present / Half Day / Absent label are all computed once, when the row is
+saved, and then stored — so they go stale when a shift's break duration,
+working hours or start/end times change, or when a Half Day / Absent
+threshold moves on the Attendance Policies page. Those edits now re-derive
+the affected rows automatically, but rows saved before that fix (in
+particular hand-fixed ones, which the biometric auto-sync skips on purpose)
+still carry the old arithmetic. Run this once after deploying to bring the
+whole table in line — clock times are never modified:
 
     python manage.py recompute_attendance_status --dry-run
     python manage.py recompute_attendance_status
@@ -16,11 +18,11 @@ from datetime import datetime
 from django.core.management.base import BaseCommand, CommandError
 
 from hrm.models import AttendanceRecord
-from hrm.views import _refresh_attendance_statuses
+from hrm.views import _refresh_attendance_records
 
 
 class Command(BaseCommand):
-    help = 'Recompute Present / Half Day / Absent / Late labels from stored worked hours.'
+    help = 'Re-derive attendance hours, overtime, flags and status from the stored clock times.'
 
     def add_arguments(self, parser):
         parser.add_argument('--employee', type=int, help='Limit to one Employee id.')
@@ -52,16 +54,16 @@ class Command(BaseCommand):
         self.stdout.write(f'Checking {total} attendance record(s)...')
 
         if options['dry_run']:
-            changes = _refresh_attendance_statuses(qs, dry_run=True)
-            for rec, old_status, new_status in changes:
-                self.stdout.write(
-                    f'  {rec.date} {rec.employee.full_name} '
-                    f'{rec.working_hours}h: {old_status} -> {new_status}'
+            changes = _refresh_attendance_records(qs, dry_run=True)
+            for rec, diff in changes:
+                fields = ', '.join(
+                    f'{name} {old} -> {new}' for name, (old, new) in sorted(diff.items())
                 )
+                self.stdout.write(f'  {rec.date} {rec.employee.full_name}: {fields}')
             self.stdout.write(self.style.WARNING(
-                f'Dry run: {len(changes)} record(s) would be relabelled.'
+                f'Dry run: {len(changes)} record(s) would be updated.'
             ))
             return
 
-        updated = _refresh_attendance_statuses(qs)
-        self.stdout.write(self.style.SUCCESS(f'Relabelled {updated} record(s).'))
+        updated = _refresh_attendance_records(qs)
+        self.stdout.write(self.style.SUCCESS(f'Updated {updated} record(s).'))

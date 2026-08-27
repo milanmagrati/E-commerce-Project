@@ -13,9 +13,17 @@ Bug report fixed:
        skipped by the biometric auto-sync, so it kept the label it was given
        under whatever threshold was in force at fix time -- forever.
 
+Working hours, overtime and the late / early-departure flags are stored the
+same way and go stale the same way — a shift's break duration or working
+hours changing left days already recorded on the old arithmetic (a
+9:19am-9:18pm day still reporting 8.00h and no overtime), so the refresh
+re-derives all of it from the row's own clock times.
+
 Asserted here:
-  * saving a policy re-labels the days already recorded under it, hand-fixed
+  * saving a policy re-derives the days already recorded under it, hand-fixed
     rows included, without touching their manually corrected clock times;
+  * hours and overtime that disagree with a row's own clock times are
+    rebuilt from those times;
   * the biometric auto-sync re-labels hand-fixed rows on the next page load
     (the self-heal path on the server) and still refuses to overwrite their
     times;
@@ -29,6 +37,7 @@ this leaves the database untouched.
 
 Run: python test_attendance_status_refresh.py
 """
+import json
 import os
 import sys
 from datetime import date, datetime, time
@@ -47,8 +56,8 @@ from hrm.models import (  # noqa: E402
     AttendancePolicy, AttendanceRecord, BiometricAttendance, Employee, Shift,
 )
 from hrm.views import (  # noqa: E402
-    _refresh_attendance_statuses, _sync_biometric_to_attendance,
-    attendance_policy_update, shift_update,
+    _refresh_attendance_records, _sync_biometric_to_attendance,
+    _validate_shift_hours, attendance_policy_update, shift_update,
 )
 
 NPT = pytz.timezone('Asia/Kathmandu')
@@ -73,6 +82,22 @@ def npt_utc(day, hh, mm):
 
 rf = RequestFactory()
 
+
+def rf_post_shift(shift, **overrides):
+    """POST the shift form as the Shifts page does, with field overrides."""
+    data = {
+        'name': shift.name, 'start_time': '10:00', 'end_time': '18:30',
+        'description': '', 'break_duration': '0', 'grace_period': '15',
+        'status': 'active', 'working_hours': '8.5', 'half_day_hours': '4',
+    }
+    data.update(overrides)
+    req = rf.post(f'/hrm/shifts/{shift.id}/update/', data)
+    req.user = ADMIN[0]
+    return req
+
+
+ADMIN = []
+
 try:
     with transaction.atomic():
         user = CustomUser.objects.filter(is_superuser=True).first()
@@ -80,6 +105,7 @@ try:
             user = CustomUser.objects.create_superuser(
                 username='__test_admin_refresh__', email='refresh@example.com', password='x'
             )
+        ADMIN.append(user)
 
         # Half Day threshold starts at 4.5h, so a 4.85h day is a full day.
         policy = AttendancePolicy.objects.create(
@@ -114,6 +140,14 @@ try:
             employee=emp, date=date(2026, 2, 12), shift=shift, status='on_leave',
             working_hours=0,
         )
+        # A hand-fixed row whose stored hours no longer match its own clock
+        # times (9:19am-9:18pm is 11.98h, not 8.00h) and which therefore also
+        # lost its overtime — the exact shape reported on the report page.
+        stale_rec = AttendanceRecord.objects.create(
+            employee=emp, date=date(2026, 2, 9), clock_in=time(9, 19), clock_out=time(21, 18),
+            shift=shift, status='present', working_hours=8.00, overtime_hours=0,
+            is_regularized=True,
+        )
 
         # -- Part 1: raising the Half Day threshold re-labels saved days -----
         print('Part 1: Attendance Policy save re-labels already-saved days')
@@ -136,6 +170,15 @@ try:
         check('hand-fixed row stays regularized', fixed_rec.is_regularized, True)
         check('8.5h day still present', full_rec.status, 'present')
         check('on_leave day untouched', leave_rec.status, 'on_leave')
+
+        stale_rec.refresh_from_db()
+        check("stale hours re-derived from the row's own clock times",
+              float(stale_rec.working_hours), 11.98)
+        check('overtime re-derived past the 8.5h shift',
+              float(stale_rec.overtime_hours), 3.48)
+        check('re-derived row keeps its clock_in', stale_rec.clock_in, time(9, 19))
+        check('re-derived row keeps its clock_out', stale_rec.clock_out, time(21, 18))
+        check('11.98h day is a full day', stale_rec.status, 'present')
 
         # -- Part 2: the biometric sync self-heals hand-fixed rows -----------
         # This is the path that repairs the server on the next page load: the
@@ -168,12 +211,7 @@ try:
             employee=emp2, date=date(2026, 2, 13), clock_in=time(10, 0),
             clock_out=time(14, 51), shift=shift, status='present', working_hours=4.85,
         )
-        req = rf.post(f'/hrm/shifts/{shift.id}/update/', {
-            'name': shift.name, 'start_time': '10:00', 'end_time': '18:30',
-            'description': '', 'break_duration': '0', 'grace_period': '15',
-            'status': 'active', 'working_hours': '8.5', 'half_day_hours': '5',
-        })
-        req.user = user
+        req = rf_post_shift(shift, half_day_hours='5')
         resp = shift_update(req, shift.id)
         check('shift update succeeded', resp.status_code, 200)
         rec2.refresh_from_db()
@@ -190,10 +228,50 @@ try:
         )
         emp2.attendance_policy = strict
         emp2.save(update_fields=['attendance_policy'])
-        updated = _refresh_attendance_statuses(AttendanceRecord.objects.filter(employee=emp2))
+        updated = _refresh_attendance_records(AttendanceRecord.objects.filter(employee=emp2))
         rec2.refresh_from_db()
         check('one record re-labelled by the reassignment', updated, 1)
         check('4.85h day is a full day under the stricter 4.0h threshold', rec2.status, 'present')
+
+        # -- Part 5: a shift's own numbers have to be consistent ------------
+        # Working Time is what overtime is measured past, and hours are the
+        # punch span minus Break Duration, so a Working Time longer than the
+        # shift actually runs skews every day recorded against it. The form
+        # auto-fills it but lets it be typed over, so the guard is server-side.
+        print('Part 5: shift hours are validated against the shift itself')
+        check('12h Working Time on a 10:00-18:30 shift is rejected',
+              bool(_validate_shift_hours('10:00', '18:30', 0, 12.0, 4.0)), True)
+        check('a 9h break on an 8.5h shift is rejected',
+              bool(_validate_shift_hours('10:00', '18:30', 540, 7.0, 4.0)), True)
+        check('8.5h Working Time on a 10:00-18:30 shift with no break is fine',
+              _validate_shift_hours('10:00', '18:30', 0, 8.5, 4.0), None)
+        check('7.0h Working Time on a 20:00-04:00 night shift with a 60m break is fine',
+              _validate_shift_hours('20:00', '04:00', 60, 7.0, 4.0), None)
+        check('an open-ended shift (no end time) is left alone',
+              _validate_shift_hours('10:00', None, 0, 8.0, 4.0), None)
+
+        resp = shift_update(rf_post_shift(shift, working_hours='12'), shift.id)
+        check('shift_update refuses the inconsistent Working Time',
+              json.loads(resp.content)['success'], False)
+
+        # -- Part 6: a break change recalculates the days already recorded ---
+        print('Part 6: changing the break duration recalculates recorded days')
+        day_rec = AttendanceRecord.objects.create(
+            employee=emp2, date=date(2026, 2, 15), clock_in=time(10, 0),
+            clock_out=time(19, 0), shift=shift, status='present', working_hours=9.0,
+            overtime_hours=0.5,
+        )
+        req = rf_post_shift(shift, break_duration='60', working_hours='7.5')
+        req.user = user
+        resp = shift_update(req, shift.id)
+        check('shift update with a 60m break succeeded',
+              json.loads(resp.content)['success'], True)
+        day_rec.refresh_from_db()
+        check('hours drop by the new 60m break', float(day_rec.working_hours), 8.0)
+        check('overtime re-derived past the 7.5h Working Time',
+              float(day_rec.overtime_hours), 0.5)
+        check('clock times untouched by the recalculation',
+              (day_rec.clock_in, day_rec.clock_out), (time(10, 0), time(19, 0)))
 
         raise Rollback()
 except Rollback:

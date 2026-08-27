@@ -876,8 +876,8 @@ def employee_edit(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
     if request.method == 'POST':
         # Which policy/shift the employee was on before this save decides how
-        # their past days were classified — compare after saving so a change
-        # can re-label them (see _refresh_attendance_statuses).
+        # their past days were measured and labelled — compare after saving so
+        # a change re-derives them (see _refresh_attendance_records).
         prev_policy_id = employee.attendance_policy_id
         prev_shift_id = employee.shift_id
         form = EmployeeForm(request.POST, request.FILES, instance=employee)
@@ -886,8 +886,8 @@ def employee_edit(request, employee_id):
             if (employee.attendance_policy_id != prev_policy_id
                     or employee.shift_id != prev_shift_id):
                 from .models import AttendanceRecord
-                _safe_refresh_statuses(
-                    _refresh_attendance_statuses,
+                _safe_refresh_attendance(
+                    _refresh_attendance_records,
                     AttendanceRecord.objects.filter(employee_id=employee.id),
                     'employee_edit',
                 )
@@ -2877,11 +2877,12 @@ def _sync_biometric_to_attendance(recent_days=None):
         # A manually regularized/corrected record (approved regularization or
         # "Fix Attendance") is an explicit human decision — never let the raw
         # biometric punches silently overwrite it back on the next page load.
-        # Its *classification* still has to track the current Half Day /
-        # Absent thresholds though: this sync is the only pass that ever
-        # revisits these rows, so skipping them outright left a hand-fixed
-        # day showing the label it got under whatever threshold was in force
-        # at fix time. Collected here and refreshed in one pass below.
+        # Everything *derived* from those times (hours, overtime, the late /
+        # early flags, the Half Day / Absent label) still has to track the
+        # current shift and policy though: this sync is the only pass that
+        # ever revisits these rows, so skipping them outright froze them on
+        # whatever arithmetic was in force at fix time. Collected here and
+        # re-derived in one pass below.
         if existing_record and existing_record.is_regularized:
             regularized_pks.append(existing_record.pk)
             continue
@@ -2964,11 +2965,11 @@ def _sync_biometric_to_attendance(recent_days=None):
             }
         )
 
-    # One pass for every hand-fixed row seen above, so a threshold change on
-    # the Attendance Policies page reaches them on the next page load without
-    # touching their manually corrected clock times.
+    # One pass for every hand-fixed row seen above, so a threshold or shift
+    # change reaches their hours, overtime and label on the next page load
+    # without touching their manually corrected clock times.
     if regularized_pks:
-        _refresh_attendance_statuses(
+        _refresh_attendance_records(
             AttendanceRecord.objects.filter(pk__in=regularized_pks)
         )
 
@@ -3306,28 +3307,32 @@ def _classify_attendance_status(working_hours, is_late, policy, shift):
     return 'late' if is_late else 'present'
 
 
-def _refresh_attendance_statuses(records=None, dry_run=False):
-    """Re-derive the stored status of existing AttendanceRecords from their
-    saved worked hours against the *current* policy / shift thresholds, and
-    return how many rows actually changed.
+def _refresh_attendance_records(records=None, dry_run=False):
+    """Re-derive existing AttendanceRecords from their stored clock times
+    against the *current* shift + policy, and return how many rows changed.
 
-    Status is stored on the row, not computed at render time, so the
-    Attendance Report shows whatever classification was saved when the row
-    was last written. Two paths used to leave that permanently stale:
+    Everything on an attendance row except the clock times is derived:
+    working_hours (clock-out minus clock-in, less the shift's break),
+    overtime_hours (anything past the shift's working hours), the late /
+    early-departure flags, and the Present / Half Day / Absent / Late label.
+    All of it is computed once, when the row is written, and then stored --
+    so it silently goes stale whenever the inputs behind it change:
 
-      * raising/lowering a Half Day (or Absent) threshold on the Attendance
-        Policies page never touched rows that were already saved; and
-      * a manually fixed row (is_regularized=True) is deliberately skipped by
-        the biometric auto-sync, so it could never pick a new threshold up at
-        all -- e.g. a 4.85h day fixed by hand stayed "Present" forever after
-        the Half Day threshold was raised above it.
+      * raising or lowering a Half Day / Absent threshold on the Attendance
+        Policies page only affected rows saved afterwards;
+      * editing a shift's break duration, working hours or start/end times
+        left every day already recorded against it on the old arithmetic --
+        e.g. a 9:19 AM to 9:18 PM day still reporting 8.00h and no overtime;
+      * and a hand-fixed row (is_regularized=True) is deliberately skipped by
+        the biometric auto-sync, so it could never pick any of that up at all.
 
-    Only the derived statuses are touched (see AUTO_ATTENDANCE_STATUSES);
-    'on_leave' and manually corrected clock times are left exactly as they
-    are -- this recomputes the *label*, never the times.
+    The stored clock times are the one thing this never touches -- a manual
+    correction stays exactly as it was entered; only the numbers derived
+    from it are rebuilt. 'on_leave' is likewise preserved, since it
+    is a deliberate marker rather than something punches imply.
 
-    With dry_run=True nothing is written and the list of
-    (record, old_status, new_status) tuples is returned instead of a count
+    With dry_run=True nothing is written and a list of
+    (record, {field: (old, new)}) tuples is returned instead of a count
     (used by the recompute_attendance_status management command).
     """
     from .models import AttendanceRecord
@@ -3338,35 +3343,52 @@ def _refresh_attendance_statuses(records=None, dry_run=False):
     policy_cache = {}
     changed = []
     for rec in qs.iterator():
-        if rec.status not in AUTO_ATTENDANCE_STATUSES:
+        employee = rec.employee
+        if employee.id not in policy_cache:
+            policy_cache[employee.id] = employee.effective_attendance_policy
+
+        metrics = _compute_attendance_metrics_from_times(
+            rec.clock_in,
+            rec.clock_out,
+            rec.shift or employee.shift,
+            policy_cache[employee.id],
+            rec.status,
+        )
+
+        diff = {}
+        if metrics['status'] != rec.status:
+            diff['status'] = (rec.status, metrics['status'])
+        if round(float(rec.working_hours or 0), 2) != round(float(metrics['working_hours']), 2):
+            diff['working_hours'] = (float(rec.working_hours or 0), float(metrics['working_hours']))
+        if round(float(rec.overtime_hours or 0), 2) != round(float(metrics['overtime_hours']), 2):
+            diff['overtime_hours'] = (float(rec.overtime_hours or 0), float(metrics['overtime_hours']))
+        if bool(rec.is_late_arrival) != bool(metrics['is_late']):
+            diff['is_late_arrival'] = (rec.is_late_arrival, metrics['is_late'])
+        if bool(rec.is_early_departure) != bool(metrics['is_early']):
+            diff['is_early_departure'] = (rec.is_early_departure, metrics['is_early'])
+
+        if not diff:
             continue
 
-        if not (rec.clock_in and rec.clock_out):
-            new_status = 'incomplete'
-        else:
-            employee = rec.employee
-            if employee.id not in policy_cache:
-                policy_cache[employee.id] = employee.effective_attendance_policy
-            new_status = _classify_attendance_status(
-                rec.working_hours,
-                rec.is_late_arrival,
-                policy_cache[employee.id],
-                rec.shift or employee.shift,
-            )
-
-        if new_status != rec.status:
-            changed.append((rec, rec.status, new_status))
-            rec.status = new_status
+        rec.status = metrics['status']
+        rec.working_hours = metrics['working_hours']
+        rec.overtime_hours = metrics['overtime_hours']
+        rec.is_late_arrival = metrics['is_late']
+        rec.is_early_departure = metrics['is_early']
+        changed.append((rec, diff))
 
     if changed and not dry_run:
         AttendanceRecord.objects.bulk_update(
-            [rec for rec, _old, _new in changed], ['status'], batch_size=500
+            [rec for rec, _diff in changed],
+            ['status', 'working_hours', 'overtime_hours',
+             'is_late_arrival', 'is_early_departure'],
+            batch_size=500,
         )
     return changed if dry_run else len(changed)
 
 
-def _refresh_statuses_for_policy(policy):
-    """Recompute every attendance row whose *effective* policy is `policy`.
+def _refresh_records_for_policy(policy):
+    """Re-derive every attendance row whose *effective* policy is `policy`.
 
     That is employees explicitly assigned to it plus -- when this policy is
     the active company-wide fallback -- everyone with no policy of their own
@@ -3382,25 +3404,27 @@ def _refresh_statuses_for_policy(policy):
     employee_ids = list(Employee.objects.filter(emp_q).values_list('id', flat=True))
     if not employee_ids:
         return 0
-    return _refresh_attendance_statuses(
+    return _refresh_attendance_records(
         AttendanceRecord.objects.filter(employee_id__in=employee_ids)
     )
 
 
-def _refresh_statuses_for_shift(shift):
-    """Recompute rows classified against `shift` (its half_day_hours is the
-    fallback threshold for employees with no effective Attendance Policy)."""
+def _refresh_records_for_shift(shift):
+    """Re-derive rows recorded against `shift` — its start/end times, break
+    duration and working hours drive their hours, overtime and late/early
+    flags, and its half_day_hours is the fallback Half Day threshold for
+    employees with no effective Attendance Policy."""
     from .models import AttendanceRecord
 
-    return _refresh_attendance_statuses(
+    return _refresh_attendance_records(
         AttendanceRecord.objects.filter(
             Q(shift=shift) | Q(shift__isnull=True, employee__shift=shift)
         )
     )
 
 
-def _safe_refresh_statuses(refresh_fn, arg, context):
-    """Run a status refresh without ever letting it break the save it follows.
+def _safe_refresh_attendance(refresh_fn, arg, context):
+    """Run a refresh without ever letting it break the save it follows.
     Returns the number of rows updated (0 on failure, which is logged)."""
     try:
         return refresh_fn(arg)
@@ -3428,54 +3452,66 @@ def _compute_attendance_metrics(clock_in, clock_out, shift, policy, status):
     Attendance Adjustments quick edit could leave a record stuck on
     'incomplete' or a stale 'half_day'/'present' even after both times were
     filled in, because the old version only re-derived status starting from
-    a bare 'present'/'late')."""
+    a bare 'present'/'late').
+
+    This is the string front door for the forms; the derivation itself lives
+    in _compute_attendance_metrics_from_times()."""
+    from datetime import datetime
+
+    def _parse(value):
+        return datetime.strptime(value[:5], '%H:%M').time() if value else None
+
+    return _compute_attendance_metrics_from_times(
+        _parse(clock_in), _parse(clock_out), shift, policy, status
+    )
+
+
+def _compute_attendance_metrics_from_times(clock_in, clock_out, shift, policy, status):
+    """The derivation behind _compute_attendance_metrics, taking datetime.time
+    objects (what AttendanceRecord stores) instead of 'HH:MM' strings.
+
+    Working with the stored times directly keeps full precision: biometric
+    punches carry seconds, and re-deriving a saved row through the string
+    path would truncate them to the minute and nudge its hours on every
+    pass. Same numbers as the biometric sync computes, so re-deriving a row
+    can never fight with the next sync.
+    """
     from datetime import datetime, timedelta
 
-    AUTO_STATUSES = AUTO_ATTENDANCE_STATUSES
-
+    day = datetime.today().date()
     working_hours = 0
     overtime_hours = 0
     is_late = False
     is_early = False
 
-    if clock_in:
-        cin = datetime.strptime(clock_in[:5], '%H:%M')
+    if clock_in and shift:
+        late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
+        shift_start = datetime.combine(day, shift.start_time)
+        if datetime.combine(day, clock_in) > shift_start + timedelta(minutes=late_grace):
+            is_late = True
 
-        if shift:
-            late_grace = policy.late_mark_after if policy else (shift.grace_period or 0)
-            shift_start = datetime.combine(datetime.today(), shift.start_time)
-            cin_full = datetime.combine(datetime.today(), cin.time())
+    if clock_out and shift and shift.end_time:
+        shift_start = datetime.combine(day, shift.start_time)
+        shift_end = datetime.combine(day, shift.end_time)
+        early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
+        cout_full = datetime.combine(day, clock_out)
 
-            if cin_full > shift_start + timedelta(minutes=late_grace):
-                is_late = True
+        # Handle night shifts spanning midnight
+        if shift_end <= shift_start:
+            shift_end += timedelta(days=1)
+            if clock_in:
+                if cout_full < datetime.combine(day, clock_in):
+                    cout_full += timedelta(days=1)
+            elif cout_full < shift_start:
+                cout_full += timedelta(days=1)
 
-    if clock_out:
-        cout = datetime.strptime(clock_out[:5], '%H:%M')
-        cout_full = datetime.combine(datetime.today(), cout.time())
-
-        if shift and shift.end_time:
-            shift_start = datetime.combine(datetime.today(), shift.start_time)
-            shift_end = datetime.combine(datetime.today(), shift.end_time)
-            early_grace = policy.early_departure_grace if policy else (shift.grace_period or 0)
-
-            # Handle night shifts spanning midnight
-            if shift_end <= shift_start:
-                shift_end += timedelta(days=1)
-                if clock_in:
-                    cin_full_tmp = datetime.combine(datetime.today(), datetime.strptime(clock_in[:5], '%H:%M').time())
-                    if cout_full < cin_full_tmp:
-                        cout_full += timedelta(days=1)
-                else:
-                    if cout_full < shift_start:
-                        cout_full += timedelta(days=1)
-
-            if cout_full < shift_end - timedelta(minutes=early_grace):
-                is_early = True
+        if cout_full < shift_end - timedelta(minutes=early_grace):
+            is_early = True
 
     if clock_in and clock_out:
-        cin = datetime.strptime(clock_in[:5], '%H:%M')
-        cout = datetime.strptime(clock_out[:5], '%H:%M')
-        diff = (cout - cin).total_seconds() / 3600
+        diff = (
+            datetime.combine(day, clock_out) - datetime.combine(day, clock_in)
+        ).total_seconds() / 3600
         if diff < 0:
             diff += 24
         working_hours = round(diff, 2)
@@ -3495,12 +3531,12 @@ def _compute_attendance_metrics(clock_in, clock_out, shift, policy, status):
         # 'absent' / 'incomplete' record's times on the Attendance
         # Adjustments page — all of those should reflect the new times, not
         # keep whatever status happened to be stored before the edit).
-        if status in AUTO_STATUSES:
+        if status in AUTO_ATTENDANCE_STATUSES:
             status = _classify_attendance_status(working_hours, is_late, policy, shift)
 
     # Flag incomplete punches (only one of clock-in/clock-out given)
     # instead of leaving the day reported as Present/Late/Half Day/Absent.
-    if not (clock_in and clock_out) and status in AUTO_STATUSES:
+    if not (clock_in and clock_out) and status in AUTO_ATTENDANCE_STATUSES:
         status = 'incomplete'
 
     return {
@@ -4155,6 +4191,69 @@ def shift_list(request):
     return render(request, 'hrm/shift_list.html', context)
 
 
+def _validate_shift_hours(start_time, end_time, break_duration, working_hours, half_day_hours):
+    """Keep a shift's numbers consistent with its own clock.
+
+    Working Time drives overtime (anything worked past it) and the report's
+    hours are the punch span minus Break Duration, so a Working Time larger
+    than the shift actually runs — or a break longer than the shift — makes
+    every day recorded against it wrong in a way nothing downstream can
+    detect. The form auto-fills Working Time from the times, but it lets the
+    value be typed over and the server accepted whatever arrived; this is the
+    guard that holds on the server, where it also covers the API.
+
+    Returns an error message, or None when the shift is consistent.
+    """
+    from datetime import datetime, timedelta
+
+    if working_hours <= 0:
+        return 'Working Time must be a positive number of hours.'
+    if half_day_hours <= 0:
+        return 'Half day threshold must be a positive number.'
+    if half_day_hours > working_hours:
+        return "The Half Day threshold cannot exceed the shift's Working Time."
+    if break_duration < 0:
+        return 'Break duration cannot be negative.'
+
+    if not (start_time and end_time):
+        # Open-ended shift: nothing to measure Working Time against.
+        return None
+
+    def _as_time(value):
+        if isinstance(value, str):
+            return datetime.strptime(value[:5], '%H:%M').time()
+        return value
+
+    try:
+        start = _as_time(start_time)
+        end = _as_time(end_time)
+    except (ValueError, TypeError):
+        return 'Invalid shift start or end time.'
+
+    today = datetime.today().date()
+    span = datetime.combine(today, end) - datetime.combine(today, start)
+    if span <= timedelta(0):
+        span += timedelta(days=1)  # night shift crossing midnight
+    span_hours = span.total_seconds() / 3600
+    break_hours = break_duration / 60.0
+
+    if break_hours >= span_hours:
+        return (
+            f'Break duration ({break_duration} min) cannot be as long as the '
+            f'shift itself ({round(span_hours, 2)}h).'
+        )
+
+    net_hours = round(span_hours - break_hours, 2)
+    if round(working_hours, 2) > net_hours + 0.01:
+        return (
+            f'Working Time ({round(working_hours, 2)}h) cannot exceed the '
+            f'{round(span_hours, 2)}h the shift runs less its '
+            f'{break_duration} min break — that is {net_hours}h.'
+        )
+
+    return None
+
+
 @login_required
 def shift_create(request):
     from .models import Shift
@@ -4178,20 +4277,28 @@ def shift_create(request):
                 half_day_hours = float(half_day_hours)
             except (ValueError, TypeError):
                 return JsonResponse({'success': False, 'error': 'Invalid half day threshold provided.'})
-            if half_day_hours <= 0:
-                return JsonResponse({'success': False, 'error': 'Half day threshold must be a positive number.'})
+            try:
+                working_hours = float(working_hours)
+                break_duration = int(break_duration)
+            except (ValueError, TypeError):
+                return JsonResponse({'success': False, 'error': 'Invalid working hours or break duration provided.'})
+            shift_error = _validate_shift_hours(
+                start_time, end_time or None, break_duration, working_hours, half_day_hours
+            )
+            if shift_error:
+                return JsonResponse({'success': False, 'error': shift_error})
             shift = Shift.objects.create(
                 name=name,
                 start_time=start_time,
                 end_time=end_time if end_time else None,
                 description=description,
-                break_duration=int(break_duration),
+                break_duration=break_duration,
                 break_start_time=break_start_time,
                 break_end_time=break_end_time,
                 grace_period=int(grace_period),
                 is_night_shift=is_night_shift,
                 is_active=is_active,
-                working_hours=float(working_hours),
+                working_hours=working_hours,
                 half_day_hours=half_day_hours,
             )
             return JsonResponse({'success': True, 'id': shift.id, 'name': shift.name})
@@ -4221,25 +4328,35 @@ def shift_update(request, pk):
                 half_day_hours = float(request.POST.get('half_day_hours', '4.0') or '4.0')
             except (ValueError, TypeError):
                 return JsonResponse({'success': False, 'error': 'Invalid half day threshold provided.'})
-            if half_day_hours <= 0:
-                return JsonResponse({'success': False, 'error': 'Half day threshold must be a positive number.'})
+            try:
+                new_working_hours = float(request.POST.get('working_hours', '8.0') or '8.0')
+                new_break_duration = int(request.POST.get('break_duration', '60') or '60')
+            except (ValueError, TypeError):
+                return JsonResponse({'success': False, 'error': 'Invalid working hours or break duration provided.'})
+            shift_error = _validate_shift_hours(
+                start_time, end_time or None, new_break_duration, new_working_hours, half_day_hours
+            )
+            if shift_error:
+                return JsonResponse({'success': False, 'error': shift_error})
             shift.name = name
             shift.start_time = start_time
             shift.end_time = end_time if end_time else None
             shift.description = description
-            shift.break_duration = int(request.POST.get('break_duration', '60') or '60')
+            shift.break_duration = new_break_duration
             shift.break_start_time = request.POST.get('break_start_time', '').strip() or None
             shift.break_end_time = request.POST.get('break_end_time', '').strip() or None
             shift.grace_period = int(request.POST.get('grace_period', '15') or '15')
             shift.is_night_shift = request.POST.get('is_night_shift') == 'on'
             shift.is_active = request.POST.get('status', 'active') == 'active'
-            shift.working_hours = float(request.POST.get('working_hours', '8.0') or '8.0')
+            shift.working_hours = new_working_hours
             shift.half_day_hours = half_day_hours
             shift.save()
-            # Shift timings feed late/early marks and half_day_hours is the
-            # fallback threshold for employees with no Attendance Policy —
-            # re-label the days already recorded against this shift.
-            updated = _safe_refresh_statuses(_refresh_statuses_for_shift, shift, 'shift_update')
+            # A shift's times, break and working hours are the arithmetic
+            # behind every day recorded against it (hours, overtime, the
+            # late/early flags), and half_day_hours is the fallback Half Day
+            # threshold — re-derive those days instead of leaving them on
+            # the old numbers.
+            updated = _safe_refresh_attendance(_refresh_records_for_shift, shift, 'shift_update')
             return JsonResponse({'success': True, 'records_updated': updated})
         except Exception as e:
             hrm_logger.exception('shift_update POST failed for shift %s', pk)
@@ -4555,7 +4672,7 @@ def attendance_policy_create(request):
         # A new active policy can become the company-wide fallback, which
         # changes how already-saved days classify — re-label them now instead
         # of leaving the report on the old thresholds.
-        updated = _safe_refresh_statuses(_refresh_statuses_for_policy, policy, 'attendance_policy_create')
+        updated = _safe_refresh_attendance(_refresh_records_for_policy, policy, 'attendance_policy_create')
         return JsonResponse({
             'success': True, 'id': policy.id, 'name': policy.name,
             'records_updated': updated,
@@ -4586,7 +4703,7 @@ def attendance_policy_update(request, pk):
         # day already saved under this policy (including hand-fixed rows the
         # biometric sync deliberately skips) so the Attendance Report and the
         # payroll counts agree with the thresholds just saved.
-        updated = _safe_refresh_statuses(_refresh_statuses_for_policy, policy, 'attendance_policy_update')
+        updated = _safe_refresh_attendance(_refresh_records_for_policy, policy, 'attendance_policy_update')
         return JsonResponse({'success': True, 'records_updated': updated})
     data = {
         'id': policy.id,
@@ -4619,8 +4736,8 @@ def attendance_policy_delete(request, pk):
         policy.delete()
         updated = 0
         if affected_ids:
-            updated = _safe_refresh_statuses(
-                _refresh_attendance_statuses,
+            updated = _safe_refresh_attendance(
+                _refresh_attendance_records,
                 AttendanceRecord.objects.filter(employee_id__in=affected_ids),
                 'attendance_policy_delete',
             )
@@ -4638,7 +4755,7 @@ def attendance_policy_toggle_status(request, pk):
     policy.save()
     # Activating/deactivating changes which policy is the fallback for
     # employees with none assigned, so their days can classify differently.
-    updated = _safe_refresh_statuses(_refresh_statuses_for_policy, policy, 'attendance_policy_toggle_status')
+    updated = _safe_refresh_attendance(_refresh_records_for_policy, policy, 'attendance_policy_toggle_status')
     return JsonResponse({
         'success': True, 'is_active': policy.is_active, 'records_updated': updated,
     })

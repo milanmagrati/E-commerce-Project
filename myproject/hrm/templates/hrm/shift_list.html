@@ -1341,9 +1341,18 @@
         .then(function(data) {
             if (data.success) {
                 clearDraft();
+                // Saving a shift re-derives the attendance days recorded
+                // against it (hours, overtime and status follow its times,
+                // break and working hours) — say so, otherwise it looks like
+                // the change only applies to future days.
+                var rederived = data.records_updated || 0;
                 var toastMsg = editingId
                     ? 'Shift has been updated successfully!'
                     : 'New shift has been created successfully!';
+                if (rederived) {
+                    toastMsg += ' ' + rederived + ' attendance record'
+                        + (rederived === 1 ? ' was' : 's were') + ' recalculated.';
+                }
                 var toastTitle = editingId ? 'Shift Updated' : 'Shift Created';
                 sessionStorage.setItem('shiftToast', JSON.stringify({
                     type: 'success', title: toastTitle, msg: toastMsg
