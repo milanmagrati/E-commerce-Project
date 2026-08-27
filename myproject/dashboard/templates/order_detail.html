@@ -4079,14 +4079,22 @@
     }
 
     // ✅ LOAD NCM STATUS HISTORY DYNAMICALLY
-    function loadNCMStatusHistory(ncmOrderId) {
+    // NCM rate-limits per account at roughly three calls a second. The server
+    // waits and retries on its own, but a busy account can still come back
+    // throttled - and that is a "try again in a second", not a failure worth
+    // showing someone. Retry it here instead, a couple of times, before the
+    // panel admits defeat.
+    const NCM_HISTORY_THROTTLE_RETRIES = 2;
+
+    function loadNCMStatusHistory(ncmOrderId, attempt) {
         if (!ncmOrderId) return;
-        
+
         const container = document.getElementById('ncmStatusHistoryContainer');
         if (!container) return;
-        
+
+        const tryNumber = attempt || 0;
         container.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin text-primary"></i> Loading Status History...</div>';
-        
+
         fetch(`/api/ncm-rtv/${ncmOrderId}/detail/`)
             .then(response => response.json())
             .then(data => {
@@ -4107,6 +4115,13 @@
                     });
                     html += '</div></div>';
                     container.innerHTML = html;
+                } else if (data.status_history_throttled && tryNumber < NCM_HISTORY_THROTTLE_RETRIES) {
+                    // Rate limited, not broken. Wait out NCM's one-second
+                    // window and ask again rather than making someone click
+                    // a Retry button to do exactly the same thing.
+                    setTimeout(function () {
+                        loadNCMStatusHistory(ncmOrderId, tryNumber + 1);
+                    }, 1200 * (tryNumber + 1));
                 } else if (data.status_history_error) {
                     // NCM could not be reached / refused the request. Saying
                     // "no status history" here would be a lie, and it hid a

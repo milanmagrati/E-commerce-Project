@@ -8830,3 +8830,98 @@ RuntimeError: NCM exploded
 [INFO] 2026-08-27 12:40:59 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
 [INFO] 2026-08-27 12:45:56 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
 [INFO] 2026-08-27 12:59:19 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-08-27 13:03:33 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[WARNING] 2026-08-27 13:19:32 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[INFO] 2026-08-27 13:19:33 ncm_service.fetch_order_status_raw:1442 NCM order 25098287: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:19:34 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:19:34 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[DEBUG] 2026-08-27 13:19:35 ncm_service._fetch_comments:285 NCM: 404 returned for order 25098287 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-27 13:19:37 ncm_service._fetch_comments:285 NCM: 404 returned for order 22614428 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[WARNING] 2026-08-27 13:19:38 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:19:38 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[DEBUG] 2026-08-27 13:19:39 ncm_service._fetch_comments:285 NCM: 404 returned for order 1 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-27 13:19:39 ncm_service._fetch_comments:285 NCM: 404 returned for order 1 at https://portal.nepalcanmove.com/api/v1/order/comment, trying next...
+[WARNING] 2026-08-27 13:19:40 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:19:40 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[INFO] 2026-08-27 13:19:41 ncm_service.fetch_order_status_raw:1442 NCM order 25098287: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:19:42 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:19:43 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:21:12 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[INFO] 2026-08-27 13:21:13 ncm_service.fetch_order_status_raw:1442 NCM order 25070858: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:21:15 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (2 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:21:15 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (2 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:21:17 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[INFO] 2026-08-27 13:21:18 ncm_service.fetch_order_status_raw:1442 NCM order 25070858: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:21:18 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[INFO] 2026-08-27 13:21:19 ncm_service.fetch_order_status_raw:1442 NCM order 25070858: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:21:20 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:21:20 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[DEBUG] 2026-08-27 13:21:21 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[WARNING] 2026-08-27 13:21:21 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-27 13:21:21 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:21:22 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-27 13:21:22 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-27 13:21:22 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:21:23 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (2 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:21:23 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (2 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:21:23 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (2 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order
+[DEBUG] 2026-08-27 13:21:24 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-27 13:21:24 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-27 13:21:24 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-27 13:21:25 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v1/order/comment, trying next...
+[WARNING] 2026-08-27 13:21:25 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[DEBUG] 2026-08-27 13:21:25 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v1/order/comment, trying next...
+[INFO] 2026-08-27 13:21:26 ncm_service.fetch_order_status_raw:1442 NCM order 25070858: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:21:26 ncm_service._fetch_comments:279 NCM comment fetch throttled, waiting 1.0s: https://portal.nepalcanmove.com/api/v1/order/comment
+[WARNING] 2026-08-27 13:21:26 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (1 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-27 13:21:26 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (1 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order/status
+[DEBUG] 2026-08-27 13:21:27 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v1/order/comment, trying next...
+[DEBUG] 2026-08-27 13:21:28 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v1/order/comment, trying next...
+[WARNING] 2026-08-27 13:21:28 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-27 13:21:28 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:20 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[INFO] 2026-08-27 13:22:21 ncm_service.fetch_order_status_raw:1442 NCM order 25098287: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:22:21 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:22 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[DEBUG] 2026-08-27 13:22:23 ncm_service._fetch_comments:285 NCM: 404 returned for order 25098287 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-27 13:22:25 ncm_service._fetch_comments:285 NCM: 404 returned for order 22614428 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[WARNING] 2026-08-27 13:22:26 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:26 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[DEBUG] 2026-08-27 13:22:26 ncm_service._fetch_comments:285 NCM: 404 returned for order 1 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-27 13:22:27 ncm_service._fetch_comments:285 NCM: 404 returned for order 1 at https://portal.nepalcanmove.com/api/v1/order/comment, trying next...
+[WARNING] 2026-08-27 13:22:28 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:28 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[INFO] 2026-08-27 13:22:29 ncm_service.fetch_order_status_raw:1442 NCM order 25098287: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:22:30 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:31 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:33 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[INFO] 2026-08-27 13:22:34 ncm_service.fetch_order_status_raw:1442 NCM order 25070858: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:22:35 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (2 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:37 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (1 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:39 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[INFO] 2026-08-27 13:22:40 ncm_service.fetch_order_status_raw:1442 NCM order 25070858: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:22:41 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[INFO] 2026-08-27 13:22:41 ncm_service.fetch_order_status_raw:1442 NCM order 25070858: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:22:42 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:43 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:44 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-27 13:22:44 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:44 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[WARNING] 2026-08-27 13:22:45 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (2 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:45 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (2 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order
+[DEBUG] 2026-08-27 13:22:45 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-27 13:22:46 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-27 13:22:46 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-27 13:22:46 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v1/order/comment, trying next...
+[WARNING] 2026-08-27 13:22:47 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[WARNING] 2026-08-27 13:22:47 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[DEBUG] 2026-08-27 13:22:47 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v1/order/comment, trying next...
+[WARNING] 2026-08-27 13:22:48 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order/status
+[DEBUG] 2026-08-27 13:22:48 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v1/order/comment, trying next...
+[WARNING] 2026-08-27 13:22:48 ncm_service._make_request:189 NCM API throttled, waiting 1.0s and retrying (1 attempt(s) left): https://portal.nepalcanmove.com/api/v1/order
+[INFO] 2026-08-27 13:22:48 ncm_service.fetch_order_status_raw:1442 NCM order 25070858: status history resolved via api_config 4 (asked for None)
+[WARNING] 2026-08-27 13:22:49 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[DEBUG] 2026-08-27 13:22:49 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...
+[DEBUG] 2026-08-27 13:22:49 ncm_service._fetch_comments:285 NCM: 404 returned for order 25070858 at https://portal.nepalcanmove.com/api/v1/order/comment, trying next...
+[WARNING] 2026-08-27 13:22:50 ncm_service._make_request:229 NCM API 404 Not Found: https://portal.nepalcanmove.com/api/v1/order
+[DEBUG] 2026-08-27 13:23:05 ncm_service._fetch_comments:285 NCM: 404 returned for order 22614428 at https://portal.nepalcanmove.com/api/v2/order/comment, trying next...

@@ -374,6 +374,12 @@ class NCMWebhookHandler:
             # Update NCM status (always store the raw NCM status)
             order.ncm_status = status
 
+            # A webhook is news the cached /order/status answer predates, so
+            # drop it - otherwise opening the order in the next few seconds
+            # could draw a timeline from just before this hop.
+            from services.ncm_service import invalidate_order_status_cache
+            invalidate_order_status_cache(order.ncm_order_id)
+
             # Update all status-related fields (status, order_status, status_setup FK, payment fields)
             update_fields = NCMService.sync_order_status_fields(order, system_status, payment_status)
             update_fields.append('ncm_status')

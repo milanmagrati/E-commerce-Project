@@ -1,10 +1,102 @@
 # services/ncm_service.py
+import re
+import threading
+import time
 import requests
 import logging
+from collections import defaultdict, deque
 from django.conf import settings
 from typing import Dict, List, Optional
 
 logger = logging.getLogger('ncm')
+
+#: NCM rate-limits per API account, not per IP, and the window is one second.
+#: Measured against the live API: 3 requests landing inside the same second
+#: succeed, the 4th comes back 429 "Request was throttled. Expected available
+#: in 1 second." Rejected requests are not counted against the window, so a
+#: retry a second later always gets through.
+#:
+#: This matters because several code paths fan out deliberately - the order
+#: detail endpoint alone fires details+status+comments in parallel - and a
+#: single page load used to overshoot the window and report the throttle to
+#: the user as "could not load status history".
+NCM_MAX_CALLS_PER_SECOND = 3
+NCM_RATE_WINDOW_SECONDS = 1.0
+#: Upper bound on a single backoff sleep, so a misbehaving Retry-After cannot
+#: pin a request thread for minutes.
+NCM_MAX_BACKOFF_SECONDS = 5.0
+#: How many times a throttled GET is re-sent before giving up. Two is enough
+#: for the observed one-second window; more would just queue behind the gate.
+NCM_THROTTLE_RETRIES = 2
+
+_rate_lock = threading.Lock()
+#: api_key -> timestamps (monotonic) of requests admitted in the last window.
+_rate_history = defaultdict(deque)
+
+
+def _await_rate_slot(api_key):
+    """Block until this NCM account has room in its one-second window.
+
+    Keeps our own concurrent fan-out under NCM's limit instead of spending a
+    request to discover it is over. In-process only: it cannot see requests
+    from another worker process, which is why the 429 retry below stays as the
+    backstop rather than being replaced by this.
+    """
+    key = api_key or ''
+    while True:
+        with _rate_lock:
+            now = time.monotonic()
+            recent = _rate_history[key]
+            while recent and now - recent[0] >= NCM_RATE_WINDOW_SECONDS:
+                recent.popleft()
+            if len(recent) < NCM_MAX_CALLS_PER_SECOND:
+                recent.append(now)
+                return
+            wait = NCM_RATE_WINDOW_SECONDS - (now - recent[0])
+        # Sleep outside the lock so other threads can still drain the window.
+        time.sleep(min(max(wait, 0.01), NCM_RATE_WINDOW_SECONDS))
+
+
+def _throttle_wait_seconds(response):
+    """How long NCM says to wait before retrying a 429, in seconds.
+
+    Prefers the Retry-After header; falls back to parsing DRF's own wording
+    ("Expected available in 1 second."), which is what NCM actually sends.
+    """
+    retry_after = None
+    try:
+        retry_after = response.headers.get('Retry-After')
+    except Exception:
+        retry_after = None
+    if retry_after:
+        try:
+            return max(float(retry_after), 0.0)
+        except (TypeError, ValueError):
+            pass
+
+    body = ''
+    try:
+        body = response.text or ''
+    except Exception:
+        body = ''
+    match = re.search(r'available in (\d+(?:\.\d+)?) second', body)
+    if match:
+        try:
+            return max(float(match.group(1)), 0.0)
+        except (TypeError, ValueError):
+            pass
+    return 1.0
+
+
+def _is_throttle_error(error):
+    """True if a failed NCM result was a rate-limit rejection, not a real error.
+
+    A throttle says nothing about whether this account owns the order, so
+    callers that sweep accounts must not read it as "wrong account".
+    """
+    if isinstance(error, dict):
+        error = error.get('detail') or error.get('error') or ''
+    return 'throttled' in str(error or '').lower()
 
 
 def _same_instant(a, b):
@@ -55,7 +147,8 @@ class NCMService:
                 self._timeout = 30
         return self._timeout
 
-    def _make_request(self, method: str, url: str, data: Dict = None, params: Dict = None, timeout: int = None, _retry: bool = True):
+    def _make_request(self, method: str, url: str, data: Dict = None, params: Dict = None, timeout: int = None, _retry: bool = True,
+                      _throttle_retries: int = NCM_THROTTLE_RETRIES):
         """Helper to make API requests.
 
         Transient failures (timeouts, connection resets, 5xx responses, or a
@@ -66,6 +159,13 @@ class NCMService:
         after NCM already processed it, retrying would risk creating a
         duplicate order/comment/return. Callers that need a POST retried
         must do so explicitly and idempotently at the call site.
+
+        Rate limiting gets its own handling on top of that. NCM allows about
+        three requests per second per account and answers 429 beyond it; that
+        is a queueing problem, not a failure, so a throttled GET waits the
+        interval NCM names and goes again (`_throttle_retries` attempts).
+        A throttled POST is still never replayed automatically, for the same
+        duplicate-write reason as above.
         """
         if timeout is None:
             timeout = self._resolve_timeout()
@@ -74,10 +174,27 @@ class NCMService:
         can_retry = _retry and method == 'GET'
 
         try:
+            # Stay inside NCM's per-account window rather than spending a
+            # request to be told we are outside it.
+            _await_rate_slot(self.api_key)
+
             if method == 'GET':
                 response = requests.get(url, headers=self.headers, params=params, timeout=timeout)
             elif method == 'POST':
                 response = requests.post(url, headers=self.headers, json=data, timeout=timeout)
+
+            if (response.status_code == 429 and method == 'GET'
+                    and _throttle_retries > 0):
+                wait = min(_throttle_wait_seconds(response), NCM_MAX_BACKOFF_SECONDS)
+                logger.warning(
+                    f"NCM API throttled, waiting {wait}s and retrying "
+                    f"({_throttle_retries} attempt(s) left): {url}"
+                )
+                time.sleep(wait)
+                return self._make_request(
+                    method, url, data, params, timeout, _retry,
+                    _throttle_retries=_throttle_retries - 1,
+                )
 
             response.raise_for_status()
             try:
@@ -145,7 +262,24 @@ class NCMService:
                     # Skip duplicate when v2 == v1 (no second base URL configured)
                     break
                 timeout = self._resolve_timeout()
-                resp = _req.get(url, headers=self.headers, params=params, timeout=timeout)
+
+                # This path deliberately does not go through _make_request:
+                # a 404 here is the ordinary "no comments yet" answer and must
+                # stay at debug level instead of logging an error per order.
+                # It still owes NCM the same rate discipline, though - and a
+                # swallowed 429 would drop an order's comments on the floor
+                # and report success, so throttling is retried here too.
+                attempts_left = NCM_THROTTLE_RETRIES
+                while True:
+                    _await_rate_slot(self.api_key)
+                    resp = _req.get(url, headers=self.headers, params=params, timeout=timeout)
+                    if resp.status_code != 429 or attempts_left <= 0:
+                        break
+                    wait = min(_throttle_wait_seconds(resp), NCM_MAX_BACKOFF_SECONDS)
+                    logger.warning(f"NCM comment fetch throttled, waiting {wait}s: {url}")
+                    time.sleep(wait)
+                    attempts_left -= 1
+
                 if resp.status_code == 404:
                     # Might be missing endpoint (v2) or no comments. Let's try fallback.
                     logger.debug(f"NCM: 404 returned for order {ncm_order_id} at {url}, trying next...")
@@ -1197,8 +1331,53 @@ def candidate_ncm_config_ids(preferred_config_id=None):
     return ordered
 
 
+#: Opening one order fetches /order/status twice within a second or so - once
+#: by the page-load sync, once by the detail endpoint that draws the timeline.
+#: Against a three-per-second budget that duplicate is expensive, so a resolved
+#: answer is briefly reusable. Short enough that a status change still shows up
+#: on the next refresh; only populated answers are ever stored.
+NCM_STATUS_CACHE_SECONDS = 20
+
+
+def _status_cache_key(ncm_order_id):
+    return f'ncm_order_status_raw_{ncm_order_id}'
+
+
+def invalidate_order_status_cache(ncm_order_id):
+    """Drop any cached /order/status answer for this order.
+
+    Called after we write a status change, so the next read is not served a
+    snapshot from just before it.
+    """
+    try:
+        from django.core.cache import cache
+        cache.delete(_status_cache_key(ncm_order_id))
+    except Exception:
+        pass
+
+
+def peek_order_status_cache(ncm_order_id):
+    """A populated /order/status answer cached moments ago, or None.
+
+    Lets a caller skip an NCM request it is about to duplicate - notably the
+    order detail endpoint, which runs immediately after the page-load sync has
+    already asked NCM this exact question.
+
+    Returns (result, resolved_config_id) or None.
+    """
+    try:
+        from django.core.cache import cache
+        cached = cache.get(_status_cache_key(ncm_order_id))
+    except Exception:
+        return None
+    if not cached:
+        return None
+    return cached[0], cached[1]
+
+
 def fetch_order_status_raw(ncm_order_id, api_config_id=None,
-                           sweep_accounts=True, skip_config_ids=()):
+                           sweep_accounts=True, skip_config_ids=(),
+                           use_cache=False):
     """Call /order/status against whichever NCM account actually owns the order.
 
     Returns (result, resolved_config_id) where `result` is the raw
@@ -1217,7 +1396,20 @@ def fetch_order_status_raw(ncm_order_id, api_config_id=None,
             every other active NCM account before giving up.
         skip_config_ids: accounts the caller has already queried itself, so a
             fallback sweep doesn't repeat a request that just came back empty.
+        use_cache: reuse a populated answer fetched for this order in the last
+            NCM_STATUS_CACHE_SECONDS. For the automatic page-load reads, which
+            otherwise ask NCM the same question twice. A deliberate "Sync
+            Status" click must leave this off and go to NCM.
     """
+    if use_cache:
+        try:
+            from django.core.cache import cache
+            cached = cache.get(_status_cache_key(ncm_order_id))
+        except Exception:
+            cached = None
+        if cached is not None:
+            return cached[0], cached[1]
+
     candidates = candidate_ncm_config_ids(api_config_id)
     if not sweep_accounts:
         candidates = candidates[:1]
@@ -1227,11 +1419,22 @@ def fetch_order_status_raw(ncm_order_id, api_config_id=None,
 
     first_success = None
     last_error = None
+    throttle_error = None
 
     for config_id in candidates:
         result = NCMService(api_config_id=config_id).get_order_status(ncm_order_id)
         if not result.get('success'):
-            last_error = result.get('error') or 'NCM request failed'
+            error = result.get('error') or 'NCM request failed'
+            # A 429 is not an answer about ownership. NCMService already waited
+            # and retried, so reaching here means the account is genuinely
+            # congested - remember that separately, because reporting some
+            # other account's "Not found" (or its empty answer) instead would
+            # tell the user this order has no history when nobody ever asked
+            # the account that has it.
+            if _is_throttle_error(error):
+                throttle_error = error
+            else:
+                last_error = error
             continue
 
         if normalize_status_entries(result.get('data')):
@@ -1240,6 +1443,15 @@ def fetch_order_status_raw(ncm_order_id, api_config_id=None,
                     f"NCM order {ncm_order_id}: status history resolved via "
                     f"api_config {config_id} (asked for {api_config_id})"
                 )
+            try:
+                from django.core.cache import cache
+                cache.set(
+                    _status_cache_key(ncm_order_id),
+                    (result, config_id),
+                    NCM_STATUS_CACHE_SECONDS,
+                )
+            except Exception:
+                pass
             return result, config_id
 
         # A successful-but-empty answer is authoritative enough to report, but
@@ -1247,6 +1459,13 @@ def fetch_order_status_raw(ncm_order_id, api_config_id=None,
         # own the order can only ever answer empty.
         if first_success is None:
             first_success = result
+
+    # An empty answer only means "this order has no history" if every account
+    # actually got to answer. If one was throttled, say so instead.
+    if throttle_error is not None:
+        if isinstance(throttle_error, dict):
+            throttle_error = throttle_error.get('detail') or str(throttle_error)
+        return ({'success': False, 'error': str(throttle_error), 'throttled': True}, None)
 
     if first_success is not None:
         return first_success, None
@@ -1260,7 +1479,8 @@ def fetch_order_status_raw(ncm_order_id, api_config_id=None,
 
 
 def fetch_order_status_history(ncm_order_id, api_config_id=None,
-                               sweep_accounts=True, skip_config_ids=()):
+                               sweep_accounts=True, skip_config_ids=(),
+                               use_cache=False):
     """Fetch one NCM order's status timeline, resolving the owning account.
 
     Returns:
@@ -1277,6 +1497,7 @@ def fetch_order_status_history(ncm_order_id, api_config_id=None,
         api_config_id=api_config_id,
         sweep_accounts=sweep_accounts,
         skip_config_ids=skip_config_ids,
+        use_cache=use_cache,
     )
     if not result.get('success'):
         return [], None, str(result.get('error') or 'Could not reach NCM')

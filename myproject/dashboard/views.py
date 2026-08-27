@@ -23606,6 +23606,10 @@ def _ncm_status_error_text(error):
         return 'NCM did not return a status history for this order.'
     if 'not found' in text.lower():
         return 'NCM has no record of this order under any configured NCM account.'
+    if 'throttled' in text.lower():
+        # NCM's raw wording ("Request was throttled. Expected available in 1
+        # second.") reads like a bug report to the staff looking at an order.
+        return 'NCM is rate-limiting requests right now. Retrying in a moment.'
     return text
 
 
@@ -23669,6 +23673,7 @@ def ncm_rtv_order_detail(request, ncm_order_id):
     """
     from services.ncm_service import (
         NCMService, fetch_order_status_history, normalize_status_entries,
+        peek_order_status_cache, _is_throttle_error,
     )
     from dashboard.models import Order, OrderItem
 
@@ -23686,6 +23691,9 @@ def ncm_rtv_order_detail(request, ncm_order_id):
         # difference: "this order has no history yet" and "the history could not
         # be loaded" used to render as the same misleading empty state.
         'status_history_error': None,
+        # True when the reason was a rate limit rather than a real failure,
+        # so the page can quietly retry instead of showing a dead end.
+        'status_history_throttled': False,
     }
 
     # Fire all 3 NCM API calls in parallel to avoid sequential latency
@@ -23712,12 +23720,28 @@ def ncm_rtv_order_detail(request, ncm_order_id):
             logger.warning(f"Failed to fetch NCM comments for order {ncm_order_id}: {e}")
             return {'success': False}
 
+    # The page-load sync ran moments ago and asked NCM for this exact status
+    # history. Reusing its answer keeps this endpoint's fan-out at two calls
+    # instead of three - which matters because NCM allows roughly three per
+    # second per account, and going over is what produced the "Request was
+    # throttled" banner on the first load of an order.
+    cached_status = peek_order_status_cache(ncm_order_id)
+    if cached_status is not None:
+        status_result, cached_config_id = cached_status
+        if cached_config_id is not None and cached_config_id != api_config_id:
+            api_config_id = cached_config_id
+            ncm_service = NCMService(api_config_id=cached_config_id)
+
     with ThreadPoolExecutor(max_workers=3) as executor:
         fut_details = executor.submit(_fetch_details, ncm_service)
-        fut_status = executor.submit(_fetch_status, ncm_service)
+        fut_status = (
+            executor.submit(_fetch_status, ncm_service)
+            if cached_status is None else None
+        )
         fut_comments = executor.submit(_fetch_comments, ncm_service)
         details_result = fut_details.result()
-        status_result = fut_status.result()
+        if fut_status is not None:
+            status_result = fut_status.result()
         comments_result = fut_comments.result()
 
     # NCM scopes an order to the account that created it: ask with any other
@@ -23732,10 +23756,21 @@ def ncm_rtv_order_detail(request, ncm_order_id):
     )
 
     if not status_history:
+        # Normally the account we just asked is worth skipping - it already
+        # answered. But a 429 is not an answer: NCM rate-limits per account at
+        # about three calls a second, and this endpoint alone fires three in
+        # parallel. Skipping a throttled account meant the only account that
+        # actually holds the history never got asked, and the page reported
+        # the throttle - which is exactly why a manual Retry then worked.
+        preferred_answered = (
+            status_result.get('success')
+            or not _is_throttle_error(status_result.get('error'))
+        )
         swept, resolved_config_id, sweep_error = fetch_order_status_history(
             ncm_order_id,
             api_config_id=api_config_id,
-            skip_config_ids=(api_config_id,),
+            skip_config_ids=(api_config_id,) if preferred_answered else (),
+            use_cache=True,
         )
         if swept:
             status_history = swept
@@ -23755,11 +23790,13 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                         details_result = fut_d.result()
                     if fut_c is not None:
                         comments_result = fut_c.result()
-        elif not status_result.get('success'):
+        elif not status_result.get('success') or sweep_error:
             # Every account refused or failed to answer - say so rather than
             # claiming the order has no history.
-            response_data['status_history_error'] = _ncm_status_error_text(
-                status_result.get('error') or sweep_error
+            raw_error = status_result.get('error') or sweep_error
+            response_data['status_history_error'] = _ncm_status_error_text(raw_error)
+            response_data['status_history_throttled'] = bool(
+                _is_throttle_error(raw_error) or _is_throttle_error(sweep_error)
             )
 
     response_data['status_history'] = status_history

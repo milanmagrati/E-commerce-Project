@@ -528,8 +528,10 @@ def track_ncm_order(request, order_id):
         # Resolve the owning NCM account off the status call (see
         # sync_ncm_status above), then read the details with the same account
         # so the tracking page can't show a timeline without its order.
+        # Opening this page right after the order page is a common path, so
+        # a status answer fetched seconds ago is reused rather than re-asked.
         status_result, resolved_config_id = fetch_order_status_raw(
-            order.ncm_order_id, api_config_id=order.api_config_id
+            order.ncm_order_id, api_config_id=order.api_config_id, use_cache=True
         )
         if resolved_config_id is not None and resolved_config_id != order.api_config_id:
             order.api_config_id = resolved_config_id

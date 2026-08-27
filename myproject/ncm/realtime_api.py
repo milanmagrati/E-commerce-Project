@@ -251,8 +251,12 @@ def api_sync_order_status(request, order_id):
         # key gets 404 "Not found". So when the stored api_config_id is missing
         # or stale, this sweeps the other active accounts and writes the answer
         # back, and every later sync for this order is a single request again.
+        # The automatic page-load sync may reuse an answer fetched seconds
+        # ago; a deliberate "Sync Status" click always goes to NCM.
         result, resolved_config_id = fetch_order_status_raw(
-            order.ncm_order_id, api_config_id=order.api_config_id
+            order.ncm_order_id,
+            api_config_id=order.api_config_id,
+            use_cache=(request.GET.get('throttle') == '1'),
         )
         if resolved_config_id is not None and resolved_config_id != order.api_config_id:
             order.api_config_id = resolved_config_id
