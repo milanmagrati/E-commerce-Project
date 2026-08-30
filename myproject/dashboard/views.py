@@ -25815,6 +25815,240 @@ def woocommerce_orders_sync(request):
         logger.exception('WooCommerce manual sync failed')
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+# ==================== FOLLOW-UP LIST: FILTERS, SORTING, EXPORT ====================
+#
+# The list page, the live-sync poll, the "select all matching" helper and the
+# export all have to agree on what "the current filter" means, or a bulk action
+# silently operates on a different set of rows than the one on screen. They all
+# go through _followup_filter_params() / _apply_followup_filters() below.
+
+#: Date-range presets, in the order they appear in the dropdown. Each resolves
+#: to an inclusive pair of *local* (Asia/Kathmandu) dates.
+FOLLOWUP_DATE_PRESETS = [
+    ('', 'All time'),
+    ('today', 'Today'),
+    ('yesterday', 'Yesterday'),
+    ('last_7_days', 'Last 7 days'),
+    ('last_30_days', 'Last 30 days'),
+    ('this_month', 'This month'),
+    ('last_month', 'Last month'),
+    ('this_year', 'This year'),
+    ('custom', 'Custom range'),
+]
+
+#: Which timestamp the date filter applies to.
+FOLLOWUP_DATE_FIELDS = {
+    'created_at': 'Date Added',
+    'updated_at': 'Last Activity',
+}
+
+#: Everything the list can be sorted by: (key, menu label, kind). `kind` drives
+#: both the ORM ordering below and the direction labels in the UI ("Newest
+#: first" reads very differently from "A → Z"). Anything not in here falls back
+#: to created_at, so a hand-edited ?sort= can never reach an arbitrary field.
+FOLLOWUP_SORT_OPTIONS = [
+    ('created_at',       'Date Added',       'date'),
+    ('updated_at',       'Last Activity',    'date'),
+    ('last_followup_at', 'Last Follow-up',   'date'),
+    ('followup_count',   'Follow-up Count',  'number'),
+    ('name',             'Name',             'text'),
+    ('phone',            'Phone Number',     'text'),
+    ('lead_source',      'Lead Source',      'text'),
+    ('status',           'Status',           'text'),
+]
+
+FOLLOWUP_SORT_KINDS = {key: kind for key, _, kind in FOLLOWUP_SORT_OPTIONS}
+FOLLOWUP_SORT_LABELS = {key: label for key, label, _ in FOLLOWUP_SORT_OPTIONS}
+
+#: Upper bound on a single bulk delete / "select all matching" request, so a
+#: runaway click can't try to rewrite the whole table in one transaction.
+FOLLOWUP_BULK_LIMIT = 2000
+
+
+def _followup_parse_date(value):
+    """Parse a YYYY-MM-DD string, returning None for anything unusable."""
+    from datetime import date as _date
+    try:
+        return _date.fromisoformat((value or '').strip())
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def _followup_day_bounds(day, end=False):
+    """Local calendar day -> tz-aware datetime at its start (or very end)."""
+    from datetime import time as _time
+    moment = _time.max if end else _time.min
+    return timezone.make_aware(datetime.combine(day, moment))
+
+
+def _followup_filter_params(request):
+    """Read every follow-up list filter/sort knob off the querystring, once."""
+    today = timezone.localdate()
+
+    date_field = (request.GET.get('date_field') or 'created_at').strip()
+    if date_field not in FOLLOWUP_DATE_FIELDS:
+        date_field = 'created_at'
+
+    raw_from = (request.GET.get('date_from') or '').strip()
+    raw_to = (request.GET.get('date_to') or '').strip()
+
+    preset = (request.GET.get('date_range') or '').strip()
+    if preset not in {key for key, _ in FOLLOWUP_DATE_PRESETS}:
+        preset = ''
+    # Bare ?date_from=/&date_to= (a bookmarked/shared URL, or the datepickers
+    # used before the preset select was touched) is a custom range.
+    if not preset and (raw_from or raw_to):
+        preset = 'custom'
+
+    start = end = None
+    if preset == 'today':
+        start = end = today
+    elif preset == 'yesterday':
+        start = end = today - timedelta(days=1)
+    elif preset == 'last_7_days':
+        start, end = today - timedelta(days=6), today
+    elif preset == 'last_30_days':
+        start, end = today - timedelta(days=29), today
+    elif preset == 'this_month':
+        start, end = today.replace(day=1), today
+    elif preset == 'last_month':
+        end = today.replace(day=1) - timedelta(days=1)
+        start = end.replace(day=1)
+    elif preset == 'this_year':
+        start, end = today.replace(month=1, day=1), today
+    elif preset == 'custom':
+        start = _followup_parse_date(raw_from)
+        end = _followup_parse_date(raw_to)
+        # A one-sided custom range is legitimate ("everything since 1 Aug").
+        # A reversed one is a slip, so swap it instead of returning nothing.
+        if start and end and start > end:
+            start, end = end, start
+        if not start and not end:
+            preset = ''   # both fields empty/garbage: no date filter at all
+
+    sort = (request.GET.get('sort') or 'created_at').strip()
+    if sort not in FOLLOWUP_SORT_KINDS:
+        sort = 'created_at'
+    direction = (request.GET.get('dir') or 'desc').strip().lower()
+    if direction not in ('asc', 'desc'):
+        direction = 'desc'
+
+    if preset == 'custom':
+        if start and end:
+            label = f"{start.strftime('%d %b %Y')} – {end.strftime('%d %b %Y')}"
+        elif start:
+            label = f"From {start.strftime('%d %b %Y')}"
+        else:
+            label = f"Until {end.strftime('%d %b %Y')}"
+    else:
+        label = dict(FOLLOWUP_DATE_PRESETS).get(preset, 'All time')
+        if start and end and preset:
+            label = f"{label} ({start.strftime('%d %b')} – {end.strftime('%d %b %Y')})"
+
+    return {
+        'q': (request.GET.get('q') or '').strip(),
+        'lead_source': (request.GET.get('lead_source') or '').strip(),
+        'status': (request.GET.get('status') or '').strip(),
+        'date_field': date_field,
+        'date_range': preset,
+        'date_from': start.isoformat() if start else '',
+        'date_to': end.isoformat() if end else '',
+        'date_start': start,
+        'date_end': end,
+        'date_label': label,
+        'sort': sort,
+        'dir': direction,
+    }
+
+
+def _apply_followup_filters(qs, params):
+    """Apply the search / lead source / status / date-range filters."""
+    if params['q']:
+        qs = qs.filter(
+            Q(name__icontains=params['q']) |
+            Q(phone__icontains=params['q']) |
+            Q(remarks__icontains=params['q'])
+        )
+    if params['lead_source']:
+        qs = qs.filter(lead_source__iexact=params['lead_source'])
+    if params['status']:
+        qs = qs.filter(status__iexact=params['status'])
+
+    field = params['date_field']
+    if params['date_start']:
+        qs = qs.filter(**{f'{field}__gte': _followup_day_bounds(params['date_start'])})
+    if params['date_end']:
+        qs = qs.filter(**{f'{field}__lte': _followup_day_bounds(params['date_end'], end=True)})
+    return qs
+
+
+def _apply_followup_sort(qs, params):
+    """Order by the requested column, with a stable tie-break.
+
+    Rows with nothing in the sorted column — no name, no follow-up yet — always
+    sink to the bottom, in either direction. An unnamed lead heading an A-Z
+    sort is never what the person who clicked the header wanted.
+    """
+    from django.db.models import CharField
+    from django.db.models.functions import Lower
+
+    sort = params['sort']
+    descending = params['dir'] == 'desc'
+    kind = FOLLOWUP_SORT_KINDS[sort]
+
+    # The two derived columns are annotated only when they're the one being
+    # sorted on, so an ordinary page load doesn't pay for a join it won't use.
+    if sort == 'followup_count':
+        qs = qs.annotate(_fu_key=Count(
+            'logs', filter=Q(logs__field_changed__startswith='Followup'), distinct=True,
+        ))
+    elif sort == 'last_followup_at':
+        qs = qs.annotate(_fu_key=Max(
+            'logs__timestamp', filter=Q(logs__field_changed__startswith='Followup'),
+        ))
+    elif kind == 'text':
+        # Case-insensitive, with '' treated the same way NULL is below.
+        qs = qs.annotate(
+            _fu_key=Case(
+                When(**{sort: ''}, then=Value(None)),
+                default=Lower(sort),
+                output_field=CharField(),
+            )
+        )
+    else:
+        qs = qs.annotate(_fu_key=F(sort))
+
+    key = F('_fu_key')
+    ordering = key.desc(nulls_last=True) if descending else key.asc(nulls_last=True)
+    return qs.order_by(ordering, F('created_at').desc(), F('id').desc())
+
+
+def _followup_action_queryset(request, params, base=None):
+    """Rows a bulk action / export should act on.
+
+    An explicit `ids=` selection always wins over the ambient filters: the user
+    ticked those specific boxes, possibly across several pages or before
+    changing a filter, so it is an "act on exactly these" request.
+    """
+    from .models import FollowUp
+
+    qs = base if base is not None else FollowUp.objects.filter(is_deleted=False)
+    raw_ids = (request.GET.get('ids') or '').strip()
+    if raw_ids:
+        selected = []
+        for chunk in raw_ids.split(','):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            try:
+                selected.append(int(chunk))
+            except ValueError:
+                continue
+        return qs.filter(id__in=selected).order_by('-created_at'), len(set(selected))
+
+    return _apply_followup_sort(_apply_followup_filters(qs, params), params), None
+
+
 @login_required
 def follow_ups_list(request):
     """View to display and manage follow-ups."""
@@ -25824,40 +26058,28 @@ def follow_ups_list(request):
         messages.error(request, 'You do not have permission to access Follow-ups.')
         return redirect('dashboard')
     from .models import FollowUp, Product, Setup, ProductVariation
-    
+
     from django.core.paginator import Paginator
-    from django.db.models import Q
+    from urllib.parse import urlencode
+
+    params = _followup_filter_params(request)
 
     follow_ups = FollowUp.objects.prefetch_related('products', 'product_variations', 'product_variations__product', 'logs', 'logs__user').select_related('product').filter(is_deleted=False)
+    follow_ups = _apply_followup_filters(follow_ups, params)
+    total_matching = follow_ups.count()
+    follow_ups = _apply_followup_sort(follow_ups, params)
 
-    search_query = request.GET.get('q', '').strip()
-    lead_source = request.GET.get('lead_source', '').strip()
-    filter_status = request.GET.get('status', '').strip()
-
-    if search_query:
-        follow_ups = follow_ups.filter(
-            Q(name__icontains=search_query) |
-            Q(phone__icontains=search_query) |
-            Q(remarks__icontains=search_query)
-        )
-    if lead_source:
-        follow_ups = follow_ups.filter(lead_source__iexact=lead_source)
-    if filter_status:
-        follow_ups = follow_ups.filter(status__iexact=filter_status)
-
-    follow_ups = follow_ups.order_by('-created_at')
-    
     # Pagination
     per_page = request.GET.get('per_page', 200)
     try:
         per_page = int(per_page)
     except ValueError:
         per_page = 200
-        
+
     paginator = Paginator(follow_ups, per_page)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
-    
+
     products = Product.objects.filter(is_deleted=False, is_active=True).prefetch_related('variations').order_by('name')
     statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('sort_order', 'name')
     action_statuses = statuses.exclude(name__iexact='Converted')
@@ -25872,6 +26094,23 @@ def follow_ups_list(request):
     sync_cursor = dj_timezone.now().isoformat()
     event_cursor = FollowUpLog.objects.aggregate(max_id=Max('id'))['max_id'] or 0
 
+    # Every filter except `page`, so pagination links and the export button can
+    # carry the full filter/sort state without rebuilding it piece by piece.
+    filter_query = urlencode({
+        k: v for k, v in (
+            ('per_page', per_page),
+            ('q', params['q']),
+            ('lead_source', params['lead_source']),
+            ('status', params['status']),
+            ('date_field', params['date_field']),
+            ('date_range', params['date_range']),
+            ('date_from', params['date_from']),
+            ('date_to', params['date_to']),
+            ('sort', params['sort']),
+            ('dir', params['dir']),
+        ) if v not in ('', None)
+    })
+
     context = {
         'follow_ups': page_obj,
         'page_obj': page_obj,
@@ -25880,9 +26119,25 @@ def follow_ups_list(request):
         'action_statuses': action_statuses,
         'order_sources': order_sources,
         'per_page': per_page,
-        'search_query': search_query,
-        'lead_source': lead_source,
-        'filter_status': filter_status,
+        'search_query': params['q'],
+        'lead_source': params['lead_source'],
+        'filter_status': params['status'],
+        'date_field': params['date_field'],
+        'date_range': params['date_range'],
+        'date_from': params['date_from'],
+        'date_to': params['date_to'],
+        'date_label': params['date_label'],
+        'date_presets': FOLLOWUP_DATE_PRESETS,
+        'date_fields': sorted(FOLLOWUP_DATE_FIELDS.items()),
+        'today_iso': timezone.localdate().isoformat(),
+        'sort_by': params['sort'],
+        'sort_dir': params['dir'],
+        'sort_options': FOLLOWUP_SORT_OPTIONS,
+        'sort_label': FOLLOWUP_SORT_LABELS[params['sort']],
+        'sort_kind': FOLLOWUP_SORT_KINDS[params['sort']],
+        'total_matching': total_matching,
+        'filter_query': filter_query,
+        'bulk_limit': FOLLOWUP_BULK_LIMIT,
         'sync_cursor': sync_cursor,
         'event_cursor': event_cursor,
     }
@@ -26025,6 +26280,7 @@ def add_follow_up(request):
             'remarks': new_follow_up.remarks,
             'all_logs': all_logs,
             'created_at': timezone.localtime(new_follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
+            'created_at_iso': new_follow_up.created_at.isoformat(),
             'version': getattr(new_follow_up, 'version', 1)
         }
 
@@ -26153,6 +26409,7 @@ def edit_follow_up(request, pk):
             'remarks': follow_up.remarks,
             'all_logs': all_logs,
             'created_at': timezone.localtime(follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
+            'created_at_iso': follow_up.created_at.isoformat(),
             'version': getattr(follow_up, 'version', 1)
         }
         # Removed Channels WebSocket broadcast for cPanel compatibility
@@ -26187,6 +26444,289 @@ def delete_follow_up(request, pk):
         return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+@require_POST
+def bulk_delete_follow_ups(request):
+    """Soft-delete every follow-up in the posted id list, in one transaction."""
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+    from .models import FollowUp, FollowUpLog
+
+    try:
+        data = json.loads(request.body or '{}')
+    except ValueError:
+        return JsonResponse({'success': False, 'error': 'Invalid request body.'}, status=400)
+
+    ids = []
+    for raw in (data.get('ids') or []):
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    ids = list(dict.fromkeys(ids))   # de-dupe, keep order for a stable response
+
+    if not ids:
+        return JsonResponse({'success': False, 'error': 'No follow-ups selected.'}, status=400)
+    if len(ids) > FOLLOWUP_BULK_LIMIT:
+        return JsonResponse({
+            'success': False,
+            'error': f'Too many rows selected ({len(ids)}). Delete at most {FOLLOWUP_BULK_LIMIT} at a time.'
+        }, status=400)
+
+    try:
+        with transaction.atomic():
+            # Lock and read first: the log rows need each entry's status *before*
+            # it was deleted, and rows already deleted by someone else in the
+            # meantime must not be logged (or counted) a second time.
+            targets = list(
+                FollowUp.objects.select_for_update()
+                .filter(id__in=ids, is_deleted=False)
+                .values_list('id', 'status')
+            )
+            target_ids = [t[0] for t in targets]
+
+            if target_ids:
+                # .update() skips auto_now, so updated_at is set by hand —
+                # the live-sync poll cursors on it to notice the deletions.
+                FollowUp.objects.filter(id__in=target_ids).update(
+                    is_deleted=True,
+                    updated_at=timezone.now(),
+                    version=F('version') + 1,
+                )
+                FollowUpLog.objects.bulk_create([
+                    FollowUpLog(
+                        follow_up_id=fu_id, user=request.user, field_changed='Deleted',
+                        old_value=status or '-', new_value='Deleted',
+                    )
+                    for fu_id, status in targets
+                ])
+    except Exception as e:
+        logger.exception('Bulk follow-up delete failed')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+    return JsonResponse({
+        'success': True,
+        'deleted': len(target_ids),
+        'ids': target_ids,
+        'skipped': len(ids) - len(target_ids),
+    })
+
+
+@login_required
+def follow_ups_filtered_ids(request):
+    """Ids of every follow-up matching the active filters.
+
+    Backs "select all N matching this filter" in the bulk toolbar, so the user
+    can act on rows that live on other pages without loading them.
+    """
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+    from .models import FollowUp
+
+    params = _followup_filter_params(request)
+    qs = _apply_followup_filters(FollowUp.objects.filter(is_deleted=False), params)
+    total = qs.count()
+    ids = list(qs.order_by('-created_at').values_list('id', flat=True)[:FOLLOWUP_BULK_LIMIT])
+
+    return JsonResponse({
+        'success': True,
+        'ids': ids,
+        'count': len(ids),
+        'total': total,
+        'truncated': total > len(ids),
+        'limit': FOLLOWUP_BULK_LIMIT,
+    })
+
+
+@login_required
+def export_follow_ups(request):
+    """Export follow-ups to Excel (default) or CSV.
+
+    Exports the whole filtered queryset — not just the page the paginator is
+    showing — or, when `ids=` is present, exactly the ticked rows.
+    """
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        messages.error(request, 'You do not have permission to export Follow-ups.')
+        return redirect('dashboard')
+    from .models import FollowUp
+    from .timezone_utils import convert_to_nepali, get_nepali_now
+
+    params = _followup_filter_params(request)
+    base = FollowUp.objects.filter(is_deleted=False).prefetch_related(
+        'products', 'product_variations', 'product_variations__product', 'logs', 'logs__user'
+    ).select_related('product')
+    qs, selection_count = _followup_action_queryset(request, params, base=base)
+
+    export_format = (request.GET.get('format') or 'xlsx').strip().lower()
+    if export_format not in ('xlsx', 'csv'):
+        export_format = 'xlsx'
+
+    def _clean(value):
+        """Excel rejects control characters; strip them rather than 500."""
+        if value is None:
+            return ''
+        return ILLEGAL_CHARACTERS_RE.sub('', str(value))
+
+    def _local(dt):
+        """Nepali wall clock, naive — Excel has no concept of tz-aware values."""
+        local = convert_to_nepali(dt)
+        return local.replace(tzinfo=None) if local else None
+
+    HEADERS = [
+        'S.N.', 'Name', 'Phone Number', 'Lead Source', 'Products', 'Status',
+        'Remarks', 'Follow-ups', 'Latest Follow-up', 'Latest Follow-up By',
+        'Latest Follow-up At', 'Date Added', 'Last Activity',
+    ]
+
+    rows = []
+    note_rows = []
+    status_counts = {}
+
+    for index, fu in enumerate(qs, start=1):
+        products = ', '.join(p['name'] for p in fu.get_formatted_products()) or ''
+
+        # logs are ordered newest-first by FollowUpLog.Meta.
+        followup_logs = [
+            log for log in fu.logs.all()
+            if (log.field_changed or '').startswith('Followup')
+        ]
+        latest = followup_logs[0] if followup_logs else None
+
+        rows.append([
+            index,
+            _clean(fu.name),
+            _clean(fu.phone),
+            _clean(fu.lead_source),
+            _clean(products),
+            _clean((fu.status or '').title()),
+            _clean(fu.remarks),
+            len(followup_logs),
+            _clean(latest.new_value) if latest else '',
+            _clean(latest.user.username if latest and latest.user else ('System' if latest else '')),
+            _local(latest.timestamp) if latest else None,
+            _local(fu.created_at),
+            _local(fu.updated_at),
+        ])
+
+        key = (fu.status or 'No Status').title()
+        status_counts[key] = status_counts.get(key, 0) + 1
+
+        for log in reversed(followup_logs):   # oldest first reads as a timeline
+            note_rows.append([
+                _clean(fu.name),
+                _clean(fu.phone),
+                _clean(log.field_changed),
+                _clean(log.new_value),
+                _clean(log.user.username if log.user else 'System'),
+                _local(log.timestamp),
+            ])
+
+    exported_at = get_nepali_now().replace(tzinfo=None)
+    stamp = exported_at.strftime('%Y%m%d_%H%M%S')
+    prefix = 'followups_selection' if selection_count is not None else 'followups'
+
+    if export_format == 'csv':
+        import csv
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename={prefix}_{stamp}.csv'
+        response.write('﻿')   # BOM so Excel opens the UTF-8 file correctly
+        writer = csv.writer(response)
+        writer.writerow(HEADERS)
+        for row in rows:
+            writer.writerow([
+                cell.strftime('%Y-%m-%d %I:%M %p') if hasattr(cell, 'strftime') else cell
+                for cell in row
+            ])
+        return response
+
+    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    DATE_FMT = 'yyyy-mm-dd hh:mm AM/PM'
+
+    def write_sheet(ws, headers, data_rows, date_cols=(), wrap_cols=()):
+        ws.append(headers)
+        for col_num in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        for row in data_rows:
+            ws.append(row)
+        for col_idx in date_cols:
+            for row_idx in range(2, ws.max_row + 1):
+                ws.cell(row=row_idx, column=col_idx).number_format = DATE_FMT
+        for col_idx in wrap_cols:
+            for row_idx in range(2, ws.max_row + 1):
+                ws.cell(row=row_idx, column=col_idx).alignment = Alignment(wrap_text=True, vertical='top')
+        for column in ws.columns:
+            width = max(
+                [len(str(headers[column[0].column - 1]))] +
+                [len(str(c.value)) for c in column[1:] if c.value is not None],
+                default=10,
+            )
+            ws.column_dimensions[column[0].column_letter].width = min(width + 3, 55)
+        ws.freeze_panes = 'A2'
+        if ws.max_row > 1:
+            ws.auto_filter.ref = ws.dimensions
+
+    wb = Workbook()
+    write_sheet(
+        wb.active, HEADERS, rows,
+        date_cols=(11, 12, 13),
+        wrap_cols=(5, 7, 9),
+    )
+    wb.active.title = 'Follow-ups'
+
+    write_sheet(
+        wb.create_sheet('Follow-up Notes'),
+        ['Name', 'Phone Number', 'Entry', 'Note', 'By', 'At'],
+        note_rows,
+        date_cols=(6,),
+        wrap_cols=(4,),
+    )
+
+    write_sheet(
+        wb.create_sheet('Status Summary'),
+        ['Status', 'Follow-ups', 'Share %'],
+        [
+            [status, count, round(count * 100.0 / len(rows), 1) if rows else 0]
+            for status, count in sorted(status_counts.items(), key=lambda kv: -kv[1])
+        ],
+    )
+
+    info_rows = [['Report', 'Follow-ups']]
+    if selection_count is not None:
+        # A manual checkbox export ignores the ambient filters (see
+        # _followup_action_queryset), so say that plainly rather than listing
+        # filter values that didn't actually scope this file.
+        info_rows.append(['Selection', f'Manual selection ({selection_count} row{"s" if selection_count != 1 else ""} requested)'])
+    else:
+        info_rows += [
+            ['Search', params['q'] or '—'],
+            ['Lead Source', params['lead_source'] or 'All Lead Sources'],
+            ['Status', params['status'] or 'All Statuses'],
+            ['Date Filter', f"{FOLLOWUP_DATE_FIELDS[params['date_field']]}: {params['date_label']}"],
+            ['Sorted By', f"{FOLLOWUP_SORT_LABELS[params['sort']]} ({params['dir'].upper()})"],
+        ]
+    info_rows += [
+        ['Total Follow-ups', len(rows)],
+        ['Total Follow-up Notes', len(note_rows)],
+        ['Exported By', request.user.get_full_name() or request.user.username],
+        ['Exported At', exported_at.strftime('%Y-%m-%d %I:%M %p') + ' (NPT)'],
+    ]
+    write_sheet(wb.create_sheet('Report Info'), ['Field', 'Value'], info_rows)
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename={prefix}_{stamp}.xlsx'
+    wb.save(response)
+    return response
 
 
 @login_required
@@ -28148,24 +28688,13 @@ def sync_follow_ups(request):
     MAX_EVENT_LOGS = 200
     MAX_UPDATE_ROWS = 200
 
-    search_query = request.GET.get('q', '').strip()
-    lead_source = request.GET.get('lead_source', '').strip()
-    filter_status = request.GET.get('status', '').strip()
+    # Mirror the follow_ups_list filters — including the date range — so the
+    # client can tell whether a live-updated row still belongs under the
+    # filters it is currently showing.
+    sync_params = _followup_filter_params(request)
 
     def apply_list_filters(qs):
-        """Mirror the follow_ups_list filters so the client can tell whether a
-        row belongs under the filters it is currently showing."""
-        if search_query:
-            qs = qs.filter(
-                Q(name__icontains=search_query) |
-                Q(phone__icontains=search_query) |
-                Q(remarks__icontains=search_query)
-            )
-        if lead_source:
-            qs = qs.filter(lead_source__iexact=lead_source)
-        if filter_status:
-            qs = qs.filter(status__iexact=filter_status)
-        return qs
+        return _apply_followup_filters(qs, sync_params)
 
     try:
         last_sync_str = request.GET.get('last_sync')
@@ -28294,6 +28823,8 @@ def sync_follow_ups(request):
                     'status': follow_up.status,
                     'remarks': follow_up.remarks,
                     'all_logs': all_logs,
+                    'created_at': timezone.localtime(follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
+                    'created_at_iso': follow_up.created_at.isoformat(),
                     'version': getattr(follow_up, 'version', 1),
                     'matches_filter': follow_up.id in matching_ids,
                 })

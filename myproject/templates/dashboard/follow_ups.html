@@ -22,9 +22,25 @@ load and broken on the next refresh.
 <div id="fuToastContainer" class="fu-toast-container" aria-live="polite"></div>
 
 <div class="container-fluid py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h4 class="mb-0"><i class="fas fa-list-alt text-primary me-2"></i> Follow-ups</h4>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0"><i class="fas fa-list-alt text-primary me-2"></i> Follow-ups
+            <span class="badge bg-light text-secondary border ms-1" style="font-size:0.7rem;font-weight:600;"><span class="fu-total-matching">{{ total_matching }}</span> matching</span>
+        </h4>
         <div class="d-flex gap-2">
+            <div class="dropdown">
+                <button class="btn btn-sm btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-file-export"></i> Export
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li><h6 class="dropdown-header">Current filter (<span class="fu-total-matching">{{ total_matching }}</span> rows)</h6></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportFollowUps('xlsx', false); return false;"><i class="fas fa-file-excel text-success me-2"></i>Excel (.xlsx)</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportFollowUps('csv', false); return false;"><i class="fas fa-file-csv text-primary me-2"></i>CSV (.csv)</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Selected rows only</h6></li>
+                    <li><a class="dropdown-item fu-needs-selection disabled" href="#" onclick="exportFollowUps('xlsx', true); return false;"><i class="fas fa-file-excel text-success me-2"></i>Excel — <span class="fu-sel-count">0</span> selected</a></li>
+                    <li><a class="dropdown-item fu-needs-selection disabled" href="#" onclick="exportFollowUps('csv', true); return false;"><i class="fas fa-file-csv text-primary me-2"></i>CSV — <span class="fu-sel-count">0</span> selected</a></li>
+                </ul>
+            </div>
             {% if request.user.can_setup_follow_up_status or request.user.is_superuser or request.user.role == 'administrator' %}
             <a href="{% url 'followup_setup_management' %}" class="btn btn-sm btn-outline-primary">
                 <i class="fas fa-cog"></i> Status Setup
@@ -33,28 +49,173 @@ load and broken on the next refresh.
             <a href="{% url 'follow_ups_trash' %}" class="btn btn-sm btn-outline-danger">
                 <i class="fas fa-trash"></i> Trash
             </a>
-            <form method="GET" class="d-flex gap-2 m-0" id="filterForm">
-                <select class="form-select form-select-sm w-auto" name="per_page" onchange="this.form.submit()">
-                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100 / page</option>
-                    <option value="200" {% if per_page == 200 %}selected{% endif %}>200 / page</option>
-                    <option value="500" {% if per_page == 500 %}selected{% endif %}>500 / page</option>
-                </select>
-                <input type="text" name="q" value="{{ search_query }}" class="form-control form-control-sm w-auto" placeholder="Search..." onkeydown="if(event.key === 'Enter') this.form.submit();">
-                <select class="form-select form-select-sm w-auto" name="lead_source" onchange="this.form.submit()">
-                    <option value="">All Lead Sources</option>
-                    {% for source in order_sources %}
-                    <option value="{{ source.name }}" {% if lead_source == source.name %}selected{% endif %}>{{ source.name }}</option>
-                    {% endfor %}
-                </select>
-                <select class="form-select form-select-sm w-auto" name="status" onchange="this.form.submit()">
-                    <option value="">All Statuses</option>
-                    {% for status in statuses %}
-                    <option value="{{ status.name }}" {% if filter_status == status.name %}selected{% endif %}>{{ status.name }}</option>
-                    {% endfor %}
-                </select>
-                <button type="submit" class="btn btn-sm btn-primary" title="Search"><i class="fas fa-search"></i></button>
-                <a href="{% url 'follow_ups_list' %}?per_page={{ per_page }}" class="btn btn-sm btn-secondary" title="Reset Filters"><i class="fas fa-undo"></i></a>
-            </form>
+        </div>
+    </div>
+
+    <!-- ===== Filter bar ===== -->
+    <form method="GET" class="fu-filter-bar card shadow-sm mb-3" id="filterForm">
+        {% comment %}
+        Direction lives in the URL alongside the sort field, so carry it
+        through every filter submit — otherwise picking a status silently
+        reset the column you sorted by.
+        {% endcomment %}
+        <input type="hidden" name="dir" id="sortDir" value="{{ sort_dir }}">
+        <div class="card-body py-2 px-3">
+            <div class="row g-2 align-items-end">
+                <div class="col-12 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">Search</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                        <input type="text" name="q" value="{{ search_query }}" class="form-control" placeholder="Name, phone, remarks">
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">Lead Source</label>
+                    <select class="form-select form-select-sm" name="lead_source" onchange="this.form.submit()">
+                        <option value="">All Lead Sources</option>
+                        {% for source in order_sources %}
+                        <option value="{{ source.name }}" {% if lead_source == source.name %}selected{% endif %}>{{ source.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">Status</label>
+                    <select class="form-select form-select-sm" name="status" onchange="this.form.submit()">
+                        <option value="">All Statuses</option>
+                        {% for status in statuses %}
+                        <option value="{{ status.name }}" {% if filter_status == status.name %}selected{% endif %}>{{ status.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">Date Field</label>
+                    <select class="form-select form-select-sm" name="date_field" onchange="this.form.submit()">
+                        {% for value, label in date_fields %}
+                        <option value="{{ value }}" {% if date_field == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">Date Range</label>
+                    <select class="form-select form-select-sm" name="date_range" id="dateRangeSelect" onchange="onDateRangeChange()">
+                        {% for value, label in date_presets %}
+                        <option value="{{ value }}" {% if date_range == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-3 col-xl-2 d-flex gap-1 align-items-end">
+                    <div class="flex-grow-1">
+                        <label class="fu-filter-label">Rows</label>
+                        <select class="form-select form-select-sm" name="per_page" onchange="this.form.submit()">
+                            <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                            <option value="200" {% if per_page == 200 %}selected{% endif %}>200</option>
+                            <option value="500" {% if per_page == 500 %}selected{% endif %}>500</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary" title="Apply filters"><i class="fas fa-filter"></i></button>
+                    <a href="{% url 'follow_ups_list' %}?per_page={{ per_page }}" class="btn btn-sm btn-outline-secondary" title="Reset all filters"><i class="fas fa-undo"></i></a>
+                </div>
+            </div>
+
+            <!-- Sort row -->
+            <div class="row g-2 align-items-end mt-1">
+                <div class="col-12 col-md-6 col-xl-4">
+                    <label class="fu-filter-label"><i class="fas fa-sort-amount-down me-1"></i>Sort By</label>
+                    <div class="input-group input-group-sm">
+                        {% comment %}
+                        applySort(), not a plain form submit: a new field needs
+                        its own natural direction. Submitting would carry the
+                        old ?dir= over and land you on "Name, Z → A".
+                        {% endcomment %}
+                        <select class="form-select" name="sort" id="sortField" onchange="applySort(this.value)">
+                            {% for value, label, kind in sort_options %}
+                            <option value="{{ value }}" data-kind="{{ kind }}" {% if sort_by == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        {% comment %}
+                        A toggle rather than a second dropdown: direction is
+                        binary, and what it means depends on the field — which
+                        is why the label is written by JS, not hardcoded.
+                        {% endcomment %}
+                        <button type="button" class="btn btn-outline-primary fu-sort-dir-btn" id="sortDirBtn" onclick="toggleSortDir()">
+                            <i class="fas fa-sort-amount-down me-1" id="sortDirIcon"></i><span id="sortDirLabel">Newest first</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-8 d-flex align-items-end">
+                    <div class="fu-quick-picks flex-wrap">
+                        <span class="text-muted me-1" style="font-size:0.72rem;">Quick sort:</span>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('created_at','desc')">Newest</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('created_at','asc')">Oldest</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('updated_at','desc')">Recently active</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('last_followup_at','asc')">Longest since follow-up</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('followup_count','desc')">Most follow-ups</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('name','asc')">Name A–Z</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Custom range row: only relevant when the preset is "Custom range" -->
+            <div class="row g-2 align-items-end mt-1" id="customDateRow" {% if date_range != 'custom' %}hidden{% endif %}>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">From</label>
+                    <input type="date" class="form-control form-control-sm" name="date_from" id="dateFrom" value="{{ date_from }}" max="{{ today_iso }}">
+                </div>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">To</label>
+                    <input type="date" class="form-control form-control-sm" name="date_to" id="dateTo" value="{{ date_to }}">
+                </div>
+                <div class="col-12 col-md-6 col-xl-4 d-flex align-items-end">
+                    <div class="fu-quick-picks">
+                        <span class="text-muted me-1" style="font-size:0.72rem;">Quick:</span>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="quickRange(7)">7d</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="quickRange(30)">30d</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="quickRange(90)">90d</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="quickRange(365)">1y</button>
+                    </div>
+                </div>
+            </div>
+
+            {% if date_range or search_query or lead_source or filter_status %}
+            <div class="d-flex flex-wrap align-items-center gap-1 mt-2 pt-2 border-top">
+                <span class="text-muted" style="font-size:0.72rem;">Active:</span>
+                {% if search_query %}<span class="fu-filter-chip">Search: “{{ search_query }}” <a href="?{{ filter_query }}&amp;q=" title="Remove">&times;</a></span>{% endif %}
+                {% if lead_source %}<span class="fu-filter-chip">Source: {{ lead_source }} <a href="?{{ filter_query }}&amp;lead_source=" title="Remove">&times;</a></span>{% endif %}
+                {% if filter_status %}<span class="fu-filter-chip">Status: {{ filter_status }} <a href="?{{ filter_query }}&amp;status=" title="Remove">&times;</a></span>{% endif %}
+                {% if date_range %}<span class="fu-filter-chip"><i class="far fa-calendar-alt me-1"></i>{% for value, label in date_fields %}{% if value == date_field %}{{ label }}{% endif %}{% endfor %}: {{ date_label }} <a href="?{{ filter_query }}&amp;date_range=&amp;date_from=&amp;date_to=" title="Remove">&times;</a></span>{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </form>
+
+    <!-- ===== Bulk action bar (shown once anything is ticked) ===== -->
+    <div class="fu-bulk-bar shadow-sm" id="bulkBar" hidden>
+        <div class="fu-bulk-inner">
+            <span class="fu-bulk-count"><i class="fas fa-check-square me-1"></i><span id="bulkCount">0</span> selected</span>
+            <span class="fu-bulk-sep"></span>
+            <span id="bulkSelectAllWrap" class="fu-bulk-hint" hidden>
+                <a href="#" onclick="selectAllMatching(); return false;">Select all <span class="fu-total-matching">{{ total_matching }}</span> matching this filter</a>
+            </span>
+            <span id="bulkAllSelectedNote" class="fu-bulk-hint" hidden>
+                All <strong id="bulkAllSelectedCount">0</strong> rows matching this filter are selected.
+            </span>
+            <div class="ms-auto d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="clearSelection()">
+                    <i class="fas fa-times"></i> Clear
+                </button>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-file-export"></i> Export Selected
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item" href="#" onclick="exportFollowUps('xlsx', true); return false;"><i class="fas fa-file-excel text-success me-2"></i>Excel (.xlsx)</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportFollowUps('csv', true); return false;"><i class="fas fa-file-csv text-primary me-2"></i>CSV (.csv)</a></li>
+                    </ul>
+                </div>
+                <button type="button" class="btn btn-sm btn-danger" id="bulkDeleteBtn" onclick="bulkDeleteSelected()">
+                    <i class="fas fa-trash-alt"></i> Delete Selected
+                </button>
+            </div>
         </div>
     </div>
 
@@ -64,20 +225,33 @@ load and broken on the next refresh.
                 <table class="table table-hover table-bordered mb-0 align-middle follow-ups-table" id="followUpsTable">
                     <thead>
                         <tr>
+                            <th style="width: 38px;" class="text-center">
+                                <input type="checkbox" class="form-check-input fu-check" id="selectAllOnPage"
+                                       onclick="toggleSelectAllOnPage(this)" title="Select all rows on this page">
+                            </th>
                             <th style="width: 50px;">S.N.</th>
-                            <th>Name</th>
-                            <th>Phone Number</th>
-                            <th>Lead Source</th>
+                            <th class="fu-sortable" data-sort="name" onclick="sortBy('name')">Name <i class="fas fa-sort fu-sort-icon"></i></th>
+                            <th class="fu-sortable" data-sort="phone" onclick="sortBy('phone')">Phone Number <i class="fas fa-sort fu-sort-icon"></i></th>
+                            <th class="fu-sortable" data-sort="lead_source" onclick="sortBy('lead_source')">Lead Source <i class="fas fa-sort fu-sort-icon"></i></th>
                             <th class="product-column">Product</th>
-                            <th style="min-width: 135px;">Follow up</th>
-                            <th>Status</th>
+                            <th class="fu-sortable" data-sort="last_followup_at" onclick="sortBy('last_followup_at')" style="min-width: 135px;">Follow up <i class="fas fa-sort fu-sort-icon"></i></th>
+                            <th class="fu-sortable" data-sort="status" onclick="sortBy('status')">Status <i class="fas fa-sort fu-sort-icon"></i></th>
                             <th style="max-width: 200px;">Remarks</th>
+                            {% comment %}
+                            Sorts by whichever timestamp the date filter is set to, so the
+                            column you filtered on is the one you can order by.
+                            {% endcomment %}
+                            <th class="fu-sortable" data-sort="{{ date_field }}" onclick="sortBy('{{ date_field }}')" style="min-width:125px;">
+                                {% for value, label in date_fields %}{% if value == date_field %}{{ label }}{% endif %}{% endfor %}
+                                <i class="fas fa-sort fu-sort-icon"></i>
+                            </th>
                             <th style="width: 110px;" class="text-center">Action</th>
                         </tr>
                     </thead>
                     <tbody id="followUpsTbody">
                         <!-- Data Entry Row -->
                         <tr class="entry-row-bg" id="entryRow">
+                            <td></td>
                             <td class="text-center fw-bold text-success" style="font-size: 1.2rem;">+</td>
                             <td><input type="text" class="form-control form-control-sm" id="newName" placeholder="Name"></td>
                             <td>
@@ -114,6 +288,7 @@ load and broken on the next refresh.
                                 </select>
                             </td>
                             <td><input type="text" class="form-control form-control-sm" id="newRemarks" placeholder="Remarks"></td>
+                            <td class="text-muted text-center" style="font-size:0.7rem;">—</td>
                             <td class="text-center">
                                 <button class="action-btn border text-success" onclick="saveFollowUp()" title="Save Entry">
                                     <i class="fas fa-save"></i>
@@ -131,7 +306,12 @@ load and broken on the next refresh.
                             data-products='[{% for p in all_products %}{"id":"{{ p.id }}","name":"{{ p.name|escapejs }}","price":{{ p.price }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
                             data-remarks="{{ item.remarks|default:'' }}"
                             data-version="{{ item.version|default:1 }}"
+                            data-created-iso="{{ item.created_at|date:'c' }}"
                             data-followup-count="{{ item.followup_count }}">
+                            <td class="text-center">
+                                <input type="checkbox" class="form-check-input fu-check fu-row-check" value="{{ item.id }}"
+                                       onclick="onRowCheckClick(event, this)">
+                            </td>
                             <td class="text-center sn-column">{{ page_obj.start_index|add:forloop.counter0 }}</td>
                             <td>{{ item.name|default:"-" }}</td>
                             <td>{{ item.phone }}</td>
@@ -179,6 +359,17 @@ load and broken on the next refresh.
                                 <span class="badge status-badge rounded-pill px-2 py-1" data-status-val="{{ item.status|default:''|lower }}">{{ item.status|title|default:"-" }}</span>
                             </td>
                             <td class="text-break" style="max-width:200px;">{{ item.remarks|default:"-" }}</td>
+                            <td class="fu-date-cell">
+                                {% if date_field == 'updated_at' %}
+                                <div class="fu-date-main">{{ item.updated_at|date:"M d, Y" }}</div>
+                                <div class="fu-date-sub">{{ item.updated_at|date:"h:i A" }}</div>
+                                <div class="fu-date-sub" title="Date added">+ {{ item.created_at|date:"M d, Y" }}</div>
+                                {% else %}
+                                <div class="fu-date-main">{{ item.created_at|date:"M d, Y" }}</div>
+                                <div class="fu-date-sub">{{ item.created_at|date:"h:i A" }}</div>
+                                <div class="fu-date-sub" title="Last activity"><i class="fas fa-pen" style="font-size:0.55rem;"></i> {{ item.updated_at|date:"M d, Y" }}</div>
+                                {% endif %}
+                            </td>
                             <td class="text-center" style="white-space:nowrap;">
                                 <a href="{% url 'order_create' %}?followup_id={{ item.id }}" class="action-btn border text-success me-1" title="Create Order">
                                     <i class="fas fa-shopping-cart"></i>
@@ -197,7 +388,7 @@ load and broken on the next refresh.
                         {% endwith %}
                         {% empty %}
                         <tr id="emptyRow">
-                            <td colspan="10" class="text-center text-muted py-4">No follow-ups found. Create one above!</td>
+                            <td colspan="11" class="text-center text-muted py-4">No follow-ups found. Create one above!</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -212,7 +403,7 @@ load and broken on the next refresh.
         <ul class="pagination justify-content-center mb-0">
             {% if page_obj.has_previous %}
             <li class="page-item">
-                <a class="page-link" href="?page={{ page_obj.previous_page_number }}&per_page={{ per_page }}&q={{ search_query|urlencode }}&lead_source={{ lead_source|urlencode }}&status={{ filter_status|urlencode }}" aria-label="Previous">
+                <a class="page-link" href="?{{ filter_query }}&amp;page={{ page_obj.previous_page_number }}" aria-label="Previous">
                     <span aria-hidden="true">&laquo;</span>
                 </a>
             </li>
@@ -226,13 +417,13 @@ load and broken on the next refresh.
                 {% if page_obj.number == num %}
                 <li class="page-item active"><span class="page-link">{{ num }}</span></li>
                 {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                <li class="page-item"><a class="page-link" href="?page={{ num }}&per_page={{ per_page }}&q={{ search_query|urlencode }}&lead_source={{ lead_source|urlencode }}&status={{ filter_status|urlencode }}">{{ num }}</a></li>
+                <li class="page-item"><a class="page-link" href="?{{ filter_query }}&amp;page={{ num }}">{{ num }}</a></li>
                 {% endif %}
             {% endfor %}
             
             {% if page_obj.has_next %}
             <li class="page-item">
-                <a class="page-link" href="?page={{ page_obj.next_page_number }}&per_page={{ per_page }}&q={{ search_query|urlencode }}&lead_source={{ lead_source|urlencode }}&status={{ filter_status|urlencode }}" aria-label="Next">
+                <a class="page-link" href="?{{ filter_query }}&amp;page={{ page_obj.next_page_number }}" aria-label="Next">
                     <span aria-hidden="true">&raquo;</span>
                 </a>
             </li>
@@ -364,8 +555,64 @@ load and broken on the next refresh.
 </div>
 
 <style>
+/* ===== Filter bar ===== */
+.fu-filter-label {
+    display: block; font-size: 0.68rem; font-weight: 600; color: #64748b;
+    text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px;
+}
+.fu-filter-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.72rem; padding: 2px 8px; border-radius: 999px;
+    background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+}
+.fu-filter-chip a { color: #1d4ed8; text-decoration: none; font-weight: 700; opacity: 0.6; }
+.fu-filter-chip a:hover { opacity: 1; }
+.btn-xxs { font-size: 0.68rem; padding: 1px 7px; line-height: 1.5; border-radius: 5px; }
+.fu-quick-picks { display: flex; align-items: center; gap: 4px; padding-bottom: 2px; }
+/* Bootstrap's .row sets display:flex, which outranks the browser's own
+   [hidden] rule. Say it explicitly so the custom-date row and the bulk bar
+   really do stay hidden until they're wanted. */
+#customDateRow[hidden], #bulkBar[hidden] { display: none !important; }
+
+/* ===== Bulk action bar =====
+   Sticks to the top of the viewport so the actions stay reachable after
+   scrolling down a 500-row page to tick the last few boxes. */
+.fu-bulk-bar {
+    position: sticky; top: 8px; z-index: 1020;
+    background: linear-gradient(90deg, #1e293b, #334155);
+    color: #f8fafc; border-radius: 10px; margin-bottom: 12px;
+    animation: fuBulkIn 0.18s ease-out;
+}
+@keyframes fuBulkIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.fu-bulk-inner { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 14px; }
+.fu-bulk-count { font-weight: 700; font-size: 0.85rem; white-space: nowrap; }
+.fu-bulk-sep { width: 1px; height: 18px; background: rgba(248,250,252,0.25); }
+.fu-bulk-hint { font-size: 0.78rem; color: #cbd5e1; }
+.fu-bulk-hint a { color: #93c5fd; text-decoration: underline; }
+.fu-bulk-hint a:hover { color: #dbeafe; }
+
+/* ===== Selection ===== */
+.fu-check { cursor: pointer; width: 1rem; height: 1rem; }
+tr.fu-row-selected > td { background-color: #eff6ff !important; }
+
+/* Keep the direction toggle a fixed width so the control doesn't jump about
+   as its label changes between "A → Z" and "Longest since follow-up". */
+.fu-sort-dir-btn { white-space: nowrap; min-width: 132px; font-weight: 600; }
+
+/* ===== Sortable headers ===== */
+.fu-sortable { cursor: pointer; user-select: none; }
+.fu-sortable:hover { background-color: #eef2f7 !important; }
+.fu-sort-icon { font-size: 0.65rem; opacity: 0.35; margin-left: 2px; }
+.fu-sortable.fu-sorted { color: #1d4ed8 !important; }
+.fu-sortable.fu-sorted .fu-sort-icon { opacity: 1; color: #1d4ed8; }
+
+/* ===== Date column ===== */
+.fu-date-cell { white-space: nowrap; font-size: 0.75rem; }
+.fu-date-main { font-weight: 600; color: #1e293b; }
+.fu-date-sub { font-size: 0.65rem; color: #94a3b8; }
+
 /* ===== Table ===== */
-.follow-ups-table { min-width: 1200px; font-size: 0.9rem; }
+.follow-ups-table { min-width: 1320px; font-size: 0.9rem; }
 .follow-ups-table th {
     white-space: nowrap;
     background-color: #f8fafc !important;
@@ -579,8 +826,22 @@ select.select2-products:not(.select2-hidden-accessible) {
     const activeFilters = {
         q: "{{ search_query|escapejs }}",
         lead_source: "{{ lead_source|escapejs }}",
-        status: "{{ filter_status|escapejs }}"
+        status: "{{ filter_status|escapejs }}",
+        date_field: "{{ date_field|escapejs }}",
+        date_range: "{{ date_range|escapejs }}",
+        date_from: "{{ date_from|escapejs }}",   // YYYY-MM-DD, local (NPT) day
+        date_to: "{{ date_to|escapejs }}"
     };
+
+    // The date filter compares local calendar days, so reduce a timestamp to
+    // the YYYY-MM-DD the *browser* would print for it. Staff and server are
+    // both on Asia/Kathmandu, which is what the server filter uses too.
+    function localDayKey(value) {
+        const dt = value ? new Date(value) : new Date();
+        if (isNaN(dt.getTime())) return null;
+        const pad = n => String(n).padStart(2, '0');
+        return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+    }
 
     // Mirrors the backend filtering in follow_ups_list/sync_follow_ups, so
     // locally-made edits (inline status, add note, full edit) can decide
@@ -597,9 +858,123 @@ select.select2-products:not(.select2-hidden-accessible) {
         if (activeFilters.status && (d.status || '').toLowerCase() !== activeFilters.status.toLowerCase()) {
             return false;
         }
+        if (activeFilters.date_from || activeFilters.date_to) {
+            // Filtering on "Last Activity" and we just saved: the row's
+            // updated_at is now, so compare against the current day. Filtering
+            // on "Date Added": use the row's own creation timestamp.
+            const day = activeFilters.date_field === 'updated_at'
+                ? localDayKey(null)
+                : localDayKey(d.created_at_iso);
+            // A row whose creation time we don't know can't be judged; leave it
+            // on screen rather than making it vanish on an unrelated edit.
+            if (!day) return true;
+            if (activeFilters.date_from && day < activeFilters.date_from) return false;
+            if (activeFilters.date_to && day > activeFilters.date_to) return false;
+        }
         return true;
     }
-    
+
+    // ===== Filter bar behaviour =====
+    function onDateRangeChange() {
+        const preset = document.getElementById('dateRangeSelect').value;
+        const row = document.getElementById('customDateRow');
+        row.hidden = preset !== 'custom';
+        if (preset !== 'custom') {
+            // A preset supersedes whatever was typed into From/To. Clearing
+            // them keeps the submitted URL honest about what actually applied.
+            document.getElementById('dateFrom').value = '';
+            document.getElementById('dateTo').value = '';
+            document.getElementById('filterForm').submit();
+        }
+    }
+
+    function quickRange(days) {
+        const to = new Date();
+        const from = new Date();
+        from.setDate(from.getDate() - (days - 1));
+        const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        document.getElementById('dateFrom').value = fmt(from);
+        document.getElementById('dateTo').value = fmt(to);
+        document.getElementById('filterForm').submit();
+    }
+
+    // ===== Sorting =====
+    //
+    // Three ways in, one code path: the Sort By select, the quick-sort
+    // shortcuts, and clicking a column header all just rewrite ?sort=&dir= and
+    // reload. The server is the only thing that actually orders rows, so the
+    // sort always spans every page rather than shuffling the current one.
+    const currentSort = { field: "{{ sort_by|escapejs }}", dir: "{{ sort_dir|escapejs }}", kind: "{{ sort_kind|escapejs }}" };
+
+    const SORT_KINDS = {
+        {% for value, label, kind in sort_options %}"{{ value|escapejs }}": "{{ kind|escapejs }}",{% endfor %}
+    };
+
+    // What "ascending" means depends on what you're sorting. Spelling it out
+    // beats an unlabelled arrow the reader has to decode.
+    const SORT_DIR_TEXT = {
+        date:   { desc: ['Newest first', 'fa-sort-amount-down'],  asc: ['Oldest first', 'fa-sort-amount-up-alt'] },
+        text:   { desc: ['Z → A', 'fa-sort-alpha-up-alt'],   asc: ['A → Z', 'fa-sort-alpha-down'] },
+        number: { desc: ['High → Low', 'fa-sort-numeric-down-alt'], asc: ['Low → High', 'fa-sort-numeric-down'] }
+    };
+
+    //: The direction a freshly picked column should start in. Dates and counts
+    //: read newest/most first; names read A-Z.
+    function defaultDirFor(field) {
+        return SORT_KINDS[field] === 'text' ? 'asc' : 'desc';
+    }
+
+    function applySort(field, dir) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('sort', field);
+        url.searchParams.set('dir', dir || defaultDirFor(field));
+        url.searchParams.set('page', '1');
+        window.location.href = url.toString();
+    }
+
+    // Column header click: the same column again flips direction, a new one
+    // starts on its natural reading.
+    function sortBy(field) {
+        applySort(field, currentSort.field === field
+            ? (currentSort.dir === 'asc' ? 'desc' : 'asc')
+            : defaultDirFor(field));
+    }
+
+    function toggleSortDir() {
+        applySort(document.getElementById('sortField').value,
+                  currentSort.dir === 'asc' ? 'desc' : 'asc');
+    }
+
+    function renderSortDirButton() {
+        const btn = document.getElementById('sortDirBtn');
+        if (!btn) return;
+        // Read the select, not currentSort: the user may have opened the
+        // dropdown and be looking at a different field than the page was
+        // rendered with (the form submits on change, but not before).
+        const field = document.getElementById('sortField').value;
+        const kind = SORT_KINDS[field] || 'date';
+        const [label, icon] = SORT_DIR_TEXT[kind][currentSort.dir];
+        document.getElementById('sortDirLabel').textContent = label;
+        document.getElementById('sortDirIcon').className = 'fas me-1 ' + icon;
+        btn.title = `Sorted ${label.toLowerCase()} — click to reverse`;
+    }
+
+    function markSortedHeader() {
+        document.querySelectorAll('.fu-sortable').forEach(th => {
+            const icon = th.querySelector('.fu-sort-icon');
+            const isActive = th.getAttribute('data-sort') === currentSort.field;
+            th.classList.toggle('fu-sorted', isActive);
+            if (!icon) return;
+            icon.className = 'fas fu-sort-icon ' + (
+                isActive ? (currentSort.dir === 'asc' ? 'fa-sort-up' : 'fa-sort-down') : 'fa-sort'
+            );
+            th.title = isActive
+                ? `Sorted ${currentSort.dir === 'asc' ? 'ascending' : 'descending'} — click to reverse`
+                : 'Click to sort by this column';
+        });
+        renderSortDirButton();
+    }
+
     function changePerPage(value) {
         let url = new URL(window.location.href);
         url.searchParams.set('per_page', value);
@@ -681,6 +1056,9 @@ select.select2-products:not(.select2-hidden-accessible) {
 
         applyStatusBadgeColors();
         initProductSelects();
+        markSortedHeader();
+        loadSelection();
+        syncSelectionUI();
     });
 
     // ===== Utilities =====
@@ -746,6 +1124,217 @@ select.select2-products:not(.select2-hidden-accessible) {
         });
     }
 
+
+    // ===== Bulk selection =====
+    //
+    // The set of ticked ids lives in sessionStorage, not just in the DOM, so a
+    // selection survives paging and filter changes — you can tick ten rows on
+    // page 1, jump to page 3, tick five more, and delete or export all fifteen
+    // in one go. It is per-tab and cleared by the Clear button.
+    const FU_SELECTION_KEY = 'followups.selection';
+    const FU_BULK_LIMIT = {{ bulk_limit }};
+    const FU_FILTER_QUERY = "{{ filter_query|escapejs }}";
+
+    //: How many rows match the current filters across every page. Server-
+    //: rendered, then kept in step as rows are deleted here or elsewhere, so
+    //: the "N matching" badge and the "Select all N" link never go stale.
+    let totalMatching = {{ total_matching }};
+
+    function adjustTotalMatching(delta) {
+        totalMatching = Math.max(0, totalMatching + delta);
+        document.querySelectorAll('.fu-total-matching').forEach(el => el.textContent = totalMatching);
+    }
+
+    let selectedIds = new Set();
+    let lastCheckedIndex = null;   // anchor for shift-click range selection
+
+    function loadSelection() {
+        try {
+            const raw = sessionStorage.getItem(FU_SELECTION_KEY);
+            if (raw) selectedIds = new Set(JSON.parse(raw).map(Number).filter(Boolean));
+        } catch (e) { selectedIds = new Set(); }
+    }
+
+    function persistSelection() {
+        try {
+            sessionStorage.setItem(FU_SELECTION_KEY, JSON.stringify([...selectedIds]));
+        } catch (e) { /* private mode / quota — selection just won't outlive the page */ }
+    }
+
+    function pageCheckboxes() {
+        return Array.from(document.querySelectorAll('#followUpsTbody .fu-row-check'));
+    }
+
+    function syncSelectionUI() {
+        const boxes = pageCheckboxes();
+        boxes.forEach(cb => {
+            const on = selectedIds.has(Number(cb.value));
+            cb.checked = on;
+            cb.closest('tr')?.classList.toggle('fu-row-selected', on);
+        });
+
+        const count = selectedIds.size;
+        document.querySelectorAll('.fu-sel-count').forEach(el => el.textContent = count);
+        const bar = document.getElementById('bulkBar');
+        bar.hidden = count === 0;
+        document.getElementById('bulkCount').textContent = count;
+
+        // Offer "select all matching" only when it would actually add rows.
+        const everythingSelected = count >= totalMatching && totalMatching > 0;
+        document.getElementById('bulkSelectAllWrap').hidden = everythingSelected || totalMatching <= boxes.length;
+        const allNote = document.getElementById('bulkAllSelectedNote');
+        allNote.hidden = !everythingSelected;
+        document.getElementById('bulkAllSelectedCount').textContent = count;
+
+        // Grey out the "selected rows only" export entries while nothing is
+        // ticked, rather than letting a click fail with an error toast.
+        document.querySelectorAll('.fu-needs-selection').forEach(el => {
+            el.classList.toggle('disabled', count === 0);
+            el.setAttribute('aria-disabled', count === 0 ? 'true' : 'false');
+        });
+
+        const master = document.getElementById('selectAllOnPage');
+        const onPage = boxes.filter(cb => cb.checked).length;
+        master.checked = boxes.length > 0 && onPage === boxes.length;
+        master.indeterminate = onPage > 0 && onPage < boxes.length;
+    }
+
+    function setSelected(id, on) {
+        if (on) selectedIds.add(Number(id));
+        else selectedIds.delete(Number(id));
+    }
+
+    function onRowCheckClick(event, cb) {
+        const boxes = pageCheckboxes();
+        const index = boxes.indexOf(cb);
+
+        // Shift-click selects the whole span since the last box you touched —
+        // the standard file-manager gesture, and the only sane way to tick 80
+        // consecutive rows.
+        if (event.shiftKey && lastCheckedIndex !== null && index > -1) {
+            const [from, to] = [Math.min(lastCheckedIndex, index), Math.max(lastCheckedIndex, index)];
+            for (let i = from; i <= to; i++) setSelected(boxes[i].value, cb.checked);
+        } else {
+            setSelected(cb.value, cb.checked);
+        }
+        lastCheckedIndex = index;
+        persistSelection();
+        syncSelectionUI();
+    }
+
+    function toggleSelectAllOnPage(master) {
+        pageCheckboxes().forEach(cb => setSelected(cb.value, master.checked));
+        lastCheckedIndex = null;
+        persistSelection();
+        syncSelectionUI();
+    }
+
+    function clearSelection() {
+        selectedIds.clear();
+        lastCheckedIndex = null;
+        persistSelection();
+        syncSelectionUI();
+    }
+
+    // Keep the selection honest when a row leaves the table (deleted here,
+    // deleted by someone else, or filtered out by a live update).
+    function dropFromSelection(id) {
+        if (selectedIds.delete(Number(id))) {
+            persistSelection();
+            syncSelectionUI();
+        }
+    }
+
+    function selectAllMatching() {
+        const params = new URLSearchParams(FU_FILTER_QUERY);
+        params.delete('page');
+        params.delete('per_page');
+        fetch(`/api/orders/follow-ups/ids/?${params.toString()}`)
+            .then(r => r.json())
+            .then(result => {
+                if (!result.success) { alertify.error(result.error || 'Could not load matching rows.'); return; }
+                result.ids.forEach(id => selectedIds.add(Number(id)));
+                persistSelection();
+                syncSelectionUI();
+                if (result.truncated) {
+                    alertify.warning(`Selected the first ${result.count} of ${result.total} matching rows (limit ${result.limit}).`);
+                } else {
+                    alertify.success(`${result.count} follow-up${result.count === 1 ? '' : 's'} selected.`);
+                }
+            })
+            .catch(err => { console.error(err); alertify.error('Could not load matching rows.'); });
+    }
+
+    function bulkDeleteSelected() {
+        const ids = [...selectedIds];
+        if (!ids.length) { alertify.error('Nothing selected.'); return; }
+        if (ids.length > FU_BULK_LIMIT) {
+            alertify.error(`Too many rows selected (${ids.length}). Delete at most ${FU_BULK_LIMIT} at a time.`);
+            return;
+        }
+        if (!confirm(`Move ${ids.length} follow-up${ids.length === 1 ? '' : 's'} to Trash?\n\nThey can be restored from the Trash page.`)) return;
+
+        const btn = document.getElementById('bulkDeleteBtn');
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+        btn.disabled = true;
+
+        trackWrite(fetch("{% url 'bulk_delete_follow_ups' %}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+            body: JSON.stringify({ ids })
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (!result.success) { alertify.error('Error: ' + (result.error || 'Bulk delete failed.')); return; }
+
+            result.ids.forEach(id => {
+                document.querySelector(`tr[data-id="${id}"]`)?.remove();
+                selectedIds.delete(Number(id));
+            });
+            // Ids the server didn't touch were already gone (someone else
+            // deleted them first) — drop them too, or the bar keeps counting
+            // rows that no longer exist.
+            ids.forEach(id => selectedIds.delete(Number(id)));
+            persistSelection();
+            updateSerialNumbers();
+            adjustTotalMatching(-result.deleted);
+            syncSelectionUI();
+
+            if (!document.querySelector('#followUpsTbody tr[data-id]')) {
+                document.getElementById('followUpsTbody').insertAdjacentHTML(
+                    'beforeend',
+                    '<tr id="emptyRow"><td colspan="11" class="text-center text-muted py-4">No follow-ups found. Create one above!</td></tr>'
+                );
+            }
+
+            let msg = `${result.deleted} follow-up${result.deleted === 1 ? '' : 's'} moved to Trash.`;
+            if (result.skipped) msg += ` ${result.skipped} already deleted.`;
+            alertify.success(msg);
+        })
+        .catch(err => { console.error(err); alertify.error('An error occurred during bulk delete.'); })
+        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; }));
+    }
+
+    // ===== Export =====
+    function exportFollowUps(format, selectedOnly) {
+        const params = new URLSearchParams(FU_FILTER_QUERY);
+        params.delete('page');
+        params.delete('per_page');
+        params.set('format', format);
+
+        if (selectedOnly) {
+            if (!selectedIds.size) { alertify.error('Select at least one row first.'); return; }
+            params.set('ids', [...selectedIds].join(','));
+        }
+
+        // A plain navigation, not fetch(): the browser handles the file
+        // download and Content-Disposition, and the page stays put.
+        window.location.href = `{% url 'export_follow_ups' %}?${params.toString()}`;
+        alertify.success(selectedOnly
+            ? `Exporting ${selectedIds.size} selected follow-up${selectedIds.size === 1 ? '' : 's'}...`
+            : `Exporting ${totalMatching} follow-up${totalMatching === 1 ? '' : 's'}...`);
+    }
 
     // ===== Live Update Toast Notifications =====
     const FU_AVATAR_PALETTE = ['#6366f1', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#0ea5e9', '#84cc16', '#f43f5e', '#a855f7', '#06b6d4'];
@@ -1032,9 +1621,13 @@ select.select2-products:not(.select2-hidden-accessible) {
         newTr.setAttribute('data-products', JSON.stringify(data.products || []));
         newTr.setAttribute('data-remarks', data.remarks || '');
         newTr.setAttribute('data-version', data.version || 1);
+        newTr.setAttribute('data-created-iso', data.created_at_iso || '');
         newTr.setAttribute('data-followup-count', countFollowupLogs(data.all_logs));
 
         newTr.innerHTML = `
+            <td class="text-center">
+                <input type="checkbox" class="form-check-input fu-check fu-row-check" value="${data.id}" onclick="onRowCheckClick(event, this)">
+            </td>
             <td class="text-center sn-column"></td>
             <td>${escapeHtml(data.name) || '-'}</td>
             <td>${escapeHtml(data.phone)}</td>
@@ -1047,6 +1640,7 @@ select.select2-products:not(.select2-hidden-accessible) {
                 <span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(data.status)}" style="${getStatusBadgeStyle(data.status)}" data-status-val="${(data.status||'').toLowerCase()}">${data.status || '-'}</span>
             </td>
             <td class="text-break" style="max-width:200px;">${escapeHtml(data.remarks) || '-'}</td>
+            <td class="fu-date-cell">${buildDateCellHtml(data)}</td>
             <td class="text-center" style="white-space:nowrap;">
                 <a href="${orderCreateUrl}?followup_id=${data.id}" class="action-btn border text-success me-1" title="Create Order">
                     <i class="fas fa-shopping-cart"></i>
@@ -1063,6 +1657,23 @@ select.select2-products:not(.select2-hidden-accessible) {
             </td>`;
         entryRow.after(newTr);
         updateSerialNumbers();
+        adjustTotalMatching(1);
+        syncSelectionUI();
+    }
+
+    // The Date cell for rows the server didn't render. A row that has just been
+    // created or touched is, by definition, active right now — so a payload
+    // without created_at_iso (older responses) still shows a sensible value.
+    function buildDateCellHtml(d) {
+        const created = d.created_at_iso ? new Date(d.created_at_iso) : new Date();
+        const now = new Date();
+        const primary = activeFilters.date_field === 'updated_at' ? now : created;
+        const secondary = activeFilters.date_field === 'updated_at' ? created : now;
+        const day = dt => dt.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+        const clock = dt => dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        return `<div class="fu-date-main">${day(primary)}</div>
+                <div class="fu-date-sub">${clock(primary)}</div>
+                <div class="fu-date-sub">${day(secondary)}</div>`;
     }
 
     function updateSerialNumbers() {
@@ -1086,8 +1697,8 @@ select.select2-products:not(.select2-hidden-accessible) {
     // data-followup-count, so the next "Add Follow-up Note" on that row
     // proposed a number that was already taken.
     //
-    // Column order: 0 S.N. | 1 Name | 2 Phone | 3 Lead | 4 Product
-    //               5 Follow Up | 6 Status | 7 Remarks | 8 Action
+    // Column order: 0 Select | 1 S.N. | 2 Name | 3 Phone | 4 Lead | 5 Product
+    //               6 Follow Up | 7 Status | 8 Remarks | 9 Date | 10 Action
     function paintRow(row, d) {
         if (!row || !d) return;
         const id = d.id || row.getAttribute('data-id');
@@ -1099,21 +1710,25 @@ select.select2-products:not(.select2-hidden-accessible) {
         row.setAttribute('data-lead', d.lead_source || '');
         row.setAttribute('data-products', JSON.stringify(d.products || []));
         row.setAttribute('data-remarks', d.remarks || '');
+        if (d.created_at_iso) row.setAttribute('data-created-iso', d.created_at_iso);
         row.setAttribute('data-followup-count', countFollowupLogs(d.all_logs));
 
         const cells = row.querySelectorAll('td');
-        if (cells.length < 8) return;   // not a data row
+        if (cells.length < 10) return;   // not a data row
 
-        cells[1].textContent = d.name || '-';
-        cells[2].textContent = d.phone || '-';
-        cells[3].textContent = d.lead_source || '-';
-        cells[4].innerHTML = d.products?.length > 0
+        cells[2].textContent = d.name || '-';
+        cells[3].textContent = d.phone || '-';
+        cells[4].textContent = d.lead_source || '-';
+        cells[5].innerHTML = d.products?.length > 0
             ? '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>'
             : '<span class="text-muted">-</span>';
-        cells[5].innerHTML = buildFuCellHtml(d.all_logs, id);
-        cells[6].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" style="${getStatusBadgeStyle(d.status)}" data-status-val="${(d.status || '').toLowerCase()}">${d.status || '-'}</span>`;
+        cells[6].innerHTML = buildFuCellHtml(d.all_logs, id);
+        cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" style="${getStatusBadgeStyle(d.status)}" data-status-val="${(d.status || '').toLowerCase()}">${d.status || '-'}</span>`;
         // textContent, not innerHTML: remarks are free text typed by staff.
-        cells[7].textContent = d.remarks || '-';
+        cells[8].textContent = d.remarks || '-';
+        cells[9].innerHTML = buildDateCellHtml({
+            created_at_iso: d.created_at_iso || row.getAttribute('data-created-iso') || ''
+        });
     }
 
     // ===== Add Note Modal =====
@@ -1159,10 +1774,14 @@ select.select2-products:not(.select2-hidden-accessible) {
                 addNoteModal.hide();
                 alertify.success('Note added successfully!');
 
-                const finalStatus = result.data.status || '';
-                if (!rowMatchesActiveFilters({ name: row.getAttribute('data-name'), phone: row.getAttribute('data-phone'), remarks: row.getAttribute('data-remarks'), lead_source: row.getAttribute('data-lead'), status: finalStatus })) {
+                // The server's copy of the row is the authority on whether it
+                // still belongs under the active filters — it carries the
+                // fields another user may have changed in the meantime.
+                if (!rowMatchesActiveFilters(result.data)) {
                     row.remove();
+                    dropFromSelection(currentNoteId);
                     updateSerialNumbers();
+                    adjustTotalMatching(-1);
                     return;
                 }
 
@@ -1265,7 +1884,9 @@ select.select2-products:not(.select2-hidden-accessible) {
 
                 if (!rowMatchesActiveFilters(d)) {
                     row.remove();
+                    dropFromSelection(currentEditId);
                     updateSerialNumbers();
+                    adjustTotalMatching(-1);
                     editModal.hide();
                     alertify.success('Updated successfully!');
                     return;
@@ -1298,7 +1919,9 @@ select.select2-products:not(.select2-hidden-accessible) {
         .then(result => {
             if (result.success) {
                 document.querySelector(`tr[data-id="${id}"]`)?.remove();
+                dropFromSelection(id);
                 updateSerialNumbers();
+                adjustTotalMatching(-1);
                 alertify.success('Deleted successfully!');
             } else {
                 alertify.error('Error deleting: ' + result.error);
@@ -1437,9 +2060,11 @@ select.select2-products:not(.select2-hidden-accessible) {
                 // If the new status no longer matches the active filters,
                 // drop the row from view instead of leaving a mismatched
                 // entry displayed under the current filter.
-                if (!rowMatchesActiveFilters({ name: row.getAttribute('data-name'), phone: row.getAttribute('data-phone'), remarks: row.getAttribute('data-remarks'), lead_source: row.getAttribute('data-lead'), status: finalStatus })) {
+                if (!rowMatchesActiveFilters(result.data)) {
                     row.remove();
+                    dropFromSelection(id);
                     updateSerialNumbers();
+                    adjustTotalMatching(-1);
                     alertify.success('Status updated!');
                     return;
                 }
@@ -1508,12 +2133,20 @@ select.select2-products:not(.select2-hidden-accessible) {
 
         syncInFlight = true;
 
+        // The date filter goes over the wire too: without it the server would
+        // report a row updated outside the active range as "matches", and the
+        // poll would splice a row into a date-filtered table that the page
+        // itself would never have rendered.
         const params = new URLSearchParams({
             last_sync: lastSyncTimestamp,
             last_event_id: lastEventId,
             q: activeFilters.q,
             lead_source: activeFilters.lead_source,
-            status: activeFilters.status
+            status: activeFilters.status,
+            date_field: activeFilters.date_field,
+            date_range: activeFilters.date_range,
+            date_from: activeFilters.date_from,
+            date_to: activeFilters.date_to
         });
         return fetch(`/api/orders/follow-ups/sync/?${params.toString()}`)
             .then(res => res.json())
@@ -1530,7 +2163,12 @@ select.select2-products:not(.select2-hidden-accessible) {
                         if (row) {
                             row.remove();
                             updateSerialNumbers();
+                            adjustTotalMatching(-1);
                         }
+                        // Drop it from the selection whether or not it was on
+                        // this page — a bulk delete elsewhere must not leave
+                        // this tab holding ids that no longer exist.
+                        dropFromSelection(id);
                     });
 
                     // Handle added/updated rows
@@ -1543,6 +2181,7 @@ select.select2-products:not(.select2-hidden-accessible) {
                             if (row) {
                                 row.remove();
                                 updateSerialNumbers();
+                                adjustTotalMatching(-1);
                             }
                             return;
                         }
@@ -1550,6 +2189,7 @@ select.select2-products:not(.select2-hidden-accessible) {
                         if (!row) {
                             appendNewRow(d);
                             row = document.querySelector(`tr[data-id="${d.id}"]`);
+                            document.getElementById('emptyRow')?.remove();
                         } else {
                             paintRow(row, d);
                         }
@@ -1560,6 +2200,10 @@ select.select2-products:not(.select2-hidden-accessible) {
                             setTimeout(() => row.style.backgroundColor = '', 1500);
                         }
                     });
+
+                    // Rows may have come or gone above; re-tick the checkboxes
+                    // and refresh the master/indeterminate state to match.
+                    syncSelectionUI();
 
                     // Handle live-update notification toasts (other users' activity).
                     // Only the newest few are rendered: anything older would be
@@ -1633,7 +2277,8 @@ select.select2-products:not(.select2-hidden-accessible) {
                 indicator.style.zIndex = '10';
                 indicator.style.transform = 'translate(10%, -50%)';
                 
-                const nameCell = row.querySelector('td:nth-child(2)');
+                // 3rd cell: 1 is the select checkbox, 2 is the S.N.
+                const nameCell = row.querySelector('td:nth-child(3)');
                 if(nameCell) {
                     nameCell.style.position = 'relative';
                     nameCell.appendChild(indicator);
