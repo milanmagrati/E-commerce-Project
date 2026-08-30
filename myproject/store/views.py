@@ -1,18 +1,35 @@
 import json
+from decimal import Decimal
+
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import JsonResponse
-from django.contrib.auth import login, logout
-from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse, Http404
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Q, Avg, Count
+from django.db.models import Q, Avg, Count, F
 
-from dashboard.models import Category, Product, ProductImage
+from dashboard.models import Category, Product
 from dashboard.models import Order as DashOrder, OrderItem as DashOrderItem
 from dashboard.models import Customer as DashCustomer, Setup
-from .models import ProductReview, Cart, CartItem, Order, OrderItem, Wishlist, Page
-from .forms import LoginForm, RegisterForm, ReviewForm, CheckoutForm
+from .models import (ProductReview, Cart, CartItem, Order, OrderItem, Wishlist, Page,
+                     DiscountCode, StoreCustomer)
+from .forms import (GuestOrderForm, ReviewForm, OrderTrackForm, CustomerLoginForm,
+                    CustomerRegisterForm, CustomerProfileForm, PasswordChangeForm)
+from . import services
+from .customer_auth import (get_customer, login_customer, logout_customer,
+                            customer_required, safe_next)
+
+# Order numbers this browser is allowed to open, remembered in the session.
+# A signed-in shopper is matched on `customer` instead; this list is what
+# lets a guest reopen what they just placed, and the track-order form
+# (number + matching phone) grants access from a different device.
+SESSION_ORDER_KEY = 'store_order_numbers'
+
+# Failed logins allowed from one session before it is made to wait, so the
+# login box cannot be used to grind through passwords.
+LOGIN_ATTEMPT_KEY = 'store_login_attempts'
+MAX_LOGIN_ATTEMPTS = 8
+LOGIN_LOCKOUT_SECONDS = 15 * 60
 
 
 def _get_next_dash_order_number():
@@ -29,12 +46,21 @@ def _get_next_dash_order_number():
     return f"T{(max_num + 1):03d}" if max_num is not None else "T001"
 
 
-def _create_dashboard_order(user, full_name, phone, email,
-                            address, city, order_type, items_data,
-                            total_amount, shipping_charge=0):
-    """Create a dashboard Order + OrderItems so admin can see store orders."""
-    from decimal import Decimal
+def _create_dashboard_order(full_name, phone, email, address, city, order_type,
+                            items_data, total_amount, shipping_charge=0, user=None,
+                            district='', branch_code='', branch_name='', note='',
+                            discount_amount=0):
+    """Create a dashboard Order + OrderItems so admin can see store orders.
+
+    `user` is None for guest orders, which is every storefront order now — the
+    dashboard's created_by is nullable and the customer is matched on phone.
+    """
     from django.db import IntegrityError, transaction
+
+    display_name = full_name
+    if not display_name and user is not None:
+        display_name = f"{user.first_name} {user.last_name}".strip() or user.username
+    display_name = display_name or 'Website Guest'
 
     # Find or create a Customer record by phone
     customer = None
@@ -42,7 +68,7 @@ def _create_dashboard_order(user, full_name, phone, email,
         customer = DashCustomer.objects.filter(phone=phone).first()
         if not customer:
             customer = DashCustomer.objects.create(
-                name=full_name or f"{user.first_name} {user.last_name}".strip() or user.username,
+                name=display_name,
                 phone=phone,
                 email=email or '',
                 city=city or '',
@@ -83,11 +109,11 @@ def _create_dashboard_order(user, full_name, phone, email,
                     order_number=dash_order_number,
                     created_by=user,
                     customer=customer,
-                    customer_name=full_name or f"{user.first_name} {user.last_name}".strip() or user.username,
+                    customer_name=display_name,
                     customer_phone=phone or '',
                     customer_email=email or '',
                     shipping_address=address or '',
-                    branch_city=city or '',
+                    branch_city=district or city or '',
                     order_from='Website',
                     in_out='in',
                     status=status_name,
@@ -99,6 +125,9 @@ def _create_dashboard_order(user, full_name, phone, email,
                     payment_status_setup=payment_status_setup,
                     total_amount=Decimal(str(total_amount)),
                     delivery_charge=Decimal(str(shipping_charge)),
+                    discount_amount=Decimal(str(discount_amount or 0)),
+                    ncm_destination_branch=branch_code or '',
+                    notes=note or '',
                 )
         except IntegrityError as e:
             if 'order_number' in str(e).lower():
@@ -125,36 +154,80 @@ def _create_dashboard_order(user, full_name, phone, email,
     return dash_order
 
 
-def _get_cart(request):
-    """Get or create cart for the current user/session."""
-    if request.user.is_authenticated:
-        cart, _ = Cart.objects.get_or_create(user=request.user)
-        return cart
+def _session_key(request):
+    """The browser's session key, creating the session if it has none yet."""
     if not request.session.session_key:
         request.session.create()
-    cart, _ = Cart.objects.get_or_create(session_key=request.session.session_key)
-    return cart
+    return request.session.session_key
 
 
-def _merge_session_cart(request, user):
-    """Merge anonymous session cart into user cart on login."""
+def _get_cart(request):
+    """This browser's cart: the account's when signed in, otherwise the
+    session's. Guest carts are merged into the account cart at sign-in, so
+    switching between the two never loses lines."""
+    customer = get_customer(request)
+    if customer:
+        cart, _ = Cart.objects.get_or_create(customer=customer)
+        return cart
+    if request.user.is_authenticated:
+        cart = Cart.objects.filter(user=request.user, customer__isnull=True).first()
+        return cart or Cart.objects.create(user=request.user)
+    session_key = _session_key(request)
+    cart = Cart.objects.filter(session_key=session_key, customer__isnull=True).first()
+    return cart or Cart.objects.create(session_key=session_key)
+
+
+def _wishlist_qs(request):
+    """Saved products belonging to the signed-in account, or to this browser."""
+    customer = get_customer(request)
+    if customer:
+        return Wishlist.objects.filter(customer=customer)
+    if request.user.is_authenticated:
+        return Wishlist.objects.filter(user=request.user, customer__isnull=True)
     session_key = request.session.session_key
     if not session_key:
+        return Wishlist.objects.none()
+    return Wishlist.objects.filter(
+        user__isnull=True, customer__isnull=True, session_key=session_key)
+
+
+def _remember_order(request, order):
+    """Let this browser reopen the order it just placed."""
+    numbers = request.session.get(SESSION_ORDER_KEY, [])
+    if order.order_number not in numbers:
+        numbers.append(order.order_number)
+        request.session[SESSION_ORDER_KEY] = numbers[-30:]
+        request.session.modified = True
+
+
+def _order_form_initial(request):
+    """Prefill the order form from the signed-in account, so a returning
+    shopper does not retype their name, number and address every time."""
+    customer = get_customer(request)
+    if not customer:
+        return {}
+    return {
+        'full_name': customer.full_name,
+        'phone': customer.phone,
+        'email': customer.email,
+        'district': customer.district,
+        'courier_branch': customer.courier_branch,
+        'courier_branch_code': customer.courier_branch_code,
+        'address': customer.address,
+    }
+
+
+def _remember_delivery_details(request, form):
+    """Keep the address a signed-in shopper just used, for next time."""
+    customer = get_customer(request)
+    if not customer:
         return
-    try:
-        session_cart = Cart.objects.get(session_key=session_key, user__isnull=True)
-    except Cart.DoesNotExist:
-        return
-    user_cart, _ = Cart.objects.get_or_create(user=user)
-    for item in session_cart.items.all():
-        existing = user_cart.items.filter(product=item.product).first()
-        if existing:
-            existing.quantity += item.quantity
-            existing.save()
-        else:
-            item.cart = user_cart
-            item.save()
-    session_cart.delete()
+    customer.district = form.cleaned_data.get('district', '') or customer.district
+    customer.courier_branch = form.cleaned_data.get('courier_branch', '') or customer.courier_branch
+    customer.courier_branch_code = (form.cleaned_data.get('courier_branch_code', '')
+                                    or customer.courier_branch_code)
+    customer.address = form.cleaned_data.get('address', '') or customer.address
+    customer.save(update_fields=['district', 'courier_branch', 'courier_branch_code', 'address'])
 
 
 def _active_products():
@@ -186,6 +259,10 @@ def _avg_rating(product):
 def _review_count(product):
     """Get review count for a product."""
     return product.store_reviews.count()
+
+
+def _is_ajax(request):
+    return request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
 
 # ──────────────────── Landing Page ────────────────────
@@ -266,15 +343,15 @@ def product_detail(request, slug):
         for s in [5, 4, 3, 2, 1]
     ]
 
-    user_has_reviewed = False
-    if request.user.is_authenticated:
-        user_has_reviewed = reviews.filter(user=request.user).exists()
-
-    in_wishlist = False
-    if request.user.is_authenticated:
-        in_wishlist = Wishlist.objects.filter(user=request.user, product=product).exists()
-
+    in_wishlist = _wishlist_qs(request).filter(product=product).exists()
     avg_rating = _avg_rating(product)
+    customer = get_customer(request)
+
+    # How many of this product are already sitting in the cart — the
+    # quantity label reads "(N in cart)", as on the reference storefront.
+    cart = _get_cart(request)
+    in_cart_qty = next(
+        (i.quantity for i in cart.items.all() if i.product_id == product.pk), 0)
 
     # Bundle / variable product extras
     available_stock = product.available_stock
@@ -293,14 +370,18 @@ def product_detail(request, slug):
         'reviews': reviews,
         'related_products': related_products,
         'rating_dist': rating_dist,
-        'user_has_reviewed': user_has_reviewed,
-        'review_form': ReviewForm(),
+        'review_form': ReviewForm(name_required=customer is None),
+        'order_form': GuestOrderForm(initial=_order_form_initial(request)),
         'in_wishlist': in_wishlist,
         'avg_rating': avg_rating,
         'review_count': review_count,
         'available_stock': available_stock,
+        'in_cart_qty': in_cart_qty,
+        'customer': customer,
         'variant_options': variant_options,
         'bundle_components': bundle_components,
+        'product_image_url': _get_product_image(product),
+        'free_delivery_threshold': services.FREE_DELIVERY_THRESHOLD,
     })
 
 
@@ -386,7 +467,7 @@ def cart_view(request):
     cart = _get_cart(request)
     cart_items = cart.items.select_related('product').all()
     subtotal = cart.subtotal
-    shipping = 0 if subtotal >= 500 else 100
+    shipping = services.delivery_charge_for(subtotal)
     total = subtotal + shipping
     return render(request, 'store/cart.html', {
         'cart_items': cart_items,
@@ -409,7 +490,7 @@ def add_to_cart(request, product_id):
 
     # Stock validation — skip for backorder-enabled products
     if avail <= 0 and not product.backorders_allowed:
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        if _is_ajax(request):
             return JsonResponse({'success': False, 'message': 'This product is out of stock'})
         messages.error(request, 'This product is out of stock.')
         return redirect('store:product_detail', slug=product.slug)
@@ -434,11 +515,19 @@ def add_to_cart(request, product_id):
         item.selected_variant = selected_variant
         item.save()
 
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+    if _is_ajax(request):
         return JsonResponse({
             'success': True,
             'message': f'{product.name} added to cart',
             'count': cart.total_items,
+            # The product page shows this next to the quantity stepper, so
+            # send the true figure rather than letting the page add up its
+            # own — stock caps mean fewer units may have gone in than asked.
+            'item_quantity': item.quantity,
+            'name': product.name,
+            'image': _get_product_image(product),
+            'variant': item.selected_variant,
+            'line_total': str(item.line_total),
         })
     messages.success(request, f'{product.name} added to cart.')
     return redirect('store:cart')
@@ -451,7 +540,7 @@ def remove_from_cart(request, item_id):
     name = item.product.name
     item.delete()
 
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+    if _is_ajax(request):
         return JsonResponse({
             'success': True,
             'message': f'{name} removed from cart',
@@ -491,7 +580,7 @@ def update_cart(request):
         item.save()
 
     subtotal = cart.subtotal
-    shipping = 0 if subtotal >= 500 else 100
+    shipping = services.delivery_charge_for(subtotal)
     return JsonResponse({
         'success': True,
         'count': cart.total_items,
@@ -504,345 +593,587 @@ def update_cart(request):
 
 # ──────────────────── Wishlist ────────────────────
 
-@login_required(login_url='/store/login/')
 def wishlist_view(request):
-    wishlist_items = Wishlist.objects.filter(user=request.user).select_related('product')
+    wishlist_items = _wishlist_qs(request).select_related('product')
     return render(request, 'store/wishlist.html', {'wishlist_items': wishlist_items})
 
 
 @require_POST
 def toggle_wishlist(request, product_id):
-    if not request.user.is_authenticated:
-        return JsonResponse({'success': False, 'message': 'Login required', 'login_required': True})
-
     product = get_object_or_404(Product, pk=product_id)
-    wishlist_item = Wishlist.objects.filter(user=request.user, product=product)
-    if wishlist_item.exists():
-        wishlist_item.delete()
+    customer = get_customer(request)
+    if customer:
+        defaults = {'customer': customer, 'session_key': _session_key(request)}
+    elif request.user.is_authenticated:
+        defaults = {'user': request.user}
+    else:
+        defaults = {'session_key': _session_key(request)}
+
+    existing = _wishlist_qs(request).filter(product=product)
+    if existing.exists():
+        existing.delete()
         added = False
     else:
-        Wishlist.objects.create(user=request.user, product=product)
+        Wishlist.objects.create(product=product, **defaults)
         added = True
 
     return JsonResponse({
         'success': True,
         'added': added,
         'message': 'Added to wishlist' if added else 'Removed from wishlist',
-        'count': Wishlist.objects.filter(user=request.user).count(),
+        'count': _wishlist_qs(request).count(),
     })
 
 
-# ──────────────────── Checkout & Orders ────────────────────
+# ──────────────────── Order form plumbing ────────────────────
 
-@login_required(login_url='/store/login/')
-def checkout_view(request):
-    cart = _get_cart(request)
-    cart_items = cart.items.select_related('product').all()
-    if not cart_items.exists():
-        messages.warning(request, 'Your cart is empty.')
-        return redirect('store:cart')
-
-    subtotal = cart.subtotal
-    shipping = 0 if subtotal >= 500 else 100
-    total = subtotal + shipping
-
-    if request.method == 'POST':
-        form = CheckoutForm(request.POST)
-        if form.is_valid():
-            order_type = request.POST.get('order_type', 'confirmed')
-            if order_type not in ('confirmed', 'inquiry'):
-                order_type = 'confirmed'
-
-            # Stock validation only for confirmed orders
-            if order_type == 'confirmed':
-                for item in cart_items:
-                    avail = item.product.available_stock
-                    if item.quantity > avail and not item.product.backorders_allowed:
-                        messages.error(request, f'"{item.product.name}" only has {avail} in stock.')
-                        return redirect('store:cart')
-
-            address_parts = [
-                form.cleaned_data['address_line1'],
-                form.cleaned_data.get('address_line2', ''),
-                form.cleaned_data['city'],
-                form.cleaned_data['province'],
-            ]
-            address = ', '.join(p for p in address_parts if p)
-
-            order = Order.objects.create(
-                user=request.user,
-                full_name=form.cleaned_data['full_name'],
-                order_type=order_type,
-                total_price=total,
-                shipping_address=address,
-                phone=form.cleaned_data['phone'],
-                email=form.cleaned_data['email'],
-                city=form.cleaned_data['city'],
-                province=form.cleaned_data['province'],
-            )
-            for item in cart_items:
-                OrderItem.objects.create(
-                    order=order,
-                    product=item.product,
-                    quantity=item.quantity,
-                    price=item.product.price,
-                    selected_variant=item.selected_variant,
-                )
-            # Create dashboard order for admin visibility
-            _create_dashboard_order(
-                user=request.user,
-                full_name=form.cleaned_data['full_name'],
-                phone=form.cleaned_data['phone'],
-                email=form.cleaned_data['email'],
-                address=address,
-                city=form.cleaned_data['city'],
-                order_type=order_type,
-                items_data=[
-                    {'product': ci.product, 'quantity': ci.quantity, 'price': ci.product.price}
-                    for ci in cart_items
-                ],
-                total_amount=total,
-                shipping_charge=shipping,
-            )
-
-            # Allocate stock via inventory service for confirmed orders
-            if order_type == 'confirmed':
-                from inventory.services import allocate_order
-                allocate_order(order)
-                cart_items.delete()
-                messages.success(request, f'Order confirmed! Order number: {order.order_number}')
-            else:
-                messages.success(request, f'Inquiry submitted! Reference number: {order.order_number}')
-            return redirect('store:order_detail', order_number=order.order_number)
-    else:
-        form = CheckoutForm(initial={
-            'full_name': f'{request.user.first_name} {request.user.last_name}'.strip(),
-            'email': request.user.email,
-        })
-
-    return render(request, 'store/checkout.html', {
-        'form': form,
-        'cart_items': cart_items,
-        'subtotal': subtotal,
-        'shipping': shipping,
-        'total': total,
-    })
-
-
-@login_required(login_url='/store/login/')
-def order_list(request):
-    orders = Order.objects.filter(user=request.user)
-    return render(request, 'store/orders.html', {'orders': orders})
-
-
-@login_required(login_url='/store/login/')
-def order_detail(request, order_number):
-    order = get_object_or_404(Order, order_number=order_number, user=request.user)
-    return render(request, 'store/order_detail.html', {'order': order})
-
-
-# ──────────────────── Auth ────────────────────
-
-def customer_login(request):
-    if request.user.is_authenticated:
-        return redirect('store:landing')
-    if request.method == 'POST':
-        form = LoginForm(request, data=request.POST)
-        if form.is_valid():
-            user = form.get_user()
-            login(request, user)
-            _merge_session_cart(request, user)
-            messages.success(request, f'Welcome back, {user.first_name or user.username}!')
-            next_url = request.GET.get('next', '/store/')
-            return redirect(next_url)
-    else:
-        form = LoginForm()
-    return render(request, 'store/login.html', {'form': form})
-
-
-def customer_register(request):
-    if request.user.is_authenticated:
-        return redirect('store:landing')
-    if request.method == 'POST':
-        form = RegisterForm(request.POST)
-        if form.is_valid():
-            user = form.save()
-            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-            _merge_session_cart(request, user)
-            messages.success(request, 'Account created successfully!')
-            return redirect('store:landing')
-    else:
-        form = RegisterForm()
-    return render(request, 'store/register.html', {'form': form})
+def locations_json(request):
+    """District → courier-branch catalogue driving the order form's two selects."""
+    return JsonResponse(services.get_locations())
 
 
 @require_POST
-def customer_logout(request):
-    logout(request)
-    messages.success(request, 'You have been logged out.')
-    return redirect('store:landing')
+def apply_discount(request):
+    """Validate a discount code against a subtotal and return the new totals."""
+    try:
+        payload = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        payload = {}
 
+    code = (payload.get('code') or '').strip().upper()
+    district = (payload.get('district') or '').strip()
+    try:
+        subtotal = Decimal(str(payload.get('subtotal') or '0'))
+    except Exception:
+        subtotal = Decimal('0')
 
-@login_required(login_url='/store/login/')
-def customer_profile(request):
-    orders = Order.objects.filter(user=request.user)[:5]
-    wishlist_items = Wishlist.objects.filter(user=request.user).select_related('product')[:5]
-    return render(request, 'store/profile.html', {
-        'orders': orders,
-        'wishlist_items': wishlist_items,
+    discount, message = services.lookup_discount(code, subtotal)
+    totals = services.price_order(subtotal, district, discount)
+    return JsonResponse({
+        'success': discount is not None,
+        'message': message or ('' if discount else 'Enter a discount code.'),
+        'code': discount.code if discount else '',
+        'totals': {k: str(v) for k, v in totals.items()},
     })
 
 
-# ──────────────────── Reviews ────────────────────
+def quote_json(request):
+    """Live delivery/total quote as the shopper picks a district or changes qty."""
+    district = request.GET.get('district', '')
+    code = (request.GET.get('code') or '').strip().upper()
+    try:
+        subtotal = Decimal(str(request.GET.get('subtotal') or '0'))
+    except Exception:
+        subtotal = Decimal('0')
 
-@login_required(login_url='/store/login/')
-@require_POST
-def add_review(request, product_id):
-    product = get_object_or_404(Product, pk=product_id)
-    if ProductReview.objects.filter(product=product, user=request.user).exists():
-        messages.warning(request, 'You have already reviewed this product.')
-        return redirect('store:product_detail', slug=product.slug)
+    discount, _msg = services.lookup_discount(code, subtotal) if code else (None, '')
+    totals = services.price_order(subtotal, district, discount)
+    return JsonResponse({
+        'district_known': bool(district.strip()),
+        'inside_valley': services.is_inside_valley(district),
+        'totals': {k: str(v) for k, v in totals.items()},
+    })
 
-    form = ReviewForm(request.POST)
-    if form.is_valid():
-        ProductReview.objects.create(
-            product=product,
-            user=request.user,
-            rating=form.cleaned_data['rating'],
-            comment=form.cleaned_data['comment'],
+
+def _place_order(request, form, items, order_type, delivery_district):
+    """Shared tail of every checkout: price it, persist it, mirror it to the
+    dashboard, allocate stock. `items` is [{'product', 'quantity', 'price',
+    'variant'}]. Returns the store Order."""
+    from django.db import transaction
+
+    subtotal = sum(Decimal(str(i['price'])) * i['quantity'] for i in items)
+    discount, _msg = services.lookup_discount(form.cleaned_data.get('discount_code'), subtotal)
+    totals = services.price_order(subtotal, delivery_district, discount)
+
+    branch_code = (form.cleaned_data.get('courier_branch_code') or '').strip().upper()
+    branch = services.resolve_branch(delivery_district, branch_code)
+    branch_name = branch['name'] if branch else (form.cleaned_data.get('courier_branch') or '')
+
+    address_parts = [
+        form.cleaned_data['address'],
+        branch_name,
+        delivery_district,
+    ]
+    address = ', '.join(p for p in address_parts if p)
+
+    with transaction.atomic():
+        order = Order.objects.create(
+            user=request.user if request.user.is_authenticated else None,
+            customer=get_customer(request),
+            session_key=_session_key(request),
+            full_name=form.cleaned_data['full_name'],
+            order_type=order_type,
+            subtotal=totals['subtotal'],
+            delivery_charge=totals['delivery'],
+            discount_code=discount.code if discount else '',
+            discount_amount=totals['discount'],
+            total_price=totals['total'],
+            shipping_address=address,
+            phone=form.cleaned_data['phone'],
+            email=form.cleaned_data.get('email', ''),
+            city=delivery_district,
+            district=delivery_district,
+            courier_branch=branch_name,
+            courier_branch_code=branch_code,
+            note=form.cleaned_data.get('note', ''),
         )
-        messages.success(request, 'Review submitted successfully!')
-    else:
-        messages.error(request, 'Invalid review. Please provide a rating between 1-5.')
-    return redirect('store:product_detail', slug=product.slug)
+        for item in items:
+            OrderItem.objects.create(
+                order=order,
+                product=item['product'],
+                quantity=item['quantity'],
+                price=item['price'],
+                selected_variant=item.get('variant', ''),
+            )
+        if discount:
+            DiscountCode.objects.filter(pk=discount.pk).update(used_count=F('used_count') + 1)
+
+    _create_dashboard_order(
+        full_name=form.cleaned_data['full_name'],
+        phone=form.cleaned_data['phone'],
+        email=form.cleaned_data.get('email', ''),
+        address=address,
+        city=delivery_district,
+        order_type=order_type,
+        items_data=items,
+        total_amount=totals['total'],
+        shipping_charge=totals['delivery'],
+        user=request.user if request.user.is_authenticated else None,
+        district=delivery_district,
+        branch_code=branch_code,
+        branch_name=branch_name,
+        note=form.cleaned_data.get('note', ''),
+        discount_amount=totals['discount'],
+    )
+
+    # Inquiries are not commitments — they must not consume stock.
+    if order_type == 'confirmed':
+        from inventory.services import allocate_order
+        allocate_order(order)
+
+    _remember_order(request, order)
+    _remember_delivery_details(request, form)
+    return order
 
 
-# ──────────────────── Quick Order (from product detail) ────────────────────
+# ──────────────────── Quick order (product page) ────────────────────
 
 def quick_order(request, product_id):
-    """Direct order from product detail — shows a mini checkout form."""
+    """Guest order form for a single product.
+
+    POSTed by the inline panel on the product page (as JSON-answering AJAX) and
+    rendered as a standalone page when JavaScript is unavailable.
+    """
     product = get_object_or_404(Product, pk=product_id, is_active=True, is_deleted=False)
-
-    # Require login — redirect back to product page after login
-    if not request.user.is_authenticated:
-        return redirect(f'/store/login/?next=/store/products/{product.slug}/')
-
     available_stock = product.available_stock
 
     if request.method == 'POST':
-        form = CheckoutForm(request.POST)
-        if form.is_valid():
-            try:
-                quantity = max(1, min(int(request.POST.get('quantity', 1)), available_stock))
-            except (ValueError, TypeError):
-                quantity = 1
-
-            order_type = request.POST.get('order_type', 'confirmed')
-            if order_type not in ('confirmed', 'inquiry'):
-                order_type = 'confirmed'
-
-            selected_variant = request.POST.get('selected_variant', '')[:500]
-
-            if order_type == 'confirmed' and available_stock <= 0 and not product.backorders_allowed:
-                messages.error(request, 'This product is out of stock.')
-                return redirect('store:product_detail', slug=product.slug)
-
-            if order_type == 'confirmed' and quantity > available_stock and not product.backorders_allowed:
-                messages.error(request, f'Only {available_stock} unit(s) available.')
-                return redirect('store:product_detail', slug=product.slug)
-
-            subtotal = product.price * quantity
-            shipping = 0 if subtotal >= 500 else 100
-            total = subtotal + shipping
-
-            address_parts = [
-                form.cleaned_data['address_line1'],
-                form.cleaned_data.get('address_line2', ''),
-                form.cleaned_data['city'],
-                form.cleaned_data['province'],
-            ]
-            address = ', '.join(p for p in address_parts if p)
-
-            order = Order.objects.create(
-                user=request.user,
-                full_name=form.cleaned_data['full_name'],
-                order_type=order_type,
-                total_price=total,
-                shipping_address=address,
-                phone=form.cleaned_data['phone'],
-                email=form.cleaned_data['email'],
-                city=form.cleaned_data['city'],
-                province=form.cleaned_data['province'],
-            )
-            OrderItem.objects.create(
-                order=order,
-                product=product,
-                quantity=quantity,
-                price=product.price,
-                selected_variant=selected_variant,
-            )
-
-            # Create dashboard order for admin visibility
-            _create_dashboard_order(
-                user=request.user,
-                full_name=form.cleaned_data['full_name'],
-                phone=form.cleaned_data['phone'],
-                email=form.cleaned_data['email'],
-                address=address,
-                city=form.cleaned_data['city'],
-                order_type=order_type,
-                items_data=[
-                    {'product': product, 'quantity': quantity, 'price': product.price}
-                ],
-                total_amount=total,
-                shipping_charge=shipping,
-            )
-
-            if order_type == 'confirmed':
-                from inventory.services import allocate_order
-                allocate_order(order)
-                messages.success(request, f'Order confirmed! Order #{order.order_number}')
-            else:
-                messages.success(request, f'Inquiry submitted! Reference #{order.order_number}')
-
-            return redirect('store:order_detail', order_number=order.order_number)
-
-        # Form invalid — re-render with errors
+        form = GuestOrderForm(request.POST)
+        order_type = request.POST.get('order_type', 'confirmed')
+        if order_type not in ('confirmed', 'inquiry'):
+            order_type = 'confirmed'
+        selected_variant = request.POST.get('selected_variant', '')[:500]
         try:
             quantity = max(1, int(request.POST.get('quantity', 1)))
         except (ValueError, TypeError):
             quantity = 1
-        order_type = request.POST.get('order_type', 'confirmed')
-        selected_variant = request.POST.get('selected_variant', '')[:500]
+
+        if form.is_valid():
+            district = form.cleaned_data['district']
+
+            # Stock only gates a real commitment; an inquiry may exceed it.
+            if order_type == 'confirmed' and not product.backorders_allowed:
+                if available_stock <= 0:
+                    return _order_error(request, product, 'This product is out of stock.')
+                if quantity > available_stock:
+                    return _order_error(request, product, f'Only {available_stock} unit(s) available.')
+
+            order = _place_order(
+                request, form,
+                items=[{
+                    'product': product, 'quantity': quantity,
+                    'price': product.price, 'variant': selected_variant,
+                }],
+                order_type=order_type,
+                delivery_district=district,
+            )
+
+            if _is_ajax(request):
+                return JsonResponse({
+                    'success': True,
+                    'order_number': order.order_number,
+                    'order_type': order.order_type,
+                    'total': str(order.total_price),
+                    'redirect': f'/store/orders/{order.order_number}/',
+                })
+
+            if order_type == 'confirmed':
+                messages.success(request, f'Order confirmed! Order #{order.order_number}')
+            else:
+                messages.success(request, f'Inquiry submitted! Reference #{order.order_number}')
+            return redirect('store:order_detail', order_number=order.order_number)
+
+        if _is_ajax(request):
+            return JsonResponse({
+                'success': False,
+                'errors': {f: [str(e) for e in errs] for f, errs in form.errors.items()},
+                'message': 'Please correct the highlighted fields.',
+            }, status=400)
     else:
-        # GET — pre-fill form and show quick checkout
         try:
             quantity = max(1, min(int(request.GET.get('qty', 1)), max(available_stock, 1)))
         except (ValueError, TypeError):
             quantity = 1
         order_type = request.GET.get('order_type', 'confirmed')
+        if order_type not in ('confirmed', 'inquiry'):
+            order_type = 'confirmed'
         selected_variant = request.GET.get('variant', '')[:500]
-        form = CheckoutForm(initial={
-            'full_name': f'{request.user.first_name} {request.user.last_name}'.strip(),
-            'email': request.user.email,
-        })
+        form = GuestOrderForm(initial=_order_form_initial(request))
 
     subtotal = product.price * quantity
-    shipping = 0 if subtotal >= 500 else 100
+    totals = services.price_order(subtotal)
 
     return render(request, 'store/quick_checkout.html', {
         'product': product,
         'quantity': quantity,
         'order_type': order_type,
         'form': form,
-        'subtotal': subtotal,
-        'shipping': shipping,
-        'total': subtotal + shipping,
+        'subtotal': totals['subtotal'],
+        'shipping': totals['delivery'],
+        'total': totals['total'],
         'available_stock': available_stock,
         'selected_variant': selected_variant,
+        'product_image_url': _get_product_image(product),
     })
 
+
+def _order_error(request, product, message):
+    if _is_ajax(request):
+        return JsonResponse({'success': False, 'message': message}, status=400)
+    messages.error(request, message)
+    return redirect('store:product_detail', slug=product.slug)
+
+
+# ──────────────────── Cart checkout ────────────────────
+
+def checkout_view(request):
+    cart = _get_cart(request)
+    cart_items = list(cart.items.select_related('product').all())
+    if not cart_items:
+        messages.warning(request, 'Your cart is empty.')
+        return redirect('store:cart')
+
+    subtotal = cart.subtotal
+
+    if request.method == 'POST':
+        form = GuestOrderForm(request.POST)
+        order_type = request.POST.get('order_type', 'confirmed')
+        if order_type not in ('confirmed', 'inquiry'):
+            order_type = 'confirmed'
+
+        if form.is_valid():
+            if order_type == 'confirmed':
+                for item in cart_items:
+                    avail = item.product.available_stock
+                    if item.quantity > avail and not item.product.backorders_allowed:
+                        msg = f'"{item.product.name}" only has {avail} in stock.'
+                        if _is_ajax(request):
+                            return JsonResponse({'success': False, 'message': msg}, status=400)
+                        messages.error(request, msg)
+                        return redirect('store:cart')
+
+            order = _place_order(
+                request, form,
+                items=[{
+                    'product': ci.product, 'quantity': ci.quantity,
+                    'price': ci.product.price, 'variant': ci.selected_variant,
+                } for ci in cart_items],
+                order_type=order_type,
+                delivery_district=form.cleaned_data['district'],
+            )
+
+            if order_type == 'confirmed':
+                cart.items.all().delete()
+
+            if _is_ajax(request):
+                return JsonResponse({
+                    'success': True,
+                    'order_number': order.order_number,
+                    'order_type': order.order_type,
+                    'total': str(order.total_price),
+                    'redirect': f'/store/orders/{order.order_number}/',
+                })
+
+            if order_type == 'confirmed':
+                messages.success(request, f'Order confirmed! Order number: {order.order_number}')
+            else:
+                messages.success(request, f'Inquiry submitted! Reference number: {order.order_number}')
+            return redirect('store:order_detail', order_number=order.order_number)
+
+        if _is_ajax(request):
+            return JsonResponse({
+                'success': False,
+                'errors': {f: [str(e) for e in errs] for f, errs in form.errors.items()},
+                'message': 'Please correct the highlighted fields.',
+            }, status=400)
+    else:
+        form = GuestOrderForm(initial=_order_form_initial(request))
+
+    totals = services.price_order(subtotal)
+    return render(request, 'store/checkout.html', {
+        'form': form,
+        'cart_items': cart_items,
+        'subtotal': totals['subtotal'],
+        'shipping': totals['delivery'],
+        'total': totals['total'],
+    })
+
+
+# ──────────────────── Order lookup ────────────────────
+
+def order_track(request):
+    """Replaces "My Orders": find an order by number + the phone on it."""
+    form = OrderTrackForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        order = Order.objects.filter(
+            order_number=form.cleaned_data['order_number'],
+            phone=form.cleaned_data['phone'],
+        ).first()
+        if order:
+            _remember_order(request, order)
+            return redirect('store:order_detail', order_number=order.order_number)
+        messages.error(request, 'No order matches that number and mobile number.')
+
+    recent = _visible_orders(request)[:10]
+    return render(request, 'store/orders.html', {
+        'form': form,
+        'recent_orders': recent,
+        'customer': get_customer(request),
+    })
+
+
+def _visible_orders(request):
+    """Orders this visitor may open: everything on the account when signed
+    in, plus whatever this browser placed as a guest."""
+    customer = get_customer(request)
+    lookup = Q(order_number__in=request.session.get(SESSION_ORDER_KEY, []))
+    session_key = request.session.session_key
+    if session_key:
+        lookup |= Q(session_key=session_key)
+    if customer:
+        lookup |= Q(customer=customer)
+        if customer.phone:
+            lookup |= Q(phone=customer.phone)
+    return Order.objects.filter(lookup).distinct()
+
+
+def order_detail(request, order_number):
+    order = Order.objects.filter(order_number=order_number).first()
+    if order is None:
+        raise Http404('Order not found')
+
+    customer = get_customer(request)
+    allowed = (
+        order.order_number in request.session.get(SESSION_ORDER_KEY, [])
+        or (order.session_key and order.session_key == request.session.session_key)
+        or (customer is not None and order.customer_id == customer.pk)
+        or (customer is not None and order.phone and order.phone == customer.phone)
+        or (request.user.is_authenticated and order.user_id == request.user.id)
+    )
+    if not allowed:
+        messages.info(request, 'Enter your mobile number to open this order.')
+        return redirect('store:order_track')
+
+    return render(request, 'store/order_detail.html', {'order': order})
+
+
+# ──────────────────── Reviews ────────────────────
+
+@require_POST
+def add_review(request, product_id):
+    """Anyone may review, signed in or not — matching the reference store,
+    where an account is never demanded to leave feedback."""
+    product = get_object_or_404(Product, pk=product_id)
+    customer = get_customer(request)
+    form = ReviewForm(request.POST, name_required=customer is None)
+    if form.is_valid():
+        ProductReview.objects.create(
+            product=product,
+            user=request.user if request.user.is_authenticated else None,
+            customer=customer,
+            session_key=_session_key(request),
+            guest_name=form.cleaned_data['guest_name'],
+            rating=form.cleaned_data['rating'],
+            comment=form.cleaned_data['comment'],
+        )
+        messages.success(request, 'Thanks — your review has been posted.')
+    else:
+        messages.error(request, 'Please add your name and a rating.')
+    return redirect('store:product_detail', slug=product.slug)
+
+
+# ──────────────────── Static pages ────────────────────
 
 def dynamic_page(request, slug):
     page = get_object_or_404(Page, slug=slug, is_published=True)
     return render(request, 'store/page_detail.html', {'page': page})
+
+
+# ──────────────────── Customer accounts ────────────────────
+# Optional throughout: nothing below is required to shop, place an order or
+# track one. Signing in only saves the shopper retyping their details and
+# keeps their order history in one place.
+
+def _login_locked(request):
+    """True while this session is serving a cool-off after repeated failures."""
+    import time
+    state = request.session.get(LOGIN_ATTEMPT_KEY) or {}
+    if state.get('count', 0) < MAX_LOGIN_ATTEMPTS:
+        return False
+    if time.time() - state.get('at', 0) > LOGIN_LOCKOUT_SECONDS:
+        request.session.pop(LOGIN_ATTEMPT_KEY, None)
+        return False
+    return True
+
+
+def _note_login_failure(request):
+    import time
+    state = request.session.get(LOGIN_ATTEMPT_KEY) or {'count': 0}
+    state['count'] = state.get('count', 0) + 1
+    state['at'] = time.time()
+    request.session[LOGIN_ATTEMPT_KEY] = state
+    request.session.modified = True
+
+
+def account_login(request):
+    if get_customer(request):
+        return redirect(safe_next(request))
+
+    form = CustomerLoginForm(request.POST or None)
+    if request.method == 'POST':
+        if _login_locked(request):
+            messages.error(request, 'Too many failed attempts. Please try again in a few minutes.')
+        elif form.is_valid():
+            customer = form.get_customer()
+            if customer:
+                # `next` is read before login_customer() cycles the session.
+                target = safe_next(request)
+                request.session.pop(LOGIN_ATTEMPT_KEY, None)
+                login_customer(request, customer)
+                messages.success(request, f'Welcome back, {customer.first_name}.')
+                return redirect(target)
+            _note_login_failure(request)
+            # One message for both wrong-password and no-such-account, so the
+            # form cannot be used to discover which numbers are registered.
+            form.add_error(None, 'Those details do not match an account.')
+
+    return render(request, 'store/account_login.html', {
+        'form': form,
+        'next': request.POST.get('next') or request.GET.get('next', ''),
+    })
+
+
+def account_register(request):
+    if get_customer(request):
+        return redirect(safe_next(request))
+
+    form = CustomerRegisterForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        customer = StoreCustomer(
+            full_name=form.cleaned_data['full_name'],
+            email=form.cleaned_data['email'],
+            phone=form.cleaned_data['phone'],
+        )
+        customer.set_password(form.cleaned_data['password'])
+        customer.save()
+
+        target = safe_next(request)
+        login_customer(request, customer)
+        messages.success(request, f'Account created. Welcome, {customer.first_name}.')
+        return redirect(target)
+
+    return render(request, 'store/account_register.html', {
+        'form': form,
+        'next': request.POST.get('next') or request.GET.get('next', ''),
+    })
+
+
+@require_POST
+def account_logout(request):
+    logout_customer(request)
+    messages.success(request, 'You have been logged out.')
+    return redirect('store:landing')
+
+
+@customer_required
+def account_home(request):
+    customer = get_customer(request)
+    orders = _visible_orders(request).prefetch_related('items__product')[:25]
+    return render(request, 'store/account.html', {
+        'customer': customer,
+        'orders': orders,
+        'profile_form': CustomerProfileForm(customer=customer, initial={
+            'full_name': customer.full_name,
+            'email': customer.email,
+            'phone': customer.phone,
+            'district': customer.district,
+            'address': customer.address,
+        }),
+        'password_form': PasswordChangeForm(customer=customer),
+        'saved_products': _wishlist_qs(request).select_related('product')[:8],
+    })
+
+
+@customer_required
+@require_POST
+def account_profile(request):
+    customer = get_customer(request)
+    form = CustomerProfileForm(request.POST, customer=customer)
+    if form.is_valid():
+        customer.full_name = form.cleaned_data['full_name']
+        customer.email = form.cleaned_data['email']
+        customer.phone = form.cleaned_data['phone']
+        customer.district = form.cleaned_data['district']
+        customer.address = form.cleaned_data['address']
+        customer.save(update_fields=['full_name', 'email', 'phone', 'district', 'address'])
+        messages.success(request, 'Your details have been saved.')
+        return redirect('store:account')
+
+    return render(request, 'store/account.html', {
+        'customer': customer,
+        'orders': _visible_orders(request).prefetch_related('items__product')[:25],
+        'profile_form': form,
+        'password_form': PasswordChangeForm(customer=customer),
+        'saved_products': _wishlist_qs(request).select_related('product')[:8],
+        'open_panel': 'details',
+    })
+
+
+@customer_required
+@require_POST
+def account_password(request):
+    customer = get_customer(request)
+    form = PasswordChangeForm(request.POST, customer=customer)
+    if form.is_valid():
+        customer.set_password(form.cleaned_data['new_password'])
+        customer.save(update_fields=['password'])
+        # A password change invalidates other sessions elsewhere in Django; do
+        # the same here by re-establishing this one on a fresh key.
+        login_customer(request, customer)
+        messages.success(request, 'Your password has been changed.')
+        return redirect('store:account')
+
+    return render(request, 'store/account.html', {
+        'customer': customer,
+        'orders': _visible_orders(request).prefetch_related('items__product')[:25],
+        'profile_form': CustomerProfileForm(customer=customer, initial={
+            'full_name': customer.full_name,
+            'email': customer.email,
+            'phone': customer.phone,
+            'district': customer.district,
+            'address': customer.address,
+        }),
+        'password_form': form,
+        'saved_products': _wishlist_qs(request).select_related('product')[:8],
+        'open_panel': 'password',
+    })

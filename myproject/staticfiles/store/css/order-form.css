@@ -1,0 +1,798 @@
+/* ═══════════════════════════════════════════════════════════════════
+   ORDER-FORM.CSS — the guest Confirm Order / Inquiry Only panel.
+   Used on the product page (inline, beside the gallery), on the
+   standalone quick-order page, and at cart checkout.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.order-form-panel {
+    --of-accent:        #D32F2F;
+    --of-accent-dark:   #A31515;
+    --of-ink:           #23201C;
+    --of-muted:         #7A736B;
+    --of-line:          #E8DFCF;
+    --of-field-line:    #E0D6C4;
+    --of-paper:         #FFFDF7;
+    --of-paper-2:       #FBF4E4;
+    --of-radius:        16px;
+
+    /* Everything below sizes itself against THIS box, not the viewport —
+       see the responsive section at the foot of the file. */
+    container-type: inline-size;
+    container-name: ofpanel;
+
+    position: relative;
+    background:
+        linear-gradient(180deg, #FFFDF7 0%, #FEF9EC 100%);
+    border: 1px solid var(--of-line);
+    border-radius: var(--of-radius);
+    box-shadow:
+        0 1px 2px rgba(35,32,28,0.04),
+        0 12px 34px -14px rgba(35,32,28,0.22);
+    font-family: 'Roboto', system-ui, sans-serif;
+    color: var(--of-ink);
+    /* Nothing inside may push the page sideways in a narrow column. */
+    max-width: 100%;
+    overflow-wrap: break-word;
+}
+.order-form-panel *, .order-form-panel *::before, .order-form-panel *::after {
+    box-sizing: border-box;
+}
+
+/* A thin warm rule along the top edge reads as a "form" without the
+   heavy all-yellow block the old design used. */
+.order-form-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    border-radius: var(--of-radius) var(--of-radius) 0 0;
+    background: linear-gradient(90deg, #F85606, #D32F2F 55%, #F0A500);
+}
+
+/* ── Header ───────────────────────────────────────────────── */
+.of-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 20px 22px 16px;
+    border-bottom: 1px dashed var(--of-line);
+}
+.of-head-icon {
+    flex-shrink: 0;
+    width: 38px; height: 38px;
+    display: grid; place-items: center;
+    border-radius: 11px;
+    background: linear-gradient(145deg, #FFE9D6, #FFD3B4);
+    color: var(--of-accent);
+}
+.of-head-text { flex: 1; min-width: 0; }
+.of-title {
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.2px;
+    line-height: 1.25;
+    margin: 0;
+    color: var(--of-ink);
+}
+.of-subtitle {
+    font-size: 12.5px;
+    color: var(--of-muted);
+    margin: 3px 0 0;
+    line-height: 1.45;
+}
+.of-mode-chip {
+    flex-shrink: 0;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+    transition: background 0.25s, color 0.25s;
+}
+.of-mode-chip[data-mode="confirmed"] { background: #FDE7E7; color: var(--of-accent-dark); }
+.of-mode-chip[data-mode="inquiry"]   { background: #E7E7E9; color: #2A2A2E; }
+
+/* ── Body ─────────────────────────────────────────────────── */
+.of-body { padding: 18px 22px 22px; }
+
+/* ── Item strip ───────────────────────────────────────────── */
+.of-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+.of-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    background: #fff;
+    border: 1px solid var(--of-field-line);
+    border-radius: 12px;
+}
+.of-item-thumb {
+    position: relative;
+    width: 46px; height: 46px;
+    flex-shrink: 0;
+    border-radius: 9px;
+    overflow: hidden;
+    background: #F3F0EA;
+}
+.of-item-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.of-item-qty {
+    position: absolute;
+    top: -6px; right: -6px;
+    min-width: 20px; height: 20px;
+    padding: 0 5px;
+    display: grid; place-items: center;
+    border-radius: 999px;
+    background: var(--of-accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    border: 2px solid #fff;
+}
+.of-item-meta { flex: 1; min-width: 0; }
+.of-item-name {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.of-item-variant {
+    font-size: 11.5px;
+    color: var(--primary, #F85606);
+    font-weight: 600;
+    margin: 2px 0 0;
+}
+.of-item-price {
+    font-size: 13.5px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* ── Quantity stepper ─────────────────────────────────────── */
+.of-qty-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 12px;
+    background: #fff;
+    border: 1px solid var(--of-field-line);
+    border-radius: 12px;
+    margin-bottom: 14px;
+}
+.of-qty-label { font-size: 12.5px; font-weight: 600; color: var(--of-muted); }
+.of-stepper {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--of-field-line);
+    border-radius: 9px;
+    overflow: hidden;
+}
+.of-stepper button {
+    width: 30px; height: 30px;
+    border: none;
+    background: #FAF7F0;
+    font-size: 17px;
+    line-height: 1;
+    color: var(--of-ink);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.of-stepper button:hover:not(:disabled) { background: #F1E9D9; }
+.of-stepper button:disabled { opacity: 0.35; cursor: not-allowed; }
+.of-stepper input {
+    width: 42px; height: 30px;
+    border: none;
+    border-left: 1px solid var(--of-field-line);
+    border-right: 1px solid var(--of-field-line);
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: inherit;
+    color: var(--of-ink);
+    background: #fff;
+    -moz-appearance: textfield;
+}
+.of-stepper input::-webkit-outer-spin-button,
+.of-stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ── Delivery notice ──────────────────────────────────────── */
+.of-notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 11px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    font-weight: 500;
+    margin-bottom: 16px;
+    background: #E8F7EE;
+    color: #096B3A;
+    border: 1px solid #C4E9D4;
+    transition: background 0.25s, color 0.25s, border-color 0.25s;
+}
+.of-notice svg { flex-shrink: 0; }
+.of-notice strong { font-weight: 800; }
+.of-notice[data-tone="paid"] {
+    background: #FFF6E5;
+    color: #8A5A00;
+    border-color: #F2DFB8;
+}
+
+/* ── Fields ───────────────────────────────────────────────── */
+.of-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.of-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.of-field.of-span-2 { grid-column: 1 / -1; }
+
+.of-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--of-muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.of-label .of-req { color: var(--of-accent); font-size: 13px; line-height: 1; }
+.of-label .of-optional {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
+    font-size: 11px;
+    color: #A79E92;
+}
+
+/* Class-only on purpose: an element selector here would out-specify
+   .of-combo-input and draw a second border inside each combobox. */
+.of-input {
+    width: 100%;
+    padding: 11px 13px;
+    font-family: inherit;
+    font-size: 13.5px;
+    color: var(--of-ink);
+    background: #fff;
+    border: 1.5px solid var(--of-field-line);
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+}
+.of-input::placeholder { color: #B3AA9E; }
+.of-input:hover:not(:disabled) { border-color: #CDBFA6; }
+.of-input:focus {
+    border-color: var(--of-accent);
+    box-shadow: 0 0 0 3.5px rgba(211,47,47,0.11);
+}
+.of-input:disabled {
+    background: #F6F2EA;
+    color: #A79E92;
+    cursor: not-allowed;
+}
+
+/* Native select fallback (no-JS page) */
+select.of-input {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%237A736B' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 13px center;
+    padding-right: 34px;
+    cursor: pointer;
+}
+
+.of-error {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--of-accent);
+    display: none;
+    align-items: center;
+    gap: 4px;
+    line-height: 1.35;
+}
+.of-field.has-error .of-error { display: flex; }
+.of-field.has-error .of-input,
+.of-field.has-error .of-combo-control {
+    border-color: var(--of-accent);
+    background: #FFFAFA;
+}
+.of-hint {
+    font-size: 11.5px;
+    color: var(--of-muted);
+    line-height: 1.4;
+}
+
+/* ── Searchable combobox (district / branch) ──────────────── */
+.of-combo { position: relative; }
+.of-combo-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 11px 13px;
+    background: #fff;
+    border: 1.5px solid var(--of-field-line);
+    border-radius: 10px;
+    cursor: text;
+    transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+}
+.of-combo-control:hover { border-color: #CDBFA6; }
+.of-combo.is-open .of-combo-control {
+    border-color: var(--of-accent);
+    box-shadow: 0 0 0 3.5px rgba(211,47,47,0.11);
+}
+.of-combo.is-disabled .of-combo-control {
+    background: #F6F2EA;
+    cursor: not-allowed;
+}
+.of-combo-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 13.5px;
+    color: var(--of-ink);
+    padding: 0;
+    text-overflow: ellipsis;
+}
+.of-combo-input::placeholder { color: #B3AA9E; }
+.of-combo-input:disabled { cursor: not-allowed; color: #A79E92; }
+.of-combo-caret {
+    flex-shrink: 0;
+    color: var(--of-muted);
+    transition: transform 0.2s ease;
+    pointer-events: none;
+}
+.of-combo.is-open .of-combo-caret { transform: rotate(180deg); }
+
+.of-combo-list {
+    position: absolute;
+    /* Above page content (cards sit at 10), below the sticky navbar at 1000. */
+    z-index: 900;
+    top: calc(100% + 6px);
+    left: 0; right: 0;
+    max-height: 264px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: #fff;
+    border: 1px solid var(--of-field-line);
+    border-radius: 12px;
+    box-shadow: 0 18px 42px -12px rgba(35,32,28,0.3);
+    padding: 5px;
+    display: none;
+}
+.of-combo.is-open .of-combo-list { display: block; }
+/* Flipped by order-form.js when the field sits too low in the viewport. */
+.of-combo.is-up .of-combo-list {
+    top: auto;
+    bottom: calc(100% + 6px);
+}
+.of-combo-option {
+    padding: 9px 11px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1.35;
+}
+.of-combo-option:hover,
+.of-combo-option.is-active { background: #FDF0EA; }
+.of-combo-option[aria-selected="true"] { background: #FDE7E7; font-weight: 700; }
+.of-combo-option-title { font-weight: 600; }
+.of-combo-option-sub {
+    font-size: 11.5px;
+    color: var(--of-muted);
+    margin-top: 2px;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.of-combo-empty {
+    padding: 14px 11px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--of-muted);
+}
+
+/* ── Discount row ─────────────────────────────────────────── */
+.of-discount { margin-top: 14px; }
+.of-discount-row { display: flex; gap: 8px; }
+.of-discount-row .of-input { flex: 1; text-transform: uppercase; }
+.of-discount-row .of-input::placeholder { text-transform: none; }
+.of-apply-btn {
+    flex-shrink: 0;
+    padding: 0 20px;
+    min-height: 43px;
+    border: none;
+    border-radius: 10px;
+    background: var(--of-ink);
+    color: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.18s, transform 0.12s;
+}
+.of-apply-btn:hover:not(:disabled) { background: #3A3530; }
+.of-apply-btn:active:not(:disabled) { transform: scale(0.97); }
+.of-apply-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.of-discount-msg {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    margin-top: 7px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+.of-discount-msg.is-visible { display: flex; }
+.of-discount-msg[data-tone="ok"]   { color: #0A7C3F; }
+.of-discount-msg[data-tone="bad"]  { color: var(--of-accent); }
+
+/* ── Totals ───────────────────────────────────────────────── */
+.of-totals {
+    margin-top: 16px;
+    background: #fff;
+    border: 1px solid var(--of-field-line);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.of-total-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--of-muted);
+}
+.of-total-row + .of-total-row { border-top: 1px solid #F3EDE1; }
+.of-total-row span:last-child { font-weight: 600; color: var(--of-ink); }
+.of-total-row.is-free span:last-child { color: #0A7C3F; font-weight: 800; }
+.of-total-row.is-pending span:last-child { color: var(--of-muted); font-weight: 500; font-size: 12px; }
+.of-total-row.is-discount span:last-child { color: #0A7C3F; }
+.of-total-row.of-grand {
+    background: linear-gradient(180deg, #FFF8E8, #FDF1D8);
+    border-top: 1px solid var(--of-field-line);
+    padding: 13px 14px;
+}
+.of-total-row.of-grand span:first-child {
+    font-size: 13.5px;
+    font-weight: 800;
+    color: var(--of-ink);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.of-total-row.of-grand span:last-child {
+    font-size: 19px;
+    font-weight: 800;
+    color: var(--of-accent);
+    letter-spacing: -0.4px;
+}
+.of-total-row[hidden] { display: none; }
+
+/* Numbers flash softly when they change, so the shopper notices. */
+@keyframes ofValuePulse {
+    0%   { transform: translateY(-2px); opacity: 0.35; }
+    100% { transform: translateY(0);    opacity: 1; }
+}
+.of-value-changed { animation: ofValuePulse 0.28s cubic-bezier(0.22,1,0.36,1); display: inline-block; }
+
+/* ── COD reassurance ──────────────────────────────────────── */
+.of-assurance {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin-top: 12px;
+}
+.of-assurance li {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--of-muted);
+}
+.of-assurance svg { color: #0A7C3F; flex-shrink: 0; }
+
+/* ── Actions ──────────────────────────────────────────────── */
+.of-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 18px;
+}
+.of-submit {
+    -webkit-appearance: none;
+    appearance: none;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 15px 18px;
+    border-radius: 12px;
+    border: 2px solid transparent;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    transition: transform 0.18s ease, box-shadow 0.22s ease, background 0.2s ease;
+}
+.of-submit:hover  { transform: translateY(-2px); }
+.of-submit:active { transform: scale(0.985); }
+.of-submit:disabled { opacity: 0.7; cursor: progress; transform: none; }
+.of-submit-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.of-submit-title { font-size: 15px; font-weight: 800; line-height: 1.2; letter-spacing: -0.1px; }
+.of-submit-sub   { font-size: 11.5px; font-weight: 500; line-height: 1.35; }
+.of-submit-arrow { display: flex; transition: transform 0.22s ease; }
+.of-submit:hover .of-submit-arrow { transform: translateX(4px); }
+
+.of-submit.is-confirm {
+    background: linear-gradient(135deg, #E23A2E 0%, #C21807 100%);
+    box-shadow: 0 6px 20px -6px rgba(194,24,7,0.6);
+}
+.of-submit.is-confirm:hover { box-shadow: 0 12px 28px -8px rgba(194,24,7,0.7); }
+.of-submit.is-confirm .of-submit-title { color: #fff; }
+.of-submit.is-confirm .of-submit-sub   { color: rgba(255,255,255,0.82); }
+.of-submit.is-confirm .of-submit-arrow { color: #fff; }
+
+.of-submit.is-inquiry {
+    background: #1A1A1A;
+    box-shadow: 0 6px 20px -8px rgba(0,0,0,0.6);
+}
+.of-submit.is-inquiry:hover { background: #2C2C2C; }
+.of-submit.is-inquiry .of-submit-title { color: #fff; }
+.of-submit.is-inquiry .of-submit-sub   { color: rgba(255,255,255,0.66); }
+.of-submit.is-inquiry .of-submit-arrow { color: #fff; }
+
+/* Sheen sweep on hover */
+.of-submit::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -120%;
+    width: 60%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+    transform: skewX(-18deg);
+    transition: left 0.55s ease;
+    pointer-events: none;
+}
+.of-submit:hover::after { left: 130%; }
+
+/* Spinner while submitting */
+.of-spinner {
+    display: none;
+    width: 17px; height: 17px;
+    border: 2.5px solid rgba(255,255,255,0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: ofSpin 0.65s linear infinite;
+    flex-shrink: 0;
+}
+.of-submit.is-busy .of-spinner { display: block; }
+.of-submit.is-busy .of-submit-arrow { display: none; }
+@keyframes ofSpin { to { transform: rotate(360deg); } }
+
+.of-formerror {
+    display: none;
+    margin-top: 12px;
+    padding: 11px 13px;
+    border-radius: 10px;
+    background: #FDECEC;
+    border: 1px solid #F6C9C9;
+    color: #A31515;
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.45;
+}
+.of-formerror.is-visible { display: block; }
+
+/* ── Success state ────────────────────────────────────────── */
+.of-success {
+    display: none;
+    padding: 34px 24px 30px;
+    text-align: center;
+    animation: ofSuccessIn 0.42s cubic-bezier(0.22,1,0.36,1);
+}
+.order-form-panel.is-done .of-success { display: block; }
+.order-form-panel.is-done .of-head,
+.order-form-panel.is-done .of-body { display: none; }
+@keyframes ofSuccessIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.of-success-mark {
+    width: 62px; height: 62px;
+    margin: 0 auto 16px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    background: #E8F7EE;
+    color: #0A7C3F;
+    animation: ofMarkPop 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.08s both;
+}
+.of-success[data-mode="inquiry"] .of-success-mark { background: #EDEFF3; color: #2A2A2E; }
+@keyframes ofMarkPop { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.of-success-title { font-size: 19px; font-weight: 800; letter-spacing: -0.3px; margin: 0 0 6px; }
+.of-success-msg { font-size: 13.5px; color: var(--of-muted); line-height: 1.55; margin: 0 auto 18px; max-width: 330px; }
+.of-success-ref {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 16px;
+    background: #fff;
+    border: 1.5px dashed var(--of-field-line);
+    border-radius: 12px;
+    margin-bottom: 18px;
+}
+.of-success-ref-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--of-muted); }
+.of-success-ref-value { font-size: 16px; font-weight: 800; letter-spacing: 1px; font-family: 'Roboto Mono', ui-monospace, monospace; }
+.of-copy-btn {
+    border: none; background: #F3EDE1;
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    display: grid; place-items: center;
+    cursor: pointer; color: var(--of-muted);
+    transition: background 0.15s, color 0.15s;
+}
+.of-copy-btn:hover { background: #E7DDC9; color: var(--of-ink); }
+.of-success-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.of-success-actions a {
+    padding: 11px 20px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    transition: background 0.16s, border-color 0.16s;
+}
+.of-success-actions .of-link-primary { background: var(--of-ink); color: #fff; }
+.of-success-actions .of-link-primary:hover { background: #3A3530; }
+.of-success-actions .of-link-ghost { border: 1.5px solid var(--of-field-line); color: var(--of-ink); }
+.of-success-actions .of-link-ghost:hover { border-color: #CDBFA6; background: #fff; }
+
+/* ── Collapsible wrapper on the product page ──────────────── */
+.pd-order-form-slot {
+    margin-top: 16px;
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition: grid-template-rows 0.42s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, margin-top 0.3s ease;
+}
+.pd-order-form-slot > div { overflow: hidden; min-height: 0; }
+.pd-order-form-slot.is-open { grid-template-rows: 1fr; opacity: 1; }
+/* Added after the expand finishes so the combobox dropdowns are not clipped. */
+.pd-order-form-slot.is-expanded > div { overflow: visible; }
+.pd-order-form-slot:not(.is-open) { margin-top: 0; }
+
+/* ── Standalone page layout (quick-order / checkout) ──────── */
+.of-page {
+    max-width: 560px;
+    margin: 28px auto 48px;
+}
+.of-page-wide { max-width: 980px; }
+
+/* ═══ Responsive ═══════════════════════════════════════════════
+   The panel lives in three very different boxes: a narrow product-page
+   column, a 560px standalone page, and full-bleed on a phone. Sizing it
+   off the VIEWPORT gets that wrong every time — a 1440px desktop still
+   renders this panel in a ~380px column. So the layout responds to the
+   panel's own inline size via container queries, and the viewport media
+   queries below stay purely as the fallback for browsers without them.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Narrow panel (product-page column, small phone): one field per row. */
+@container ofpanel (max-width: 430px) {
+    .of-fields { grid-template-columns: 1fr; }
+    .of-head { padding: 15px 15px 13px; gap: 10px; }
+    .of-body { padding: 15px; }
+    .of-title { font-size: 16px; }
+    .of-mode-chip { display: none; }
+    .of-assurance { gap: 8px 12px; }
+    .of-submit { padding: 13px 14px; gap: 10px; }
+    .of-submit-title { font-size: 14.5px; }
+}
+
+/* Roomy panel (standalone order / checkout page on a laptop): the two
+   actions sit side by side, with Confirm Order taking the lead. */
+@container ofpanel (min-width: 560px) {
+    .of-actions { flex-direction: row; align-items: stretch; }
+    .of-submit.is-confirm { flex: 1 1 58%; }
+    .of-submit.is-inquiry { flex: 1 1 42%; }
+    .of-head { padding: 20px 24px 16px; }
+    .of-body { padding: 20px 24px 24px; }
+}
+
+/* Viewport fallback — only bites where container queries are unsupported
+   AND the screen is genuinely small, so it can never fight the rules above. */
+@supports not (container-type: inline-size) {
+    @media (max-width: 560px) {
+        .of-fields { grid-template-columns: 1fr; }
+        .of-head { padding: 15px 15px 13px; }
+        .of-body { padding: 15px; }
+        .of-mode-chip { display: none; }
+    }
+}
+
+/* ── Touch / small-screen ergonomics ──────────────────────── */
+@media (max-width: 640px) {
+    /* iOS zooms the whole page in on any input under 16px. Bumping just
+       the font size keeps the boxes the same height and stops the jump. */
+    .of-input,
+    .of-combo-input,
+    .of-stepper input { font-size: 16px; }
+
+    /* Thumb-sized targets. */
+    .of-stepper button { width: 42px; height: 42px; }
+    .of-stepper input  { height: 42px; }
+    .of-apply-btn      { min-height: 46px; padding: 0 18px; }
+    .of-submit         { min-height: 54px; }
+    .of-copy-btn       { width: 34px; height: 34px; }
+
+    /* A long dropdown must never grow past the visible viewport; dvh keeps
+       it right when the mobile browser chrome slides away. */
+    .of-combo-list { max-height: min(46dvh, 300px); }
+
+    .of-success { padding: 26px 16px; }
+    .of-success-msg { font-size: 13px; }
+    .of-success-actions a { flex: 1 1 140px; text-align: center; }
+}
+
+/* Very narrow phones (~320-360px): stop the discount row and totals from
+   forcing a horizontal scrollbar. */
+@media (max-width: 380px) {
+    .of-head-icon { display: none; }
+    .of-discount-row { flex-wrap: wrap; }
+    .of-discount-row .of-input { flex: 1 1 100%; }
+    .of-apply-btn { flex: 1 1 100%; }
+    .of-item-thumb { width: 46px; height: 46px; }
+    .of-submit-sub { font-size: 11px; }
+    .of-total-row { font-size: 12.5px; }
+}
+
+/* Short landscape phones — cap the dropdown so it cannot cover the field
+   the shopper is typing into. */
+@media (max-height: 520px) {
+    .of-combo-list { max-height: 42dvh; }
+}
+
+/* Fine pointer only: hover lifts are noise on touch, where :hover sticks
+   after a tap. */
+@media (hover: none) {
+    .of-submit:hover { transform: none; }
+    .of-submit:hover .of-submit-arrow { transform: none; }
+    .of-submit::after { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .order-form-panel *,
+    .pd-order-form-slot { transition: none !important; animation: none !important; }
+    .pd-order-form-slot { scroll-behavior: auto; }
+}
+
+/* ── Compact mode ─────────────────────────────────────────── */
+/* On the product page the photo, name, price and quantity are already on
+   screen a few pixels above, so the panel drops its own copy of them and
+   leads with the delivery notice instead. */
+.order-form-panel.is-compact .of-notice { margin-top: 0; }
+.order-form-panel.is-compact .of-head { padding-bottom: 14px; }
+
+/* ── Print ────────────────────────────────────────────────── */
+@media print {
+    .of-actions, .of-discount, .of-combo-list { display: none; }
+    .order-form-panel { box-shadow: none; border-color: #999; }
+}

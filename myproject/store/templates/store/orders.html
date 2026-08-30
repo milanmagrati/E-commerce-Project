@@ -1,37 +1,121 @@
 {% extends "store/base.html" %}
 
-{% block title %}My Orders — Store{% endblock %}
+{% block title %}Track your order — Store{% endblock %}
+
+{% block extra_css %}
+<style>
+.track-wrap { max-width: 900px; margin: 30px auto 56px; }
+.track-hero { text-align: center; margin-bottom: 26px; }
+.track-hero h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; margin: 0 0 8px; }
+.track-hero p { color: #666; font-size: 14px; max-width: 460px; margin: 0 auto; line-height: 1.6; }
+
+.track-card {
+    background: #fff;
+    border: 1px solid #EAEAEA;
+    border-radius: 16px;
+    padding: 26px;
+    box-shadow: 0 12px 34px -18px rgba(0,0,0,0.25);
+    max-width: 520px;
+    margin: 0 auto;
+}
+.track-card .of-fields { grid-template-columns: 1fr; }
+.track-submit {
+    width: 100%;
+    margin-top: 18px;
+    padding: 14px;
+    border: none;
+    border-radius: 11px;
+    background: linear-gradient(135deg, #F85606, #d94800);
+    color: #fff;
+    font-family: inherit;
+    font-size: 14.5px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 8px 20px -8px rgba(248,86,6,0.7);
+    transition: transform 0.16s, box-shadow 0.2s;
+}
+.track-submit:hover { transform: translateY(-2px); box-shadow: 0 14px 28px -10px rgba(248,86,6,0.8); }
+
+.recent-block { margin-top: 40px; }
+.recent-title {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: #888;
+    text-align: center;
+    margin-bottom: 16px;
+}
+.recent-grid { display: grid; gap: 12px; }
+.recent-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: #fff;
+    border: 1px solid #EAEAEA;
+    border-radius: 12px;
+    transition: border-color 0.16s, transform 0.16s;
+}
+.recent-row:hover { border-color: #F85606; transform: translateX(3px); }
+.recent-ref { font-family: 'Roboto Mono', monospace; font-weight: 600; font-size: 13.5px; letter-spacing: 0.5px; }
+.recent-meta { flex: 1; font-size: 12.5px; color: #777; }
+.recent-total { font-weight: 800; font-size: 14px; white-space: nowrap; }
+.recent-badge {
+    font-size: 10.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
+    padding: 4px 9px; border-radius: 999px; white-space: nowrap;
+}
+.recent-badge.type-confirmed { background: #FDE7E7; color: #A31515; }
+.recent-badge.type-inquiry   { background: #ECECEF; color: #34343A; }
+@media (max-width: 560px) {
+    .recent-row { flex-wrap: wrap; }
+    .recent-meta { flex-basis: 100%; }
+}
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h1 class="page-title">My Orders</h1>
-
-    {% if orders %}
-    <div class="orders-list">
-        {% for order in orders %}
-        <div class="order-card">
-            <div class="order-card-header">
-                <div>
-                    <strong>Order #{{ order.order_number }}</strong>
-                    <span class="order-date">{{ order.created_at|date:"M d, Y" }}</span>
-                </div>
-                <div class="order-card-header-badges">
-                    <span class="order-status status-{{ order.status }}">{{ order.get_status_display }}</span>
-                    <span class="order-type-badge type-{{ order.order_type }}">{{ order.get_order_type_display }}</span>
-                </div>
-            </div>
-            <div class="order-card-body">
-                <p>{{ order.items.count }} item{{ order.items.count|pluralize }} &middot; Total: <strong>Rs. {{ order.total_price }}</strong></p>
-            </div>
-            <a href="{% url 'store:order_detail' order_number=order.order_number %}" class="btn btn-outline btn-sm">View Details</a>
-        </div>
-        {% endfor %}
+<div class="container track-wrap">
+    <div class="track-hero">
+        <h1>Track your order</h1>
+        <p>Enter the reference number we gave you and the mobile
+           number on the order — अर्डर नम्बर र मोबाइल नम्बर हाल्नुहोस्।</p>
     </div>
-    {% else %}
-    <div class="empty-state">
-        <h2>No orders yet</h2>
-        <p>Start shopping and your orders will appear here.</p>
-        <a href="{% url 'store:product_list' %}" class="btn btn-primary">Start Shopping</a>
+
+    <form class="track-card order-form-panel" method="POST" style="border-radius:16px;">
+        {% csrf_token %}
+        <div class="of-fields">
+            <div class="of-field {% if form.order_number.errors %}has-error{% endif %}">
+                <label class="of-label" for="id_order_number">Order number <span class="of-req">*</span></label>
+                <input class="of-input" type="text" id="id_order_number" name="order_number"
+                       value="{{ form.order_number.value|default:'' }}" placeholder="e.g. 4F9C2A1B7D3E"
+                       autocomplete="off" style="text-transform:uppercase;letter-spacing:1px;" required>
+                <span class="of-error" style="display:{% if form.order_number.errors %}flex{% else %}none{% endif %}">{{ form.order_number.errors.0 }}</span>
+            </div>
+            <div class="of-field {% if form.phone.errors %}has-error{% endif %}">
+                <label class="of-label" for="id_phone">Mobile number <span class="of-req">*</span></label>
+                <input class="of-input" type="tel" id="id_phone" name="phone"
+                       value="{{ form.phone.value|default:'' }}" placeholder="98XXXXXXXX"
+                       inputmode="numeric" required>
+                <span class="of-error" style="display:{% if form.phone.errors %}flex{% else %}none{% endif %}">{{ form.phone.errors.0 }}</span>
+            </div>
+        </div>
+        <button type="submit" class="track-submit">Find my order</button>
+    </form>
+
+    {% if recent_orders %}
+    <div class="recent-block">
+        <p class="recent-title">Orders from this device</p>
+        <div class="recent-grid">
+            {% for order in recent_orders %}
+            <a class="recent-row" href="{% url 'store:order_detail' order_number=order.order_number %}">
+                <span class="recent-ref">{{ order.order_number }}</span>
+                <span class="recent-badge type-{{ order.order_type }}">{{ order.get_order_type_display }}</span>
+                <span class="recent-meta">{{ order.created_at|date:"M d, Y" }} · {{ order.items.count }} item{{ order.items.count|pluralize }}</span>
+                <span class="recent-total">Rs. {{ order.total_price|floatformat:0 }}</span>
+            </a>
+            {% endfor %}
+        </div>
     </div>
     {% endif %}
 </div>

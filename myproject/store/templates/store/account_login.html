@@ -1,0 +1,37 @@
+{% extends "store/base.html" %}
+
+{% block title %}Log in — Store{% endblock %}
+
+{% block content %}
+<div class="acct acct-narrow">
+    <div class="acct-head">
+        <h1>Log in</h1>
+        <p>Welcome back. Your saved details and order history are waiting.</p>
+    </div>
+
+    <div class="acct-card">
+        <form method="POST" action="{% url 'store:account_login' %}" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
+
+            {% for error in form.non_field_errors %}
+            <div class="acct-formwide-error">{{ error }}</div>
+            {% endfor %}
+
+            {% include "store/partials/acct_field.html" with field=form.identifier %}
+            {% include "store/partials/acct_field.html" with field=form.password %}
+
+            <button type="submit" class="acct-submit">Log in</button>
+        </form>
+
+        <p class="acct-alt">
+            New here? <a href="{% url 'store:account_register' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Create an account</a>
+        </p>
+
+        <p class="acct-guest">
+            <a href="{% url 'store:product_list' %}">Keep shopping</a>
+            or <a href="{% url 'store:order_track' %}">track an order</a> with its number and your mobile number.
+        </p>
+    </div>
+</div>
+{% endblock %}

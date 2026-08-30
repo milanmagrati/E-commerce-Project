@@ -164,10 +164,8 @@ document.addEventListener('DOMContentLoaded', function () {
         e.preventDefault();
         e.stopPropagation();
         const pid = btn.dataset.productId;
-        if (!IS_AUTHENTICATED) {
-            window.location = '/store/login/?next=' + window.location.pathname;
-            return;
-        }
+        // Guest storefront: the wishlist lives on the browser session, so
+        // there is nothing to sign into first.
         fetch('/store/wishlist/toggle/' + pid + '/', {
             method: 'POST',
             headers: { 'X-CSRFToken': CSRF_TOKEN, 'X-Requested-With': 'XMLHttpRequest' },

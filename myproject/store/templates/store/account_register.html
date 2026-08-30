@@ -1,0 +1,39 @@
+{% extends "store/base.html" %}
+
+{% block title %}Create account — Store{% endblock %}
+
+{% block content %}
+<div class="acct acct-narrow">
+    <div class="acct-head">
+        <h1>Create account</h1>
+        <p>So your delivery details fill themselves in next time, and every order stays in one place.</p>
+    </div>
+
+    <div class="acct-card">
+        <form method="POST" action="{% url 'store:account_register' %}" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
+
+            {% for error in form.non_field_errors %}
+            <div class="acct-formwide-error">{{ error }}</div>
+            {% endfor %}
+
+            {% include "store/partials/acct_field.html" with field=form.full_name %}
+            {% include "store/partials/acct_field.html" with field=form.email %}
+            {% include "store/partials/acct_field.html" with field=form.phone %}
+            {% include "store/partials/acct_field.html" with field=form.password %}
+            {% include "store/partials/acct_field.html" with field=form.password_confirm %}
+
+            <button type="submit" class="acct-submit">Create account</button>
+        </form>
+
+        <p class="acct-alt">
+            Already have one? <a href="{% url 'store:account_login' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Log in</a>
+        </p>
+
+        <p class="acct-guest">
+            Anything already in your cart or saved list comes with you.
+        </p>
+    </div>
+</div>
+{% endblock %}

@@ -17,14 +17,28 @@ urlpatterns = [
     path('wishlist/', views.wishlist_view, name='wishlist'),
     path('wishlist/toggle/<int:product_id>/', views.toggle_wishlist, name='toggle_wishlist'),
     path('checkout/', views.checkout_view, name='checkout'),
-    path('orders/', views.order_list, name='order_list'),
+
+    # Order lookup stays open to guests: number + phone, no sign-in needed.
+    path('track-order/', views.order_track, name='order_track'),
     path('orders/<str:order_number>/', views.order_detail, name='order_detail'),
-    path('login/', views.customer_login, name='login'),
-    path('register/', views.customer_register, name='register'),
-    path('logout/', views.customer_logout, name='logout'),
-    path('profile/', views.customer_profile, name='profile'),
+
+    # Customer accounts. Optional everywhere — they save retyping details and
+    # keep order history together, but nothing on the storefront demands one.
+    path('account/login/', views.account_login, name='account_login'),
+    path('account/register/', views.account_register, name='account_register'),
+    path('account/logout/', views.account_logout, name='account_logout'),
+    path('account/', views.account_home, name='account'),
+    path('account/profile/', views.account_profile, name='account_profile'),
+    path('account/password/', views.account_password, name='account_password'),
+
     path('review/add/<int:product_id>/', views.add_review, name='add_review'),
     path('quick-order/<int:product_id>/', views.quick_order, name='quick_order'),
+
+    # Order-form data endpoints
+    path('api/locations/', views.locations_json, name='locations'),
+    path('api/quote/', views.quote_json, name='quote'),
+    path('api/discount/', views.apply_discount, name='apply_discount'),
+
     path('api/load-more/', views.load_more_products, name='load_more'),
     path('p/<slug:slug>/', views.dynamic_page, name='dynamic_page'),
 ]

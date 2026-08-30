@@ -1,14 +1,15 @@
 from django.contrib import admin
 from .models import (
-    ProductReview, Cart, CartItem, Order, OrderItem, Wishlist
+    ProductReview, Cart, CartItem, Order, OrderItem, Wishlist, DiscountCode,
+    StoreCustomer,
 )
 
 
 @admin.register(ProductReview)
 class ProductReviewAdmin(admin.ModelAdmin):
-    list_display = ('product', 'user', 'rating', 'created_at')
+    list_display = ('product', 'display_name', 'rating', 'created_at')
     list_filter = ('rating', 'created_at')
-    search_fields = ('product__name', 'user__username')
+    search_fields = ('product__name', 'guest_name', 'user__username')
 
 
 class CartItemInline(admin.TabularInline):
@@ -30,15 +31,25 @@ class OrderItemInline(admin.TabularInline):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ('order_number', 'user', 'order_type', 'status', 'total_price', 'created_at')
-    list_filter = ('order_type', 'status', 'created_at')
-    search_fields = ('order_number', 'user__username')
+    list_display = ('order_number', 'full_name', 'phone', 'district', 'courier_branch',
+                    'order_type', 'status', 'total_price', 'created_at')
+    list_filter = ('order_type', 'status', 'district', 'created_at')
+    search_fields = ('order_number', 'full_name', 'phone', 'email')
     inlines = [OrderItemInline]
+
+
+@admin.register(DiscountCode)
+class DiscountCodeAdmin(admin.ModelAdmin):
+    list_display = ('code', 'discount_type', 'value', 'min_order_amount',
+                    'free_delivery', 'is_active', 'used_count', 'usage_limit', 'valid_to')
+    list_filter = ('discount_type', 'is_active', 'free_delivery')
+    search_fields = ('code', 'description')
+    readonly_fields = ('used_count',)
 
 
 @admin.register(Wishlist)
 class WishlistAdmin(admin.ModelAdmin):
-    list_display = ('user', 'product', 'created_at')
+    list_display = ('product', 'user', 'session_key', 'created_at')
     search_fields = ('user__username', 'product__name')
 
 
@@ -48,3 +59,14 @@ class OrderItemAdmin(admin.ModelAdmin):
     list_filter = ('order__status',)
     search_fields = ('order__order_number', 'product__name')
     readonly_fields = ('reserved_qty', 'backordered_qty')
+
+
+@admin.register(StoreCustomer)
+class StoreCustomerAdmin(admin.ModelAdmin):
+    """Read-mostly view of storefront shoppers. These are NOT staff users —
+    they live in their own table and have no dashboard access at all."""
+    list_display = ('full_name', 'email', 'phone', 'district', 'is_active', 'created_at', 'last_login')
+    list_filter = ('is_active', 'created_at')
+    search_fields = ('full_name', 'email', 'phone')
+    readonly_fields = ('password', 'created_at', 'last_login')
+    ordering = ('-created_at',)

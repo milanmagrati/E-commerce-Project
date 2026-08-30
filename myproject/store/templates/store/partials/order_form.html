@@ -1,0 +1,254 @@
+{% comment %}
+Guest order form — the whole Confirm Order / Inquiry Only flow, no account needed.
+
+Context it expects:
+  of_action      URL to POST to
+  of_items       list of {name, image, qty, price, variant, product_id}
+  of_subtotal    Decimal goods total
+  of_mode        'confirmed' | 'inquiry' — which button is pre-emphasised
+  of_compact     bool — drop the product strip + quantity stepper, for pages
+                 that already show them right above the form (the product
+                 page), so nothing is said twice. Defaults off; an undefined
+                 template variable is '' (falsy), so the flag must be opt-in.
+  of_qty_editable  bool — show the quantity stepper (single-product flows)
+  of_max_qty     int — stepper ceiling
+  of_unit_price  Decimal — price of the single product, for live qty maths
+  of_variant     preselected variant string, if any
+  of_id          unique prefix for this panel's element ids
+  of_config      JSON string read by order-form.js
+  of_form        optional bound GuestOrderForm, so a no-JS POST that fails
+                 validation comes back with the typed values and the errors
+{% endcomment %}
+{% load store_tags %}
+
+<div class="order-form-panel{% if of_compact %} is-compact{% endif %}" data-order-form data-mode="{{ of_mode|default:'confirmed' }}"
+     data-config="{{ of_config }}">
+
+    <div class="of-head">
+        <span class="of-head-icon" aria-hidden="true">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+        </span>
+        <div class="of-head-text">
+            <h2 class="of-title">Fill the order form</h2>
+            <p class="of-subtitle">अर्डर / इन्क्वायरीको लागि फर्म भर्नुहोस्।</p>
+        </div>
+        <span class="of-mode-chip" data-mode-chip data-mode="{{ of_mode|default:'confirmed' }}">
+            {% if of_mode == 'inquiry' %}Inquiry{% else %}Order{% endif %}
+        </span>
+    </div>
+
+    <form class="of-body" method="POST" action="{{ of_action }}" data-order-form-body novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="order_type" value="{{ of_mode|default:'confirmed' }}" data-order-type>
+        <!-- Set by the product page when a variant chip is picked -->
+        <input type="hidden" name="selected_variant" value="{{ of_variant|default:'' }}" data-variant-input>
+
+        <!-- What is being ordered. Skipped where the page already shows the
+             product and its quantity directly above this panel; the quantity
+             still travels with the form via the hidden input below. -->
+        {% if not of_compact %}
+        <div class="of-items">
+            {% for item in of_items %}
+            <div class="of-item">
+                <div class="of-item-thumb">
+                    {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+                    <span class="of-item-qty" {% if of_qty_editable %}data-item-qty{% endif %}>{{ item.qty }}</span>
+                </div>
+                <div class="of-item-meta">
+                    <p class="of-item-name">{{ item.name }}</p>
+                    <p class="of-item-variant" data-variant-label {% if not item.variant %}hidden{% endif %}>{{ item.variant }}</p>
+                </div>
+                <span class="of-item-price" {% if of_qty_editable %}data-item-price{% endif %}>Rs. {{ item.price|floatformat:0 }}</span>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if of_qty_editable %}
+        <div class="of-qty-row">
+            <span class="of-qty-label">Quantity</span>
+            <div class="of-stepper">
+                <button type="button" data-qty-minus aria-label="Decrease quantity">&minus;</button>
+                <input type="number" name="quantity" value="{{ of_qty|default:1 }}" min="1"
+                       max="{{ of_max_qty|default:99 }}" data-qty-input aria-label="Quantity">
+                <button type="button" data-qty-plus aria-label="Increase quantity">+</button>
+            </div>
+        </div>
+        {% endif %}
+        {% else %}
+        <input type="hidden" name="quantity" value="{{ of_qty|default:1 }}" data-qty-input>
+        <!-- Kept so the page's variant chips have something to write into. -->
+        <span data-variant-label hidden></span>
+        {% endif %}
+
+        <!-- Delivery notice — rewritten live once a district is chosen -->
+        <div class="of-notice" data-delivery-notice data-tone="free">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+            <span data-delivery-text><strong>FREE delivery</strong> inside Kathmandu Valley · काठमाडौँ उपत्यका भित्र नि:शुल्क</span>
+        </div>
+
+        <!-- Customer details -->
+        <div class="of-fields">
+            {% of_error of_form "full_name" as err_full_name %}
+            <div class="of-field of-span-2{% if err_full_name %} has-error{% endif %}" data-field="full_name">
+                <label class="of-label" for="{{ of_id }}name">Name <span class="of-req">*</span></label>
+                <input class="of-input" type="text" id="{{ of_id }}name" name="full_name" value="{% of_value of_form 'full_name' %}"
+                       placeholder="Your full name" autocomplete="name" required>
+                <span class="of-error" data-error>{{ err_full_name }}</span>
+            </div>
+
+            {% of_error of_form "phone" as err_phone %}
+            <div class="of-field{% if err_phone %} has-error{% endif %}" data-field="phone">
+                <label class="of-label" for="{{ of_id }}phone">Mobile number <span class="of-req">*</span></label>
+                <input class="of-input" type="tel" id="{{ of_id }}phone" name="phone" value="{% of_value of_form 'phone' %}"
+                       placeholder="98XXXXXXXX" inputmode="numeric" maxlength="14"
+                       autocomplete="tel" required>
+                <span class="of-error" data-error>{{ err_phone }}</span>
+                <span class="of-hint">कृपया सही मोबाइल नम्बर अंग्रेजीमा लेख्नुहोस्</span>
+            </div>
+
+            {% of_error of_form "email" as err_email %}
+            <div class="of-field{% if err_email %} has-error{% endif %}" data-field="email">
+                <label class="of-label" for="{{ of_id }}email">Email <span class="of-optional">(optional)</span></label>
+                <input class="of-input" type="email" id="{{ of_id }}email" name="email" value="{% of_value of_form 'email' %}"
+                       placeholder="you@example.com" autocomplete="email">
+                <span class="of-error" data-error>{{ err_email }}</span>
+            </div>
+
+            {% of_error of_form "district" as err_district %}
+            <div class="of-field{% if err_district %} has-error{% endif %}" data-field="district">
+                <label class="of-label" for="{{ of_id }}district">District <span class="of-req">*</span></label>
+                <!-- Enhanced into a searchable combobox by order-form.js; stays a
+                     plain text input (still submittable) if JS never runs. -->
+                <div class="of-combo" data-combo="district">
+                    <div class="of-combo-control">
+                        <input class="of-combo-input" type="text" id="{{ of_id }}district" name="district" value="{% of_value of_form 'district' %}"
+                               placeholder="Select district" autocomplete="off" role="combobox"
+                               aria-expanded="false" aria-autocomplete="list" required>
+                        <span class="of-combo-caret" aria-hidden="true">
+                            <svg width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1.5L6 6.5L11 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </span>
+                    </div>
+                    <div class="of-combo-list" role="listbox"></div>
+                </div>
+                <span class="of-error" data-error>{{ err_district }}</span>
+            </div>
+
+            {% of_error of_form "courier_branch" as err_courier_branch %}
+            <div class="of-field{% if err_courier_branch %} has-error{% endif %}" data-field="courier_branch">
+                <label class="of-label" for="{{ of_id }}branch">Courier branch</label>
+                <div class="of-combo is-disabled" data-combo="branch">
+                    <div class="of-combo-control">
+                        <input class="of-combo-input" type="text" id="{{ of_id }}branch" name="courier_branch" value="{% of_value of_form 'courier_branch' %}"
+                               placeholder="Select district first" autocomplete="off" role="combobox"
+                               aria-expanded="false" aria-autocomplete="list" disabled>
+                        <span class="of-combo-caret" aria-hidden="true">
+                            <svg width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="M1 1.5L6 6.5L11 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </span>
+                    </div>
+                    <div class="of-combo-list" role="listbox"></div>
+                </div>
+                <input type="hidden" name="courier_branch_code" data-branch-code value="{% of_value of_form 'courier_branch_code' %}">
+                <span class="of-error" data-error>{{ err_courier_branch }}</span>
+            </div>
+
+            {% of_error of_form "address" as err_address %}
+            <div class="of-field of-span-2{% if err_address %} has-error{% endif %}" data-field="address">
+                <label class="of-label" for="{{ of_id }}address">Address <span class="of-req">*</span></label>
+                <input class="of-input" type="text" id="{{ of_id }}address" name="address" value="{% of_value of_form 'address' %}"
+                       placeholder="Tole / street, ward no., nearest landmark"
+                       autocomplete="street-address" required>
+                <span class="of-error" data-error>{{ err_address }}</span>
+            </div>
+
+            {% of_error of_form "note" as err_note %}
+            <div class="of-field of-span-2{% if err_note %} has-error{% endif %}" data-field="note">
+                <label class="of-label" for="{{ of_id }}note">Note <span class="of-optional">(optional)</span></label>
+                <input class="of-input" type="text" id="{{ of_id }}note" name="note" value="{% of_value of_form 'note' %}"
+                       placeholder="Preferred delivery time, size, colour…">
+                <span class="of-error" data-error>{{ err_note }}</span>
+            </div>
+        </div>
+
+        <!-- Discount code -->
+        <div class="of-discount">
+            <label class="of-label" for="{{ of_id }}code" style="margin-bottom:5px;">Discount code</label>
+            <div class="of-discount-row">
+                <input class="of-input" type="text" id="{{ of_id }}code" name="discount_code" value="{% of_value of_form 'discount_code' %}"
+                       placeholder="Discount Code" autocomplete="off" data-discount-input>
+                <button type="button" class="of-apply-btn" data-discount-apply>Apply</button>
+            </div>
+            <p class="of-discount-msg" data-discount-msg></p>
+        </div>
+
+        <!-- Totals -->
+        <div class="of-totals" data-totals>
+            <div class="of-total-row">
+                <span>Subtotal</span>
+                <span data-total="subtotal">Rs. {{ of_subtotal|floatformat:0 }}</span>
+            </div>
+            <div class="of-total-row is-discount" data-discount-row hidden>
+                <span>Discount</span>
+                <span data-total="discount">− Rs. 0</span>
+            </div>
+            <div class="of-total-row" data-delivery-row>
+                <span>Delivery</span>
+                <span data-total="delivery">Select district</span>
+            </div>
+            <div class="of-total-row of-grand">
+                <span>Total</span>
+                <span data-total="total">Rs. {{ of_total|default:of_subtotal|floatformat:0 }}</span>
+            </div>
+        </div>
+
+        <ul class="of-assurance">
+            <li><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Cash on delivery</li>
+            <li><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> We call to confirm</li>
+            <li><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Delivered nationwide</li>
+        </ul>
+
+        <p class="of-formerror" data-form-error></p>
+
+        <div class="of-actions">
+            <button type="submit" class="of-submit is-confirm" value="confirmed" data-submit="confirmed">
+                <span class="of-spinner" aria-hidden="true"></span>
+                <span class="of-submit-text">
+                    <span class="of-submit-title">Confirm Order</span>
+                    <span class="of-submit-sub">सामान लिने भएमा मात्र</span>
+                </span>
+                <span class="of-submit-arrow" aria-hidden="true">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                </span>
+            </button>
+            <button type="submit" class="of-submit is-inquiry" value="inquiry" data-submit="inquiry">
+                <span class="of-spinner" aria-hidden="true"></span>
+                <span class="of-submit-text">
+                    <span class="of-submit-title">Inquiry Only</span>
+                    <span class="of-submit-sub">बुझ्नको लागि</span>
+                </span>
+                <span class="of-submit-arrow" aria-hidden="true">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                </span>
+            </button>
+        </div>
+    </form>
+
+    <!-- Replaces the form once the order lands -->
+    <div class="of-success" data-success>
+        <div class="of-success-mark">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <h3 class="of-success-title" data-success-title>Order confirmed</h3>
+        <p class="of-success-msg" data-success-msg>Thank you! Our team will call you shortly to confirm the delivery details.</p>
+        <div class="of-success-ref">
+            <span class="of-success-ref-label">Ref</span>
+            <span class="of-success-ref-value" data-success-ref>—</span>
+            <button type="button" class="of-copy-btn" data-copy-ref title="Copy reference">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+        </div>
+        <div class="of-success-actions">
+            <a class="of-link-primary" href="#" data-success-link>View order</a>
+            <a class="of-link-ghost" href="{% url 'store:product_list' %}">Continue shopping</a>
+        </div>
+    </div>
+</div>
