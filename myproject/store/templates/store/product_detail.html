@@ -218,7 +218,7 @@ open, and both the add-to-cart form and the order panel post normally.
                     {% order_form_single_item product 1 '' as of_items %}
                     {% order_form_config product.price product.price available_stock True as of_config %}
                     {% url 'store:quick_order' product.id as quick_order_url %}
-                    {% include "store/partials/order_form.html" with of_action=quick_order_url of_items=of_items of_subtotal=product.price of_total=product.price of_mode='confirmed' of_compact=True of_qty_editable=True of_qty=1 of_max_qty=available_stock of_id='pd-' of_config=of_config of_form=order_form of_hide_inquiry=True %}
+                    {% include "store/partials/order_form.html" with of_action=quick_order_url of_items=of_items of_subtotal=product.price of_total=product.price of_mode='confirmed' of_compact=True of_qty_editable=True of_qty=1 of_max_qty=available_stock of_id='pd-' of_config=of_config of_form=order_form %}
                 </div>
             </div>
 
