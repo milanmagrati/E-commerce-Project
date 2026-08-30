@@ -244,6 +244,8 @@
         this.qtyEditable = !!this.config.qtyEditable;
 
         this.district = '';
+        this.branchCode = '';
+        this.branchName = '';
         this.discountCode = '';
         this.discountAmount = 0;
         this.freeDelivery = false;
@@ -302,7 +304,11 @@
             onSelect: function (option) {
                 var codeInput = self.q('[data-branch-code]');
                 if (codeInput) codeInput.value = option.value;
+                self.branchCode = option.value || '';
+                self.branchName = option.label || '';
                 self.clearError('courier_branch');
+                // A branch can carry its own charge, ETA and covered areas.
+                self.recalculate();
             }
         });
 
@@ -313,6 +319,8 @@
                 self.clearError('district');
                 var codeInput = self.q('[data-branch-code]');
                 if (codeInput) codeInput.value = '';
+                self.branchCode = '';
+                self.branchName = '';
                 self.branchCombo.setOptions((option.branches || []).map(function (b) {
                     return {
                         label: b.name,
@@ -402,7 +410,12 @@
                     'X-CSRFToken': csrf(),
                     'X-Requested-With': 'XMLHttpRequest'
                 },
-                body: JSON.stringify({ code: code, subtotal: self.subtotal, district: self.district })
+                body: JSON.stringify({
+                    code: code,
+                    subtotal: self.subtotal,
+                    district: self.district,
+                    branch: self.branchCode
+                })
             })
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
@@ -442,6 +455,7 @@
         var params = new URLSearchParams({
             subtotal: this.subtotal,
             district: this.district || '',
+            branch: this.branchCode || '',
             code: this.discountCode || ''
         });
         clearTimeout(this._quoteTimer);
@@ -483,6 +497,87 @@
         setText(this.q('[data-total="total"]'),
             money(known ? t.total : Math.max(subtotal - discount, 0)));
         this.paintNotice(data.inside_valley, delivery);
+        this.paintDelivery(known ? (data.delivery || null) : null, delivery);
+    };
+
+    /* The delivery card: charge, promised time and covered areas for the
+       destination the shopper picked. Hidden until there is a district. */
+    OrderForm.prototype.paintDelivery = function (info, delivery) {
+        var card = this.q('[data-delivery-card]');
+        var notice = this.q('[data-delivery-notice]');
+        if (!card) return;
+        if (!info) {
+            card.hidden = true;
+            if (notice) notice.hidden = false;
+            return;
+        }
+
+        var free = !!info.is_free || delivery <= 0;
+        card.hidden = false;
+        // The card says the same thing with more detail — showing both reads
+        // as the page repeating itself.
+        if (notice) notice.hidden = true;
+        card.classList.toggle('is-free', free);
+
+        setText(this.q('[data-delivery-amount]'), free ? 'FREE' : money(delivery));
+        setText(this.q('[data-delivery-dest]'),
+            this.branchName ? this.branchName + ', ' + this.district : this.district);
+
+        var eta = this.q('[data-delivery-eta]');
+        if (eta) {
+            var en = (info.delivery_time || '').trim();
+            var np = (info.delivery_time_np || '').trim();
+            eta.hidden = !en && !np;
+            setText(this.q('[data-delivery-eta-en]'), en);
+            setText(this.q('[data-delivery-eta-np]'), np);
+        }
+
+        this.paintAreas(info.covered_areas || []);
+
+        var note = this.q('[data-delivery-note]');
+        if (note) {
+            // Why it is free matters: a threshold waiver disappears if the
+            // shopper drops an item, so say so rather than just "FREE".
+            var text = (info.note || '').trim();
+            if (!text && free && info.free_reason === 'threshold') {
+                text = 'Free delivery on orders of ' + money(info.free_above) + ' or more.';
+            } else if (!text && free && info.free_reason === 'coupon') {
+                text = 'Your discount code covers the delivery charge.';
+            }
+            note.textContent = text;
+            note.hidden = !text;
+        }
+    };
+
+    OrderForm.prototype.paintAreas = function (areas) {
+        var box = this.q('[data-delivery-areas]');
+        var list = this.q('[data-areas-list]');
+        var toggle = this.q('[data-areas-toggle]');
+        if (!box || !list) return;
+
+        if (!areas.length) { box.hidden = true; return; }
+        box.hidden = false;
+        setText(this.q('[data-areas-count]'), String(areas.length));
+        list.innerHTML = areas.map(function (a) {
+            return '<span class="of-delivery-chip">' + esc(a) + '</span>';
+        }).join('');
+
+        var CLAMP = 12;
+        var clamped = areas.length > CLAMP;
+        list.classList.toggle('is-clamped', clamped);
+        if (toggle) {
+            toggle.hidden = !clamped;
+            toggle.textContent = clamped ? 'Show all ' + areas.length + ' areas' : '';
+            if (clamped && !toggle.dataset.bound) {
+                toggle.dataset.bound = '1';
+                toggle.addEventListener('click', function () {
+                    var open = list.classList.toggle('is-clamped');
+                    toggle.textContent = open
+                        ? 'Show all ' + list.children.length + ' areas'
+                        : 'Show fewer';
+                });
+            }
+        }
     };
 
     OrderForm.prototype.paintNotice = function (insideValley, delivery) {
@@ -490,9 +585,13 @@
         var text = this.q('[data-delivery-text]');
         if (!notice || !text) return;
 
+        // The opening line is server-rendered from the delivery setup, so put
+        // that exact wording back rather than a hardcoded promise.
+        if (this.introNotice == null) this.introNotice = text.innerHTML;
+
         if (!this.district) {
             notice.dataset.tone = 'free';
-            text.innerHTML = '<strong>FREE delivery</strong> inside Kathmandu Valley · काठमाडौँ उपत्यका भित्र नि:शुल्क';
+            text.innerHTML = this.introNotice;
         } else if (delivery === 0) {
             notice.dataset.tone = 'free';
             text.innerHTML = '<strong>FREE delivery</strong> to ' + esc(this.district) +
@@ -583,11 +682,6 @@
 
     OrderForm.prototype.setMode = function (mode) {
         this.panel.dataset.mode = mode;
-        var chip = this.q('[data-mode-chip]');
-        if (chip) {
-            chip.dataset.mode = mode;
-            chip.textContent = mode === 'inquiry' ? 'Inquiry' : 'Order';
-        }
     };
 
     OrderForm.prototype.setFormError = function (message) {

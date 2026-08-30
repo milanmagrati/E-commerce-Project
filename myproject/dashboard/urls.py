@@ -2,6 +2,7 @@
 from django.urls import path
 from . import views
 from . import followup_setup_views
+from . import delivery_charge_views
 from . import page_views
 
 
@@ -240,6 +241,17 @@ urlpatterns = [
     path('setup/<int:setup_id>/delete/', views.setup_delete, name='setup_delete'),
     path('setup/<int:setup_id>/toggle-default/', views.setup_toggle_default, name='setup_toggle_default'),
     path('setup/reorder/', views.setup_reorder, name='setup_reorder'),
+
+    # Delivery Charge Setup — storefront delivery pricing, times and zones
+    path('setup/delivery-charges/', delivery_charge_views.delivery_charge_setup, name='delivery_charge_setup'),
+    path('setup/delivery-charges/save/', delivery_charge_views.delivery_charge_save, name='delivery_charge_save'),
+    path('setup/delivery-charges/<int:rule_id>/delete/', delivery_charge_views.delivery_charge_delete, name='delivery_charge_delete'),
+    path('setup/delivery-charges/<int:rule_id>/toggle/', delivery_charge_views.delivery_charge_toggle, name='delivery_charge_toggle'),
+    path('setup/delivery-charges/bulk-action/', delivery_charge_views.delivery_charge_bulk_action, name='delivery_charge_bulk_action'),
+    path('setup/delivery-charges/settings/', delivery_charge_views.delivery_charge_settings, name='delivery_charge_settings'),
+    path('setup/delivery-charges/sync/', delivery_charge_views.delivery_charge_sync, name='delivery_charge_sync'),
+    path('setup/delivery-charges/export/', delivery_charge_views.delivery_charge_export, name='delivery_charge_export'),
+    path('setup/delivery-charges/branches/', delivery_charge_views.delivery_charge_branches, name='delivery_charge_branches'),
 
     # Company Setup (branding & themes)
     path('settings/company/', views.company_setup, name='company_setup'),

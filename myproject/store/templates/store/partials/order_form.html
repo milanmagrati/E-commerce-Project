@@ -80,7 +80,9 @@ Context it expects:
         <!-- Delivery notice — rewritten live once a district is chosen -->
         <div class="of-notice" data-delivery-notice data-tone="free">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-            <span data-delivery-text><strong>FREE delivery</strong> inside Kathmandu Valley · काठमाडौँ उपत्यका भित्र नि:शुल्क</span>
+            <!-- Wording comes from Setup → Delivery Charge Setup, so it can
+                 never promise free delivery the shop no longer offers. -->
+            <span data-delivery-text>{{ store_delivery_intro|default:'<strong>FREE delivery</strong> inside Kathmandu Valley · काठमाडौँ उपत्यका भित्र नि:शुल्क'|safe }}</span>
         </div>
 
         <!-- Customer details -->
@@ -164,6 +166,42 @@ Context it expects:
                        placeholder="Preferred delivery time, size, colour…">
                 <span class="of-error" data-error>{{ err_note }}</span>
             </div>
+        </div>
+
+        <!-- Delivery summary for the chosen destination: what it costs, how
+             long it takes and which areas the branch reaches. Stays hidden
+             until a district is picked — order-form.js fills it from the
+             delivery rules configured in Setup → Delivery Charge Setup. -->
+        <div class="of-delivery" data-delivery-card hidden>
+            <div class="of-delivery-head">
+                <span class="of-delivery-icon" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                </span>
+                <div class="of-delivery-headings">
+                    <span class="of-delivery-label">Delivery charge</span>
+                    <span class="of-delivery-dest" data-delivery-dest></span>
+                </div>
+                <span class="of-delivery-amount" data-delivery-amount>—</span>
+            </div>
+
+            <div class="of-delivery-row" data-delivery-eta hidden>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span class="of-delivery-eta-text">
+                    <span data-delivery-eta-en></span>
+                    <span class="of-delivery-eta-np" data-delivery-eta-np></span>
+                </span>
+            </div>
+
+            <div class="of-delivery-areas" data-delivery-areas hidden>
+                <div class="of-delivery-areas-head">
+                    <span>Covered areas</span>
+                    <span class="of-delivery-areas-count" data-areas-count></span>
+                </div>
+                <div class="of-delivery-chips" data-areas-list></div>
+                <button type="button" class="of-delivery-more" data-areas-toggle hidden></button>
+            </div>
+
+            <p class="of-delivery-note" data-delivery-note hidden></p>
         </div>
 
         <!-- Discount code -->

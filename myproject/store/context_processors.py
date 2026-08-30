@@ -1,6 +1,27 @@
+from decimal import Decimal
+
 from dashboard.models import Category
 from store.customer_auth import get_customer
 from store.models import Cart, Wishlist, Page
+
+
+def _delivery_intro():
+    """The line the order form leads with, before a district is picked.
+
+    Read from the delivery setup rather than hardcoded, so the panel cannot
+    promise free valley delivery after an administrator has started charging
+    for it.
+    """
+    from store import services
+
+    conf = services.delivery_settings()
+    if Decimal(conf['inside_valley_charge']) <= 0 and conf['valley_districts']:
+        return ('<strong>FREE delivery</strong> inside Kathmandu Valley · '
+                'काठमाडौँ उपत्यका भित्र नि:शुल्क')
+    threshold = Decimal(conf['free_delivery_threshold'])
+    if threshold > 0:
+        return f'<strong>FREE delivery</strong> on orders over Rs. {threshold:.0f}'
+    return 'Delivery is charged by district — pick yours to see the exact cost.'
 
 
 def store_context(request):
@@ -47,4 +68,5 @@ def store_context(request):
         'store_all_categories': all_categories,
         'store_cart_items': cart_items,
         'footer_pages': footer_pages,
+        'store_delivery_intro': _delivery_intro(),
     }

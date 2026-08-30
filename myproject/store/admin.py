@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     ProductReview, Cart, CartItem, Order, OrderItem, Wishlist, DiscountCode,
-    StoreCustomer,
+    StoreCustomer, DeliveryCharge, DeliverySetting,
 )
 
 
@@ -70,3 +70,18 @@ class StoreCustomerAdmin(admin.ModelAdmin):
     search_fields = ('full_name', 'email', 'phone')
     readonly_fields = ('password', 'created_at', 'last_login')
     ordering = ('-created_at',)
+
+
+@admin.register(DeliveryCharge)
+class DeliveryChargeAdmin(admin.ModelAdmin):
+    """Fallback editor. The day-to-day surface is Setup -> Delivery Charge Setup
+    in the dashboard, which also busts the storefront's delivery cache."""
+    list_display = ('district', 'scope_label', 'charge', 'free_above', 'delivery_time', 'is_active')
+    list_filter = ('is_active',)
+    search_fields = ('district', 'branch_name', 'branch_code', 'covered_areas')
+
+
+@admin.register(DeliverySetting)
+class DeliverySettingAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'inside_valley_charge', 'default_charge',
+                    'free_delivery_threshold', 'updated_at')

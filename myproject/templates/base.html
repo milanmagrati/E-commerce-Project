@@ -1771,11 +1771,12 @@
 
                 <!-- ==================== SETUP ==================== -->
                 <li>
-                    <a href="#" data-bs-toggle="collapse" data-bs-target="#setupMenu" aria-expanded="false">
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#setupMenu"
+                        aria-expanded="{% if '/setup/' in request.path %}true{% else %}false{% endif %}">
                         <i class="fas fa-cog"></i> Setup
                         <i class="fas fa-chevron-down float-end mt-1"></i>
                     </a>
-                    <ul class="collapse list-unstyled" id="setupMenu">
+                    <ul class="collapse list-unstyled {% if '/setup/' in request.path %}show{% endif %}" id="setupMenu">
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_cities %}
                         <li class="{% if request.resolver_match.url_name == 'city_management' %}active{% endif %}">
                             <a href="{% url 'city_management' %}">City Setup</a>
@@ -1787,6 +1788,9 @@
                         </li>
                         <li class="{% if request.resolver_match.url_name == 'rtv_status_list' %}active{% endif %}">
                             <a href="{% url 'rtv_status_list' %}"><i class="fas fa-tags me-1"></i> RTV Status</a>
+                        </li>
+                        <li class="{% if 'delivery-charges' in request.path %}active{% endif %}">
+                            <a href="{% url 'delivery_charge_setup' %}"><i class="fas fa-truck-fast me-1"></i> Delivery Charge Setup</a>
                         </li>
                         <li class="{% if request.resolver_match.url_name == 'api_integration_list' %}active{% endif %}">
                             <a href="{% url 'api_integration_list' %}"><i class="fas fa-plug me-1"></i> API

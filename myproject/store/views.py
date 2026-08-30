@@ -381,7 +381,7 @@ def product_detail(request, slug):
         'variant_options': variant_options,
         'bundle_components': bundle_components,
         'product_image_url': _get_product_image(product),
-        'free_delivery_threshold': services.FREE_DELIVERY_THRESHOLD,
+        'free_delivery_threshold': services.free_delivery_threshold(),
     })
 
 
@@ -642,13 +642,14 @@ def apply_discount(request):
 
     code = (payload.get('code') or '').strip().upper()
     district = (payload.get('district') or '').strip()
+    branch = (payload.get('branch') or '').strip()
     try:
         subtotal = Decimal(str(payload.get('subtotal') or '0'))
     except Exception:
         subtotal = Decimal('0')
 
     discount, message = services.lookup_discount(code, subtotal)
-    totals = services.price_order(subtotal, district, discount)
+    totals = services.price_order(subtotal, district, discount, branch)
     return JsonResponse({
         'success': discount is not None,
         'message': message or ('' if discount else 'Enter a discount code.'),
@@ -660,6 +661,7 @@ def apply_discount(request):
 def quote_json(request):
     """Live delivery/total quote as the shopper picks a district or changes qty."""
     district = request.GET.get('district', '')
+    branch = (request.GET.get('branch') or '').strip()
     code = (request.GET.get('code') or '').strip().upper()
     try:
         subtotal = Decimal(str(request.GET.get('subtotal') or '0'))
@@ -667,11 +669,27 @@ def quote_json(request):
         subtotal = Decimal('0')
 
     discount, _msg = services.lookup_discount(code, subtotal) if code else (None, '')
-    totals = services.price_order(subtotal, district, discount)
+    totals = services.price_order(subtotal, district, discount, branch)
+    quote = services.quote_delivery(subtotal, district, branch)
+    coupon_free = bool(discount and discount.free_delivery)
     return JsonResponse({
         'district_known': bool(district.strip()),
-        'inside_valley': services.is_inside_valley(district),
+        'inside_valley': quote['inside_valley'],
         'totals': {k: str(v) for k, v in totals.items()},
+        'delivery': {
+            'charge': str(quote['charge'] if not coupon_free else Decimal('0')),
+            'base_charge': str(quote['base_charge']),
+            'is_free': coupon_free or quote['is_free'],
+            # 'coupon' outranks the zone/threshold reasons so the shopper can
+            # see *why* they are not being charged.
+            'free_reason': 'coupon' if coupon_free else quote['free_reason'],
+            'free_above': str(quote['free_above']),
+            'delivery_time': quote['delivery_time'],
+            'delivery_time_np': quote['delivery_time_np'],
+            'covered_areas': quote['covered_areas'],
+            'note': quote['note'],
+            'matched': quote['matched'],
+        },
     })
 
 
@@ -683,9 +701,9 @@ def _place_order(request, form, items, order_type, delivery_district):
 
     subtotal = sum(Decimal(str(i['price'])) * i['quantity'] for i in items)
     discount, _msg = services.lookup_discount(form.cleaned_data.get('discount_code'), subtotal)
-    totals = services.price_order(subtotal, delivery_district, discount)
 
     branch_code = (form.cleaned_data.get('courier_branch_code') or '').strip().upper()
+    totals = services.price_order(subtotal, delivery_district, discount, branch_code)
     branch = services.resolve_branch(delivery_district, branch_code)
     branch_name = branch['name'] if branch else (form.cleaned_data.get('courier_branch') or '')
 

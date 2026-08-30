@@ -80,20 +80,6 @@
     margin: 3px 0 0;
     line-height: 1.45;
 }
-.of-mode-chip {
-    flex-shrink: 0;
-    font-size: 10.5px;
-    font-weight: 800;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    padding: 5px 10px;
-    border-radius: 999px;
-    white-space: nowrap;
-    transition: background 0.25s, color 0.25s;
-}
-.of-mode-chip[data-mode="confirmed"] { background: #FDE7E7; color: var(--of-accent-dark); }
-.of-mode-chip[data-mode="inquiry"]   { background: #E7E7E9; color: #2A2A2E; }
-
 /* ── Body ─────────────────────────────────────────────────── */
 .of-body { padding: 18px 22px 22px; }
 
@@ -222,6 +208,7 @@
     border: 1px solid #C4E9D4;
     transition: background 0.25s, color 0.25s, border-color 0.25s;
 }
+.of-notice[hidden] { display: none; }
 .of-notice svg { flex-shrink: 0; }
 .of-notice strong { font-weight: 800; }
 .of-notice[data-tone="paid"] {
@@ -409,6 +396,152 @@ select.of-input {
     font-size: 12.5px;
     color: var(--of-muted);
 }
+
+/* ── Delivery card ────────────────────────────────────────── */
+/* Appears once a district is chosen: the charge for that destination, the
+   promised time, and the areas the courier branch actually reaches. */
+.of-delivery {
+    margin-top: 16px;
+    border: 1px solid var(--of-field-line);
+    border-radius: 13px;
+    background: #fff;
+    overflow: hidden;
+    animation: ofDeliveryIn 0.28s ease both;
+}
+@keyframes ofDeliveryIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: none; }
+}
+.of-delivery[hidden] { display: none; }
+
+.of-delivery-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 13px;
+    background: linear-gradient(180deg, #FFF9EC, #FDF3DE);
+    border-bottom: 1px solid #F1E6CE;
+}
+.of-delivery-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: 9px;
+    background: #fff;
+    border: 1px solid var(--of-field-line);
+    color: var(--of-accent);
+}
+.of-delivery-headings { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.of-delivery-label {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--of-muted);
+}
+.of-delivery-dest {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--of-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.of-delivery-amount {
+    flex-shrink: 0;
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--of-accent);
+    letter-spacing: -0.2px;
+}
+.of-delivery.is-free .of-delivery-head {
+    background: linear-gradient(180deg, #ECF9F1, #E1F4EA);
+    border-bottom-color: #C9E8D7;
+}
+.of-delivery.is-free .of-delivery-icon { color: #0A7C3F; }
+.of-delivery.is-free .of-delivery-amount { color: #0A7C3F; }
+
+.of-delivery-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 13px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #0A6B37;
+    background: #F6FBF7;
+    border-bottom: 1px solid #EFEADF;
+}
+.of-delivery-row[hidden] { display: none; }
+.of-delivery-row svg { flex-shrink: 0; margin-top: 2px; }
+.of-delivery-eta-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.of-delivery-eta-text > span:first-child { font-weight: 700; }
+.of-delivery-eta-np { color: #14803F; font-weight: 600; }
+.of-delivery-eta-np:empty { display: none; }
+
+.of-delivery-areas { padding: 11px 13px 12px; }
+.of-delivery-areas[hidden] { display: none; }
+.of-delivery-areas-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--of-muted);
+}
+.of-delivery-areas-count {
+    padding: 1px 7px;
+    border-radius: 20px;
+    background: var(--of-paper-2);
+    border: 1px solid var(--of-field-line);
+    font-size: 10px;
+    letter-spacing: 0;
+    color: var(--of-ink);
+}
+.of-delivery-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.of-delivery-chip {
+    padding: 3.5px 9px;
+    border-radius: 7px;
+    background: var(--of-paper-2);
+    border: 1px solid var(--of-field-line);
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #5B534A;
+    line-height: 1.35;
+}
+/* Long branch lists run to 30+ names — show a readable dozen and let the
+   shopper open the rest rather than pushing the buttons off screen. */
+.of-delivery-chips.is-clamped .of-delivery-chip:nth-child(n+13) { display: none; }
+.of-delivery-more {
+    margin-top: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--of-accent);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.of-delivery-more[hidden] { display: none; }
+
+.of-delivery-note {
+    margin: 0;
+    padding: 9px 13px;
+    border-top: 1px dashed var(--of-line);
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--of-muted);
+}
+.of-delivery-note[hidden] { display: none; }
 
 /* ── Discount row ─────────────────────────────────────────── */
 .of-discount { margin-top: 14px; }
@@ -701,7 +834,6 @@ select.of-input {
     .of-head { padding: 15px 15px 13px; gap: 10px; }
     .of-body { padding: 15px; }
     .of-title { font-size: 16px; }
-    .of-mode-chip { display: none; }
     .of-assurance { gap: 8px 12px; }
     .of-submit { padding: 13px 14px; gap: 10px; }
     .of-submit-title { font-size: 14.5px; }
@@ -724,7 +856,6 @@ select.of-input {
         .of-fields { grid-template-columns: 1fr; }
         .of-head { padding: 15px 15px 13px; }
         .of-body { padding: 15px; }
-        .of-mode-chip { display: none; }
     }
 }
 
@@ -762,6 +893,8 @@ select.of-input {
     .of-item-thumb { width: 46px; height: 46px; }
     .of-submit-sub { font-size: 11px; }
     .of-total-row { font-size: 12.5px; }
+    .of-delivery-amount { font-size: 16px; }
+    .of-delivery-icon { display: none; }
 }
 
 /* Short landscape phones — cap the dropdown so it cannot cover the field

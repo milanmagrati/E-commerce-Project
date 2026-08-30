@@ -1,0 +1,1108 @@
+{% extends 'base.html' %}
+{% comment %}
+Setup → Delivery Charge Setup.
+
+Everything the storefront quotes for delivery is edited here: the site-wide
+defaults at the top, then one rule per district (or per courier branch inside
+a district). The table is a single bulk form; per-row toggle/delete post
+through one hidden form so nothing has to nest.
+{% endcomment %}
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --dc-ink: #101828;
+        --dc-muted: #667085;
+        --dc-line: #E4E7EC;
+        --dc-soft: #F7F8FA;
+        --dc-brand: #4F46E5;
+        --dc-brand-dark: #3730A3;
+        --dc-green: #059669;
+        --dc-amber: #D97706;
+        --dc-red: #DC2626;
+        --dc-radius: 14px;
+    }
+
+    .dc-wrap { max-width: 1500px; margin: 0 auto; padding: 1.75rem 1.25rem 4rem; color: var(--dc-ink); }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    .dc-header {
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(135deg, #4F46E5 0%, #6D28D9 55%, #9333EA 100%);
+        color: #fff;
+        border-radius: 18px;
+        padding: 1.9rem 2rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 18px 40px -18px rgba(79, 70, 229, 0.7);
+    }
+    .dc-header::after {
+        content: '';
+        position: absolute;
+        right: -70px; top: -90px;
+        width: 300px; height: 300px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.09);
+    }
+    .dc-header-inner {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.25rem;
+        align-items: flex-end;
+        justify-content: space-between;
+    }
+    .dc-eyebrow {
+        display: inline-flex; align-items: center; gap: .45rem;
+        font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+        background: rgba(255, 255, 255, .18);
+        padding: .3rem .7rem; border-radius: 999px; margin-bottom: .7rem;
+    }
+    .dc-header h1 { font-size: 1.75rem; font-weight: 800; margin: 0 0 .35rem; letter-spacing: -.02em; }
+    .dc-header p { margin: 0; opacity: .88; font-size: .93rem; max-width: 60ch; }
+    .dc-header-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .dc-hbtn {
+        display: inline-flex; align-items: center; gap: .45rem;
+        padding: .58rem 1rem; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .35);
+        background: rgba(255, 255, 255, .14); color: #fff; font-size: .85rem; font-weight: 600;
+        text-decoration: none; cursor: pointer; transition: background .18s, transform .12s;
+    }
+    .dc-hbtn:hover { background: rgba(255, 255, 255, .26); color: #fff; transform: translateY(-1px); }
+    .dc-hbtn.is-solid { background: #fff; color: var(--dc-brand-dark); border-color: #fff; }
+    .dc-hbtn.is-solid:hover { background: #F4F3FF; color: var(--dc-brand-dark); }
+
+    /* ── Stats ──────────────────────────────────────────────── */
+    .dc-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: .9rem;
+        margin-bottom: 1.5rem;
+    }
+    .dc-stat {
+        background: #fff; border: 1px solid var(--dc-line); border-radius: var(--dc-radius);
+        padding: 1rem 1.1rem; display: flex; align-items: center; gap: .85rem;
+        transition: box-shadow .2s, transform .2s;
+    }
+    .dc-stat:hover { box-shadow: 0 10px 24px -14px rgba(16, 24, 40, .4); transform: translateY(-2px); }
+    .dc-stat-icon {
+        width: 40px; height: 40px; flex-shrink: 0; border-radius: 11px;
+        display: flex; align-items: center; justify-content: center; font-size: 1rem;
+    }
+    .dc-stat-value { font-size: 1.4rem; font-weight: 800; line-height: 1.1; letter-spacing: -.02em; }
+    .dc-stat-label { font-size: .74rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--dc-muted); }
+
+    /* ── Cards ──────────────────────────────────────────────── */
+    .dc-card {
+        background: #fff; border: 1px solid var(--dc-line); border-radius: var(--dc-radius);
+        margin-bottom: 1.25rem; overflow: hidden;
+    }
+    .dc-card-head {
+        display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; justify-content: space-between;
+        padding: 1rem 1.25rem; border-bottom: 1px solid var(--dc-line); background: var(--dc-soft);
+    }
+    .dc-card-title { display: flex; align-items: center; gap: .6rem; font-size: 1rem; font-weight: 700; margin: 0; }
+    .dc-card-title i { color: var(--dc-brand); }
+    .dc-card-sub { font-size: .8rem; color: var(--dc-muted); margin: .2rem 0 0; }
+    .dc-card-body { padding: 1.25rem; }
+
+    /* ── Forms ──────────────────────────────────────────────── */
+    /* Fixed column counts, not auto-fit: an auto-fit track lets one column go
+       narrow enough to wrap its label onto a second line, which knocks that
+       column's input out of line with its neighbours. */
+    .dc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.15rem 1.25rem; align-items: stretch; }
+    .dc-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dc-field { display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+    .dc-field label {
+        font-size: .74rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+        color: var(--dc-muted); margin: 0; line-height: 1.2;
+        /* Two lines' worth, so a wrapped label still leaves every input in a
+           row sitting on the same baseline. */
+        min-height: 2.4em; display: flex; align-items: flex-end;
+    }
+    /* Help text is pinned to the bottom of the (stretched) field, so the hints
+       across a row line up too. */
+    .dc-field .dc-help { font-size: .73rem; line-height: 1.35; color: var(--dc-muted); margin-top: auto; padding-top: .1rem; }
+    .dc-span-2 { grid-column: span 2; }
+    .dc-input, .dc-select, .dc-textarea {
+        width: 100%; border: 1px solid var(--dc-line); border-radius: 9px;
+        padding: .55rem .7rem; font-size: .88rem; color: var(--dc-ink); background: #fff;
+        transition: border-color .16s, box-shadow .16s;
+    }
+    .dc-input:focus, .dc-select:focus, .dc-textarea:focus {
+        outline: none; border-color: var(--dc-brand); box-shadow: 0 0 0 3px rgba(79, 70, 229, .12);
+    }
+    .dc-textarea { min-height: 74px; resize: vertical; }
+    .dc-switch { display: flex; align-items: center; gap: .55rem; font-size: .85rem; font-weight: 600; cursor: pointer; }
+    .dc-switch input { width: 1.05rem; height: 1.05rem; cursor: pointer; accent-color: var(--dc-brand); }
+
+    .dc-btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+        padding: .55rem 1.05rem; border-radius: 9px; border: 1px solid transparent;
+        font-size: .85rem; font-weight: 600; cursor: pointer; text-decoration: none;
+        transition: background .16s, box-shadow .16s, transform .12s, color .16s;
+    }
+    .dc-btn:active { transform: translateY(1px); }
+    .dc-btn-primary { background: var(--dc-brand); color: #fff; }
+    .dc-btn-primary:hover { background: var(--dc-brand-dark); color: #fff; }
+    .dc-btn-ghost { background: #fff; border-color: var(--dc-line); color: var(--dc-ink); }
+    .dc-btn-ghost:hover { background: var(--dc-soft); color: var(--dc-ink); }
+    .dc-btn-danger { background: #FEF2F2; border-color: #FECACA; color: var(--dc-red); }
+    .dc-btn-danger:hover { background: #FEE2E2; color: var(--dc-red); }
+    .dc-btn-sm { padding: .38rem .6rem; font-size: .8rem; }
+
+    /* ── Toolbar ────────────────────────────────────────────── */
+    .dc-toolbar { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; width: 100%; }
+    .dc-search { position: relative; flex: 1 1 240px; min-width: 180px; }
+    .dc-search i { position: absolute; left: .75rem; top: 50%; transform: translateY(-50%); color: var(--dc-muted); font-size: .82rem; }
+    .dc-search .dc-input { padding-left: 2.1rem; }
+    .dc-toolbar .dc-select { width: auto; min-width: 140px; flex: 0 1 auto; }
+
+    /* ── Bulk bar ───────────────────────────────────────────── */
+    .dc-bulk {
+        display: none;
+        gap: .6rem; flex-wrap: wrap; align-items: center;
+        padding: .8rem 1.25rem;
+        background: linear-gradient(90deg, #EEF2FF, #F5F3FF);
+        border-bottom: 1px solid #DDD6FE;
+    }
+    .dc-bulk.is-visible { display: flex; }
+    .dc-bulk-count {
+        display: inline-flex; align-items: center; gap: .4rem;
+        font-size: .85rem; font-weight: 700; color: var(--dc-brand-dark);
+        background: #fff; border: 1px solid #DDD6FE; border-radius: 999px; padding: .3rem .8rem;
+    }
+    .dc-bulk .dc-select, .dc-bulk .dc-input { width: auto; min-width: 150px; }
+    .dc-bulk-value { display: none; gap: .5rem; flex-wrap: wrap; }
+    .dc-bulk-value.is-visible { display: flex; }
+
+    /* ── Table ──────────────────────────────────────────────── */
+    .dc-table-scroll { overflow-x: auto; }
+    .dc-table { width: 100%; border-collapse: collapse; font-size: .87rem; }
+    .dc-table thead th {
+        background: var(--dc-soft); color: var(--dc-muted);
+        font-size: .71rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+        padding: .7rem .9rem; text-align: left; white-space: nowrap;
+        border-bottom: 1px solid var(--dc-line); position: sticky; top: 0; z-index: 2;
+    }
+    .dc-table tbody td { padding: .8rem .9rem; border-bottom: 1px solid #F1F3F7; vertical-align: middle; }
+    .dc-table tbody tr { transition: background .14s; }
+    .dc-table tbody tr:hover { background: #FBFAFF; }
+    .dc-table tbody tr.is-selected { background: #F5F3FF; }
+    .dc-table tbody tr.is-off td:not(.dc-cell-actions) { opacity: .6; }
+    .dc-check { width: 1.05rem; height: 1.05rem; cursor: pointer; accent-color: var(--dc-brand); }
+    .dc-col-check { width: 42px; }
+
+    .dc-district { font-weight: 700; letter-spacing: -.01em; }
+    .dc-scope { display: inline-flex; align-items: center; gap: .3rem; font-size: .75rem; color: var(--dc-muted); margin-top: .15rem; }
+    .dc-scope.is-branch { color: var(--dc-brand); font-weight: 600; }
+    .dc-amount { font-weight: 800; font-size: .95rem; white-space: nowrap; }
+    .dc-amount.is-free { color: var(--dc-green); }
+    .dc-eta { line-height: 1.35; }
+    .dc-eta-np { display: block; font-size: .78rem; color: var(--dc-muted); }
+    .dc-areas { display: flex; flex-wrap: wrap; gap: .25rem; max-width: 290px; }
+    .dc-chip {
+        padding: .13rem .45rem; border-radius: 6px; background: var(--dc-soft);
+        border: 1px solid var(--dc-line); font-size: .73rem; font-weight: 600; color: #475467;
+    }
+    .dc-chip.is-more { background: #EEF2FF; border-color: #DDD6FE; color: var(--dc-brand-dark); }
+    .dc-dash { color: #C4C9D4; }
+    .dc-pill {
+        display: inline-flex; align-items: center; gap: .32rem;
+        padding: .22rem .6rem; border-radius: 999px; font-size: .74rem; font-weight: 700;
+        border: 1px solid transparent; cursor: pointer;
+    }
+    .dc-pill.is-on { background: #ECFDF3; color: #067647; border-color: #ABEFC6; }
+    .dc-pill.is-off { background: #FEF3F2; color: #B42318; border-color: #FECDCA; }
+    .dc-cell-actions { white-space: nowrap; text-align: right; }
+    .dc-icon-btn {
+        width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--dc-line);
+        background: #fff; color: var(--dc-muted); cursor: pointer; font-size: .8rem;
+        transition: all .15s; margin-left: .3rem;
+    }
+    .dc-icon-btn:hover { border-color: var(--dc-brand); color: var(--dc-brand); background: #F5F3FF; }
+    .dc-icon-btn.is-danger:hover { border-color: #FECACA; color: var(--dc-red); background: #FEF2F2; }
+
+    .dc-empty { text-align: center; padding: 3.5rem 1.5rem; color: var(--dc-muted); }
+    .dc-empty i { font-size: 2.4rem; color: #D0D5DD; margin-bottom: .9rem; display: block; }
+    .dc-empty h3 { font-size: 1.05rem; font-weight: 700; color: var(--dc-ink); margin-bottom: .35rem; }
+
+    /* ── District combobox ──────────────────────────────────── */
+    .dc-combo { position: relative; }
+    .dc-combo .dc-input { padding-right: 2rem; }
+    .dc-combo-caret {
+        position: absolute; right: .7rem; top: 50%; transform: translateY(-50%);
+        color: var(--dc-muted); font-size: .72rem; cursor: pointer; transition: transform .18s;
+    }
+    .dc-combo.is-open .dc-combo-caret { transform: translateY(-50%) rotate(180deg); }
+    .dc-combo-list {
+        display: none;
+        position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30;
+        max-height: 244px; overflow-y: auto;
+        background: #fff; border: 1px solid var(--dc-line); border-radius: 10px;
+        box-shadow: 0 18px 34px -14px rgba(16, 24, 40, .35);
+        padding: .25rem;
+    }
+    .dc-combo.is-open .dc-combo-list { display: block; }
+    .dc-combo.is-up .dc-combo-list { top: auto; bottom: calc(100% + 4px); }
+    .dc-combo-option {
+        display: flex; align-items: baseline; justify-content: space-between; gap: .6rem;
+        padding: .45rem .6rem; border-radius: 7px; cursor: pointer;
+        font-size: .85rem; font-weight: 600; color: var(--dc-ink);
+    }
+    .dc-combo-option:hover, .dc-combo-option.is-active { background: #F5F3FF; color: var(--dc-brand-dark); }
+    .dc-combo-option small { font-size: .72rem; font-weight: 500; color: var(--dc-muted); white-space: nowrap; }
+    .dc-combo-empty { padding: .7rem .6rem; font-size: .8rem; color: var(--dc-muted); }
+
+    /* ── Modal ──────────────────────────────────────────────── */
+    /* overflow stays visible so the combobox list can hang past the body. */
+    .dc-modal .modal-content { border: none; border-radius: 16px; overflow: visible; }
+    .dc-modal .modal-header {
+        background: linear-gradient(135deg, var(--dc-brand), #7C3AED);
+        color: #fff; border: none; padding: 1.1rem 1.4rem;
+        border-radius: 16px 16px 0 0;
+    }
+    .dc-modal .modal-footer { border-radius: 0 0 16px 16px; }
+    .dc-modal .modal-header .btn-close { filter: brightness(0) invert(1); }
+    .dc-modal .modal-body { padding: 1.4rem; }
+    .dc-modal .modal-footer { background: var(--dc-soft); border-top: 1px solid var(--dc-line); padding: .9rem 1.4rem; }
+
+    /* ── Responsive: the table becomes stacked cards ────────── */
+    @media (max-width: 992px) {
+        .dc-wrap { padding: 1rem .75rem 3rem; }
+        .dc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .dc-header { padding: 1.4rem 1.15rem; }
+        .dc-header h1 { font-size: 1.4rem; }
+        .dc-header-actions { width: 100%; }
+        .dc-hbtn { flex: 1 1 auto; justify-content: center; }
+
+        .dc-table, .dc-table tbody, .dc-table tr, .dc-table td { display: block; width: 100%; }
+        .dc-table thead { display: none; }
+        .dc-table tbody tr {
+            border: 1px solid var(--dc-line); border-radius: 12px;
+            margin: .75rem 1rem; padding: .35rem .25rem; position: relative;
+        }
+        .dc-table tbody tr.is-selected { border-color: #C7D2FE; }
+        /* The empty-state row is not a record — don't dress it as a card. */
+        .dc-table tbody tr:not([data-dc-row]) { border: none; margin: 0; }
+        .dc-table tbody tr:not([data-dc-row]) td { display: block; padding: 0; }
+        .dc-table tbody td { border: none; padding: .4rem .9rem; display: flex; gap: .75rem; align-items: flex-start; }
+        .dc-table tbody td::before {
+            content: attr(data-label);
+            flex: 0 0 34%; max-width: 34%;
+            font-size: .68rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+            color: var(--dc-muted); padding-top: .15rem;
+        }
+        .dc-table tbody td.dc-col-check { position: absolute; top: .55rem; right: .7rem; padding: 0; width: auto; }
+        .dc-table tbody td.dc-col-check::before { content: none; }
+        .dc-table tbody td.dc-cell-actions { justify-content: flex-end; text-align: left; padding-top: .6rem; }
+        .dc-table tbody td.dc-cell-actions::before { flex: 1; }
+        .dc-areas { max-width: none; }
+        .dc-toolbar .dc-select, .dc-bulk .dc-select, .dc-bulk .dc-input { flex: 1 1 140px; min-width: 0; width: auto; }
+    }
+    @media (max-width: 576px) {
+        /* One column, and labels no longer need reserving two lines. */
+        .dc-grid { grid-template-columns: minmax(0, 1fr); }
+        .dc-span-2 { grid-column: span 1; }
+        .dc-field label { min-height: 0; }
+        .dc-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .dc-stat { padding: .8rem; gap: .6rem; }
+        .dc-stat-icon { width: 34px; height: 34px; }
+        .dc-stat-value { font-size: 1.15rem; }
+        .dc-card-head { padding: .85rem; }
+        .dc-card-body { padding: .9rem; }
+        .dc-table tbody tr { margin: .6rem .6rem; }
+        .dc-table tbody td::before { flex-basis: 40%; max-width: 40%; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dc-wrap">
+
+    <!-- ══ Header ══ -->
+    <div class="dc-header">
+        <div class="dc-header-inner">
+            <div>
+                <span class="dc-eyebrow"><i class="fas fa-truck-fast"></i> Storefront delivery</span>
+                <h1>Delivery Charge Setup</h1>
+                <p>Set what delivery costs, how long it takes and which areas each courier branch reaches.
+                   Shoppers see exactly this on the product order form the moment they pick their district.</p>
+            </div>
+            <div class="dc-header-actions">
+                <button type="button" class="dc-hbtn" data-bs-toggle="modal" data-bs-target="#dcSyncModal">
+                    <i class="fas fa-rotate"></i> Sync districts
+                </button>
+                <a class="dc-hbtn" href="{% url 'delivery_charge_export' %}">
+                    <i class="fas fa-file-csv"></i> Export CSV
+                </a>
+                <button type="button" class="dc-hbtn is-solid" data-dc-add>
+                    <i class="fas fa-plus"></i> Add delivery rule
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ Stats ══ -->
+    <div class="dc-stats">
+        <div class="dc-stat">
+            <span class="dc-stat-icon" style="background:#EEF2FF;color:#4F46E5;"><i class="fas fa-layer-group"></i></span>
+            <div>
+                <div class="dc-stat-value">{{ stats.total }}</div>
+                <div class="dc-stat-label">Total rules</div>
+            </div>
+        </div>
+        <div class="dc-stat">
+            <span class="dc-stat-icon" style="background:#ECFDF3;color:#059669;"><i class="fas fa-circle-check"></i></span>
+            <div>
+                <div class="dc-stat-value">{{ stats.active }}</div>
+                <div class="dc-stat-label">Active</div>
+            </div>
+        </div>
+        <div class="dc-stat">
+            <span class="dc-stat-icon" style="background:#FFF7ED;color:#D97706;"><i class="fas fa-map-location-dot"></i></span>
+            <div>
+                <div class="dc-stat-value">{{ stats.districts }}</div>
+                <div class="dc-stat-label">Districts covered</div>
+            </div>
+        </div>
+        <div class="dc-stat">
+            <span class="dc-stat-icon" style="background:#F0F9FF;color:#0284C7;"><i class="fas fa-gift"></i></span>
+            <div>
+                <div class="dc-stat-value">{{ stats.free }}</div>
+                <div class="dc-stat-label">Free zones</div>
+            </div>
+        </div>
+        <div class="dc-stat">
+            <span class="dc-stat-icon" style="background:#FDF4FF;color:#A21CAF;"><i class="fas fa-indian-rupee-sign"></i></span>
+            <div>
+                <div class="dc-stat-value">Rs. {{ stats.avg_charge|default:0|floatformat:0 }}</div>
+                <div class="dc-stat-label">Average charge</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ Site-wide defaults ══ -->
+    <div class="dc-card">
+        <div class="dc-card-head">
+            <div>
+                <h2 class="dc-card-title"><i class="fas fa-sliders"></i> Site-wide defaults</h2>
+                <p class="dc-card-sub">Used for any district that has no rule of its own — nothing is ever left unpriced.</p>
+            </div>
+            <button class="dc-btn dc-btn-ghost dc-btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#dcDefaults">
+                <i class="fas fa-chevron-down"></i> Show / hide
+            </button>
+        </div>
+        <div class="collapse {% if not rules %}show{% endif %}" id="dcDefaults">
+            <form method="POST" action="{% url 'delivery_charge_settings' %}" class="dc-card-body">
+                {% csrf_token %}
+                <div class="dc-grid">
+                    <div class="dc-field">
+                        <label for="dcValleyCharge">Inside-valley charge (Rs.)</label>
+                        <input class="dc-input" type="number" step="any" min="0" id="dcValleyCharge"
+                               name="inside_valley_charge" value="{{ setting.inside_valley_charge|floatformat:'-2' }}">
+                        <span class="dc-help">Applied to the valley districts listed below.</span>
+                    </div>
+                    <div class="dc-field">
+                        <label for="dcDefaultCharge">Default charge (Rs.)</label>
+                        <input class="dc-input" type="number" step="any" min="0" id="dcDefaultCharge"
+                               name="default_charge" value="{{ setting.default_charge|floatformat:'-2' }}">
+                        <span class="dc-help">Fallback for any district with no rule of its own.</span>
+                    </div>
+                    <div class="dc-field">
+                        <label for="dcThreshold">Free delivery above (Rs.)</label>
+                        <input class="dc-input" type="number" step="any" min="0" id="dcThreshold"
+                               name="free_delivery_threshold" value="{{ setting.free_delivery_threshold|floatformat:'-2' }}">
+                        <span class="dc-help">Waives the charge on big orders in districts with no rule. 0 turns it off.</span>
+                    </div>
+                    <div class="dc-field dc-span-2">
+                        <label for="dcValleyDistricts">Valley districts</label>
+                        <input class="dc-input" type="text" id="dcValleyDistricts"
+                               name="valley_districts" value="{{ setting.valley_districts }}">
+                        <span class="dc-help">Comma separated. These get the inside-valley charge above.</span>
+                    </div>
+                    <div class="dc-field">
+                        <label for="dcDefaultTime">Default delivery time</label>
+                        <input class="dc-input" type="text" id="dcDefaultTime" name="default_delivery_time"
+                               value="{{ setting.default_delivery_time }}" placeholder="Delivered within 3-5 days">
+                        <span class="dc-help">Used by rules that set no time of their own.</span>
+                    </div>
+                    <div class="dc-field dc-span-2">
+                        <label for="dcDefaultTimeNp">Default delivery time (Nepali)</label>
+                        <input class="dc-input" type="text" id="dcDefaultTimeNp" name="default_delivery_time_np"
+                               value="{{ setting.default_delivery_time_np }}" placeholder="३-५ दिन भित्र डेलिभरी हुनेछ">
+                        <span class="dc-help">Shown under the English line on the storefront.</span>
+                    </div>
+                </div>
+                <hr style="border:none;border-top:1px solid var(--dc-line);margin:1.25rem 0 1rem;">
+                <div class="d-flex flex-wrap align-items-center gap-3 mt-3">
+                    <label class="dc-switch">
+                        <input type="checkbox" name="show_delivery_time" {% if setting.show_delivery_time %}checked{% endif %}>
+                        Show delivery time on the storefront
+                    </label>
+                    <label class="dc-switch">
+                        <input type="checkbox" name="show_covered_areas" {% if setting.show_covered_areas %}checked{% endif %}>
+                        Show covered areas on the storefront
+                    </label>
+                    <button type="submit" class="dc-btn dc-btn-primary ms-auto">
+                        <i class="fas fa-floppy-disk"></i> Save defaults
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ══ Rules ══ -->
+    <div class="dc-card">
+        <div class="dc-card-head">
+            <form method="GET" class="dc-toolbar" data-dc-filter>
+                <div class="dc-search">
+                    <i class="fas fa-magnifying-glass"></i>
+                    <input class="dc-input" type="search" name="q" value="{{ search }}"
+                           placeholder="Search district, branch or area…">
+                </div>
+                <select class="dc-select" name="status">
+                    <option value="">All statuses</option>
+                    <option value="active" {% if status == 'active' %}selected{% endif %}>Active only</option>
+                    <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive only</option>
+                </select>
+                <select class="dc-select" name="scope">
+                    <option value="">All rules</option>
+                    <option value="district" {% if scope == 'district' %}selected{% endif %}>District-wide</option>
+                    <option value="branch" {% if scope == 'branch' %}selected{% endif %}>Branch-specific</option>
+                    <option value="free" {% if scope == 'free' %}selected{% endif %}>Free delivery</option>
+                    <option value="paid" {% if scope == 'paid' %}selected{% endif %}>Paid delivery</option>
+                </select>
+                <select class="dc-select" name="sort">
+                    <option value="district" {% if sort == 'district' %}selected{% endif %}>District A→Z</option>
+                    <option value="-district" {% if sort == '-district' %}selected{% endif %}>District Z→A</option>
+                    <option value="-charge" {% if sort == '-charge' %}selected{% endif %}>Highest charge</option>
+                    <option value="charge" {% if sort == 'charge' %}selected{% endif %}>Lowest charge</option>
+                    <option value="updated" {% if sort == 'updated' %}selected{% endif %}>Recently updated</option>
+                </select>
+                <button class="dc-btn dc-btn-ghost dc-btn-sm" type="submit"><i class="fas fa-filter"></i> Apply</button>
+                {% if search or status or scope or sort != 'district' %}
+                <a class="dc-btn dc-btn-ghost dc-btn-sm" href="{% url 'delivery_charge_setup' %}"><i class="fas fa-xmark"></i> Clear</a>
+                {% endif %}
+            </form>
+        </div>
+
+        <form method="POST" action="{% url 'delivery_charge_bulk_action' %}" id="dcBulkForm">
+            {% csrf_token %}
+
+            <!-- Bulk action bar — appears as soon as a row is ticked -->
+            <div class="dc-bulk" data-dc-bulkbar>
+                <span class="dc-bulk-count"><i class="fas fa-check-double"></i> <span data-dc-count>0</span> selected</span>
+
+                <!-- Not `required`: the bar is display:none until a row is ticked,
+                     and a hidden required control makes the browser refuse to
+                     submit with an error it cannot show. The JS below checks it. -->
+                <select class="dc-select" name="action" data-dc-action>
+                    <option value="">Choose an action…</option>
+                    <option value="activate">Activate</option>
+                    <option value="deactivate">Deactivate</option>
+                    <option value="set_charge">Set delivery charge…</option>
+                    <option value="set_delivery_time">Set delivery time…</option>
+                    <option value="set_free_above">Set free-delivery threshold…</option>
+                    <option value="clear_free_above">Never free (clear threshold)</option>
+                    <option value="delete">Delete</option>
+                </select>
+
+                <span class="dc-bulk-value" data-dc-value="set_charge">
+                    <input class="dc-input" type="number" step="any" min="0" name="bulk_charge" placeholder="Charge (Rs.)">
+                </span>
+                <span class="dc-bulk-value" data-dc-value="set_delivery_time">
+                    <input class="dc-input" type="text" name="bulk_delivery_time" placeholder="e.g. Delivered within 3-4 days">
+                    <input class="dc-input" type="text" name="bulk_delivery_time_np" placeholder="नेपालीमा (optional)">
+                </span>
+                <span class="dc-bulk-value" data-dc-value="set_free_above">
+                    <input class="dc-input" type="number" step="any" min="0" name="bulk_free_above" placeholder="Free above (Rs.)">
+                </span>
+
+                <button type="submit" class="dc-btn dc-btn-primary dc-btn-sm"><i class="fas fa-bolt"></i> Apply</button>
+                <button type="button" class="dc-btn dc-btn-ghost dc-btn-sm" data-dc-clear><i class="fas fa-xmark"></i> Clear</button>
+            </div>
+
+            <div class="dc-table-scroll">
+                <table class="dc-table">
+                    <thead>
+                        <tr>
+                            <th class="dc-col-check"><input type="checkbox" class="dc-check" data-dc-all title="Select all"></th>
+                            <th>District / branch</th>
+                            <th>Charge</th>
+                            <th>Free above</th>
+                            <th>Delivery time</th>
+                            <th>Covered areas</th>
+                            <th>Status</th>
+                            <th style="text-align:right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rule in rules %}
+                        <tr data-dc-row
+                            data-id="{{ rule.id }}"
+                            data-district="{{ rule.district }}"
+                            data-branch-code="{{ rule.branch_code }}"
+                            data-branch-name="{{ rule.branch_name }}"
+                            data-charge="{{ rule.charge|floatformat:'-2' }}"
+                            data-free-above="{% if rule.free_above is not None %}{{ rule.free_above|floatformat:'-2' }}{% endif %}"
+                            data-time="{{ rule.delivery_time }}"
+                            data-time-np="{{ rule.delivery_time_np }}"
+                            data-areas="{{ rule.covered_areas }}"
+                            data-note="{{ rule.note }}"
+                            data-active="{{ rule.is_active|yesno:'1,0' }}"
+                            class="{% if not rule.is_active %}is-off{% endif %}">
+                            <td class="dc-col-check">
+                                <input type="checkbox" class="dc-check" name="selected_ids" value="{{ rule.id }}" data-dc-row-check>
+                            </td>
+                            <td data-label="District">
+                                <div>
+                                    <div class="dc-district">{{ rule.district }}</div>
+                                    <div class="dc-scope {% if rule.branch_code %}is-branch{% endif %}">
+                                        <i class="fas {% if rule.branch_code %}fa-location-dot{% else %}fa-globe{% endif %}"></i>
+                                        {{ rule.scope_label }}{% if rule.branch_code %} · {{ rule.branch_code }}{% endif %}
+                                    </div>
+                                </div>
+                            </td>
+                            <td data-label="Charge">
+                                <span class="dc-amount {% if rule.charge <= 0 %}is-free{% endif %}">
+                                    {% if rule.charge > 0 %}Rs. {{ rule.charge|floatformat:0 }}{% else %}FREE{% endif %}
+                                </span>
+                            </td>
+                            <td data-label="Free above">
+                                {% if rule.free_above is not None %}Rs. {{ rule.free_above|floatformat:0 }}
+                                {% else %}<span class="dc-dash">Always charged</span>{% endif %}
+                            </td>
+                            <td data-label="Delivery time">
+                                {% if rule.delivery_time or rule.delivery_time_np %}
+                                <span class="dc-eta">
+                                    {{ rule.delivery_time }}
+                                    {% if rule.delivery_time_np %}<span class="dc-eta-np">{{ rule.delivery_time_np }}</span>{% endif %}
+                                </span>
+                                {% else %}<span class="dc-dash">Site default</span>{% endif %}
+                            </td>
+                            <td data-label="Covered areas">
+                                {% with areas=rule.covered_area_list %}
+                                {% if areas %}
+                                <div class="dc-areas">
+                                    {% for area in areas|slice:':3' %}<span class="dc-chip">{{ area }}</span>{% endfor %}
+                                    {% if areas|length > 3 %}<span class="dc-chip is-more">+{{ areas|length|add:'-3' }}</span>{% endif %}
+                                </div>
+                                {% else %}<span class="dc-dash">From courier</span>{% endif %}
+                                {% endwith %}
+                            </td>
+                            <td data-label="Status">
+                                <button type="button" class="dc-pill {% if rule.is_active %}is-on{% else %}is-off{% endif %}"
+                                        data-dc-toggle="{% url 'delivery_charge_toggle' rule.id %}"
+                                        title="Click to {% if rule.is_active %}deactivate{% else %}activate{% endif %}">
+                                    <i class="fas {% if rule.is_active %}fa-circle-check{% else %}fa-circle-pause{% endif %}"></i>
+                                    {% if rule.is_active %}Active{% else %}Inactive{% endif %}
+                                </button>
+                            </td>
+                            <td class="dc-cell-actions" data-label="Actions">
+                                <button type="button" class="dc-icon-btn" data-dc-edit title="Edit"><i class="fas fa-pen"></i></button>
+                                <button type="button" class="dc-icon-btn is-danger"
+                                        data-dc-delete="{% url 'delivery_charge_delete' rule.id %}"
+                                        data-dc-name="{{ rule }}" title="Delete"><i class="fas fa-trash"></i></button>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8">
+                                <div class="dc-empty">
+                                    <i class="fas fa-truck-ramp-box"></i>
+                                    <h3>{% if search or status or scope %}No rules match those filters{% else %}No delivery rules yet{% endif %}</h3>
+                                    <p>{% if search or status or scope %}Try clearing the search or filters.{% else %}Add one district at a time, or pull every NCM district in at once with <strong>Sync districts</strong>.{% endif %}</p>
+                                    {% if not search and not status and not scope %}
+                                    <button type="button" class="dc-btn dc-btn-primary mt-2" data-dc-add>
+                                        <i class="fas fa-plus"></i> Add your first rule
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Per-row toggle/delete post through this, so nothing nests inside the bulk form -->
+<form method="POST" id="dcRowForm" hidden>{% csrf_token %}</form>
+
+{{ district_options|json_script:"dcDistrictData" }}
+
+<!-- ══ Add / edit modal ══ -->
+<div class="modal fade dc-modal" id="dcRuleModal" tabindex="-1" aria-hidden="true">
+    <!-- Not modal-dialog-scrollable: a scrolling body would clip the district
+         dropdown. The whole dialog scrolls instead on short screens. -->
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-truck-fast me-2"></i><span data-dc-modal-title>Add delivery rule</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="{% url 'delivery_charge_save' %}" id="dcRuleForm">
+                {% csrf_token %}
+                <input type="hidden" name="rule_id" data-dc-field="rule_id">
+                <input type="hidden" name="branch_name" data-dc-field="branch_name">
+                <div class="modal-body">
+                    <div class="dc-grid">
+                        <div class="dc-field">
+                            <label for="dcDistrict">District <span style="color:var(--dc-red)">*</span></label>
+                            <!-- A styled combobox, not <datalist>: the native one renders an
+                                 unstyled OS list that spills outside the modal. -->
+                            <div class="dc-combo" data-dc-combo>
+                                <input class="dc-input" id="dcDistrict" name="district" data-dc-field="district"
+                                       placeholder="Type to search district" autocomplete="off"
+                                       role="combobox" aria-expanded="false" aria-autocomplete="list"
+                                       aria-controls="dcDistrictList" required>
+                                <span class="dc-combo-caret" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                                <div class="dc-combo-list" id="dcDistrictList" role="listbox"></div>
+                            </div>
+                            <span class="dc-help">
+                                {% if locations_source == 'ncm' %}Pick one of the courier's {{ districts|length }} districts, or type your own.
+                                {% else %}Courier list unavailable right now — type the district name.{% endif %}
+                            </span>
+                        </div>
+                        <div class="dc-field">
+                            <label for="dcBranch">Courier branch</label>
+                            <select class="dc-select" id="dcBranch" name="branch_code" data-dc-field="branch_code">
+                                <option value="">All branches in this district</option>
+                            </select>
+                            <span class="dc-help">A branch rule overrides the district rule for that branch only.</span>
+                        </div>
+                        <div class="dc-field">
+                            <label for="dcCharge">Delivery charge (Rs.) <span style="color:var(--dc-red)">*</span></label>
+                            <input class="dc-input" type="number" step="any" min="0" id="dcCharge" name="charge"
+                                   data-dc-field="charge" value="0" required>
+                            <span class="dc-help">0 shows as FREE on the storefront.</span>
+                        </div>
+                        <div class="dc-field">
+                            <label for="dcFreeAbove">Free above (Rs.)</label>
+                            <input class="dc-input" type="number" step="any" min="0" id="dcFreeAbove"
+                                   name="free_above" data-dc-field="free_above" placeholder="Blank = always charged">
+                            <span class="dc-help">Waive the charge once the order reaches this subtotal.</span>
+                        </div>
+                        <div class="dc-field">
+                            <label for="dcTime">Delivery time</label>
+                            <input class="dc-input" type="text" id="dcTime" name="delivery_time"
+                                   data-dc-field="delivery_time" placeholder="Delivered within 3-4 days">
+                        </div>
+                        <div class="dc-field">
+                            <label for="dcTimeNp">Delivery time (Nepali)</label>
+                            <input class="dc-input" type="text" id="dcTimeNp" name="delivery_time_np"
+                                   data-dc-field="delivery_time_np" placeholder="३-४ दिन भित्र डेलिभरी हुनेछ">
+                        </div>
+                    </div>
+
+                    <div class="dc-field mt-3">
+                        <label for="dcAreas">Covered areas</label>
+                        <textarea class="dc-textarea" id="dcAreas" name="covered_areas" data-dc-field="covered_areas"
+                                  placeholder="SHAHILEK, CHHELA, GADHI, AAITA, BADILEK…"></textarea>
+                        <span class="dc-help">Comma separated. Leave blank to show the courier branch's own area list.</span>
+                    </div>
+
+                    <div class="dc-field mt-3">
+                        <label for="dcNote">Note shown to the shopper</label>
+                        <input class="dc-input" type="text" id="dcNote" name="note" data-dc-field="note"
+                               placeholder="e.g. Remote area — please stay reachable on the phone.">
+                    </div>
+
+                    <label class="dc-switch mt-3">
+                        <input type="checkbox" name="is_active" data-dc-field="is_active" checked> Active
+                    </label>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="dc-btn dc-btn-ghost" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="dc-btn dc-btn-primary"><i class="fas fa-floppy-disk"></i> Save rule</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ══ Sync modal ══ -->
+<div class="modal fade dc-modal" id="dcSyncModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-rotate me-2"></i>Sync districts from NCM</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="{% url 'delivery_charge_sync' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <p class="mb-3" style="font-size:.9rem;color:var(--dc-muted);">
+                        Creates a district-wide rule for every NCM district that doesn't have one yet.
+                        Existing rules are never touched, so this is safe to run any time.
+                    </p>
+                    <div class="dc-grid dc-grid-2">
+                        <div class="dc-field">
+                            <label for="dcSyncCharge">Charge for the new rules (Rs.)</label>
+                            <input class="dc-input" type="number" step="any" min="0" id="dcSyncCharge" name="sync_charge"
+                                   placeholder="Site defaults">
+                            <span class="dc-help">Blank uses Rs. {{ setting.inside_valley_charge|floatformat:0 }} inside the valley
+                                and Rs. {{ setting.default_charge|floatformat:0 }} elsewhere.</span>
+                        </div>
+                        <div class="dc-field">
+                            <label for="dcSyncFreeAbove">Free above (Rs.)</label>
+                            <input class="dc-input" type="number" step="any" min="0" id="dcSyncFreeAbove" name="sync_free_above"
+                                   value="{{ setting.free_delivery_threshold|floatformat:'-2' }}" placeholder="Blank = always charged">
+                            <span class="dc-help">Carries your free-delivery threshold onto the new rules.</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="dc-btn dc-btn-ghost" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="dc-btn dc-btn-primary"><i class="fas fa-rotate"></i> Sync districts</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    'use strict';
+
+    var BRANCH_URL = "{% url 'delivery_charge_branches' %}";
+    var bulkForm = document.getElementById('dcBulkForm');
+    var bulkBar = document.querySelector('[data-dc-bulkbar]');
+    var rowChecks = Array.prototype.slice.call(document.querySelectorAll('[data-dc-row-check]'));
+    var allCheck = document.querySelector('[data-dc-all]');
+    var countLabel = document.querySelector('[data-dc-count]');
+    var actionSelect = document.querySelector('[data-dc-action]');
+
+    /* ── Selection ───────────────────────────────────────── */
+    function selected() { return rowChecks.filter(function (c) { return c.checked; }); }
+
+    function syncSelection() {
+        var picked = selected();
+        if (countLabel) countLabel.textContent = picked.length;
+        if (bulkBar) bulkBar.classList.toggle('is-visible', picked.length > 0);
+        if (allCheck) {
+            allCheck.checked = picked.length > 0 && picked.length === rowChecks.length;
+            allCheck.indeterminate = picked.length > 0 && picked.length < rowChecks.length;
+        }
+        rowChecks.forEach(function (c) {
+            var row = c.closest('tr');
+            if (row) row.classList.toggle('is-selected', c.checked);
+        });
+    }
+
+    rowChecks.forEach(function (check) {
+        check.addEventListener('change', syncSelection);
+    });
+
+    if (allCheck) {
+        allCheck.addEventListener('change', function () {
+            rowChecks.forEach(function (c) { c.checked = allCheck.checked; });
+            syncSelection();
+        });
+    }
+
+    var clearBtn = document.querySelector('[data-dc-clear]');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function () {
+            rowChecks.forEach(function (c) { c.checked = false; });
+            if (actionSelect) actionSelect.value = '';
+            showActionValue('');
+            syncSelection();
+        });
+    }
+
+    /* ── Bulk action: reveal only the input the action needs ─ */
+    function showActionValue(action) {
+        document.querySelectorAll('[data-dc-value]').forEach(function (box) {
+            box.classList.toggle('is-visible', box.dataset.dcValue === action);
+        });
+    }
+
+    if (actionSelect) {
+        actionSelect.addEventListener('change', function () { showActionValue(actionSelect.value); });
+    }
+
+    if (bulkForm) {
+        bulkForm.addEventListener('submit', function (e) {
+            var action = actionSelect ? actionSelect.value : '';
+            var count = selected().length;
+            if (!action) {
+                e.preventDefault();
+                alert('Choose an action to apply first.');
+                return;
+            }
+            if (!count) {
+                e.preventDefault();
+                alert('Select at least one delivery rule first.');
+                return;
+            }
+            if (action === 'delete' &&
+                !confirm('Delete ' + count + ' delivery rule(s)? Those districts will fall back to the site-wide charge.')) {
+                e.preventDefault();
+            }
+        });
+    }
+
+    /* ── Row actions ─────────────────────────────────────── */
+    var rowForm = document.getElementById('dcRowForm');
+    function postTo(url) {
+        if (!rowForm) return;
+        rowForm.action = url;
+        rowForm.submit();
+    }
+
+    document.querySelectorAll('[data-dc-toggle]').forEach(function (btn) {
+        btn.addEventListener('click', function () { postTo(btn.dataset.dcToggle); });
+    });
+
+    document.querySelectorAll('[data-dc-delete]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            if (confirm('Delete the delivery rule for ' + btn.dataset.dcName + '?')) {
+                postTo(btn.dataset.dcDelete);
+            }
+        });
+    });
+
+    /* ── Number inputs ───────────────────────────────────── */
+    /* A wheel over a focused number input silently nudges the value — that is
+       how a Rs. 500 threshold quietly becomes Rs. 499.97 while scrolling. */
+    document.querySelectorAll('input[type="number"]').forEach(function (input) {
+        input.addEventListener('wheel', function (e) {
+            if (document.activeElement === input) { e.preventDefault(); input.blur(); }
+        }, { passive: false });
+    });
+
+    /* ── Add / edit modal ────────────────────────────────── */
+    var modalEl = document.getElementById('dcRuleModal');
+    var modal = modalEl ? new bootstrap.Modal(modalEl) : null;
+    var branchSelect = document.querySelector('[data-dc-field="branch_code"]');
+    var branchNameInput = document.querySelector('[data-dc-field="branch_name"]');
+    var districtInput = document.querySelector('[data-dc-field="district"]');
+
+    function field(name) { return document.querySelector('[data-dc-field="' + name + '"]'); }
+
+    /* ── District combobox ───────────────────────────────── */
+    var comboRoot = document.querySelector('[data-dc-combo]');
+    var comboList = document.getElementById('dcDistrictList');
+    var districtData = [];
+    try {
+        districtData = JSON.parse(document.getElementById('dcDistrictData').textContent) || [];
+    } catch (err) { districtData = []; }
+
+    var comboMatches = [];
+    var comboActive = -1;
+
+    function comboEscape(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function comboRender() {
+        if (!comboList) return;
+        if (!comboMatches.length) {
+            comboList.innerHTML = '<div class="dc-combo-empty">' +
+                (districtData.length ? 'No district matches — you can still type your own.'
+                                     : 'Courier list unavailable. Type the district name.') + '</div>';
+            return;
+        }
+        comboList.innerHTML = comboMatches.map(function (d, i) {
+            var meta = [d.province, d.branches ? d.branches + ' branch' + (d.branches > 1 ? 'es' : '') : '']
+                .filter(Boolean).join(' · ');
+            return '<div class="dc-combo-option' + (i === comboActive ? ' is-active' : '') +
+                '" role="option" data-index="' + i + '"><span>' + comboEscape(d.name) + '</span>' +
+                (meta ? '<small>' + comboEscape(meta) + '</small>' : '') + '</div>';
+        }).join('');
+    }
+
+    /* Flip the list above the field when there is no room below it. */
+    function comboPlace() {
+        if (!comboRoot || !districtInput) return;
+        var rect = districtInput.getBoundingClientRect();
+        var below = window.innerHeight - rect.bottom;
+        comboRoot.classList.toggle('is-up', below < 260 && rect.top > below);
+    }
+
+    function comboOpen(query) {
+        if (!comboRoot) return;
+        var q = (query || '').trim().toUpperCase();
+        comboMatches = q
+            ? districtData.filter(function (d) { return d.name.indexOf(q) !== -1; })
+            : districtData.slice();
+        comboActive = comboMatches.length ? 0 : -1;
+        comboPlace();
+        comboRender();
+        comboRoot.classList.add('is-open');
+        districtInput.setAttribute('aria-expanded', 'true');
+    }
+
+    function comboClose() {
+        if (!comboRoot) return;
+        comboRoot.classList.remove('is-open');
+        districtInput.setAttribute('aria-expanded', 'false');
+        comboActive = -1;
+    }
+
+    function comboChoose(entry) {
+        if (!entry) return;
+        districtInput.value = entry.name;
+        comboClose();
+        loadBranches(entry.name, '');
+    }
+
+    if (districtInput && comboRoot && comboList) {
+        // Focus shows the whole list — the admin is usually browsing, not
+        // re-filtering the district that is already in the box.
+        districtInput.addEventListener('focus', function () {
+            districtInput.select();
+            comboOpen('');
+        });
+        districtInput.addEventListener('input', function () {
+            // Districts are stored uppercase; typing lowercase would otherwise
+            // create a second rule for the same place. Re-setting .value moves
+            // the caret to the end, so put it back where it was.
+            var upper = districtInput.value.toUpperCase();
+            if (upper !== districtInput.value) {
+                var at = districtInput.selectionStart;
+                districtInput.value = upper;
+                districtInput.setSelectionRange(at, at);
+            }
+            comboOpen(districtInput.value);
+        });
+        districtInput.addEventListener('keydown', function (e) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (!comboRoot.classList.contains('is-open')) { comboOpen(''); return; }
+                if (!comboMatches.length) return;
+                comboActive = (comboActive + (e.key === 'ArrowDown' ? 1 : -1) + comboMatches.length) % comboMatches.length;
+                comboRender();
+                var node = comboList.querySelector('[data-index="' + comboActive + '"]');
+                if (node) node.scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'Enter' && comboRoot.classList.contains('is-open') && comboActive >= 0) {
+                e.preventDefault();
+                comboChoose(comboMatches[comboActive]);
+            } else if (e.key === 'Escape') {
+                comboClose();
+            }
+        });
+        districtInput.addEventListener('blur', function () {
+            // Let a click on an option land first. Whatever was typed is kept —
+            // a district off the courier's list is still a valid rule.
+            setTimeout(function () {
+                comboClose();
+                loadBranches(districtInput.value.trim().toUpperCase(), '');
+            }, 150);
+        });
+        comboList.addEventListener('mousedown', function (e) {
+            var node = e.target.closest('[data-index]');
+            if (!node) return;
+            e.preventDefault();
+            comboChoose(comboMatches[parseInt(node.dataset.index, 10)]);
+        });
+        comboRoot.querySelector('.dc-combo-caret').addEventListener('mousedown', function (e) {
+            e.preventDefault();
+            if (comboRoot.classList.contains('is-open')) comboClose();
+            else districtInput.focus();
+        });
+        window.addEventListener('resize', comboPlace);
+    }
+
+    /** Load the branches for a district; keep `wanted` selected if it is there.
+        Skips the round trip when the district has not actually changed, so
+        blurring the combobox does not reset a branch the admin just picked. */
+    var loadedDistrict = null;
+    function loadBranches(district, wanted, force) {
+        if (!branchSelect) return;
+        if (!force && district === loadedDistrict) return;
+        loadedDistrict = district;
+        branchSelect.innerHTML = '<option value="">All branches in this district</option>';
+        branchSelect.disabled = !district;
+        if (!district) { syncBranchName(); return; }
+        fetch(BRANCH_URL + '?district=' + encodeURIComponent(district), {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                (data.branches || []).forEach(function (b) {
+                    var opt = document.createElement('option');
+                    opt.value = b.code;
+                    opt.textContent = b.name + (b.code ? ' (' + b.code + ')' : '');
+                    opt.dataset.name = b.name;
+                    if (wanted && b.code === wanted) opt.selected = true;
+                    branchSelect.appendChild(opt);
+                });
+                // A branch saved before the courier dropped it must stay selectable.
+                if (wanted && branchSelect.value !== wanted) {
+                    var keep = document.createElement('option');
+                    keep.value = wanted;
+                    keep.textContent = wanted;
+                    keep.selected = true;
+                    branchSelect.appendChild(keep);
+                }
+                syncBranchName();
+            })
+            .catch(function () { /* leave the district-wide option in place */ });
+    }
+
+    function syncBranchName() {
+        if (!branchSelect || !branchNameInput) return;
+        var opt = branchSelect.options[branchSelect.selectedIndex];
+        branchNameInput.value = (opt && opt.dataset.name) || (branchSelect.value ? opt.textContent : '');
+    }
+
+    if (branchSelect) branchSelect.addEventListener('change', syncBranchName);
+
+    function openModal(row) {
+        if (!modal) return;
+        var title = document.querySelector('[data-dc-modal-title]');
+        var data = row ? row.dataset : {};
+
+        field('rule_id').value = data.id || '';
+        field('district').value = data.district || '';
+        field('charge').value = data.charge || '0';
+        field('free_above').value = data.freeAbove || '';
+        field('delivery_time').value = data.time || '';
+        field('delivery_time_np').value = data.timeNp || '';
+        field('covered_areas').value = data.areas || '';
+        field('note').value = data.note || '';
+        field('is_active').checked = row ? data.active === '1' : true;
+        if (branchNameInput) branchNameInput.value = data.branchName || '';
+        if (title) title.textContent = row ? 'Edit delivery rule' : 'Add delivery rule';
+
+        loadBranches((data.district || '').toUpperCase(), data.branchCode || '', true);
+        modal.show();
+    }
+
+    document.querySelectorAll('[data-dc-add]').forEach(function (btn) {
+        btn.addEventListener('click', function () { openModal(null); });
+    });
+
+    document.querySelectorAll('[data-dc-edit]').forEach(function (btn) {
+        btn.addEventListener('click', function () { openModal(btn.closest('[data-dc-row]')); });
+    });
+
+    /* ── Filters: re-run on change, and debounce the search box ─ */
+    var filterForm = document.querySelector('[data-dc-filter]');
+    if (filterForm) {
+        filterForm.querySelectorAll('select').forEach(function (sel) {
+            sel.addEventListener('change', function () { filterForm.submit(); });
+        });
+        var searchBox = filterForm.querySelector('input[name="q"]');
+        if (searchBox) {
+            var timer = null;
+            searchBox.addEventListener('input', function () {
+                clearTimeout(timer);
+                timer = setTimeout(function () { filterForm.submit(); }, 600);
+            });
+        }
+    }
+
+    syncSelection();
+})();
+</script>
+{% endblock %}

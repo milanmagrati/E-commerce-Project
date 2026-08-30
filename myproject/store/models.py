@@ -313,3 +313,120 @@ class Page(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class DeliverySetting(models.Model):
+    """Site-wide delivery defaults — the fallback used whenever no
+    :class:`DeliveryCharge` rule matches the district the shopper picked.
+
+    Single row, always read through :meth:`get_solo`, so the storefront never
+    has to care whether an administrator has visited the setup page yet.
+    """
+
+    inside_valley_charge = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal('0'),
+        help_text="Delivery fee for the Kathmandu Valley districts listed below.")
+    default_charge = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal('100'),
+        help_text="Fee used for any district that has no rule of its own.")
+    free_delivery_threshold = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal('500'),
+        help_text="Orders at or above this subtotal ship free, in districts "
+                  "that have no rule of their own. 0 disables it.")
+    valley_districts = models.CharField(
+        max_length=255, default='KATHMANDU, LALITPUR, BHAKTAPUR',
+        help_text="Comma-separated districts treated as inside the valley.")
+    default_delivery_time = models.CharField(
+        max_length=140, blank=True, default='Delivered within 3-5 days',
+        help_text="Shown on the order form when a rule has no time of its own.")
+    default_delivery_time_np = models.CharField(
+        max_length=180, blank=True, default='',
+        help_text="Nepali version of the line above (optional).")
+    show_covered_areas = models.BooleanField(
+        default=True, help_text="Show the branch's covered areas on the order form.")
+    show_delivery_time = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Delivery setting'
+        verbose_name_plural = 'Delivery settings'
+
+    def __str__(self):
+        return 'Delivery settings'
+
+    @classmethod
+    def get_solo(cls):
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls.objects.create()
+        return obj
+
+    @property
+    def valley_district_set(self):
+        return {
+            part.strip().upper()
+            for part in (self.valley_districts or '').split(',')
+            if part.strip()
+        }
+
+
+class DeliveryCharge(models.Model):
+    """One delivery rule: what a district (optionally a single courier branch
+    inside it) costs, how long it takes, and which areas it reaches.
+
+    A rule with a blank ``branch_code`` covers the whole district; a rule with
+    one set beats it for that branch only. Districts and branch codes are held
+    uppercase so lookups match whatever casing NCM returns.
+    """
+
+    district = models.CharField(max_length=80, db_index=True)
+    branch_code = models.CharField(
+        max_length=40, blank=True, default='',
+        help_text="Blank = the rule covers every branch in the district.")
+    branch_name = models.CharField(max_length=140, blank=True, default='')
+    charge = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0'))
+    free_above = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Subtotal at or above which this rule ships free. "
+                  "Blank = this district is always charged.")
+    delivery_time = models.CharField(
+        max_length=140, blank=True, default='',
+        help_text="e.g. 'Delivered within 3-4 days'.")
+    delivery_time_np = models.CharField(
+        max_length=180, blank=True, default='',
+        help_text="e.g. '३-४ दिन भित्र डेलिभरी हुनेछ'.")
+    covered_areas = models.TextField(
+        blank=True, default='',
+        help_text="Comma-separated areas. Blank = fall back to the courier's own list.")
+    note = models.CharField(max_length=200, blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['district', 'branch_name', 'branch_code']
+        unique_together = [('district', 'branch_code')]
+        indexes = [models.Index(fields=['district', 'branch_code'])]
+        verbose_name = 'Delivery charge'
+        verbose_name_plural = 'Delivery charges'
+
+    def __str__(self):
+        if self.branch_code:
+            return f'{self.district} / {self.branch_name or self.branch_code}'
+        return self.district
+
+    def save(self, *args, **kwargs):
+        self.district = (self.district or '').strip().upper()
+        self.branch_code = (self.branch_code or '').strip().upper()
+        self.branch_name = (self.branch_name or '').strip()
+        super().save(*args, **kwargs)
+
+    @property
+    def scope_label(self):
+        return self.branch_name or self.branch_code or 'All branches'
+
+    @property
+    def covered_area_list(self):
+        raw = (self.covered_areas or '').replace('\n', ',')
+        return [a.strip() for a in raw.split(',') if a.strip()]
