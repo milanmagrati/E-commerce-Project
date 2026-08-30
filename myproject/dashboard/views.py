@@ -14719,7 +14719,12 @@ def ncm_branches_json(request):
                             code_value = str(branch.get('code') or branch.get('Code') or branch.get('id') or branch.get('ID') or '').strip()
                             name_value = str(branch.get('name') or branch.get('Name') or branch.get('branch_name') or branch.get('Branch_Name') or '').strip()
 
-                            address = branch.get('address', '')
+                            # NCM returns address as null for some branches
+                            # (23 of them as of Aug 2026, incl. FALASHAIN/FALA1).
+                            # A None here used to raise AttributeError on
+                            # address.lower() below and the branch got silently
+                            # dropped by the bare except.
+                            address = branch.get('address') or ''
                             municipality_value = ''
 
                             for address_pattern, muni_name in MUNICIPALITY_MAPPING.items():
