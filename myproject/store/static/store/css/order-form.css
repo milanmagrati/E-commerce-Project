@@ -80,20 +80,6 @@
     margin: 3px 0 0;
     line-height: 1.45;
 }
-.of-mode-chip {
-    flex-shrink: 0;
-    font-size: 10.5px;
-    font-weight: 800;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    padding: 5px 10px;
-    border-radius: 999px;
-    white-space: nowrap;
-    transition: background 0.25s, color 0.25s;
-}
-.of-mode-chip[data-mode="confirmed"] { background: #FDE7E7; color: var(--of-accent-dark); }
-.of-mode-chip[data-mode="inquiry"]   { background: #E7E7E9; color: #2A2A2E; }
-
 /* ── Body ─────────────────────────────────────────────────── */
 .of-body { padding: 18px 22px 22px; }
 
@@ -701,7 +687,6 @@ select.of-input {
     .of-head { padding: 15px 15px 13px; gap: 10px; }
     .of-body { padding: 15px; }
     .of-title { font-size: 16px; }
-    .of-mode-chip { display: none; }
     .of-assurance { gap: 8px 12px; }
     .of-submit { padding: 13px 14px; gap: 10px; }
     .of-submit-title { font-size: 14.5px; }
@@ -724,7 +709,6 @@ select.of-input {
         .of-fields { grid-template-columns: 1fr; }
         .of-head { padding: 15px 15px 13px; }
         .of-body { padding: 15px; }
-        .of-mode-chip { display: none; }
     }
 }
 

@@ -583,11 +583,6 @@
 
     OrderForm.prototype.setMode = function (mode) {
         this.panel.dataset.mode = mode;
-        var chip = this.q('[data-mode-chip]');
-        if (chip) {
-            chip.dataset.mode = mode;
-            chip.textContent = mode === 'inquiry' ? 'Inquiry' : 'Order';
-        }
     };
 
     OrderForm.prototype.setFormError = function (message) {

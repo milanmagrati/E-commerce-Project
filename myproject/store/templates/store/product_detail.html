@@ -200,14 +200,7 @@ open, and both the add-to-cart form and the order panel post normally.
 
                 <button type="button" class="pdp-btn pdp-btn-accent"
                         data-open-order="confirmed" aria-expanded="false" aria-controls="order-panel">
-                    Confirm order
-                    <span class="sub">सामान लिने भएमा मात्र</span>
-                </button>
-
-                <button type="button" class="pdp-btn pdp-btn-solid"
-                        data-open-order="inquiry" aria-expanded="false" aria-controls="order-panel">
-                    Inquiry only
-                    <span class="sub">बुझ्नको लागि</span>
+                    Order Now
                 </button>
             </div>
 
@@ -217,7 +210,7 @@ open, and both the add-to-cart form and the order panel post normally.
                 <span data-save-text>{% if in_wishlist %}Saved{% else %}Save for later{% endif %}</span>
             </button>
 
-            <!-- The order form itself, collapsed until one of the two buttons
+            <!-- The order form itself, collapsed until the Order Now button
                  above is used. of_compact drops its product strip and stepper:
                  both are already a few pixels above this point. -->
             <div class="pdp-order-slot" id="order-panel" data-order-slot>
@@ -225,7 +218,7 @@ open, and both the add-to-cart form and the order panel post normally.
                     {% order_form_single_item product 1 '' as of_items %}
                     {% order_form_config product.price product.price available_stock True as of_config %}
                     {% url 'store:quick_order' product.id as quick_order_url %}
-                    {% include "store/partials/order_form.html" with of_action=quick_order_url of_items=of_items of_subtotal=product.price of_total=product.price of_mode='confirmed' of_compact=True of_qty_editable=True of_qty=1 of_max_qty=available_stock of_id='pd-' of_config=of_config of_form=order_form %}
+                    {% include "store/partials/order_form.html" with of_action=quick_order_url of_items=of_items of_subtotal=product.price of_total=product.price of_mode='confirmed' of_compact=True of_qty_editable=True of_qty=1 of_max_qty=available_stock of_id='pd-' of_config=of_config of_form=order_form of_hide_inquiry=True %}
                 </div>
             </div>
 
