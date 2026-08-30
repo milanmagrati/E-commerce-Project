@@ -552,6 +552,10 @@
                                                     <input type="checkbox" class="form-check-input" name="can_delete_ncm_orders" id="can_delete_ncm_orders" {% if edit_user.can_delete_ncm_orders %}checked{% endif %}>
                                                     <label for="can_delete_ncm_orders">Delete NCM Orders</label>
                                                 </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_export_logistics_orders" id="can_export_logistics_orders" {% if edit_user.can_export_logistics_orders %}checked{% endif %}>
+                                                    <label for="can_export_logistics_orders">Export Logistics Orders</label>
+                                                </div>
                                             </div>
 
                                             <!-- Bulk Logs -->
@@ -564,6 +568,10 @@
                                                 <div class="perm-item">
                                                     <input type="checkbox" class="form-check-input" name="can_manage_ncm_bulk_logs" id="can_manage_ncm_bulk_logs" {% if edit_user.can_manage_ncm_bulk_logs %}checked{% endif %}>
                                                     <label for="can_manage_ncm_bulk_logs">Manage Bulk Logs</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_export_logistics_bulk_logs" id="can_export_logistics_bulk_logs" {% if edit_user.can_export_logistics_bulk_logs %}checked{% endif %}>
+                                                    <label for="can_export_logistics_bulk_logs">Export Bulk Logs</label>
                                                 </div>
                                             </div>
 
@@ -717,6 +725,10 @@
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_access_follow_ups" id="can_access_follow_ups" {% if edit_user.can_access_follow_ups %}checked{% endif %}>
                                                 <label for="can_access_follow_ups">Can Access Follow Ups</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_follow_ups" id="can_export_follow_ups" {% if edit_user.can_export_follow_ups %}checked{% endif %}>
+                                                <label for="can_export_follow_ups">Can Export Follow Ups</label>
                                             </div>
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_setup_follow_up_status" id="can_setup_follow_up_status" {% if edit_user.can_setup_follow_up_status %}checked{% endif %}>

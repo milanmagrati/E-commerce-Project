@@ -20,7 +20,7 @@
                     <i class="fas fa-sync-alt" id="syncNowIcon"></i> Sync Now
                 </button>
                 {% endif %}
-                {% if request.user.role == 'administrator' or request.user.can_export_orders %}
+                {% if request.user.role == 'administrator' or request.user.can_export_logistics_orders %}
                 <button type="button" class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#exportLogisticsModal">
                     <i class="fas fa-file-excel"></i> Export
                 </button>
@@ -39,7 +39,7 @@
     </div>
 </div>
 
-{% if request.user.role == 'administrator' or request.user.can_export_orders %}
+{% if request.user.role == 'administrator' or request.user.can_export_logistics_orders %}
 <!-- Export Modal -->
 <div class="modal fade" id="exportLogisticsModal" tabindex="-1" aria-labelledby="exportLogisticsModalLabel" aria-hidden="true">
     <div class="modal-dialog">

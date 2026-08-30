@@ -26,9 +26,11 @@
             page changes with the errand, and a menu of every combination would
             not fit on a button.
             {% endcomment %}
+            {% if request.user.can_export_logistics_bulk_logs or request.user.is_superuser or request.user.role == 'administrator' %}
             <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#exportLogsModal">
                 <i class="fas fa-file-export"></i> Export
             </button>
+            {% endif %}
             <a href="{% url 'logistics_bulk_logs_trash' %}" class="btn btn-danger">
                 <i class="fas fa-trash-alt"></i> Trash
             </a>
@@ -422,6 +424,7 @@ ticked - so the choices are laid out as a dialog with the counts next to them.
 Everything except the row limit is decided here; the view re-reads the same
 filters the page did, so the file can only ever be what the table was showing.
 {% endcomment %}
+{% if request.user.can_export_logistics_bulk_logs or request.user.is_superuser or request.user.role == 'administrator' %}
 <div class="modal fade" id="exportLogsModal" tabindex="-1" aria-labelledby="exportLogsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content export-modal">
@@ -595,6 +598,7 @@ filters the page did, so the file can only ever be what the table was showing.
         </div>
     </div>
 </div>
+{% endif %}
 
 <style>
     /* Provider Toggle */

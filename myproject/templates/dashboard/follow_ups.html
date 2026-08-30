@@ -27,6 +27,7 @@ load and broken on the next refresh.
             <span class="badge bg-light text-secondary border ms-1" style="font-size:0.7rem;font-weight:600;"><span class="fu-total-matching">{{ total_matching }}</span> matching</span>
         </h4>
         <div class="d-flex gap-2">
+            {% if request.user.can_export_follow_ups or request.user.is_superuser or request.user.role == 'administrator' %}
             <div class="dropdown">
                 <button class="btn btn-sm btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                     <i class="fas fa-file-export"></i> Export
@@ -41,6 +42,7 @@ load and broken on the next refresh.
                     <li><a class="dropdown-item fu-needs-selection disabled" href="#" onclick="exportFollowUps('csv', true); return false;"><i class="fas fa-file-csv text-primary me-2"></i>CSV — <span class="fu-sel-count">0</span> selected</a></li>
                 </ul>
             </div>
+            {% endif %}
             {% if request.user.can_setup_follow_up_status or request.user.is_superuser or request.user.role == 'administrator' %}
             <a href="{% url 'followup_setup_management' %}" class="btn btn-sm btn-outline-primary">
                 <i class="fas fa-cog"></i> Status Setup
@@ -203,6 +205,7 @@ load and broken on the next refresh.
                 <button type="button" class="btn btn-sm btn-outline-light" onclick="clearSelection()">
                     <i class="fas fa-times"></i> Clear
                 </button>
+                {% if request.user.can_export_follow_ups or request.user.is_superuser or request.user.role == 'administrator' %}
                 <div class="dropdown">
                     <button class="btn btn-sm btn-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
                         <i class="fas fa-file-export"></i> Export Selected
@@ -212,6 +215,7 @@ load and broken on the next refresh.
                         <li><a class="dropdown-item" href="#" onclick="exportFollowUps('csv', true); return false;"><i class="fas fa-file-csv text-primary me-2"></i>CSV (.csv)</a></li>
                     </ul>
                 </div>
+                {% endif %}
                 <button type="button" class="btn btn-sm btn-danger" id="bulkDeleteBtn" onclick="bulkDeleteSelected()">
                     <i class="fas fa-trash-alt"></i> Delete Selected
                 </button>

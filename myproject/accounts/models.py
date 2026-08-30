@@ -159,6 +159,8 @@ class CustomUser(AbstractUser):
     can_delete_ncm_orders = models.BooleanField(default=False, verbose_name="Can Delete NCM Orders")
     can_view_ncm_bulk_logs = models.BooleanField(default=False, verbose_name="Can View NCM Bulk Logs")
     can_manage_ncm_bulk_logs = models.BooleanField(default=False, verbose_name="Can Manage NCM Bulk Logs")
+    can_export_logistics_orders = models.BooleanField(default=False, verbose_name="Can Export Logistics Orders")
+    can_export_logistics_bulk_logs = models.BooleanField(default=False, verbose_name="Can Export Logistics Bulk Logs")
     can_view_ncm_trash = models.BooleanField(default=False, verbose_name="Can View NCM Trash")
     can_sync_ncm_orders = models.BooleanField(default=False, verbose_name="Can Sync NCM Orders")
     can_view_ncm_branches = models.BooleanField(default=False, verbose_name="Can View NCM Branches")
@@ -178,6 +180,7 @@ class CustomUser(AbstractUser):
 
     # FOLLOW UP PERMISSIONS
     can_access_follow_ups = models.BooleanField(default=False, verbose_name="Can Access Follow Ups")
+    can_export_follow_ups = models.BooleanField(default=False, verbose_name="Can Export Follow Ups")
     can_view_follow_up_report = models.BooleanField(default=False, verbose_name="Can View Follow Up Report")
     can_setup_follow_up_status = models.BooleanField(default=False, verbose_name="Can Setup Follow Up Status")
 
@@ -257,11 +260,12 @@ class CustomUser(AbstractUser):
                 'can_view_cities', 'can_add_cities', 'can_edit_cities', 'can_delete_cities',
                 'can_view_ncm_orders', 'can_create_ncm_orders', 'can_edit_ncm_orders',
                 'can_delete_ncm_orders', 'can_view_ncm_bulk_logs', 'can_manage_ncm_bulk_logs',
+                'can_export_logistics_orders', 'can_export_logistics_bulk_logs',
                 'can_view_ncm_trash', 'can_sync_ncm_orders', 'can_view_ncm_branches', 'can_manage_ncm_branches',
                 'can_view_hrm', 'can_view_hrm_hr_management', 'can_view_hrm_asset_management',
                 'can_view_hrm_attendance', 'can_view_hrm_payroll', 'can_view_hrm_incomplete_attendance',
                 'can_fix_hrm_incomplete_attendance',
-                'can_access_todo', 'can_access_follow_ups', 'can_view_follow_up_report', 'can_setup_follow_up_status',
+                'can_access_todo', 'can_access_follow_ups', 'can_export_follow_ups', 'can_view_follow_up_report', 'can_setup_follow_up_status',
                 'can_view_cost_price', 'can_edit_prices', 'can_give_discounts',
                 'can_view_content_management', 'can_view_resources', 'can_create_resources',
                 'can_view_audit_trail', 'can_view_all_users_activity', 'can_export_audit_logs',

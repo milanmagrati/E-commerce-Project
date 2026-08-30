@@ -21433,8 +21433,11 @@ def _export_logistics_orders_excel(orders, provider, date_from, date_to):
 def export_logistics_orders_excel(request):
     """Export logistics orders to Excel, honouring the same filters as the
     list page plus a custom date range picked just for the export."""
-    if request.user.role != 'administrator' and not request.user.can_export_orders:
-        return HttpResponse("You do not have permission to export orders.", status=403)
+    if request.user.role != 'administrator' and not (
+        getattr(request.user, 'can_view_ncm_orders', False)
+        and getattr(request.user, 'can_export_logistics_orders', False)
+    ):
+        return HttpResponse("You do not have permission to export logistics orders.", status=403)
 
     provider = request.GET.get('provider', 'all').strip()
     search_query = request.GET.get('search', '').strip()
@@ -21992,7 +21995,7 @@ def _bulk_log_list_export_csv(provider, include, columns, rows):
 
 
 @login_required
-@permission_required('can_view_ncm_bulk_logs')
+@permission_required('can_view_ncm_bulk_logs', 'can_export_logistics_bulk_logs')
 def logistics_bulk_logs_export(request):
     """Export the Bulk Logs list: the batches, their order rows, or both.
 
@@ -26549,7 +26552,11 @@ def export_follow_ups(request):
     Exports the whole filtered queryset — not just the page the paginator is
     showing — or, when `ids=` is present, exactly the ticked rows.
     """
-    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    is_admin = request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    has_access = is_admin or (
+        getattr(request.user, 'can_access_follow_ups', False)
+        and getattr(request.user, 'can_export_follow_ups', False)
+    )
     if not has_access:
         messages.error(request, 'You do not have permission to export Follow-ups.')
         return redirect('dashboard')
