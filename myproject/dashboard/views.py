@@ -5447,6 +5447,99 @@ def _rtv_is_redirect_eligible(rtv_last_status, local_ncm_status=None):
     return False
 
 
+def _rtv_listed_on_stale_order_status(rtv_last_status, local_ncm_status):
+    """True when the ONLY thing keeping a row listed is the linked order's
+    stored NCM status, while the RTV row itself says the parcel is not at a
+    branch.
+
+    The same fact reaches this database by two routes that refresh at different
+    times:
+
+    * ``RTVOrder.last_status`` — rewritten for **every** active RTV each time
+      the RTV list sync runs (ncm_rtvs_sync, `:24207`);
+    * ``Order.ncm_status`` — rewritten by the NCM webhook (near-real-time, but
+      only for orders NCM actually sends events for) and by the order detail
+      page's load-time sync. Nothing else touches it for an RTV'd order: the
+      background bulk sync skips it, because 'return' is a terminal status.
+
+    Since either side can lag, _rtv_is_redirect_eligible() accepts a row when
+    *either* says "at a branch" — dropping the order-side rescue would hide a
+    webhook-fresh arrival until the next RTV sync. But the two directions of
+    disagreement are not equally suspicious, which is why this is one-sided:
+
+    * RTV says at-branch, order says in transit — routine. The RTV copy is the
+      one every sync refreshes; the order's is simply behind. Nothing to do.
+    * RTV says in transit, order says at-branch — the failure. The systematically
+      refreshed copy says the parcel has moved on, and a stale
+      ``"Arrived at RETURN (…)"`` frozen on the order is all that still lists it.
+      The operator finds out only when NCM refuses the redirect, and the row used
+      to clear itself only when somebody opened the order detail page — the other
+      writer of ``Order.ncm_status``.
+
+    Even so, this does not pick a winner: only NCM can. It flags the row so
+    possible_redirection_list can tell the page to hand it straight to
+    possible_redirection_refresh_status(), which asks NCM and writes the answer
+    back to both copies.
+
+    A blank status abstains: it means "never synced", not "not at a branch".
+    """
+    if not (rtv_last_status or '').strip() or not (local_ncm_status or '').strip():
+        return False
+    return (not _rtv_is_redirect_eligible(rtv_last_status)
+            and _rtv_is_redirect_eligible(local_ncm_status))
+
+
+def _live_ncm_status(ncm_order_id, api_config_id=None):
+    """NCM's current status string for one order, or '' if it can't be had.
+
+    Never raises. Every caller holds a stored fallback, and a modal that answers
+    from the last known status beats one that fails to open.
+    """
+    from services.ncm_service import NCMService
+    try:
+        svc = NCMService(api_config_id=api_config_id) if api_config_id else NCMService()
+        result = svc.get_bulk_order_statuses([str(ncm_order_id)])
+    except Exception:
+        logger.warning('Live NCM status lookup failed for order %s',
+                       ncm_order_id, exc_info=True)
+        return ''
+
+    if not result.get('success'):
+        return ''
+    _data = result.get('data') or {}
+    statuses = _data.get('result') if isinstance(_data, dict) else None
+    if not isinstance(statuses, dict):
+        return ''
+    raw = statuses.get(str(ncm_order_id))
+    if isinstance(raw, dict):
+        raw = raw.get('status') or raw.get('Status') or ''
+    return str(raw or '').strip()
+
+
+def _rtv_redirect_eligibility(rtv_rec, local_ncm_status, ncm_order_id, api_config_id=None):
+    """``(redirect_eligible, status_to_show)`` for the redirect / detail modals.
+
+    Normally the same OR of the two stored statuses the list view applies. The
+    exception is the one case that OR gets wrong — the RTV row says the parcel
+    has left the branch while the linked order's stored status still claims it
+    is there (see _rtv_listed_on_stale_order_status). Trusting the stale half
+    there enables the Redirect button and walks the operator through the whole
+    form for a redirect NCM then refuses.
+
+    Neither stored copy can settle that, so ask NCM. One extra request, only on
+    the ambiguous open of a single modal — and the answer is written back to the
+    RTV row so the Possible Redirection page stops asking it again.
+    """
+    stored = rtv_rec.last_status if rtv_rec else ''
+    if _rtv_listed_on_stale_order_status(stored, local_ncm_status):
+        live = _live_ncm_status(ncm_order_id, api_config_id)
+        if live:
+            if rtv_rec and live != rtv_rec.last_status:
+                RTVOrder.objects.filter(order_id=ncm_order_id).update(last_status=live)
+            return _rtv_is_redirect_eligible(live), live
+    return _rtv_is_redirect_eligible(stored, local_ncm_status), stored
+
+
 def _redirected_rtv_ncm_ids(rtv_qs):
     """NCM order ids within `rtv_qs` whose package has already been redirected.
 
@@ -5568,7 +5661,14 @@ def possible_redirection_list(request):
 
     # Exclude terminal orders using live Order.ncm_status
     # PERFORMANCE FIX: Use a subquery restricted to active RTVs rather than loading all history
+    #
+    # is_deleted=False on all three linked-order subqueries below: a trashed
+    # order is not the parcel's status any more, and _rtv_is_non_redirectable()
+    # — the Python mirror the refresh endpoint applies — is only ever handed
+    # orders from a is_deleted=False queryset. Without it the two disagreed, and
+    # a deleted row could silently decide what this page shows.
     _terminal_ncm_ids = Order.objects.filter(
+        is_deleted=False,
         ncm_order_id__isnull=False,
         ncm_order_id__in=rtvs.values('order_id'),
         ncm_status__iregex=NON_REDIRECTABLE_NCM_STATUS_REGEX,
@@ -5578,14 +5678,15 @@ def possible_redirection_list(request):
 
     # Also exclude RTVs where the linked local Order is already marked delivered
     _delivered_ncm_ids = Order.objects.filter(
+        is_deleted=False,
         ncm_order_id__isnull=False,
-        ncm_order_id__in=rtvs.values('order_id')
+        ncm_order_id__in=rtvs.values('order_id'),
     ).filter(
-        Q(status__iexact='delivered') | 
-        Q(order_status__iexact='delivered') | 
+        Q(status__iexact='delivered') |
+        Q(order_status__iexact='delivered') |
         Q(ncm_status__iexact='Delivered')
     ).values('ncm_order_id')
-    
+
     rtvs = rtvs.exclude(order_id__in=_delivered_ncm_ids)
 
     # Keep ONLY packages NCM has confirmed are physically sitting at a branch or
@@ -5604,8 +5705,11 @@ def possible_redirection_list(request):
         _eligible_rtv_q |= Q(last_status__istartswith=_prefix)
         _eligible_order_q |= Q(ncm_status__istartswith=_prefix)
 
-    # The linked local order's ncm_status counts too: it is refreshed by the
-    # order detail page's load-time sync, which can be ahead of the RTV list sync.
+    # The linked local order's ncm_status counts too: the NCM webhook and the
+    # order detail page's load-time sync both write it, and either can be ahead
+    # of the RTV list sync. It can also be BEHIND, which is the failure
+    # _rtv_listed_on_stale_order_status() flags on the way out — a row kept alive
+    # only by this clause is not trusted, it is checked against NCM.
     _eligible_ncm_ids = Order.objects.filter(
         is_deleted=False,
         ncm_order_id__isnull=False,
@@ -5809,6 +5913,14 @@ def possible_redirection_list(request):
             'ncm_status': (local_order.ncm_status or '') if local_order else '',
             'local_order_id': local_order.id if local_order else None,
             'last_status': rtv.last_status or '',
+            # The row is listed only on a stored order status the RTV row itself
+            # contradicts, so we do not actually know whether it belongs here.
+            # The template marks these rows and the page checks them against NCM
+            # immediately on load instead of waiting out its cross-tab cooldown
+            # — see _rtv_listed_on_stale_order_status().
+            'status_uncertain': _rtv_listed_on_stale_order_status(
+                rtv.last_status, local_order.ncm_status if local_order else '',
+            ),
         }
         rtv_entries.append(entry)
 
@@ -6014,6 +6126,15 @@ def possible_redirection_refresh_status(request):
         )
     }
 
+    # Rows listed only on a stale order status are the ones the page is
+    # currently getting wrong, so they get first call on the linked-order write
+    # budget below. Without this a page full of ordinary rows could use the whole
+    # cap and leave the one wrong row wrong for another refresh.
+    rtvs.sort(key=lambda r: not _rtv_listed_on_stale_order_status(
+        r.last_status,
+        local_orders[r.order_id].ncm_status if r.order_id in local_orders else '',
+    ))
+
     # Each RTV carries the API account its shipment lives under; asking the
     # wrong account for a status returns nothing, so group before requesting.
     by_config = {}
@@ -6078,20 +6199,40 @@ def possible_redirection_refresh_status(request):
                         rtv.save(update_fields=['last_status'])
                         rtv_updated += 1
 
-                    # The linked local order is only written through when the
-                    # fresh status is one that ends redirectability. The bulk
-                    # endpoint answers with a bare status string, which carries
-                    # no vendor_return flag, so an in-pipeline status like
-                    # "Arrived" would resolve to plain 'in_transit' and quietly
-                    # strip the order's 'return' status. Terminal statuses are
-                    # safe: 'Delivered' is re-fetched in full by the sync (so a
-                    # package delivered back to the vendor is still recognised
-                    # as a return), and the returned/sent-to-vendor texts map
-                    # into the return states either way.
+                    # Two reasons to write NCM's answer through to the linked
+                    # local order:
+                    #
+                    #  * the fresh status is terminal — redirectability is over
+                    #    and the order genuinely moved on. 'Delivered' is
+                    #    re-fetched in full by the sync (so a package delivered
+                    #    back to the vendor is still recognised as a return),
+                    #    and the returned/sent-to-vendor texts map into the
+                    #    return states either way;
+                    #  * the fresh status says the parcel is NOT at a branch
+                    #    while the order's stored ncm_status still claims it is.
+                    #    That stored value is half of the list view's
+                    #    eligibility test, so leaving it stale re-lists the row
+                    #    on the very reload this endpoint asks for — the reason
+                    #    a "Dispatched to Return" parcel stayed on the page
+                    #    until somebody opened its order detail page, that
+                    #    page's sync being the only other writer of ncm_status.
+                    #
+                    # Anything else is left alone. The bulk endpoint answers
+                    # with a bare status string carrying no vendor_return flag,
+                    # so an in-pipeline "Arrived" would resolve to plain
+                    # 'in_transit' and quietly strip the order's 'return'
+                    # status. (bulk_sync's own guard refuses that write, but not
+                    # asking is cheaper than being refused.)
+                    _corrects_stale_eligibility = (
+                        not _rtv_is_redirect_eligible(new_status)
+                        and _rtv_is_redirect_eligible(local.ncm_status if local else None)
+                    )
                     if (local is not None
+                            and new_status
                             and order_writes_attempted < POSSIBLE_REDIRECTION_REFRESH_MAX_ORDER_WRITES
-                            and re.search(NON_REDIRECTABLE_NCM_STATUS_REGEX,
-                                          new_status, re.IGNORECASE)):
+                            and (re.search(NON_REDIRECTABLE_NCM_STATUS_REGEX,
+                                           new_status, re.IGNORECASE)
+                                 or _corrects_stale_eligibility)):
                         order_writes_attempted += 1
                         try:
                             if sync_order_status_from_raw(svc, local, raw_status, request.user):
@@ -6900,9 +7041,15 @@ def redirect_rtv_get(request, ncm_order_id):
             'items': items,
             'source': 'local',
         }
-        rtv_extra['redirect_eligible'] = _rtv_is_redirect_eligible(
-            rtv_rec.last_status if rtv_rec else '', local_order.ncm_status
+        _eligible, _shown_status = _rtv_redirect_eligibility(
+            rtv_rec, local_order.ncm_status, ncm_order_id, api_config_id,
         )
+        rtv_extra['redirect_eligible'] = _eligible
+        if rtv_rec:
+            # Report whatever the eligibility verdict was actually based on, so
+            # the disabled option's "still in transit (…)" text names the status
+            # that disabled it rather than the one it overruled.
+            rtv_extra['last_status'] = _shown_status
         return JsonResponse({'status': 'success', 'order': data, 'rtv': rtv_extra})
     except Order.DoesNotExist:
         pass
@@ -6979,11 +7126,24 @@ def redirect_rtv_get(request, ncm_order_id):
         'items': [],
         'source': 'ncm',
     }
-    # ncm_data['status'] is whatever NCM just answered with — fresher than the
-    # locally stored rtv_rec.last_status, which only updates on the next sync.
-    rtv_extra['redirect_eligible'] = _rtv_is_redirect_eligible(
-        rtv_rec.last_status if rtv_rec else '', ncm_data.get('status')
-    )
+    # ncm_data['status'] is whatever NCM just answered with, so it does not need
+    # the stored last_status to vouch for it — and must not be overruled by it.
+    # OR-ing the two (as this used to) let a stale "Arrived" enable the Redirect
+    # button for a package NCM had already sent back out, and the operator only
+    # found out when NCM rejected the redirect. Falling back to the stored value
+    # still covers an NCM call that failed or answered without a status.
+    _live_status = (ncm_data.get('status') or '').strip()
+    if _live_status:
+        rtv_extra['redirect_eligible'] = _rtv_is_redirect_eligible(_live_status)
+        # Free correction: we already paid for this answer, so persist it rather
+        # than leaving the Possible Redirection page to discover it again.
+        if rtv_rec and _live_status != rtv_rec.last_status:
+            RTVOrder.objects.filter(order_id=ncm_order_id).update(last_status=_live_status)
+            rtv_extra['last_status'] = _live_status
+    else:
+        rtv_extra['redirect_eligible'] = _rtv_is_redirect_eligible(
+            rtv_rec.last_status if rtv_rec else ''
+        )
     return JsonResponse({'status': 'success', 'order': data, 'rtv': rtv_extra})
 
 

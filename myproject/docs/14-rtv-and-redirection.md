@@ -163,7 +163,7 @@ A note/follow-up thread per RTV: `called_no_answer`, `called_answered`, `whatsap
 **Purpose** — RTV parcels that could be redirected to a *different* customer, matched
 against open orders wanting the same product.
 **URL** `/orders/possible-redirection/` · **name** `possible_redirection_list`
-**View** `dashboard/views.py:5489` · **Template** `dashboard/templates/possible_redirection.html`
+**View** `dashboard/views.py:5532` · **Template** `dashboard/templates/possible_redirection.html`
 **Permission** `can_view_orders`
 
 ### The two status gates
@@ -199,6 +199,10 @@ Matched as a case-insensitive **prefix**, so branch-qualified variants like
 (`"Dispatched to Return (…)"`) is **not** a candidate — NCM's redirect endpoint refuses it
 outright.
 
+Both gates read **two** stored copies of the parcel's NCM status and accept the row if
+*either* says "at a branch". That is deliberate, and it is also where the page's one
+persistent bug lived — see the next section.
+
 ```mermaid
 flowchart TD
     A[All RTV rows] --> B{Non-redirectable?<br/>returned / delivered / sent to vendor}
@@ -213,12 +217,83 @@ flowchart TD
 **Already-redirected detection** — `_redirected_rtv_ncm_ids()` (`:5449-5484`) checks **three
 independent markers**, because a redirect can be recorded in more than one way.
 
+### Two copies of one status, and which one to trust
+
+| Copy | Who writes it |
+|---|---|
+| `RTVOrder.last_status` | The RTV list sync — rewrites it for **every** active RTV on each run (`:24207`) |
+| `Order.ncm_status` | The NCM webhook, and the order detail page's load-time sync. Nothing else: the background bulk sync skips RTV'd orders, since `'return'` is terminal |
+
+Either can lag, so eligibility accepts either — dropping the order-side rescue would hide a
+webhook-fresh arrival until the next RTV sync. But the two directions of disagreement are
+**not** equally suspicious:
+
+- *RTV says at-branch, order says in transit* — routine. The RTV copy is the systematically
+  refreshed one and it is what lists the row.
+- *RTV says in transit, order says at-branch* — **the failure.** A stale
+  `"Arrived at RETURN (…)"` frozen on the order is all that still lists a parcel NCM has
+  already sent back out. `_rtv_listed_on_stale_order_status()` (`:5450`) detects exactly
+  this direction; the entry carries it as `status_uncertain`, and the row renders with
+  `data-status-uncertain="1"` and a *"Verifying with NCM"* note.
+
+All three linked-order subqueries in the list view filter `is_deleted=False`, matching the
+Python mirror — a trashed order must not decide what this page shows.
+
+**Where the modals resolve it** — `redirect_rtv_get` backs both the detail modal and the
+redirect modal, and `_rtv_redirect_eligibility()` (`:5519`) is what it reports as
+`redirect_eligible`:
+
+| Case | Verdict from |
+|---|---|
+| No linked order | NCM's live status alone, since `get_order_details` just returned it. Falls back to the stored `last_status` if NCM answered without one |
+| Linked order, statuses agree | The stored OR — no NCM call |
+| Linked order, statuses disagree *suspiciously* | One `_live_ncm_status()` call. Only here, and only for a single modal open |
+
+Any live answer is written back to `RTVOrder.last_status`, so the Possible Redirection page
+does not have to discover it again. Before this, a stale `"Arrived"` could enable the Redirect
+button, and the operator filled out the whole form only for NCM to reject the redirect.
+
 ### Live refresh
 
-`/api/possible-redirection/refresh-status/` (POST JSON) pulls fresh statuses from NCM and
-then uses `_rtv_is_non_redirectable()` / `_rtv_is_redirect_eligible()` to decide whether a
-row currently on screen would still be listed on a reload — so rows disappear as parcels
-move on, without a page refresh.
+`/api/possible-redirection/refresh-status/` (POST form-encoded `ncm_ids`) pulls fresh
+statuses from NCM in one bulk call per API config, then uses `_rtv_is_non_redirectable()` /
+`_rtv_is_redirect_eligible()` to decide whether a row on screen would still be listed on a
+reload — so rows disappear as parcels move on. The verdict is deliberately computed from the
+**stored** values after the writes below, not from the raw NCM answer, so it can never
+disagree with the list view's SQL and put the page in a reload loop.
+
+What it writes back:
+
+| Target | When |
+|---|---|
+| `RTVOrder.last_status` | Any time NCM's answer is non-blank and different. Free — it comes out of the same bulk response |
+| The linked `Order` (via `ncm.bulk_sync.sync_order_status_from_raw`) | The fresh status is **terminal**, *or* it says "not at a branch" while the order's stored `ncm_status` still claims it is |
+
+That second condition is the fix for the long-standing report *"the row only disappears after
+I open the order detail page"*. The endpoint used to write terminal statuses only, so a
+parcel that had moved from `"Arrived at RETURN (…)"` to `"Dispatched to RETURN (…)"` left the
+stale `ncm_status` in place — which re-listed the row on the very reload the endpoint asked
+for, and made the endpoint itself read that stale copy and report nothing dropped. The order
+detail page's sync was the only other writer, which is why visiting it was the only thing
+that worked.
+
+Anything else is left alone on purpose: the bulk endpoint answers with a bare status string
+carrying no `vendor_return` flag, so an in-pipeline `"Arrived"` would resolve to plain
+`in_transit` and strip the order's `return` status. (`bulk_sync` refuses that write anyway —
+not asking is just cheaper.)
+
+Rows flagged `status_uncertain` are sorted to the front, so they get first call on
+`POSSIBLE_REDIRECTION_REFRESH_MAX_ORDER_WRITES` (10) — a page full of ordinary rows can no
+longer spend the whole budget and leave the one wrong row wrong.
+
+**Cadence** (`possible_redirection.html`, `statusRefresh()`) — on load, every 5 minutes, and
+on `visibilitychange`. A 90-second cross-tab cooldown in `localStorage` normally suppresses
+the extra triggers; a rendered `data-status-uncertain` row **overrides that cooldown once per
+load**, which is what makes going straight to this page (rather than via an order detail
+page) enough to clear a stale row. The endpoint's own 45-second server-side throttle still
+applies, so this cannot become a hammer.
+
+Verified by `test_possible_redirection_status_refresh.py`.
 
 ### Matching amounts
 
@@ -321,6 +396,11 @@ The keyword fallback triggers on `return`, `rtv`, or `sent to vendor`
   loosening them locally just moves the rejection to NCM.
 - **Redirect eligibility is a prefix match.** `"Arrived at RETURN (TINKUNE)"` passes;
   `"Dispatched to RETURN (TINKUNE)"` does not.
+- **A listed row is not proof the parcel is still at the branch.** Eligibility reads two
+  copies of the status and accepts either, so one stale copy can list a parcel that has moved
+  on. The page corrects itself by asking NCM on load — do not "simplify" that away, and do
+  not add a third writer of `Order.ncm_status` without teaching the refresh endpoint about
+  it.
 - The RTV sync's cost is now the per-order comment fetches that follow the bulk
   fetch, not the bulk fetch itself — the status-filtered query covers all active
   RTVs in a handful of calls.
@@ -332,9 +412,12 @@ The keyword fallback triggers on `return`, `rtv`, or `sent to vendor`
 ## Files that own this
 
 - `dashboard/models.py:2161-2330` — `RTVStatus`, `RTVOrder`, `RTVFollowUp`
-- `dashboard/views.py:5395-5486` — the redirection status gates
-- `dashboard/views.py:5489-…` — `possible_redirection_list`
-- `dashboard/views.py:6130-…` — `redirect_orders_list`
+- `dashboard/views.py:5391-5489` — the redirection status gates and
+  `_rtv_listed_on_stale_order_status()`
+- `dashboard/views.py:5492-5548` — `_live_ncm_status()`, `_rtv_redirect_eligibility()`
+- `dashboard/views.py:5532-…` — `possible_redirection_list`
+- `dashboard/views.py:5999-…` — `possible_redirection_refresh_status`
+- `dashboard/views.py:6212-…` — `redirect_orders_list`
 - `dashboard/views.py:6482`, `:6989` — the redirect save endpoints
 - `dashboard/views.py:22782-…` — `ncm_rtvs_list`
 - `dashboard/views.py:25821` — the RTV report

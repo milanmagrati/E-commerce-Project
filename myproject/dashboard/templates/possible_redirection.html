@@ -247,7 +247,7 @@
             <tbody>
                 {% if rtv_entries %}
                     {% for entry in rtv_entries %}
-                    <tr class="order-row" data-ncm-id="{{ entry.ncm_order_id }}">
+                    <tr class="order-row" data-ncm-id="{{ entry.ncm_order_id }}"{% if entry.status_uncertain %} data-status-uncertain="1"{% endif %}>
                         <td>
                             <button type="button" class="btn btn-link fw-bold text-primary p-0 border-0 text-decoration-none od-id-link" onclick="openDetailModal({{ entry.ncm_order_id }})">
                                 <i class="fas fa-search-plus me-1 small opacity-50"></i>#{{ entry.ncm_order_id }}
@@ -295,6 +295,15 @@
                             {% endif %}
                             {% if entry.last_status %}
                                 <div class="small text-muted mt-1" title="NCM delivery status"><i class="fas fa-truck me-1"></i>{{ entry.last_status }}</div>
+                            {% endif %}
+                            {% if entry.status_uncertain %}
+                                {# The RTV row and the linked order disagree about whether the
+                                   parcel is at a branch, so we don't yet know if this row belongs
+                                   here. The page asks NCM on load and reloads itself with the
+                                   answer — say so rather than presenting a guess as fact. #}
+                                <div class="small text-info mt-1" title="This row's two stored NCM statuses disagree ({{ entry.last_status|default:'—' }} vs {{ entry.ncm_status|default:'—' }}). Checking with NCM…">
+                                    <i class="fas fa-sync-alt fa-spin me-1"></i>Verifying with NCM
+                                </div>
                             {% endif %}
                         </td>
                         <td class="hide-md">
@@ -522,6 +531,7 @@
         <ol class="mb-0 small text-muted">
             <li>Click <strong>"Sync RTV from NCM"</strong> to fetch the latest RTV (Return to Vendor) orders from NCM.</li>
             <li>Only RTV orders NCM has confirmed are <strong>at a branch or warehouse</strong> (Arrived, Pickup Complete, or Returned to Warehouse) appear here &mdash; NCM refuses to redirect a parcel that is still travelling back, so one still marked "Dispatched to Return" shows up only once its arrival is reported. Orders linked to local orders show customer details.</li>
+            <li>This page checks the listed statuses against NCM each time you open it, so a parcel that has moved back into transit drops off on its own. A row marked <span class="text-info"><i class="fas fa-sync-alt me-1"></i>Verifying with NCM</span> is one whose two stored statuses disagree &mdash; give it a moment and the page will reload with NCM's answer.</li>
             <li>Click the <span class="badge bg-success"><i class="fas fa-random"></i></span> button to open the redirect modal &mdash; details are fetched from NCM if no local order exists.</li>
             <li>Use <strong>"NCM — Redirect Order"</strong> to redirect via NCM's redirect API to a new customer/address.</li>
         </ol>
@@ -2193,7 +2203,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // package that had already been delivered stayed listed here until someone
     // opened its order detail page — that page's load-time sync was the only
     // writer of a fresh NCM status. This asks NCM directly for the IDs shown.
-    function statusRefresh() {
+    //
+    // `force` skips the cross-tab cooldown. It is passed only on a load that
+    // rendered at least one row whose two stored NCM statuses disagree (see
+    // _rtv_status_disagreement in the view): those rows are listed on a status
+    // we already know is contradicted, so waiting out a 90-second cooldown that
+    // another tab may have started minutes ago means the operator is shown a
+    // parcel NCM will refuse to redirect. The server keeps its own 45-second
+    // throttle, so this cannot turn into a hammer.
+    function statusRefresh(force) {
         var rows = document.querySelectorAll('tr.order-row[data-ncm-id]');
         if (!rows.length) { return; }
 
@@ -2209,7 +2227,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Shared across tabs, same as the comment sync above, so several open
         // tabs don't each fire the request.
         var lastStatusRefresh = parseInt(localStorage.getItem('pr_last_status_refresh') || '0', 10);
-        if (Date.now() - lastStatusRefresh < 90000) { // 90-second cooldown
+        if (!force && Date.now() - lastStatusRefresh < 90000) { // 90-second cooldown
             return;
         }
         localStorage.setItem('pr_last_status_refresh', String(Date.now()));
@@ -2362,7 +2380,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // and whenever the tab is brought back to the front. One bulk NCM request
     // covers the whole page, and the cooldown inside makes the extra triggers
     // nearly free.
-    statusRefresh();
+    //
+    // A row the view flagged as unverified overrides that cooldown, once, on
+    // this load — that is what makes going straight to this page (rather than
+    // via an order detail page) enough to clear a parcel NCM has already moved
+    // back into transit.
+    statusRefresh(document.querySelector('tr.order-row[data-status-uncertain]') !== null);
     setInterval(statusRefresh, 300000);
     document.addEventListener('visibilitychange', function () {
         if (!document.hidden) { statusRefresh(); }
