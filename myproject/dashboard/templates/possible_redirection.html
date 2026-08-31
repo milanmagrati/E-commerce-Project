@@ -123,12 +123,41 @@
                 </a>
             </div>
         </div>
-        <p class="text-muted mt-1 mb-0">
-            NCM RTV (Return to Vendor) orders that can be redirected to a different customer/branch via NCM Redirect API instead of returning to warehouse.
-            The table lists only what can be redirected right now — a package still travelling back, one already delivered or returned to vendor, one already redirected, or one with no matching new order is left out; redirected ones move to <a href="{% url 'redirect_orders_list' %}">Redirect Orders</a>.
-            The counts above cover <strong>all</strong> RTV orders, so they can be higher than the number of rows shown.
-            {% if linked_count %}<span class="badge bg-info text-dark ms-1">{{ linked_count }} linked to local orders</span>{% endif %}
-        </p>
+        <div class="pr-guide">
+            <div class="pr-guide__head">
+                <span class="pr-guide__badge"><i class="fas fa-book-open"></i> Quick Guide</span>
+                {% if linked_count %}<span class="badge bg-info text-dark">{{ linked_count }} linked to local orders</span>{% endif %}
+            </div>
+            <div class="pr-guide__body">
+                <div class="pr-guide__col">
+                    <div class="pr-guide__row">
+                        <i class="fas fa-random"></i>
+                        <div><strong>What this is.</strong> RTV (Return to Vendor) parcels you can send to a different customer or branch through NCM's Redirect API — instead of letting them travel back to the warehouse.</div>
+                    </div>
+                    <div class="pr-guide__row">
+                        <i class="fas fa-filter"></i>
+                        <div><strong>What shows here.</strong> Only parcels redirectable right now. Still travelling back, delivered, returned to vendor, already redirected, or with no matching new order — all left out.</div>
+                    </div>
+                </div>
+                <div class="pr-guide__col">
+                    <div class="pr-guide__row">
+                        <i class="fas fa-sync-alt"></i>
+                        <div><strong>Stays current.</strong> Statuses are checked against NCM every time you open the page, so rows drop off on their own as parcels move. A <span class="pr-guide__chip"><i class="fas fa-sync-alt"></i> Verifying</span> row is still being confirmed — give it a moment.</div>
+                    </div>
+                    <div class="pr-guide__row">
+                        <i class="fas fa-arrow-right"></i>
+                        <div><strong>After redirecting.</strong> The order moves to <a href="{% url 'redirect_orders_list' %}">Redirect Orders</a>. The counts above cover <em>all</em> RTV orders, so they can be higher than the rows shown.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="pr-guide__steps">
+                <span><b>1</b> Sync RTV from NCM</span>
+                <i class="fas fa-chevron-right"></i>
+                <span><b>2</b> Open a row's <i class="fas fa-random text-primary"></i> redirect action</span>
+                <i class="fas fa-chevron-right"></i>
+                <span><b>3</b> Pick the new customer &amp; confirm</span>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -523,20 +552,6 @@
     </ul>
 </nav>
 {% endif %}
-
-<!-- Info Card -->
-<div class="card shadow-sm mb-4 border-start border-primary border-3">
-    <div class="card-body py-3">
-        <h6 class="fw-bold mb-2"><i class="fas fa-info-circle text-primary me-2"></i>How Redirection Works</h6>
-        <ol class="mb-0 small text-muted">
-            <li>Click <strong>"Sync RTV from NCM"</strong> to fetch the latest RTV (Return to Vendor) orders from NCM.</li>
-            <li>Only RTV orders NCM has confirmed are <strong>at a branch or warehouse</strong> (Arrived, Pickup Complete, or Returned to Warehouse) appear here &mdash; NCM refuses to redirect a parcel that is still travelling back, so one still marked "Dispatched to Return" shows up only once its arrival is reported. Orders linked to local orders show customer details.</li>
-            <li>This page checks the listed statuses against NCM each time you open it, so a parcel that has moved back into transit drops off on its own. A row marked <span class="text-info"><i class="fas fa-sync-alt me-1"></i>Verifying with NCM</span> is one whose two stored statuses disagree &mdash; give it a moment and the page will reload with NCM's answer.</li>
-            <li>Click the <span class="badge bg-success"><i class="fas fa-random"></i></span> button to open the redirect modal &mdash; details are fetched from NCM if no local order exists.</li>
-            <li>Use <strong>"NCM — Redirect Order"</strong> to redirect via NCM's redirect API to a new customer/address.</li>
-        </ol>
-    </div>
-</div>
 
 <!-- Hidden URL template for order detail links -->
 <span id="odOrderDetailUrlTpl" data-url="{% url 'order_detail' 99999 %}" style="display:none;"></span>
@@ -1084,6 +1099,65 @@
     .stat-icon { opacity: 0.3; }
 
     .filter-card { border: none; border-radius: 0.5rem; }
+
+    /* ── Quick Guide (framed manual under the page title) ── */
+    .pr-guide {
+        border: 1px solid #d9e2f5;
+        background: linear-gradient(180deg, #f6f9ff 0%, #ffffff 62%);
+        border-radius: 0.75rem;
+        padding: 0.9rem 1.1rem;
+        margin-top: 0.85rem;
+        box-shadow: 0 1px 2px rgba(16, 42, 110, 0.05);
+    }
+    .pr-guide__head {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.7rem;
+    }
+    .pr-guide__badge {
+        display: inline-flex; align-items: center; gap: 0.4rem;
+        font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em;
+        text-transform: uppercase; color: #2b4bce;
+        background: #e7edff; border-radius: 999px; padding: 0.28rem 0.7rem;
+    }
+    .pr-guide__body {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 0.55rem 1.6rem;
+    }
+    .pr-guide__col { display: flex; flex-direction: column; gap: 0.55rem; }
+    .pr-guide__row {
+        display: flex; gap: 0.6rem;
+        font-size: 0.82rem; line-height: 1.45; color: #4a5568;
+    }
+    .pr-guide__row > i {
+        color: #4e73df; margin-top: 0.18rem;
+        flex-shrink: 0; width: 1rem; text-align: center;
+    }
+    .pr-guide__row strong { color: #1f2937; font-weight: 650; }
+    .pr-guide__chip {
+        display: inline-flex; align-items: center; gap: 0.25rem;
+        font-size: 0.72rem; font-weight: 600; color: #0d6efd;
+        background: #e7f1ff; border-radius: 6px; padding: 0.03rem 0.35rem;
+        white-space: nowrap;
+    }
+    .pr-guide__steps {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+        margin-top: 0.8rem; padding-top: 0.7rem;
+        border-top: 1px dashed #d9e2f5;
+        font-size: 0.78rem; color: #475569;
+    }
+    .pr-guide__steps > span {
+        display: inline-flex; align-items: center; gap: 0.35rem;
+        background: #fff; border: 1px solid #e2e8f0;
+        border-radius: 6px; padding: 0.2rem 0.55rem;
+    }
+    .pr-guide__steps b {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.15rem; height: 1.15rem; border-radius: 50%;
+        background: #4e73df; color: #fff; font-size: 0.68rem; font-weight: 700;
+    }
+    .pr-guide__steps > i { color: #94a3b8; font-size: 0.7rem; }
+    @media (max-width: 768px) {
+        .pr-guide__body { grid-template-columns: 1fr; }
+    }
 
     .bulk-bar { border: 2px solid #4e73df; border-radius: 0.5rem; animation: slideDown 0.3s ease; }
     @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }

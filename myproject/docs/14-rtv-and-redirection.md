@@ -234,7 +234,8 @@ webhook-fresh arrival until the next RTV sync. But the two directions of disagre
   `"Arrived at RETURN (…)"` frozen on the order is all that still lists a parcel NCM has
   already sent back out. `_rtv_listed_on_stale_order_status()` (`:5450`) detects exactly
   this direction; the entry carries it as `status_uncertain`, and the row renders with
-  `data-status-uncertain="1"` and a *"Verifying with NCM"* note.
+  `data-status-uncertain="1"` and a *"Verifying"* chip. The page's own **Quick Guide** panel
+  (the framed manual under the title) explains that chip to the operator.
 
 All three linked-order subqueries in the list view filter `is_deleted=False`, matching the
 Python mirror — a trashed order must not decide what this page shows.
