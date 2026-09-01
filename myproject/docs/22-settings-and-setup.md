@@ -145,6 +145,70 @@ The storefront reads all this through `/store/api/quote/` — see [24](./24-stor
 
 ---
 
+## Bulk Discount Setup
+
+**URL** `/setup/bulk-discounts/` · **name** `bulk_discount_setup`
+**View** `dashboard/bulk_discount_views.py:157` · **Template** `dashboard/bulk_discount_setup.html`
+**Permission** `@login_required` + `@admin_only` (every route in this file is admin-only)
+
+Quantity breaks — "buy 3, save 10%" — for the storefront. Added Sep 2026. Sidebar entry sits
+directly under Delivery Charge Setup.
+
+### Two models — `store/models.py`
+
+| Model | Line | Holds |
+|---|---|---|
+| `BulkDiscount` | `:267` | One rule. `scope` + its target, `is_active`, `priority`, `starts_at`/`ends_at`, `show_on_cards`, `badge_text`, `note` |
+| `BulkDiscountTier` | `:424` | One rung: `min_qty`, `discount_type` (`percent` / `amount` / `price`), `value`, optional `label`. `unique_together = ('rule', 'min_qty')`, max **8** rungs per rule (`MAX_TIERS`) |
+
+### Scope — what a rule points at
+
+| `scope` | Target | Rank |
+|---|---|---|
+| `variation` | One `ProductVariation` — set a different break per size or colour | 40 |
+| `product` | One `Product` — simple, variable (all options) or bundle | 30 |
+| `category` | Every product in a `dashboard.Category` | 20 |
+| `all` | The whole shop | 10 |
+
+**`save()` clears the columns the scope doesn't name**, so a rule edited from "product" to
+"category" cannot go on matching the product it used to point at. A variation rule always
+**re-derives** its `product_id` from the variation — re-point it at an option of another
+product and the setup page follows it, rather than filing it under the old name.
+
+### Resolution
+
+Most specific live rule wins (**variation ▸ product ▸ category ▸ all**), then higher
+`priority`, then the newest row. Within the winning rule, the **cheapest applicable rung**
+applies — a ladder typed out of order can never charge more for taking more. Full picture in
+[24 — Storefront](./24-storefront.md#quantity-breaks-bulk-discounts).
+
+The editor **warns when a new rule duplicates an existing target**, and names which of the two
+`priority` will pick.
+
+### Actions — all `@admin_only`, under `/setup/bulk-discounts/`
+
+| Action | Route suffix | Notes |
+|---|---|---|
+| Save a rule | `save/` | Creates or edits, ladder included. Validates scope + target, schedule order and tier rows |
+| Delete / pause a rule | `<rule_id>/delete/`, `<rule_id>/toggle/` | |
+| Duplicate | `<rule_id>/duplicate/` | Copy lands **paused**, so it can be re-pointed before going live |
+| Spread across a product | `<rule_id>/spread/` | Copies one **variation** ladder onto that product's other variations. Options that already have their own rule are left alone |
+| Bulk action | `bulk-action/` | activate / deactivate / delete / set-priority / clear-schedule |
+| Live preview | `preview/` | "What would 4 cost?" — computed **through `store.bulk_discounts`**, so the preview cannot drift from the real storefront price |
+| Export | `export/` | CSV, one row per tier |
+
+### Gotchas
+
+- **Saving busts the cache, but only in this process.** The storefront snapshot
+  (`store:bulk_discounts:v1`) is `LocMemCache` with a 60s TTL, so a multi-process deployment
+  takes up to a minute to agree. Rules written by a script never reach the running server at all
+  until the TTL lapses.
+- **A discount code stacks on top** of the bulk-discounted subtotal.
+- **Category and shop-wide rules have no `base_price`** — there is no single price to discount,
+  so their ladder is priced per line at quote time and the editor's preview asks for a product.
+
+---
+
 ## API Sync Settings
 
 Part of the settings hub, backed by the `APISettings` singleton
@@ -321,6 +385,9 @@ its footer. See [24 — Storefront](./24-storefront.md).
 - **`base_urls` order matters** — `[0]` is v1, `[1]` is v2. Getting them backwards breaks
   branches and vendor/RTV endpoints while leaving order creation working.
 - **Cities auto-create too**, from the order form.
+- **Delivery Charge Setup and Bulk Discount Setup are `@admin_only`**, unlike the rest of
+  `/setup/`, which runs on `can_view_orders` / `can_create_orders`. No permission flag opens
+  them — the role has to be `administrator`.
 - Maintenance mode does not stop the NCM heartbeat — admins keeping a tab open will still
   drive background syncs.
 - City management, purchases and several reports check permissions **inline** rather than by
@@ -332,7 +399,10 @@ its footer. See [24 — Storefront](./24-storefront.md).
 
 - `dashboard/models.py:1583-1609` — `Setup`
 - `dashboard/delivery_charge_views.py` — Delivery Charge Setup (all `@admin_only`)
-- `store/models.py:318-433` — `DeliverySetting`, `DeliveryCharge`
+- `dashboard/bulk_discount_views.py` — Bulk Discount Setup (all `@admin_only`)
+- `store/models.py:597-712` — `DeliverySetting`, `DeliveryCharge`
+- `store/models.py:267-482` — `BulkDiscount`, `BulkDiscountTier`
+- `store/bulk_discounts.py` — the pricing module both the storefront and the preview use
 - `dashboard/models.py:882-906` — `City`
 - `dashboard/models.py:1540-1579` — `LogisticsAPIConfig`
 - `dashboard/models.py:1878-2081` — `CompanySetup`, landing-page models

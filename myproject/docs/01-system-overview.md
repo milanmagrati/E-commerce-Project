@@ -61,7 +61,7 @@ explains a lot of the design in chapters 09–13.
 | **`pick_and_drop`** | Second courier. Send and cancel only. |
 | **`inventory`** | Stock reservation, backorders, FIFO batch deduction, forecasting. No models of its own — it operates on `dashboard` models. |
 | **`hrm`** | HR, attendance (incl. ZKTeco biometric devices), leave, payroll, payslips. |
-| **`store`** | Customer-facing storefront. Separate from the admin dashboard. |
+| **`store`** | Customer-facing storefront. Separate from the admin dashboard. Sells product variations, prices its own quantity breaks, and never requires a shopper account. |
 | **`trendycrm`** | Omnichannel customer messaging with an AI reply router (Facebook, Instagram, WhatsApp, TikTok). |
 | **`bill_rewards`** | Receipt OCR → product matching → loyalty rewards. The only app using Celery. |
 | **`google_sheets`** | Two-way Google Sheets import/sync. |

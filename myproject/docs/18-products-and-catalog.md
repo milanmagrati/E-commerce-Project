@@ -31,8 +31,32 @@ Products, variations, bundles, batches, images and the shared media library.
 | Media | main image + `ProductImage` gallery |
 | Soft delete | `is_deleted`, `deleted_at` |
 
-**`available_stock` property** (`:143-157`) = `stock − reserved_qty`. Use this, not `stock`,
+**`available_stock` property** (`:190`) = `stock − reserved_qty`. Use this, not `stock`,
 when asking "can I sell one?" See [17](./17-inventory-and-stock.md).
+
+### Storefront helper properties
+
+Added Sep 2026 when the storefront learned to sell variations. All read-only, no schema
+change, so views, template tags and templates all answer the same question the same way:
+
+| On `Product` | Line | Returns |
+|---|---|---|
+| `is_variable` | `:123` | `product_type == 'variable'` |
+| `active_variations` | `:128` | The sellable `ProductVariation` rows |
+| `has_variations` | `:140` | Variable **and** it actually has active rows |
+| `variation_price_range` | `:146` | `(min, max)` across those rows, else `(price, price)` |
+| `in_stock_variation_exists` | `:155` | Any option still buyable |
+| `storefront_available` | `:162` | The one question a card should ask before offering a buy button |
+
+| On `ProductVariation` | Line | Returns |
+|---|---|---|
+| `display_label` | `:726` | `variation_name` or the SKU |
+| `is_in_stock` | `:732` | `stock > 0` |
+| `committed_qty` | `:749` | Units already sitting on open dashboard `OrderItem` rows |
+| `available_stock` | `:764` | `stock − committed_qty` — **derived, not a counter**, so it cannot drift |
+
+> A variable product's own `price` is a parent value **nobody is charged**. Quote
+> `variation_price_range` or the picked variation. See [24](./24-storefront.md).
 
 ---
 
@@ -154,6 +178,13 @@ Pricing is gated more finely than most things, because staff should not always s
 ## Gotchas
 
 - **`available_stock`, not `stock`.** Reserved units are still physically present.
+- **A `ProductVariation` is a sellable thing on the storefront now**, not just admin metadata.
+  Deleting or deactivating one removes a shopper's option (and cascades away any
+  `store.BulkDiscount` scoped to it) — `store.OrderItem.variation` is `SET_NULL`, so placed
+  orders keep their `selected_variant` text.
+- **`ProductVariantOption` is not `ProductVariation`.** The former is loose comma-separated
+  display metadata; only the latter has a SKU, a price and stock, and only the latter can be
+  bought.
 - **Bundles reserve components, not themselves.** A bundle's own `stock` number is not what
   gates a sale.
 - **Batches sort by expiry, then creation** — so FIFO here means "oldest expiry first", not

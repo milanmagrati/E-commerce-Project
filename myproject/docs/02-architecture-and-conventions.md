@@ -241,6 +241,20 @@ and `patch_*.py` one-offs. They are **artifacts, not a pipeline** — nothing ru
 automatically. When adding a test, follow the same pattern unless you deliberately want to
 introduce a real harness.
 
+The storefront ones are the closest thing here to a real suite — each prints a pass/fail
+tally and covers a feature end to end rather than one function:
+
+```bash
+python test_store_accounts.py        # optional sign-in, guest adoption
+python test_store_variations.py      # per-variation buying, cart lines, order mirroring
+python test_store_bulk_discounts.py  # tier arithmetic, specificity, cart/order pricing, setup page
+```
+
+> Windows note: `test_store_bulk_discounts.py` opens with
+> `sys.stdout.reconfigure(encoding='utf-8', errors='replace')`. Any script that prints
+> box-drawing characters or emoji needs that line — the cp1252 console raises
+> `UnicodeEncodeError` without it.
+
 ---
 
 ## Files that own this

@@ -119,6 +119,22 @@ used by the dispatch path.
 
 ---
 
+## Variations
+
+`ProductVariation` carries its own `stock`, and since Sep 2026 the storefront sells against it
+([24](./24-storefront.md)). **The allocation engine does not.**
+
+| Layer | Counts against |
+|---|---|
+| Storefront display + add-to-cart + checkout gate | `ProductVariation.available_stock` = `stock − committed_qty`, where committed is what open dashboard `OrderItem` rows already claim. **Derived on read**, so there is no counter to drift |
+| `allocate_order()` | `Product.stock` / `reserved_qty`, exactly as before |
+
+So a variation can be gated correctly on the shop and still reserve at the parent level.
+Variation-level allocation is a **known follow-up**, not an oversight — the two numbers are
+consistent today only because parent stock is the sum staff maintain.
+
+---
+
 ## FIFO batches
 
 `ProductBatch` (`dashboard/models.py:201-246`) tracks stock in dated lots, which is what

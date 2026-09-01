@@ -3,7 +3,8 @@
 Things found while writing this manual that are worth knowing before you trust a comment, a
 decorator, or an older document. Everything here was verified against the code.
 
-This is a **record**, not a to-do list. Nothing here has been changed.
+This is a **record**, not a to-do list — unless a section says otherwise, nothing here has
+been changed.
 
 ---
 
@@ -299,11 +300,31 @@ Every app's `tests.py` is empty Django boilerplate. See
 | Thing | Why it matters |
 |---|---|
 | **No cron, no Celery Beat** | The NCM sync runs only while a browser tab is open, unless `NCM_HEARTBEAT_TOKEN` + an external pinger are configured |
-| **`LocMemCache` is per-process** | Cannot be used as a lock. The NCM sync lock is a DB compare-and-swap for this reason |
+| **`LocMemCache` is per-process** | Cannot be used as a lock. The NCM sync lock is a DB compare-and-swap for this reason. Also why the storefront's delivery and bulk-discount snapshots take up to their TTL to agree across processes, and why a rule written by a script is invisible to the running server |
 | **MySQL `CONVERT_TZ()` returns NULL** | Django `__date` lookups silently match nothing. Every date filter builds explicit localized bounds |
 | **`DEBUG=False` caches templates** | HTML-only edits need a dev-server restart; autoreload only watches `.py` |
+| **WhiteNoise caches static *contents* at startup** | `WHITENOISE_AUTOREFRESH` defaults to `DEBUG`. With it off, a new static path 404s and an edited file serves stale bytes until restart — `collectstatic` alone is not enough. Several unrelated JS behaviours breaking at once usually means one stale served file |
 | **Gemini free tier ≈ 20 calls/day** | CRM auto-replies stop with 429s |
 | **`MockExtractor` fallback** | With no OCR provider configured, bill OCR fabricates results and only logs a notice |
 | **Sentinel middleware ordering** | Moving it before `MessageMiddleware` silently stops access-denial capture |
 | **Retention is manual** | `sentinel_prune` has no schedule |
 | **`accounts` is pinned to `AutoField`** | `AccountsConfig.default_auto_field = 'django.db.models.AutoField'` (`accounts/apps.py`). Prod `accounts_customuser.id` and its ~80 FKs are `int(11)`; without the pin Django emits new FKs to `CustomUser` as `BIGINT` and MySQL rejects the migration with errno 150 ("Foreign key constraint is incorrectly formed"). Migration 0047 realigns migration state; the SQL is a no-op against the existing columns. Do not remove the pin. |
+
+---
+
+## 15. Storefront pricing — deliberate behaviours that look like bugs
+
+Added Sep 2026 with quantity breaks ([24](./24-storefront.md#quantity-breaks-bulk-discounts)).
+All four are **chosen**, not accidents; each names where it would have to change.
+
+| Behaviour | Why it is this way | Changes in |
+|---|---|---|
+| **A discount code stacks on top of the bulk price** | The code is a separate promise from the quantity break; refusing to combine them would silently void a code a shopper was given | `_place_order` (`store/views.py:883`) |
+| **Cart lines never pool quantities** | Two variations of one product are two lines of 2, not one line of 4. Pooling would make a line's own price depend on a different line, which the cart UI cannot honestly show | `store/bulk_discounts.py` + the cart view |
+| **The cheapest applicable rung wins**, not the highest `min_qty` | A ladder typed out of order can then never charge more for taking more | `price_for()` |
+| **A mis-typed tier fails towards list price** | `unit_price_from()` clamps to `[0, base]` — a rule can never go negative or above list, so the worst a typo does is offer no discount | `BulkDiscountTier.unit_price_from` |
+
+One real bug that this work fixed, worth knowing because the same trap is easy to walk back
+into: **a variable product's `Product.price` is a parent value nobody is charged.** The mobile
+sticky bar was quoting it, so a product whose options sell at Rs. 700 / Rs. 400 advertised
+Rs. 400 regardless of the pick. Quote `variation_price_range` or the chosen variation.

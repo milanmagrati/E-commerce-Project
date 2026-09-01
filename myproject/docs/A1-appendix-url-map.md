@@ -215,6 +215,7 @@ APIs: `/api/search-products/` · `/api/product/<id>/` · `/api/product/<id>/upda
 `/settings/` `settings_hub` · `/settings/company/` · `/settings/landing-page/`
 `/setup/` `setup_management` + add/edit/delete/toggle-default/reorder
 `/setup/delivery-charges/` `delivery_charge_setup` **(admin)** + save/`<id>`/delete/`<id>`/toggle/bulk-action/settings/sync/export/branches
+`/setup/bulk-discounts/` `bulk_discount_setup` **(admin)** + save/`<id>`/delete/`<id>`/toggle/`<id>`/duplicate/`<id>`/spread/bulk-action/preview/export
 `/cities/` + edit/delete + `/api/cities/quick_add|bulk_add|` + get-valley-status
 `/api-integration/` + add/edit/delete/toggle/get
 `/pages/` + add/edit/delete (CMS pages)
@@ -244,7 +245,7 @@ Maintenance & notices: `/api/maintenance/toggle|logs/` · `/api/active-notice/` 
 | App | Prefix | Key pages | Chapter |
 |---|---|---|---|
 | HRM | `/hrm/` | ~218 patterns — see the chapter | [23](./23-hrm.md) |
-| Storefront | `/store/` | landing, products, cart, checkout, `track-order/`, `orders/<order_number>/`, `account/*`, `p/<slug>/`, order-form APIs (`api/locations\|quote\|discount/`) | [24](./24-storefront.md) |
+| Storefront | `/store/` | landing, products, cart, checkout, `track-order/`, `orders/<order_number>/`, `account/*`, `p/<slug>/`, `notify-back-in-stock/<product_id>/`, order-form APIs (`api/locations\|quote\|discount/`), `api/load-more/` | [24](./24-storefront.md) |
 | TrendyCRM | `/trendy-crm/` | conversations, chatbots, integrations, contacts, tickets, social | [25](./25-trendycrm.md) |
 | Bill rewards | `/bill-rewards/` | dashboard, upload, bills, aliases, rewards, trending | [26](./26-bill-rewards.md) |
 | Google Sheets | `/imports/` | imports, sheet view | [27](./27-sheets-and-woocommerce.md) |
