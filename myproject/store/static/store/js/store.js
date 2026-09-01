@@ -237,15 +237,19 @@ document.addEventListener('DOMContentLoaded', function () {
                                 </form>`;
                             }
 
-                            // Quantity-break chip, same three lines as the
-                            // server-rendered card. Absent for variable
+                            // Quantity-break rungs, same strip as the
+                            // server-rendered card. Empty for variable
                             // products, which price per option.
-                            const bulk = p.bulk
-                                ? `<a href="/store/products/${p.slug}/?qty=${p.bulk.min_qty}" class="product-card-bulk">
-                                        <span class="product-card-bulk-qty">${p.bulk.min_qty}pcs</span>
-                                        <span class="product-card-bulk-save">${p.bulk.badge}</span>
-                                        <span class="product-card-bulk-each">${p.bulk.each}</span>
-                                    </a>`
+                            const rungs = (p.bulk || []).map(t => `
+                                <a href="/store/products/${p.slug}/?qty=${t.min_qty}"
+                                   class="product-card-bulk-tier"
+                                   title="Take ${t.min_qty} and pay ${t.each} each">
+                                    <span class="product-card-bulk-qty">${t.min_qty}pcs</span>
+                                    <span class="product-card-bulk-save">${t.badge}</span>
+                                    <span class="product-card-bulk-each">${t.each}<span class="product-card-bulk-ea"> each</span></span>
+                                </a>`).join('');
+                            const bulk = rungs
+                                ? `<div class="product-card-bulk" role="group" aria-label="Quantity offers">${rungs}</div>`
                                 : '';
 
                             card.innerHTML = `

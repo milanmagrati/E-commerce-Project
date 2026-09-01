@@ -10,8 +10,8 @@ Standalone check for storefront quantity breaks ("buy 3, save 10%"):
   * schedule windows and the active flag gate a rule
   * a cart line re-prices itself as it crosses a rung, and the cart subtotal
     follows
-  * a card teaser appears for a simple product and never for a variable one
-  * the product page ships the ladder and the card renders the chip
+  * a card shows the same rungs as the product page, and never for a variable one
+  * the product page ships the ladder and the card renders it too
   * an order placed through the storefront is written at the discounted rate,
     on both the store OrderItem and the mirrored dashboard OrderItem
   * the Setup page loads, saves a rule with its tiers, and the preview endpoint
@@ -252,17 +252,17 @@ def main():
               Cart.objects.get(pk=cart.pk).subtotal == Decimal('1800.00'))
 
         # ── 7. what the storefront shows ──────────────────────────────
-        print("\n── card teaser and product page ──")
-        teaser = bulk_discounts.card_teaser(simple)
-        check("a simple product's card teases the break",
-              teaser is not None and teaser['min_qty'] == 2)
+        print("\n── card ladder and product page ──")
+        ladder = bulk_discounts.card_ladder(simple)
+        check("a simple product's card shows the break",
+              len(ladder) == 1 and ladder[0]['min_qty'] == 2)
         check("a variable product's card does not — it prices per option",
-              bulk_discounts.card_teaser(variable) is None)
+              bulk_discounts.card_ladder(variable) == [])
 
         r_simple.show_on_cards = False
         r_simple.save()
         fresh()
-        check("'hide on cards' is honoured", bulk_discounts.card_teaser(simple) is None)
+        check("'hide on cards' is honoured", bulk_discounts.card_ladder(simple) == [])
         r_simple.show_on_cards = True
         r_simple.save()
         fresh()
@@ -270,9 +270,33 @@ def main():
         # A sold-out product must not advertise a break it cannot honour.
         simple.stock = 0
         simple.save()
-        check("a sold-out product shows no chip", bulk_discounts.card_teaser(simple) is None)
+        check("a sold-out product shows no rungs", bulk_discounts.card_ladder(simple) == [])
         simple.stock = 100
         simple.save()
+
+        # The card used to tease only the deepest rung, which advertised the
+        # hardest offer to reach and contradicted the page it linked to.
+        tier(r_simple, 4, 'percent', 15)
+        tier(r_simple, 8, 'amount', 250)
+        fresh()
+        page_rungs = [t['min_qty'] for t in bulk_discounts.tiers_for(simple)]
+        card_rungs = [t['min_qty'] for t in bulk_discounts.card_ladder(simple)]
+        check("the card shows every rung the product page does",
+              card_rungs == page_rungs == [2, 4, 8])
+
+        # A ladder longer than the card can hold is thinned, never truncated:
+        # the way in and the best deal both have to survive.
+        tier(r_simple, 3, 'percent', 12)
+        tier(r_simple, 6, 'percent', 18)
+        fresh()
+        long_ladder = [t['min_qty'] for t in bulk_discounts.tiers_for(simple)]
+        thinned = [t['min_qty'] for t in bulk_discounts.card_ladder(simple)]
+        check("a long ladder is thinned to fit", len(long_ladder) == 5 and len(thinned) == 3)
+        check("keeping the entry rung and the deepest one",
+              thinned[0] == long_ladder[0] and thinned[-1] == long_ladder[-1])
+        check("and staying in ladder order", thinned == sorted(thinned))
+        r_simple.tiers.filter(min_qty__in=[3, 4, 6, 8]).delete()
+        fresh()
 
         # The option card only flags the offer; the rungs live in one place.
         tier(r_simple, 5, 'percent', 20)
@@ -294,8 +318,8 @@ def main():
         rendered = Template(
             "{% load store_tags %}{% include 'store/partials/product_card.html' %}"
         ).render(Context({'product': simple}))
-        check("the card renders the chip", 'product-card-bulk' in rendered)
-        check("the chip says how many and how much",
+        check("the card renders the rung strip", 'product-card-bulk' in rendered)
+        check("the rung says how many and how much",
               '2pcs' in rendered and 'Save 10%' in rendered)
         check("and links in with that quantity ready", '?qty=2' in rendered)
 

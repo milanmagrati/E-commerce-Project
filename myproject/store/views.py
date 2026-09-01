@@ -340,15 +340,19 @@ def load_more_products(request):
 
 
 def _bulk_card_payload(product):
-    """The quantity-break chip a listing card draws, as plain JSON, or None."""
-    tier = bulk_discounts.card_teaser(product)
-    if not tier:
-        return None
-    return {
-        'min_qty': tier['min_qty'],
-        'badge': tier['badge'],
-        'each': tier['unit_price_display'] + ' each',
-    }
+    """The quantity-break rungs a listing card draws, as plain JSON.
+
+    Same shape the server-rendered card gets, so a load-more card and a
+    first-page card show the same offer.
+    """
+    return [
+        {
+            'min_qty': tier['min_qty'],
+            'badge': tier['badge'],
+            'each': tier['unit_price_display'],
+        }
+        for tier in bulk_discounts.card_ladder(product)
+    ]
 
 
 # ──────────────────── Product Views ────────────────────

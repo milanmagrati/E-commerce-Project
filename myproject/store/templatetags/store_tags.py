@@ -56,14 +56,16 @@ def product_price_display(product):
 
 
 @register.simple_tag
-def product_bulk_teaser(product):
-    """Deepest quantity break a listing card should tease, or None.
+def product_bulk_ladder(product):
+    """The quantity-break rungs a listing card shows — possibly empty.
 
-    Resolved entirely from a cached snapshot, so putting this on every card of
-    a 20-product grid costs no extra queries. Variable products return None —
-    their breaks are per option and belong on the product page.
+    The same ladder the product page draws, thinned to what a card has room
+    for, so the two never disagree about what is on offer. Resolved entirely
+    from a cached snapshot, so putting this on every card of a 20-product grid
+    costs no extra queries. Variable products return nothing — their breaks are
+    per option and belong on the product page.
     """
-    return bulk_discounts.card_teaser(product)
+    return bulk_discounts.card_ladder(product)
 
 
 # ── Order form helpers ─────────────────────────────────────────────

@@ -221,8 +221,8 @@ it, so none of them can drift apart.
 |---|---|
 | `rule_for(product, variation)` | Which rule applies here |
 | `tiers_for(...)` | The ladder, as display-ready rungs |
-| `best_tier(...)` / `summary_badge(...)` | The deepest saving, as one line |
-| `card_teaser(product)` | The chip on a listing card, or `None` |
+| `summary_badge(...)` | The whole ladder, as one line — what a *flag* says |
+| `card_ladder(product)` | The rungs a listing card shows, thinned to fit, or `[]` |
 | `price_for(product, variation, qty)` | `{base_unit, unit, line_total, saved, tier, next_tier, need_more, tiers}` |
 | `tiers_payload(product, variations)` | The JSON blob the product page ships to JS |
 
@@ -257,12 +257,18 @@ Two safety rules are deliberate and worth keeping:
 
 | Surface | Shows |
 |---|---|
-| Listing / home card | A chip — `3pcs · Save 10% · Rs. 360 each` — linking to the product page with `?qty=3` preselected. Only for products buyable straight from the card — never one with variations (it prices per option), never a sold-out one, and only while the rule's `show_on_cards` is on |
+| Listing / home card | The **same rungs as the product page** — `2pcs / Save 5% / Rs. 475 each`, up to `CARD_RUNGS` (3) of them — each linking in with that quantity preselected (`?qty=2`). Only for products buyable straight from the card — never one with variations (it prices per option), never a sold-out one, and only while the rule's `show_on_cards` is on |
 | Product page — variation card | A one-line **flag** (`Save up to 15%`), not a price list |
 | Product page — ladder | The **Buy more, pay less** rungs, next to the stepper they act on. Clicking a rung sets the quantity; the header names the chosen option |
 | Product page — price row | Live unit price, struck-through list price, "You save Rs. X", and a nudge: *"Add 2 more to save 10%."* Mirrored into the mobile sticky bar |
 | Order panel | Re-prices as the quantity changes, through the same tier data |
 | Cart | Per-line discounted unit price, the old price struck through, and the rung's label |
+
+> **A card shows the ladder, not just the best rung.** Teasing only the deepest saving
+> advertises the *hardest* offer to reach — a shopper who would happily take 2 reads "8pcs" as
+> out of reach — and makes the card disagree with the page it links to. A ladder longer than
+> three rungs is **thinned, never truncated**: `thin()` keeps both ends, so the cheapest way in
+> and the best deal always survive.
 
 > **The card flags, the ladder prices.** Both used to print the same rungs, which read as a
 > duplicate. Splitting the jobs is the fix — don't put the ladder back on the variation card.

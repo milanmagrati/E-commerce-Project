@@ -752,38 +752,80 @@ img {
    Three lines, tightest first: how many, what it saves, what each one then
    costs. It is a link, not a button: the shopper lands on the product page
    with that quantity already in the stepper. */
+/* Quantity breaks: a strip of rungs, mirroring the product page's ladder. */
 .product-card-bulk {
-    display: block;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 5px;
     margin: 0 12px 8px;
-    padding: 6px 8px;
+}
+.product-card-bulk-tier {
+    min-width: 0;
+    padding: 5px 4px;
     border: 1px solid var(--border, #e5e5e5);
     border-radius: 6px;
     background: #fff;
     text-align: center;
-    line-height: 1.35;
+    line-height: 1.32;
+    text-decoration: none;
     transition: border-color 0.16s ease, background 0.16s ease;
 }
-.product-card-bulk:hover {
+.product-card-bulk-tier:hover {
     border-color: var(--primary);
     background: rgba(248, 86, 6, 0.04);
 }
+/* A lone rung owns the whole width, so it can breathe. */
+.product-card-bulk-tier:only-child {
+    padding: 6px 8px;
+}
 .product-card-bulk-qty {
     display: block;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--text, #212121);
 }
 .product-card-bulk-save {
     display: block;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     color: #1a7f4b;
+    white-space: nowrap;
 }
 .product-card-bulk-each {
     display: block;
-    font-size: 10.5px;
+    font-size: 9.5px;
     color: var(--text-muted, #757575);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.product-card-bulk-tier:only-child .product-card-bulk-qty,
+.product-card-bulk-tier:only-child .product-card-bulk-save {
+    font-size: 12px;
+}
+.product-card-bulk-tier:only-child .product-card-bulk-each {
+    font-size: 10.5px;
+}
+
+/* Narrow cards: the unit price keeps its number and drops the word, so three
+   rungs still fit rather than each one ellipsing into nonsense. */
+@media (max-width: 600px) {
+    .product-card-bulk {
+        gap: 4px;
+        margin: 0 8px 8px;
+    }
+    .product-card-bulk-tier:not(:only-child) {
+        padding: 4px 2px;
+    }
+    .product-card-bulk-tier:not(:only-child) .product-card-bulk-qty,
+    .product-card-bulk-tier:not(:only-child) .product-card-bulk-save {
+        font-size: 10px;
+    }
+    .product-card-bulk-tier:not(:only-child) .product-card-bulk-ea {
+        display: none;
+    }
 }
 
 /* Load more */

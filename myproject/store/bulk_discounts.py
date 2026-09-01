@@ -30,6 +30,10 @@ CACHE_KEY = 'store:bulk_discounts:v1'
 # a small table.
 CACHE_TTL = 60
 
+# How many rungs a listing card has room for without crowding out the price
+# and the buy button.
+CARD_RUNGS = 3
+
 _PENNY = Decimal('0.01')
 
 
@@ -237,14 +241,6 @@ def tiers_for(product, variation=None, base_price=None):
     return out
 
 
-def best_tier(product, variation=None, base_price=None):
-    """The deepest saving on offer — what a card teases."""
-    tiers = tiers_for(product, variation, base_price)
-    if not tiers:
-        return None
-    return max(tiers, key=lambda t: (t['save_each'], t['min_qty']))
-
-
 def summary_badge(product, variation=None, base_price=None):
     """One line summing the whole ladder up, or ''.
 
@@ -268,8 +264,8 @@ def summary_badge(product, variation=None, base_price=None):
     return f"{lead} Rs. {best['save_each']:,.0f}"
 
 
-def card_teaser(product):
-    """The chip a listing card shows, or None.
+def _card_eligible(product):
+    """Whether a listing card may advertise a quantity break at all.
 
     Only for products a shopper can buy straight from the card — a variable
     product prices per variation, so its offer belongs on the product page
@@ -277,13 +273,44 @@ def card_teaser(product):
     advertise a quantity break it cannot honour.
     """
     if getattr(product, 'has_variations', False):
-        return None
+        return False
     if not getattr(product, 'storefront_available', True):
-        return None
+        return False
     rule = rule_for(product)
-    if not rule or not rule['show_on_cards']:
-        return None
-    return best_tier(product)
+    return bool(rule and rule['show_on_cards'])
+
+
+def card_ladder(product, limit=CARD_RUNGS):
+    """The rungs a listing card shows — the same ladder as the product page.
+
+    Teasing only the deepest rung advertises the *hardest* offer to reach: a
+    shopper who would happily take 2 sees "8pcs" and reads the whole thing as
+    out of reach, and the card then contradicts the product page it links to.
+    Showing the ladder states both the cheapest way in and the best deal going.
+
+    Long ladders are thinned rather than truncated, so the first and last rungs
+    always survive — the entry price and the best price are the two a card
+    cannot afford to drop.
+    """
+    if not _card_eligible(product):
+        return []
+    return thin(tiers_for(product), limit)
+
+
+def thin(tiers, limit=CARD_RUNGS):
+    """At most ``limit`` rungs, evenly spread, both ends kept."""
+    if limit < 1 or len(tiers) <= limit:
+        return list(tiers)
+    if limit == 1:
+        return [tiers[-1]]
+    last = len(tiers) - 1
+    picked, seen = [], set()
+    for i in range(limit):
+        idx = round(i * last / (limit - 1))
+        if idx not in seen:
+            seen.add(idx)
+            picked.append(tiers[idx])
+    return picked
 
 
 def price_for(product, variation=None, quantity=1, base_price=None):

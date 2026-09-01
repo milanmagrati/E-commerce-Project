@@ -43,18 +43,25 @@
     </a>
 
     {% comment %}
-    Quantity break, teased on the card. Simple products only: a variable
-    product prices per option, so its ladder is drawn on the product page
-    where an option has actually been picked.
+    The quantity-break ladder, same rungs and same order as the product page —
+    a card that teased only the deepest rung advertised the hardest offer to
+    reach and then disagreed with the page it links to. Simple products only:
+    a variable product prices per option, so its ladder is drawn on the
+    product page where an option has actually been picked.
     {% endcomment %}
-    {% product_bulk_teaser product as bulk %}
-    {% if bulk %}
-    <a href="{% url 'store:product_detail' slug=product.slug %}?qty={{ bulk.min_qty }}"
-       class="product-card-bulk" title="Take {{ bulk.min_qty }} and pay {{ bulk.unit_price_display }} each">
-        <span class="product-card-bulk-qty">{{ bulk.min_qty }}pcs</span>
-        <span class="product-card-bulk-save">{{ bulk.badge }}</span>
-        <span class="product-card-bulk-each">{{ bulk.unit_price_display }} each</span>
-    </a>
+    {% product_bulk_ladder product as bulk_tiers %}
+    {% if bulk_tiers %}
+    <div class="product-card-bulk" role="group" aria-label="Quantity offers">
+        {% for tier in bulk_tiers %}
+        <a href="{% url 'store:product_detail' slug=product.slug %}?qty={{ tier.min_qty }}"
+           class="product-card-bulk-tier"
+           title="Take {{ tier.min_qty }} and pay {{ tier.unit_price_display }} each">
+            <span class="product-card-bulk-qty">{{ tier.min_qty }}pcs</span>
+            <span class="product-card-bulk-save">{{ tier.badge }}</span>
+            <span class="product-card-bulk-each">{{ tier.unit_price_display }}<span class="product-card-bulk-ea"> each</span></span>
+        </a>
+        {% endfor %}
+    </div>
     {% endif %}
 
     {% if product.has_variations or product.is_bundle %}
