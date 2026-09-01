@@ -57,8 +57,8 @@
            class="product-card-bulk-tier"
            title="Take {{ tier.min_qty }} and pay {{ tier.unit_price_display }} each">
             <span class="product-card-bulk-qty">{{ tier.min_qty }}pcs</span>
-            <span class="product-card-bulk-save">{{ tier.badge }}</span>
-            <span class="product-card-bulk-each">{{ tier.unit_price_display }}<span class="product-card-bulk-ea"> each</span></span>
+            <span class="product-card-bulk-save">{% if tier.badge_lead %}<span class="product-card-bulk-word">{{ tier.badge_lead }} </span>{% endif %}{{ tier.badge_value }}</span>
+            <span class="product-card-bulk-each">{{ tier.unit_price_display }}<span class="product-card-bulk-word"> each</span></span>
         </a>
         {% endfor %}
     </div>

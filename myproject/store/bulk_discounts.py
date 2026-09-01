@@ -192,8 +192,13 @@ def tiers_for(product, variation=None, base_price=None):
 
     Each entry is a plain dict the templates and the JSON blobs both use::
 
-        {'min_qty', 'label', 'offer_label', 'badge', 'unit_price',
-         'unit_price_display', 'save_each', 'save_percent', 'save_total'}
+        {'min_qty', 'label', 'offer_label', 'badge', 'badge_lead',
+         'badge_value', 'unit_price', 'unit_price_display', 'save_each',
+         'save_percent', 'save_total'}
+
+    ``badge`` is the whole line ("Save 10%"). ``badge_lead`` + ``badge_value``
+    are the same line split at the verb, so a narrow listing card can drop the
+    word and keep the number.
 
     Empty list when nothing applies. Rungs that save nothing (a 0% rule, or a
     fixed price above the list price) are dropped — a chip promising no saving
@@ -221,15 +226,21 @@ def tiers_for(product, variation=None, base_price=None):
         if tier['type'] == 'percent':
             # 10.0 → "10", 7.5 → "7.5". Decimal's 'g' keeps the exponent, so
             # the trailing zero is trimmed by hand.
-            pct = f'{save_percent:.1f}'.rstrip('0').rstrip('.')
-            auto_badge = f'Save {pct}%'
+            value = f"{save_percent:.1f}".rstrip('0').rstrip('.') + '%'
         else:
-            auto_badge = f'Save Rs. {save_each:,.0f}'
+            value = f'Rs. {save_each:,.0f}'
+        lead = 'Save'
+        if rule['badge_text']:
+            # An admin's own wording is one phrase — there is no verb to split
+            # off, so it survives whole or not at all.
+            lead, value = '', rule['badge_text']
         out.append({
             'min_qty': qty,
             'label': tier['label'],
             'offer_label': tier['offer_label'],
-            'badge': rule['badge_text'] or auto_badge,
+            'badge': f'{lead} {value}'.strip(),
+            'badge_lead': lead,
+            'badge_value': value,
             'type': tier['type'],
             'unit_price': unit,
             'unit_price_display': f'Rs. {unit:,.0f}',

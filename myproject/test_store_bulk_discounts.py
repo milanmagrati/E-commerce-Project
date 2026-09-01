@@ -320,7 +320,11 @@ def main():
         ).render(Context({'product': simple}))
         check("the card renders the rung strip", 'product-card-bulk' in rendered)
         check("the rung says how many and how much",
-              '2pcs' in rendered and 'Save 10%' in rendered)
+              '2pcs' in rendered and '10%' in rendered and 'Rs. 900' in rendered)
+        # The word is marked up separately so a narrow card can drop it and
+        # keep the number; both halves have to be on the page.
+        check("the saving reads as a sentence when there is room",
+              'product-card-bulk-word">Save </span>10%' in rendered)
         check("and links in with that quantity ready", '?qty=2' in rendered)
 
         client = Client()

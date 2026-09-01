@@ -245,8 +245,8 @@ document.addEventListener('DOMContentLoaded', function () {
                                    class="product-card-bulk-tier"
                                    title="Take ${t.min_qty} and pay ${t.each} each">
                                     <span class="product-card-bulk-qty">${t.min_qty}pcs</span>
-                                    <span class="product-card-bulk-save">${t.badge}</span>
-                                    <span class="product-card-bulk-each">${t.each}<span class="product-card-bulk-ea"> each</span></span>
+                                    <span class="product-card-bulk-save">${t.lead ? `<span class="product-card-bulk-word">${t.lead} </span>` : ''}${t.value}</span>
+                                    <span class="product-card-bulk-each">${t.each}<span class="product-card-bulk-word"> each</span></span>
                                 </a>`).join('');
                             const bulk = rungs
                                 ? `<div class="product-card-bulk" role="group" aria-label="Quantity offers">${rungs}</div>`

@@ -349,6 +349,8 @@ def _bulk_card_payload(product):
         {
             'min_qty': tier['min_qty'],
             'badge': tier['badge'],
+            'lead': tier['badge_lead'],
+            'value': tier['badge_value'],
             'each': tier['unit_price_display'],
         }
         for tier in bulk_discounts.card_ladder(product)
