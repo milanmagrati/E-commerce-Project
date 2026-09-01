@@ -128,12 +128,18 @@ Typing / viewing indicators, so two staff don't work the same lead simultaneousl
 
 | Page | URL | View | Template | Guard |
 |---|---|---|---|---|
-| Follow-ups board | `/orders/follow-ups/` | `follow_ups_list` | `dashboard/follow_ups.html` | `@login_required` |
-| Trash | `/orders/follow-ups/trash/` | | `dashboard/follow_ups_trash.html` | `@login_required` |
+| Follow-ups board | `/orders/follow-ups/` | `follow_ups_list` (`views.py:26216`) | `dashboard/follow_ups.html` | inline `can_access_follow_ups` |
+| Trash | `/orders/follow-ups/trash/` | `follow_ups_trash` | `dashboard/follow_ups_trash.html` | inline `can_access_follow_ups` |
+| **Export** | `/orders/follow-ups/export/` | `export_follow_ups` (`:26709`) | xlsx / CSV | inline `can_access_follow_ups` **AND** `can_export_follow_ups` |
 
-APIs (all `@login_required`):
+APIs (all inline `can_access_follow_ups`):
 `/api/orders/follow-ups/add/` · `/<pk>/edit/` · `/<pk>/logs/` · `/<pk>/delete/` ·
-`/<pk>/restore/` · `/<pk>/hard-delete/`
+`/<pk>/restore/` · `/<pk>/hard-delete/` ·
+**`/api/orders/follow-ups/bulk-delete/`** (`bulk_delete_follow_ups`, `:26614`) ·
+**`/api/orders/follow-ups/ids/`** (`follow_ups_filtered_ids`, `:26682`)
+
+> The follow-ups views check the flag **inline**, not by decorator — a grep for
+> `@permission_required` misses them. See [A4](./A4-appendix-known-quirks.md).
 
 **Real-time:**
 
@@ -141,6 +147,35 @@ APIs (all `@login_required`):
 |---|---|
 | `/api/orders/follow-ups/sync/` | Poll for changes made by other staff (uses `version`) |
 | `/api/orders/follow-ups/presence/` | Typing / viewing indicators |
+
+### Filtering, bulk actions and export (Aug 2026)
+
+The list view, the sync poll, the ids endpoint and the export all run through one shared
+pair — `_followup_filter_params()` / `_apply_followup_filters()` — so a bulk action or an
+export can never act on a different set than the one on screen.
+
+- **Filters:** search, lead source, status, plus a **date filter** — presets (today,
+  yesterday, last 7/30 days, this/last month, this year) or a custom From/To. A *Date Field*
+  selector switches the whole filter, the Date column and its sort header between
+  `created_at` and `updated_at`. Reversed ranges are swapped; an unparseable date falls
+  back to all-time rather than 500ing.
+- **Sorting:** a *Sort By* control over eight fields, including two derived ones
+  (`last_followup_at`, `followup_count`) that are annotated only when sorted on. Column
+  headers and quick-sort shortcuts write the same `?sort=&dir=`, so ordering spans every
+  page; blank/null values sink to the bottom in both directions.
+- **Bulk selection:** a checkbox column with master checkbox and shift-click range select.
+  The selection lives in `sessionStorage`, so it survives paging and filter changes.
+  "Select all N matching this filter" pulls ids from `/api/orders/follow-ups/ids/`.
+- **Bulk delete** is a **soft delete** (restorable from Trash) in one transaction, with
+  `select_for_update` so a row someone else just deleted isn't logged twice, and
+  `updated_at` set by hand so the sync poll notices in every other open tab.
+- **Export** is xlsx (Follow-ups / Follow-up Notes / Status Summary / Report Info) or CSV,
+  covering the whole filtered queryset. An explicit `ids=` selection wins over the ambient
+  filters, and the Report Info sheet says so.
+- The sync poll sends the date filter too, so it can't splice a row into a date-filtered
+  table the page itself would never have rendered.
+
+Verified by `test_followup_bulk_export_sort.py` (repo-root standalone script).
 
 ### Follow-up status setup
 
@@ -173,7 +208,8 @@ Drill-down APIs: `/api/reports/followups/<pk>/logs/`, `…/staff/<id>/logs/`,
 |---|---|
 | `can_view_customers` / `can_create_customers` / `can_edit_customers` / `can_delete_customers` | Customer CRUD |
 | `can_view_on_hold_orders` | On-hold page and order follow-up endpoints |
-| `can_access_follow_ups` | The standalone follow-ups board |
+| `can_access_follow_ups` | The standalone follow-ups board, bulk delete, ids endpoint (checked inline) |
+| `can_export_follow_ups` | The follow-ups Export button — **in addition to** `can_access_follow_ups` |
 | `can_view_follow_up_report` | The report (checked inline) |
 | `can_setup_follow_up_status` | Follow-up status setup |
 

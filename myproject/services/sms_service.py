@@ -64,6 +64,34 @@ class SMSService:
             logger.warning(f"Unknown SMS provider: {self.provider}")
             return {'success': False, 'message': 'Unknown SMS provider', 'sent': False}
     
+    def send_text(self, phone_number: str, message: str, ref: str = 'notify') -> Dict:
+        """Send an arbitrary short message through the configured provider.
+
+        For non-order notifications (e.g. back-in-stock alerts) that don't fit
+        the fixed order-status templates.
+        """
+        if not self.enabled:
+            logger.info(f"SMS disabled. Skipping message to {phone_number}")
+            return {'success': True, 'message': 'SMS disabled', 'sent': False}
+
+        phone_number = self._clean_phone(phone_number)
+        if not phone_number:
+            return {'success': False, 'message': 'Invalid phone number', 'sent': False}
+
+        if not (message or '').strip():
+            return {'success': False, 'message': 'Empty message', 'sent': False}
+
+        if self.provider == 'twilio':
+            return self._send_twilio_sms(phone_number, message, ref)
+        elif self.provider == 'sparrow':
+            return self._send_sparrow_sms(phone_number, message, ref)
+        elif self.provider == 'atuha':
+            return self._send_atuha_sms(phone_number, message, ref)
+        elif self.provider == 'console':
+            return self._send_console_sms(phone_number, message, ref)
+        logger.warning(f"Unknown SMS provider: {self.provider}")
+        return {'success': False, 'message': 'Unknown SMS provider', 'sent': False}
+
     def _prepare_message(self, order_number: str, status: str, additional_info: str = None) -> Optional[str]:
         """Prepare SMS message for status"""
         status_lower = status.lower()

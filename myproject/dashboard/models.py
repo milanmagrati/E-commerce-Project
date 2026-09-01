@@ -120,6 +120,52 @@ class Product(models.Model):
         return self.product_type == 'bundle'
 
     @property
+    def is_variable(self):
+        """Check if this product is a variable product (has variations)."""
+        return self.product_type == 'variable'
+
+    @property
+    def active_variations(self):
+        """Variations a shopper may actually buy: active and not switched off.
+
+        `is_active` is nullable on the model, so `exclude(is_active=False)`
+        keeps both True and NULL rows.
+        """
+        return (self.variations
+                .exclude(is_active=False)
+                .exclude(status='inactive')
+                .order_by('created_at'))
+
+    @property
+    def has_variations(self):
+        """True only for a variable product that has at least one buyable
+        variation — a 'variable' product with none behaves like a simple one."""
+        return self.is_variable and self.active_variations.exists()
+
+    @property
+    def variation_price_range(self):
+        """(min_price, max_price) across buyable variations, or (price, price)
+        when there are none."""
+        prices = [v.price for v in self.active_variations]
+        if not prices:
+            return (self.price, self.price)
+        return (min(prices), max(prices))
+
+    @property
+    def in_stock_variation_exists(self):
+        # Cheap, listing-page check: real units on hand and the row not switched
+        # off. The committed-orders-aware figure is ProductVariation.available_stock,
+        # used on the product page and at add-to-cart / checkout.
+        return any(v.is_in_stock for v in self.active_variations)
+
+    @property
+    def storefront_available(self):
+        """Whether the storefront should let this product be ordered at all."""
+        if self.has_variations:
+            return self.in_stock_variation_exists
+        return self.available_stock > 0 or self.backorders_allowed
+
+    @property
     def average_cost(self):
         """Calculate cost based on cost_price_type setting.
         - fixed: always returns the static cost_price field.
@@ -675,6 +721,49 @@ class ProductVariation(models.Model):
 
     def __str__(self):
         return f"{self.product.name} - {self.sku}"
+
+    @property
+    def display_label(self):
+        """Human-readable name for this variation, for the storefront and
+        order lines. Prefers the explicit name, falls back to the SKU."""
+        return self.variation_name or self.sku
+
+    @property
+    def is_in_stock(self):
+        """Cheap on-hand check: units in stock and the row not marked
+        out-of-stock. `available_stock` is the figure that also nets off
+        unshipped orders — use that on the storefront and at checkout."""
+        return self.stock > 0 and self.status != 'out_of_stock'
+
+    # Order statuses at or past the point where dispatch has already
+    # subtracted `stock` (or the order is void) — so their units are no
+    # longer "waiting to ship" and must not be counted again.
+    _SETTLED_ORDER_STATUSES = {
+        'dispatched', 'packed', 'shipped', 'in_transit', 'in transit',
+        'out_for_delivery', 'delivered', 'return', 'returned',
+        'return_processing', 'redirected', 'cancelled', 'canceled',
+        'rejected', 'trash', 'pickup_created', 'pickup created', 'inquiry',
+    }
+
+    @property
+    def committed_qty(self):
+        """Units of this variation already promised to orders that have not
+        been dispatched yet (dispatch is the single place `stock` is
+        decremented). Derived from the dashboard OrderItems every storefront
+        order is mirrored into, so there is no reservation counter to drift."""
+        from django.db.models import Sum
+        from django.db.models.functions import Lower
+        rows = (OrderItem.objects
+                .filter(product_variation_id=self.pk)
+                .annotate(_st=Lower('order__order_status'))
+                .exclude(_st__in=self._SETTLED_ORDER_STATUSES)
+                .aggregate(n=Sum('quantity')))
+        return rows['n'] or 0
+
+    @property
+    def available_stock(self):
+        """Units on hand minus what unshipped orders have already claimed."""
+        return max(self.stock - self.committed_qty, 0)
 
     class Meta:
         ordering = ['sku']

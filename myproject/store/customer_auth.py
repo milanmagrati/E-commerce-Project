@@ -97,13 +97,14 @@ def adopt_guest_data(request, customer, old_session_key):
         customer__isnull=True, session_key__in=keys
     ).exclude(pk=account_cart.pk)
     for guest_cart in guest_carts:
-        for item in guest_cart.items.select_related('product'):
+        for item in guest_cart.items.select_related('product', 'variation'):
+            # A cart can hold one line per (product, variation) — matching the
+            # CartItem unique_together — so the merge has to key on both, or a
+            # move collides with an existing row and raises IntegrityError.
             existing = CartItem.objects.filter(
-                cart=account_cart, product=item.product
+                cart=account_cart, product=item.product, variation=item.variation
             ).first()
             if existing:
-                # unique_together is (cart, product), so quantities add up
-                # instead of the move failing on a duplicate row.
                 existing.quantity += item.quantity
                 if item.selected_variant and not existing.selected_variant:
                     existing.selected_variant = item.selected_variant

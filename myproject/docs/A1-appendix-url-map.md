@@ -1,6 +1,6 @@
 # A1 — Complete URL Map
 
-**685 named URL patterns across 14 mounted apps.** This appendix is the index; each chapter
+**~705 named URL patterns across 14 mounted apps.** This appendix is the index; each chapter
 carries the detail.
 
 ---
@@ -10,14 +10,14 @@ carries the detail.
 | Prefix | Include | Patterns | Chapter |
 |---|---|---|---|
 | `admin/` | `django.contrib.admin` | — | — |
-| `` (root) | `dashboard.urls` | **253** | [05](./05-orders-list.md)–[22](./22-settings-and-setup.md) |
+| `` (root) | `dashboard.urls` | **269** | [05](./05-orders-list.md)–[22](./22-settings-and-setup.md) |
 | `accounts/` | `accounts.urls` | 25 | [03](./03-auth-roles-permissions.md) |
 | `ncm/` | `ncm.urls` | 17 | [09](./09-ncm-api-client.md)–[12](./12-ncm-sync-and-scheduler.md) |
 | `pnd/` | `pick_and_drop.urls` | 5 | [13](./13-pick-and-drop.md) |
 | `chat/` | `chat.urls` | 16 | [28](./28-chat-todo-resources.md) |
 | `hrm/` | `hrm.urls` | **218** | [23](./23-hrm.md) |
 | `todo/` | `todo.urls` | 6 | [28](./28-chat-todo-resources.md) |
-| `store/` | `store.urls` | 23 | [24](./24-storefront.md) |
+| `store/` | `store.urls` | 28 | [24](./24-storefront.md) |
 | `api/integrations/` | `integrations.urls` | 1 | [27](./27-sheets-and-woocommerce.md) |
 | `bill-rewards/` | `bill_rewards.urls` | 16 | [26](./26-bill-rewards.md) |
 | `imports/` | `google_sheets.urls` | 13 | [27](./27-sheets-and-woocommerce.md) |
@@ -98,8 +98,9 @@ app).
 | URL | Name | Permission |
 |---|---|---|
 | `/logistics/orders/` | `logistics_orders_list` (`?provider=ncm\|pnd`) | `can_view_ncm_orders` |
-| `/logistics/orders/export/` | `logistics_orders_export` | `can_view_ncm_orders` |
+| `/logistics/orders/export/` | `logistics_orders_export` | `can_view_ncm_orders` **+** `can_export_logistics_orders` |
 | `/logistics/bulk-logs/` | `logistics_bulk_logs_list` | `can_view_ncm_bulk_logs` |
+| `/logistics/bulk-logs/export/` | `logistics_bulk_logs_export` | `can_view_ncm_bulk_logs` **+** `can_export_logistics_bulk_logs` |
 | `/logistics/bulk-logs/trash/` + restore/permanent-delete/bulk-action/empty | | `can_manage_ncm_bulk_logs` |
 | `/logistics/bulk-logs/progress/` | JSON poller | |
 | `/logistics/bulk-logs/<provider>/<log_id>/terminate\|resume/` | Batch control | |
@@ -159,7 +160,9 @@ APIs: `/api/search-products/` · `/api/product/<id>/` · `/api/product/<id>/upda
 `/customers/<id>/delete/` · `/customers/bulk-action/` ·
 `/api/customer/<id>/` · `/api/search-customer-by-phone/`
 `/orders/follow-ups/` `follow_ups_list` · `/orders/follow-ups/trash/` ·
+`/orders/follow-ups/export/` `export_follow_ups` (`can_access_follow_ups` **+** `can_export_follow_ups`) ·
 `/api/orders/follow-ups/add|<pk>/edit|<pk>/logs|<pk>/delete|<pk>/restore|<pk>/hard-delete/` ·
+`/api/orders/follow-ups/bulk-delete/` · `/api/orders/follow-ups/ids/` ·
 `/api/orders/follow-ups/sync/` · `/api/orders/follow-ups/presence/`
 `/setup/followup-status/` + add/edit/update-color/delete/toggle-default
 
@@ -211,6 +214,7 @@ APIs: `/api/search-products/` · `/api/product/<id>/` · `/api/product/<id>/upda
 
 `/settings/` `settings_hub` · `/settings/company/` · `/settings/landing-page/`
 `/setup/` `setup_management` + add/edit/delete/toggle-default/reorder
+`/setup/delivery-charges/` `delivery_charge_setup` **(admin)** + save/`<id>`/delete/`<id>`/toggle/bulk-action/settings/sync/export/branches
 `/cities/` + edit/delete + `/api/cities/quick_add|bulk_add|` + get-valley-status
 `/api-integration/` + add/edit/delete/toggle/get
 `/pages/` + add/edit/delete (CMS pages)
@@ -240,7 +244,7 @@ Maintenance & notices: `/api/maintenance/toggle|logs/` · `/api/active-notice/` 
 | App | Prefix | Key pages | Chapter |
 |---|---|---|---|
 | HRM | `/hrm/` | ~218 patterns — see the chapter | [23](./23-hrm.md) |
-| Storefront | `/store/` | landing, products, cart, checkout, orders, profile, `p/<slug>/` | [24](./24-storefront.md) |
+| Storefront | `/store/` | landing, products, cart, checkout, `track-order/`, `orders/<order_number>/`, `account/*`, `p/<slug>/`, order-form APIs (`api/locations\|quote\|discount/`) | [24](./24-storefront.md) |
 | TrendyCRM | `/trendy-crm/` | conversations, chatbots, integrations, contacts, tickets, social | [25](./25-trendycrm.md) |
 | Bill rewards | `/bill-rewards/` | dashboard, upload, bills, aliases, rewards, trending | [26](./26-bill-rewards.md) |
 | Google Sheets | `/imports/` | imports, sheet view | [27](./27-sheets-and-woocommerce.md) |

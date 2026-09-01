@@ -36,7 +36,9 @@ open, and both the add-to-cart form and the order panel post normally.
                 <div class="pdp-media-flags">
                     {% if available_stock <= 0 %}
                     <span class="pdp-flag is-out">Sold out</span>
-                    {% elif available_stock <= product.low_stock_threshold %}
+                    {% elif not has_variations and available_stock <= product.low_stock_threshold %}
+                    {# Skipped for variable products: the threshold belongs to the
+                       product, while available_stock here is the best variation. #}
                     <span class="pdp-flag">Low stock</span>
                     {% endif %}
                 </div>
@@ -103,7 +105,14 @@ open, and both the add-to-cart form and the order panel post normally.
              data-price="{{ product.price|stringformat:'s' }}"
              data-in-cart="{{ in_cart_qty }}"
              data-name="{{ product.name }}"
-             data-image="{% product_image_url product %}">
+             data-image="{% product_image_url product %}"
+             {% if has_variations %}data-has-variations="1"{% endif %}>
+
+        {% if has_variations %}
+        <!-- Units of each variation already in the cart, so the "(N in cart)"
+             label can follow whichever option is selected. -->
+        <script type="application/json" data-in-cart-map>{{ in_cart_json|safe }}</script>
+        {% endif %}
 
             {% if product.category %}
             <p class="pdp-vendor">{{ product.category.name }}</p>
@@ -123,36 +132,92 @@ open, and both the add-to-cart form and the order panel post normally.
             </div>
 
             <div class="pdp-price-row">
-                <span class="pdp-price-label">Regular price</span>
-                <span class="pdp-price">Rs. {{ product.price|floatformat:"-2" }}</span>
+                <span class="pdp-price-label" data-price-label>Regular price</span>
+                <span class="pdp-price" data-price-display>{% if has_variations %}{% product_price_display product %}{% else %}Rs. {{ product.price|floatformat:"-2" }}{% endif %}</span>
+                <!-- Filled in only while a quantity break is in force: the
+                     list price, struck through, beside the rate being paid. -->
+                <span class="pdp-price-was" data-price-was hidden></span>
                 <span class="pdp-price-unit">Inclusive of all taxes</span>
             </div>
 
-            {% if available_stock > 0 %}
-            <p class="pdp-stock in">In stock — {{ available_stock }} available</p>
+            {% if has_variations %}
+            <p class="pdp-stock is-pending" data-stock-line>Availability depends on the option you pick</p>
+            {% elif available_stock > 0 %}
+            <p class="pdp-stock in" data-stock-line>In stock — {{ available_stock }} available</p>
             {% elif product.backorders_allowed %}
-            <p class="pdp-stock in">Available on backorder</p>
+            <p class="pdp-stock in" data-stock-line>Available on backorder</p>
             {% else %}
-            <p class="pdp-stock out">Sold out</p>
+            <p class="pdp-stock out" data-stock-line>Sold out</p>
             {% endif %}
 
-            {% if product.product_type == 'variable' and variant_options %}
+            {% if has_variations %}
             <hr class="pdp-divider">
-            {% for opt in variant_options %}
-            <div class="pdp-option" data-option-group>
-                <span class="pdp-option-label">
-                    {{ opt.option_name }}:
-                    <span class="val" data-option-value="{{ opt.option_name }}"></span>
-                </span>
-                <div class="pdp-pills" role="group" aria-label="{{ opt.option_name }}">
-                    {% for val in opt.get_values_list %}
-                    <button type="button" class="pdp-pill" data-pill
-                            data-option="{{ opt.option_name }}" data-value="{{ val }}"
-                            aria-pressed="false">{{ val }}</button>
-                    {% endfor %}
+            <div class="pdp-variants" data-variation-group>
+                <div class="pdp-variants-head">
+                    <span class="pdp-variants-label" id="variant-label-{{ product.id }}">Choose an option</span>
+                    <span class="pdp-variants-count">{{ variations|length }} option{{ variations|length|pluralize }}</span>
+                    <span class="pdp-variants-chosen" data-variation-value>Not chosen yet</span>
+                    <button type="button" class="pdp-variants-clear" data-variation-clear hidden>Clear</button>
+                </div>
+
+                <div class="pdp-variants-carousel">
+                    <button type="button" class="pdp-variants-nav is-prev" data-variation-prev
+                            aria-label="Scroll to previous options" hidden>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+
+                    <div class="pdp-variants-track" data-variation-track role="group"
+                         aria-labelledby="variant-label-{{ product.id }}">
+                        {% for v in variations %}
+                        <button type="button"
+                                class="pdp-variant-card{% if not v.in_stock %} is-out{% endif %}"
+                                data-variation
+                                data-variation-id="{{ v.id }}"
+                                data-price="{{ v.price|stringformat:'s' }}"
+                                data-price-label="{{ v.price_display }}"
+                                data-stock="{{ v.stock }}"
+                                data-image="{{ v.image }}"
+                                data-label="{{ v.label }}"
+                                aria-pressed="false"
+                                {% if preselect_variation_id and v.id|stringformat:'s' == preselect_variation_id %}data-preselect="1"{% endif %}
+                                {% if not v.in_stock %}aria-disabled="true" disabled{% endif %}>
+                            <span class="pdp-variant-card-media">
+                                {% if v.image %}
+                                <img src="{{ v.image }}" alt="" loading="lazy">
+                                {% else %}
+                                <span class="pdp-variant-card-noimg" aria-hidden="true">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                                </span>
+                                {% endif %}
+                                <span class="pdp-variant-card-check" aria-hidden="true">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                </span>
+                            </span>
+                            <span class="pdp-variant-card-name">{{ v.label }}</span>
+                            {% if v.sku and v.sku != v.label %}
+                            <span class="pdp-variant-card-sku">SKU {{ v.sku }}</span>
+                            {% endif %}
+                            <span class="pdp-variant-card-price">{{ v.price_display }}</span>
+                            {% if v.bulk_badge and v.in_stock %}
+                            <!-- A flag, not a price list: the rungs are drawn
+                                 once below, next to the stepper they act on. -->
+                            <span class="pdp-variant-card-bulk">{{ v.bulk_badge }}</span>
+                            {% endif %}
+                            <span class="pdp-variant-card-stock{% if v.in_stock and v.stock <= v.low_stock %} is-low{% endif %}{% if not v.in_stock %} is-out{% endif %}">
+                                {% if not v.in_stock %}Sold out
+                                {% elif v.stock <= v.low_stock %}Only {{ v.stock }} left
+                                {% else %}In stock &mdash; {{ v.stock }}{% endif %}
+                            </span>
+                        </button>
+                        {% endfor %}
+                    </div>
+
+                    <button type="button" class="pdp-variants-nav is-next" data-variation-next
+                            aria-label="Scroll to more options" hidden>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
                 </div>
             </div>
-            {% endfor %}
             {% endif %}
 
             {% if product.product_type == 'bundle' and bundle_components %}
@@ -166,18 +231,62 @@ open, and both the add-to-cart form and the order panel post normally.
             </div>
             {% endif %}
 
-            {% if available_stock > 0 or product.backorders_allowed %}
+            {% comment %}
+            storefront_available, not `available_stock or backorders_allowed`:
+            a ProductVariation carries no backorder flag of its own, so a
+            variable product whose every option is sold out must show as sold
+            out even when the parent product allows backorders. Otherwise the
+            buy block renders with nothing selectable and the shopper is stuck
+            being told to choose an option that does not exist.
+            {% endcomment %}
+            {% if product.storefront_available %}
 
             <hr class="pdp-divider">
 
-            <div class="pdp-qty-block">
+            {% comment %}
+            Quantity breaks. The ladder below is rendered server-side for a
+            plain product so it is right before any script runs; product.js
+            re-renders it from `data-bulk-map` whenever the chosen option or
+            the quantity changes, and hides the block when the current line
+            has no breaks at all.
+            {% endcomment %}
+            <script type="application/json" data-bulk-map>{{ bulk_tiers_json|safe }}</script>
+
+            <div class="pdp-bulk" data-bulk{% if not bulk_tiers and not has_variations %} hidden{% endif %}>
+                <div class="pdp-bulk-head">
+                    <span class="pdp-bulk-title">Buy more, pay less</span>
+                    <!-- Which option these rungs price. Only a variable product
+                         fills it in, and only once an option is chosen. -->
+                    <span class="pdp-bulk-for" data-bulk-for hidden></span>
+                    <span class="pdp-bulk-saved" data-bulk-saved hidden></span>
+                </div>
+                <div class="pdp-bulk-tiers" data-bulk-tiers role="group" aria-label="Quantity offers">
+                    {% for tier in bulk_tiers %}
+                    <button type="button" class="pdp-bulk-tier" data-bulk-tier
+                            data-min-qty="{{ tier.min_qty }}"
+                            aria-pressed="false">
+                        <span class="pdp-bulk-tier-qty">{{ tier.min_qty }}pcs</span>
+                        <span class="pdp-bulk-tier-save">{{ tier.badge }}</span>
+                        <span class="pdp-bulk-tier-each">{{ tier.unit_price_display }} each</span>
+                    </button>
+                    {% endfor %}
+                </div>
+                {% if has_variations %}
+                <!-- Held open rather than popping into existence once an option
+                     is picked, the same way the stock line above reads. -->
+                <p class="pdp-bulk-await" data-bulk-await>Pick an option to see its bulk price.</p>
+                {% endif %}
+                <p class="pdp-bulk-nudge" data-bulk-nudge hidden role="status"></p>
+            </div>
+
+            <div class="pdp-qty-block" data-qty-block{% if has_variations %} data-locked{% endif %}>
                 <span class="pdp-qty-label">
                     Quantity
                     <span class="pdp-qty-incart" data-in-cart {% if not in_cart_qty %}hidden{% endif %}>({{ in_cart_qty }} in cart)</span>
                 </span>
                 <div class="pdp-stepper">
                     <button type="button" data-qty-minus aria-label="Decrease quantity for {{ product.name }}">&minus;</button>
-                    <input type="number" data-qty value="1" min="1"
+                    <input type="number" data-qty value="{{ preselect_qty }}" min="1"
                            {% if available_stock > 0 %}max="{{ available_stock }}"{% endif %}
                            inputmode="numeric" aria-label="Quantity">
                     <button type="button" data-qty-plus aria-label="Increase quantity for {{ product.name }}">+</button>
@@ -190,7 +299,9 @@ open, and both the add-to-cart form and the order panel post normally.
                     {% csrf_token %}
                     <input type="hidden" name="quantity" value="1" data-cart-qty>
                     <input type="hidden" name="selected_variant" value="" data-cart-variant>
-                    <button type="submit" class="pdp-btn pdp-btn-outline">
+                    <input type="hidden" name="selected_variation" value="" data-cart-variation-id>
+                    <button type="submit" class="pdp-btn pdp-btn-outline{% if has_variations %} is-awaiting{% endif %}"
+                            {% if has_variations %}data-needs-variation aria-disabled="true"{% endif %}>
                         <span class="pdp-btn-icon">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
                         </span>
@@ -198,11 +309,17 @@ open, and both the add-to-cart form and the order panel post normally.
                     </button>
                 </form>
 
-                <button type="button" class="pdp-btn pdp-btn-accent"
-                        data-open-order="confirmed" aria-expanded="false" aria-controls="order-panel">
+                <button type="button" class="pdp-btn pdp-btn-accent{% if has_variations %} is-awaiting{% endif %}"
+                        data-open-order="confirmed" aria-expanded="false" aria-controls="order-panel"
+                        {% if has_variations %}data-needs-variation aria-disabled="true"{% endif %}>
                     Order Now
                 </button>
             </div>
+            {% if has_variations %}
+            <!-- Silent until a buy action is attempted without a choice, so the
+                 page does not open on an error the shopper has not caused. -->
+            <p class="pdp-variant-alert" data-variation-hint hidden role="status"></p>
+            {% endif %}
 
             <button type="button" class="pdp-save{% if in_wishlist %} is-active{% endif %}"
                     data-save="{{ product.id }}">
@@ -216,7 +333,7 @@ open, and both the add-to-cart form and the order panel post normally.
             <div class="pdp-order-slot" id="order-panel" data-order-slot>
                 <div>
                     {% order_form_single_item product 1 '' as of_items %}
-                    {% order_form_config product.price product.price available_stock True as of_config %}
+                    {% order_form_config product.price product.price available_stock True product as of_config %}
                     {% url 'store:quick_order' product.id as quick_order_url %}
                     {% include "store/partials/order_form.html" with of_action=quick_order_url of_items=of_items of_subtotal=product.price of_total=product.price of_mode='confirmed' of_compact=True of_qty_editable=True of_qty=1 of_max_qty=available_stock of_id='pd-' of_config=of_config of_form=order_form %}
                 </div>
@@ -226,10 +343,26 @@ open, and both the add-to-cart form and the order panel post normally.
             <div class="pdp-buttons" data-buttons>
                 <button type="button" class="pdp-btn pdp-btn-solid" disabled>Sold out</button>
             </div>
+
+            <form class="pdp-restock" method="POST"
+                  action="{% url 'store:notify_back_in_stock' product_id=product.id %}"
+                  data-restock-form>
+                {% csrf_token %}
+                <p class="pdp-restock-lead">Tell me when it's back</p>
+                <div class="pdp-restock-row">
+                    <input type="email" name="email" inputmode="email" autocomplete="email"
+                           placeholder="you@example.com" required
+                           {% if customer %}value="{{ customer.email }}"{% endif %}
+                           aria-label="Email for the back-in-stock alert" data-restock-email>
+                    <button type="submit" class="pdp-btn pdp-btn-outline">Notify me</button>
+                </div>
+                <p class="pdp-restock-msg" data-restock-msg hidden role="status"></p>
+            </form>
+
             <button type="button" class="pdp-save{% if in_wishlist %} is-active{% endif %}"
                     data-save="{{ product.id }}">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="{% if in_wishlist %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                <span data-save-text>{% if in_wishlist %}Saved{% else %}Notify me / save{% endif %}</span>
+                <span data-save-text>{% if in_wishlist %}Saved{% else %}Save for later{% endif %}</span>
             </button>
             {% endif %}
 
@@ -397,9 +530,12 @@ open, and both the add-to-cart form and the order panel post normally.
 <div class="pdp-sticky" data-sticky-bar>
     <div class="pdp-sticky-info">
         <div class="pdp-sticky-name">{{ product.name }}</div>
-        <div class="pdp-sticky-price">Rs. {{ product.price|floatformat:"-2" }}</div>
+        <!-- Mirrors the price row above once script runs, so it follows the
+             chosen option and the quantity break rather than quoting a parent
+             price no option is actually sold at. -->
+        <div class="pdp-sticky-price" data-sticky-price>{% if has_variations %}{% product_price_display product %}{% else %}Rs. {{ product.price|floatformat:"-2" }}{% endif %}</div>
     </div>
-    {% if available_stock > 0 or product.backorders_allowed %}
+    {% if product.storefront_available %}
     <button type="button" class="pdp-btn pdp-btn-solid" data-sticky-add>Add to cart</button>
     {% else %}
     <button type="button" class="pdp-btn pdp-btn-solid" disabled>Sold out</button>

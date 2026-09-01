@@ -22,12 +22,29 @@
                 </div>
                 <div class="cart-item-info">
                     <a href="{% url 'store:product_detail' slug=item.product.slug %}" class="cart-item-name">{{ item.product.name }}</a>
-                    <p class="cart-item-price">Rs. {{ item.product.price }}</p>
+                    {% if item.variant_label %}<p class="cart-item-variant">{{ item.variant_label }}</p>{% endif %}
+                    <p class="cart-item-price">
+                        <span data-unit-price="{{ item.id }}">Rs. {{ item.unit_price }}</span>
+                        <!-- Always present, hidden until the line is on a rung,
+                             so raising the quantity past one can fill it in. -->
+                        <span class="cart-item-was" data-was-price="{{ item.id }}"
+                              {% if not item.bulk_tier %}hidden{% endif %}>Rs. {{ item.base_unit_price }}</span>
+                    </p>
+                    {% comment %}
+                    The break is applied for real — line_total and the order
+                    that follows are both priced off it — so the cart says so
+                    rather than leaving the shopper to spot the smaller number.
+                    {% endcomment %}
+                    <p class="cart-item-bulk" data-bulk-line="{{ item.id }}"
+                       {% if not item.bulk_tier %}hidden{% endif %}>
+                        <span data-bulk-label>{% if item.bulk_tier %}{{ item.bulk_tier.offer_label }}{% endif %}</span>
+                        <span data-bulk-saved>{% if item.bulk_saved %}&minus; Rs. {{ item.bulk_saved|floatformat:"-2" }}{% endif %}</span>
+                    </p>
                 </div>
                 <div class="cart-item-qty">
                     <div class="qty-stepper">
                         <button type="button" class="qty-btn cart-qty-minus" data-item="{{ item.id }}">-</button>
-                        <input type="number" class="qty-input cart-qty-input" data-item="{{ item.id }}" value="{{ item.quantity }}" min="1" max="{{ item.product.stock }}">
+                        <input type="number" class="qty-input cart-qty-input" data-item="{{ item.id }}" value="{{ item.quantity }}" min="1" max="{{ item.available_stock }}">
                         <button type="button" class="qty-btn cart-qty-plus" data-item="{{ item.id }}">+</button>
                     </div>
                 </div>
@@ -89,6 +106,23 @@ document.addEventListener('DOMContentLoaded', function() {
         }).then(r => r.json()).then(data => {
             if (data.success) {
                 document.querySelector(`.item-line-total[data-item="${itemId}"]`).textContent = 'Rs. ' + data.item_total;
+                // The line may have crossed a quantity break either way, so
+                // the unit price, the struck-through list price and the offer
+                // line all follow the server's re-quote.
+                const unitEl = document.querySelector(`[data-unit-price="${itemId}"]`);
+                if (unitEl) unitEl.textContent = 'Rs. ' + data.unit_price;
+                const bulkRow = document.querySelector(`[data-bulk-line="${itemId}"]`);
+                if (bulkRow) {
+                    const on = !!data.bulk_label;
+                    bulkRow.hidden = !on;
+                    bulkRow.querySelector('[data-bulk-label]').textContent = data.bulk_label || '';
+                    bulkRow.querySelector('[data-bulk-saved]').textContent = on ? '− Rs. ' + data.bulk_saved : '';
+                    const wasEl = document.querySelector(`[data-was-price="${itemId}"]`);
+                    if (wasEl) {
+                        wasEl.textContent = on ? 'Rs. ' + data.base_unit_price : '';
+                        wasEl.hidden = !on;
+                    }
+                }
                 document.getElementById('cartSubtotal').textContent = 'Rs. ' + data.subtotal;
                 document.getElementById('cartShipping').textContent = data.shipping === '0' ? 'FREE' : 'Rs. ' + data.shipping;
                 document.getElementById('cartTotal').textContent = 'Rs. ' + data.total;

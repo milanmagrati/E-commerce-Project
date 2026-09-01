@@ -14,10 +14,10 @@
     </nav>
 
     <div class="of-page">
-        {% order_form_single_item product quantity selected_variant as of_items %}
-        {% order_form_config subtotal product.price available_stock True as of_config %}
+        {% order_form_single_item product quantity selected_variant unit_price variation_id as of_items %}
+        {% order_form_config subtotal unit_price available_stock True product variation list_unit_price as of_config %}
         {% url 'store:quick_order' product.id as quick_order_url %}
-        {% include "store/partials/order_form.html" with of_action=quick_order_url of_items=of_items of_subtotal=subtotal of_total=total of_mode=order_type of_qty_editable=True of_qty=quantity of_max_qty=available_stock of_variant=selected_variant of_form=form of_id='qc-' of_config=of_config %}
+        {% include "store/partials/order_form.html" with of_action=quick_order_url of_items=of_items of_subtotal=subtotal of_total=total of_mode=order_type of_qty_editable=True of_qty=quantity of_max_qty=available_stock of_variant=selected_variant of_variation_id=variation_id of_form=form of_id='qc-' of_config=of_config %}
     </div>
 </div>
 {% endblock %}

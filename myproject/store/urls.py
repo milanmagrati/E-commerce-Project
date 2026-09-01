@@ -16,6 +16,7 @@ urlpatterns = [
     path('cart/update/', views.update_cart, name='update_cart'),
     path('wishlist/', views.wishlist_view, name='wishlist'),
     path('wishlist/toggle/<int:product_id>/', views.toggle_wishlist, name='toggle_wishlist'),
+    path('notify-back-in-stock/<int:product_id>/', views.notify_back_in_stock, name='notify_back_in_stock'),
     path('checkout/', views.checkout_view, name='checkout'),
 
     # Order lookup stays open to guests: number + phone, no sign-in needed.

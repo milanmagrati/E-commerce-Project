@@ -126,6 +126,7 @@ Easy to miss when auditing access — the flag is read inside the function body:
 | `manage_targets` | `:19865` | `can_view_targets` |
 | `rtv_report` | `:25821` | `can_view_rtv_report` |
 | `follow_up_report` + its 3 log APIs | `:26600`, `:27053`, `:27091`, `:27179` | `can_view_follow_up_report` |
+| `follow_ups_list`, `export_follow_ups`, `bulk_delete_follow_ups`, `follow_ups_filtered_ids` + the follow-up CRUD/trash APIs | `:26216`, `:26709`, `:26614`, `:26682`, … | `can_access_follow_ups` (export also needs `can_export_follow_ups`) |
 
 This is not necessarily wrong — some of these need to vary the response — but a grep for
 `@permission_required` will not find them.
@@ -305,3 +306,4 @@ Every app's `tests.py` is empty Django boilerplate. See
 | **`MockExtractor` fallback** | With no OCR provider configured, bill OCR fabricates results and only logs a notice |
 | **Sentinel middleware ordering** | Moving it before `MessageMiddleware` silently stops access-denial capture |
 | **Retention is manual** | `sentinel_prune` has no schedule |
+| **`accounts` is pinned to `AutoField`** | `AccountsConfig.default_auto_field = 'django.db.models.AutoField'` (`accounts/apps.py`). Prod `accounts_customuser.id` and its ~80 FKs are `int(11)`; without the pin Django emits new FKs to `CustomUser` as `BIGINT` and MySQL rejects the migration with errno 150 ("Foreign key constraint is incorrectly formed"). Migration 0047 realigns migration state; the SQL is a no-op against the existing columns. Do not remove the pin. |

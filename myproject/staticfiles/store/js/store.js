@@ -212,9 +212,45 @@ document.addEventListener('DOMContentLoaded', function () {
                                 stars += `<span class="star ${i <= Math.round(p.average_rating) ? 'filled' : 'empty'}">&#9733;</span>`;
                             }
 
+                            const priceText = p.price_display || ('Rs. ' + p.price);
+                            const badge = p.has_variations
+                                ? '<span class="product-card-badge is-options">Options</span>'
+                                : (p.product_type === 'bundle'
+                                    ? '<span class="product-card-badge is-bundle">Bundle</span>' : '');
+
+                            let action;
+                            if (p.has_variations || p.product_type === 'bundle') {
+                                action = `<a href="/store/products/${p.slug}/" class="product-card-cart-btn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-11M12 6V3M20 21v-4M20 13V3M1 14h6M9 6h6M17 17h6"/></svg>
+                                        Select Options
+                                    </a>`;
+                            } else if (p.in_stock === false) {
+                                action = `<button type="button" class="product-card-cart-btn is-disabled" disabled>Out of Stock</button>`;
+                            } else {
+                                action = `<form method="POST" action="/store/cart/add/${p.id}/" class="add-to-cart-form">
+                                    <input type="hidden" name="csrfmiddlewaretoken" value="${CSRF_TOKEN}">
+                                    <input type="hidden" name="quantity" value="1">
+                                    <button type="submit" class="product-card-cart-btn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                                        Add to Cart
+                                    </button>
+                                </form>`;
+                            }
+
+                            // Quantity-break chip, same three lines as the
+                            // server-rendered card. Absent for variable
+                            // products, which price per option.
+                            const bulk = p.bulk
+                                ? `<a href="/store/products/${p.slug}/?qty=${p.bulk.min_qty}" class="product-card-bulk">
+                                        <span class="product-card-bulk-qty">${p.bulk.min_qty}pcs</span>
+                                        <span class="product-card-bulk-save">${p.bulk.badge}</span>
+                                        <span class="product-card-bulk-each">${p.bulk.each}</span>
+                                    </a>`
+                                : '';
+
                             card.innerHTML = `
                                 <a href="/store/products/${p.slug}/" class="product-card-link">
-                                    <div class="product-card-img">${imgHtml}</div>
+                                    <div class="product-card-img">${badge}${imgHtml}</div>
                                 </a>
                                 <button class="wishlist-heart" data-product-id="${p.id}" title="Add to wishlist">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -222,16 +258,10 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <a href="/store/products/${p.slug}/" class="product-card-info">
                                     <h3 class="product-card-title">${p.name}</h3>
                                     <div class="product-card-rating">${stars}<span class="review-count">(${p.review_count})</span></div>
-                                    <div class="product-card-price"><span class="price-current">Rs. ${p.price}</span></div>
+                                    <div class="product-card-price"><span class="price-current">${priceText}</span></div>
                                 </a>
-                                <form method="POST" action="/store/cart/add/${p.id}/" class="add-to-cart-form">
-                                    <input type="hidden" name="csrfmiddlewaretoken" value="${CSRF_TOKEN}">
-                                    <input type="hidden" name="quantity" value="1">
-                                    <button type="submit" class="product-card-cart-btn">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-                                        Add to Cart
-                                    </button>
-                                </form>
+                                ${bulk}
+                                ${action}
                             `;
                             justForYouGrid.appendChild(card);
                             requestAnimationFrame(() => card.classList.add('visible'));

@@ -12,10 +12,10 @@ from dashboard.models import Category, Product
 from dashboard.models import Order as DashOrder, OrderItem as DashOrderItem
 from dashboard.models import Customer as DashCustomer, Setup
 from .models import (ProductReview, Cart, CartItem, Order, OrderItem, Wishlist, Page,
-                     DiscountCode, StoreCustomer)
+                     DiscountCode, StoreCustomer, BackInStockNotice)
 from .forms import (GuestOrderForm, ReviewForm, OrderTrackForm, CustomerLoginForm,
                     CustomerRegisterForm, CustomerProfileForm, PasswordChangeForm)
-from . import services
+from . import bulk_discounts, services
 from .customer_auth import (get_customer, login_customer, logout_customer,
                             customer_required, safe_next)
 
@@ -142,10 +142,14 @@ def _create_dashboard_order(full_name, phone, email, address, city, order_type,
     for item in items_data:
         price = Decimal(str(item['price']))
         qty = item['quantity']
+        variation = item.get('variation')
         DashOrderItem.objects.create(
             order=dash_order,
             product=item['product'],
+            product_variation=variation,
             product_name=item['product'].name,
+            product_sku=(variation.sku if variation else ''),
+            variation_name=(variation.display_label if variation else (item.get('variant') or None)),
             quantity=qty,
             price=price,
             total=price * qty,
@@ -235,8 +239,11 @@ def _active_products():
     return Product.objects.filter(is_active=True, is_deleted=False)
 
 
-def _get_product_image(product):
-    """Get the best image URL for a product."""
+def _get_product_image(product, variation=None):
+    """Get the best image URL for a product, preferring the chosen variation's
+    own image when it has one."""
+    if variation is not None and getattr(variation, 'image', None):
+        return variation.image.url
     if product.image:
         return product.image.url
     img = product.images.filter(is_featured=True).first()
@@ -246,6 +253,25 @@ def _get_product_image(product):
     if img:
         return img.image.url
     return ''
+
+
+def _resolve_variation(product, variation_id):
+    """Return (variation, error). `variation` is a buyable ProductVariation of
+    this product, or None. `error` is a shopper-facing string when a variable
+    product was given a missing/invalid variation, else ''."""
+    from dashboard.models import ProductVariation
+
+    if variation_id:
+        try:
+            variation = product.active_variations.get(pk=int(variation_id))
+            return variation, ''
+        except (ProductVariation.DoesNotExist, ValueError, TypeError):
+            if product.is_variable:
+                return None, 'That option is no longer available. Please pick another.'
+            return None, ''
+    if product.has_variations:
+        return None, 'Please choose an option first.'
+    return None, ''
 
 
 def _avg_rating(product):
@@ -292,17 +318,37 @@ def load_more_products(request):
     products = _active_products().order_by('-created_at', 'pk')[offset:offset + limit]
     data = []
     for p in products:
+        low, high = p.variation_price_range
+        price_display = (f'Rs. {float(low):,.0f} – Rs. {float(high):,.0f}'
+                         if low != high else f'Rs. {float(low):,.0f}')
         data.append({
             'id': p.id,
             'name': p.name,
             'slug': p.slug,
             'price': str(p.price),
+            'price_display': price_display,
+            'product_type': p.product_type,
+            'has_variations': p.has_variations,
+            'in_stock': p.storefront_available,
             'average_rating': _avg_rating(p),
             'review_count': _review_count(p),
             'image': _get_product_image(p),
             'stock': p.stock,
+            'bulk': _bulk_card_payload(p),
         })
     return JsonResponse({'products': data, 'has_more': len(data) == limit})
+
+
+def _bulk_card_payload(product):
+    """The quantity-break chip a listing card draws, as plain JSON, or None."""
+    tier = bulk_discounts.card_teaser(product)
+    if not tier:
+        return None
+    return {
+        'min_qty': tier['min_qty'],
+        'badge': tier['badge'],
+        'each': tier['unit_price_display'] + ' each',
+    }
 
 
 # ──────────────────── Product Views ────────────────────
@@ -347,22 +393,77 @@ def product_detail(request, slug):
     avg_rating = _avg_rating(product)
     customer = get_customer(request)
 
-    # How many of this product are already sitting in the cart — the
-    # quantity label reads "(N in cart)", as on the reference storefront.
+    # How many of this product are already sitting in the cart — the quantity
+    # label reads "(N in cart)". A variable product holds one cart line per
+    # variation, so the figure is tracked per variation and product.js swaps it
+    # as the shopper picks. `in_cart_qty` is the opening figure: the plain
+    # product's line, or 0 while no variation has been chosen.
     cart = _get_cart(request)
-    in_cart_qty = next(
-        (i.quantity for i in cart.items.all() if i.product_id == product.pk), 0)
+    in_cart_by_variation = {}
+    in_cart_qty = 0
+    for line in cart.items.all():
+        if line.product_id != product.pk:
+            continue
+        if line.variation_id:
+            in_cart_by_variation[str(line.variation_id)] = line.quantity
+        else:
+            in_cart_qty = line.quantity
 
     # Bundle / variable product extras
     available_stock = product.available_stock
-    variant_options = []
+    variations = []
     bundle_components = []
-    if product.product_type == 'variable':
-        variant_options = list(product.variant_options.all())
+    has_variations = product.has_variations
+    preselect_variation_id = ''
+    variation_rows = list(product.active_variations) if has_variations else []
+    if has_variations:
+        for v in variation_rows:
+            avail = v.available_stock
+            # The card only flags that this option has a break, and how deep.
+            # The rungs themselves are drawn once, in the ladder beside the
+            # quantity stepper, for whichever option is chosen.
+            v_badge = bulk_discounts.summary_badge(product, v)
+            variations.append({
+                'id': v.id,
+                'label': v.display_label,
+                'price': v.price,
+                'price_display': f'Rs. {float(v.price):,.0f}',
+                'stock': avail,
+                'in_stock': v.is_in_stock and avail > 0,
+                # "Only N left" copy uses the variation's own threshold, not the
+                # product's; 5 is the fallback when none is set.
+                'low_stock': v.low_stock_threshold or 5,
+                'image': v.image.url if v.image else '',
+                # Shown under the name only when it adds something the label
+                # does not already say (display_label is variation_name or sku).
+                'sku': (v.sku or '').strip(),
+                # One line flagging this option's quantity break, or ''.
+                'bulk_badge': v_badge,
+            })
+        # The buy block renders when the product can be ordered at all; the qty
+        # ceiling starts at the biggest variation so the stepper is usable, and
+        # product.js narrows it to the picked variation. Buttons stay disabled
+        # until a pick.
+        available_stock = max((v['stock'] for v in variations), default=0)
+        # A shared / "edit from cart" link may name a variation to open on.
+        want = (request.GET.get('variation') or '').strip()
+        if want and any(str(v['id']) == want and v['in_stock'] for v in variations):
+            preselect_variation_id = want
     elif product.product_type == 'bundle':
         bundle_components = list(
             product.bundle_components.select_related('component_product').all()
         )
+
+    # A quantity-break chip on a listing card links in as `?qty=4`, so the
+    # stepper opens on the quantity that earns the offer.
+    preselect_qty = 1
+    try:
+        wanted_qty = int(request.GET.get('qty') or 1)
+    except (TypeError, ValueError):
+        wanted_qty = 1
+    if wanted_qty > 1:
+        ceiling = available_stock if available_stock > 0 else wanted_qty
+        preselect_qty = max(1, min(wanted_qty, ceiling))
 
     return render(request, 'store/product_detail.html', {
         'product': product,
@@ -378,8 +479,19 @@ def product_detail(request, slug):
         'available_stock': available_stock,
         'in_cart_qty': in_cart_qty,
         'customer': customer,
-        'variant_options': variant_options,
+        'has_variations': has_variations,
+        'variations': variations,
+        'preselect_variation_id': preselect_variation_id,
+        'in_cart_json': json.dumps(in_cart_by_variation),
         'bundle_components': bundle_components,
+        # Quantity breaks. `bulk_tiers` is the ladder rendered under the price
+        # for a plain product (empty for a variable one, whose ladders live per
+        # option); `bulk_tiers_json` carries every ladder so product.js can
+        # re-price live as the quantity or the chosen option changes.
+        'bulk_tiers': [] if has_variations else bulk_discounts.tiers_for(product),
+        'bulk_tiers_json': json.dumps(
+            bulk_discounts.tiers_payload(product, variation_rows or None)),
+        'preselect_qty': preselect_qty,
         'product_image_url': _get_product_image(product),
         'free_delivery_threshold': services.free_delivery_threshold(),
     })
@@ -465,7 +577,7 @@ def search_autocomplete(request):
 
 def cart_view(request):
     cart = _get_cart(request)
-    cart_items = cart.items.select_related('product').all()
+    cart_items = cart.items.select_related('product', 'variation').all()
     subtotal = cart.subtotal
     shipping = services.delivery_charge_for(subtotal)
     total = subtotal + shipping
@@ -485,30 +597,49 @@ def add_to_cart(request, product_id):
     except (ValueError, TypeError):
         quantity = 1
 
-    avail = product.available_stock
-    selected_variant = request.POST.get('selected_variant', '')[:500]
+    # Which variation, if this is a variable product
+    variation, var_error = _resolve_variation(
+        product, request.POST.get('selected_variation', ''))
+    if var_error:
+        if _is_ajax(request):
+            return JsonResponse({'success': False, 'message': var_error})
+        messages.error(request, var_error)
+        return redirect('store:product_detail', slug=product.slug)
+
+    # A picked variation carries its own stock and price; only a plain product
+    # honours the backorder flag.
+    if variation is not None:
+        avail = variation.available_stock
+        selected_variant = variation.display_label[:500]
+        backorderable = False
+    else:
+        avail = product.available_stock
+        selected_variant = request.POST.get('selected_variant', '')[:500]
+        backorderable = product.backorders_allowed
 
     # Stock validation — skip for backorder-enabled products
-    if avail <= 0 and not product.backorders_allowed:
+    if avail <= 0 and not backorderable:
+        msg = ('This option is out of stock' if variation is not None
+               else 'This product is out of stock')
         if _is_ajax(request):
-            return JsonResponse({'success': False, 'message': 'This product is out of stock'})
-        messages.error(request, 'This product is out of stock.')
+            return JsonResponse({'success': False, 'message': msg})
+        messages.error(request, msg + '.')
         return redirect('store:product_detail', slug=product.slug)
 
     cart = _get_cart(request)
 
     # For backorder-enabled products, don't cap quantity to available stock
-    if product.backorders_allowed:
+    if backorderable:
         effective_qty = quantity
     else:
         effective_qty = min(quantity, avail)
 
     item, created = CartItem.objects.get_or_create(
-        cart=cart, product=product,
+        cart=cart, product=product, variation=variation,
         defaults={'quantity': effective_qty, 'selected_variant': selected_variant}
     )
     if not created:
-        if product.backorders_allowed:
+        if backorderable:
             item.quantity = item.quantity + quantity
         else:
             item.quantity = min(item.quantity + quantity, avail)
@@ -525,8 +656,9 @@ def add_to_cart(request, product_id):
             # own — stock caps mean fewer units may have gone in than asked.
             'item_quantity': item.quantity,
             'name': product.name,
-            'image': _get_product_image(product),
-            'variant': item.selected_variant,
+            'image': _get_product_image(product, variation),
+            'variant': item.variant_label,
+            'unit_price': str(item.unit_price),
             'line_total': str(item.line_total),
         })
     messages.success(request, f'{product.name} added to cart.')
@@ -573,18 +705,27 @@ def update_cart(request):
     if quantity <= 0:
         item.delete()
     else:
-        if item.product.backorders_allowed:
+        # A variation line is capped at its own stock; a plain product honours
+        # the backorder flag.
+        if item.variation is None and item.product.backorders_allowed:
             item.quantity = quantity
         else:
-            item.quantity = min(quantity, item.product.available_stock)
+            item.quantity = min(quantity, item.available_stock)
         item.save()
 
     subtotal = cart.subtotal
     shipping = services.delivery_charge_for(subtotal)
+    # The line may have crossed a quantity break either way, so the cart page
+    # is told the new unit price and which rung (if any) it is now on.
+    quote = item.bulk_price if quantity > 0 else None
     return JsonResponse({
         'success': True,
         'count': cart.total_items,
         'item_total': str(item.line_total) if quantity > 0 else '0',
+        'unit_price': str(quote['unit']) if quote else '0',
+        'base_unit_price': str(quote['base_unit']) if quote else '0',
+        'bulk_label': (quote['tier']['offer_label'] if quote and quote['tier'] else ''),
+        'bulk_saved': str(quote['saved']) if quote else '0',
         'subtotal': str(subtotal),
         'shipping': str(shipping),
         'total': str(subtotal + shipping),
@@ -623,6 +764,52 @@ def toggle_wishlist(request, product_id):
         'message': 'Added to wishlist' if added else 'Removed from wishlist',
         'count': _wishlist_qs(request).count(),
     })
+
+
+@require_POST
+def notify_back_in_stock(request, product_id):
+    """Register a shopper to hear when a sold-out product — or one specific
+    variation — is buyable again. Works for guests and signed-in shoppers."""
+    product = get_object_or_404(Product, pk=product_id, is_active=True, is_deleted=False)
+    variation, var_error = _resolve_variation(
+        product, request.POST.get('selected_variation', ''))
+    if var_error:
+        variation = None  # fall back to a product-level notice
+
+    email = (request.POST.get('email') or '').strip()
+    phone = (request.POST.get('phone') or '').strip()
+    customer = get_customer(request)
+    if customer:
+        email = email or (customer.email or '')
+        phone = phone or (customer.phone or '')
+
+    if not email and not phone:
+        msg = 'Add an email or phone number so we can reach you.'
+        if _is_ajax(request):
+            return JsonResponse({'success': False, 'message': msg})
+        messages.error(request, msg)
+        return redirect('store:product_detail', slug=product.slug)
+
+    match = {'product': product, 'variation': variation, 'notified_at__isnull': True}
+    if email:
+        match['email'] = email
+    else:
+        match['phone'] = phone
+    BackInStockNotice.objects.get_or_create(
+        defaults={
+            'session_key': _session_key(request),
+            'customer': customer,
+            'email': email,
+            'phone': phone,
+        },
+        **match,
+    )
+
+    msg = "You're on the list — we'll message you the moment it's back."
+    if _is_ajax(request):
+        return JsonResponse({'success': True, 'message': msg})
+    messages.success(request, msg)
+    return redirect('store:product_detail', slug=product.slug)
 
 
 # ──────────────────── Order form plumbing ────────────────────
@@ -696,7 +883,7 @@ def quote_json(request):
 def _place_order(request, form, items, order_type, delivery_district):
     """Shared tail of every checkout: price it, persist it, mirror it to the
     dashboard, allocate stock. `items` is [{'product', 'quantity', 'price',
-    'variant'}]. Returns the store Order."""
+    'variant', 'variation'}] ('variation' optional). Returns the store Order."""
     from django.db import transaction
 
     subtotal = sum(Decimal(str(i['price'])) * i['quantity'] for i in items)
@@ -739,6 +926,7 @@ def _place_order(request, form, items, order_type, delivery_district):
             OrderItem.objects.create(
                 order=order,
                 product=item['product'],
+                variation=item.get('variation'),
                 quantity=item['quantity'],
                 price=item['price'],
                 selected_variant=item.get('variant', ''),
@@ -783,24 +971,34 @@ def quick_order(request, product_id):
     rendered as a standalone page when JavaScript is unavailable.
     """
     product = get_object_or_404(Product, pk=product_id, is_active=True, is_deleted=False)
-    available_stock = product.available_stock
 
     if request.method == 'POST':
         form = GuestOrderForm(request.POST)
         order_type = request.POST.get('order_type', 'confirmed')
         if order_type not in ('confirmed', 'inquiry'):
             order_type = 'confirmed'
-        selected_variant = request.POST.get('selected_variant', '')[:500]
+        variation, var_error = _resolve_variation(
+            product, request.POST.get('selected_variation', ''))
+        if var_error:
+            return _order_error(request, product, var_error)
+        selected_variant = (variation.display_label if variation
+                            else request.POST.get('selected_variant', ''))[:500]
+        available_stock = variation.available_stock if variation else product.available_stock
+        backorderable = product.backorders_allowed and variation is None
         try:
             quantity = max(1, int(request.POST.get('quantity', 1)))
         except (ValueError, TypeError):
             quantity = 1
+        # Quantity break, priced server-side: whatever the page showed, the
+        # order is written at the rate this quantity actually earns.
+        bulk = bulk_discounts.price_for(product, variation, quantity)
+        unit_price = bulk['unit']
 
         if form.is_valid():
             district = form.cleaned_data['district']
 
             # Stock only gates a real commitment; an inquiry may exceed it.
-            if order_type == 'confirmed' and not product.backorders_allowed:
+            if order_type == 'confirmed' and not backorderable:
                 if available_stock <= 0:
                     return _order_error(request, product, 'This product is out of stock.')
                 if quantity > available_stock:
@@ -810,7 +1008,8 @@ def quick_order(request, product_id):
                 request, form,
                 items=[{
                     'product': product, 'quantity': quantity,
-                    'price': product.price, 'variant': selected_variant,
+                    'price': unit_price, 'variant': selected_variant,
+                    'variation': variation,
                 }],
                 order_type=order_type,
                 delivery_district=district,
@@ -838,17 +1037,22 @@ def quick_order(request, product_id):
                 'message': 'Please correct the highlighted fields.',
             }, status=400)
     else:
+        variation, _var_error = _resolve_variation(product, request.GET.get('variation', ''))
+        available_stock = variation.available_stock if variation else product.available_stock
         try:
             quantity = max(1, min(int(request.GET.get('qty', 1)), max(available_stock, 1)))
         except (ValueError, TypeError):
             quantity = 1
+        bulk = bulk_discounts.price_for(product, variation, quantity)
+        unit_price = bulk['unit']
         order_type = request.GET.get('order_type', 'confirmed')
         if order_type not in ('confirmed', 'inquiry'):
             order_type = 'confirmed'
-        selected_variant = request.GET.get('variant', '')[:500]
+        selected_variant = (variation.display_label if variation
+                            else request.GET.get('variant', ''))[:500]
         form = GuestOrderForm(initial=_order_form_initial(request))
 
-    subtotal = product.price * quantity
+    subtotal = unit_price * quantity
     totals = services.price_order(subtotal)
 
     return render(request, 'store/quick_checkout.html', {
@@ -861,7 +1065,13 @@ def quick_order(request, product_id):
         'total': totals['total'],
         'available_stock': available_stock,
         'selected_variant': selected_variant,
-        'product_image_url': _get_product_image(product),
+        'unit_price': unit_price,
+        'list_unit_price': bulk['base_unit'],
+        'bulk_tier': bulk['tier'],
+        'bulk_saved': bulk['saved'],
+        'variation': variation,
+        'variation_id': variation.id if variation else '',
+        'product_image_url': _get_product_image(product, variation),
     })
 
 
@@ -876,7 +1086,7 @@ def _order_error(request, product, message):
 
 def checkout_view(request):
     cart = _get_cart(request)
-    cart_items = list(cart.items.select_related('product').all())
+    cart_items = list(cart.items.select_related('product', 'variation').all())
     if not cart_items:
         messages.warning(request, 'Your cart is empty.')
         return redirect('store:cart')
@@ -892,9 +1102,13 @@ def checkout_view(request):
         if form.is_valid():
             if order_type == 'confirmed':
                 for item in cart_items:
-                    avail = item.product.available_stock
-                    if item.quantity > avail and not item.product.backorders_allowed:
-                        msg = f'"{item.product.name}" only has {avail} in stock.'
+                    avail = item.available_stock
+                    backorderable = item.variation is None and item.product.backorders_allowed
+                    if item.quantity > avail and not backorderable:
+                        label = item.product.name
+                        if item.variation:
+                            label += f' ({item.variation.display_label})'
+                        msg = f'"{label}" only has {avail} in stock.'
                         if _is_ajax(request):
                             return JsonResponse({'success': False, 'message': msg}, status=400)
                         messages.error(request, msg)
@@ -904,7 +1118,8 @@ def checkout_view(request):
                 request, form,
                 items=[{
                     'product': ci.product, 'quantity': ci.quantity,
-                    'price': ci.product.price, 'variant': ci.selected_variant,
+                    'price': ci.unit_price, 'variant': ci.variant_label,
+                    'variation': ci.variation,
                 } for ci in cart_items],
                 order_type=order_type,
                 delivery_district=form.cleaned_data['district'],

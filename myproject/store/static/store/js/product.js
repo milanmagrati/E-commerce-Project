@@ -24,6 +24,14 @@
         return 'Rs. ' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
     }
 
+    // Badge text on a quantity break is typed by an administrator, so it is
+    // escaped before going anywhere near innerHTML.
+    function esc(text) {
+        return String(text == null ? '' : text)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
     /* ====================================================================
        Account menu in the header
        ==================================================================== */
@@ -391,17 +399,19 @@
        The buy column: quantity, variants, add to cart, order panel
        ==================================================================== */
 
-    function initBuyColumn() {
+    function initBuyColumn(gallery) {
         var root = $('[data-buy]');
         if (!root) return;
 
         var maxStock = parseInt(root.dataset.maxStock || '0', 10);
         var unitPrice = parseFloat(root.dataset.price || '0');
+        var hasVariations = root.dataset.hasVariations === '1';
         var qtyInput = $('[data-qty]', root);
         var minus = $('[data-qty-minus]', root);
         var plus = $('[data-qty-plus]', root);
         var cartQty = $('[data-cart-qty]', root);
         var cartVariant = $('[data-cart-variant]', root);
+        var cartVariationId = $('[data-cart-variation-id]', root);
         var stickyBar = $('[data-sticky-bar]');
 
         function clamp(value) {
@@ -423,6 +433,9 @@
             if (cartQty) cartQty.value = n;
             if (minus) minus.disabled = n <= 1;
             if (plus) plus.disabled = maxStock > 0 && n >= maxStock;
+            // Re-price before the order panel is told the new quantity, so the
+            // panel reads the rate this quantity has just earned.
+            applyBulk(n);
             syncOrderPanel();
         }
 
@@ -439,40 +452,428 @@
             qtyInput.addEventListener('blur', syncQuantity);
         }
 
-        /* ── variants ── */
+        /* ── variations ──
+           Each tile is one real ProductVariation. Picking one drives the
+           price, the stock line, the quantity ceiling, the gallery image and
+           the "(N in cart)" figure, and unlocks the buy buttons; nothing can
+           be added or ordered until one is chosen. Sold-out tiles are rendered
+           disabled, so anything that reaches selectVariation() is buyable. */
 
-        var chosen = {};
+        var selectedVariation = null;   // {id, label, price, stock, image}
+        var needsBtns = $$('[data-needs-variation]');
+        var variationHint = $('[data-variation-hint]');
+        var priceDisplay = $('[data-price-display]', root);
+        var stockLine = $('[data-stock-line]', root);
+        var variationValue = $('[data-variation-value]', root);
+        var variationClear = $('[data-variation-clear]', root);
+        var variationGroup = $('[data-variation-group]', root);
+        var variationTrack = $('[data-variation-track]', root);
+        var variationPrev = $('[data-variation-prev]', root);
+        var variationNext = $('[data-variation-next]', root);
+        var qtyBlock = $('[data-qty-block]', root);
+        var tiles = $$('[data-variation]', root);
+        var selectable = tiles.filter(function (t) { return !t.disabled; });
 
-        function variantString() {
-            return Object.keys(chosen).map(function (key) {
-                return key + ': ' + chosen[key];
-            }).join(', ');
+        // The unchosen state, captured before any pick so "Clear" can put the
+        // price row, stock line, image and buttons back exactly as the page
+        // first rendered them.
+        var basePrice = unitPrice;
+        var baseMaxStock = maxStock;
+        var basePriceLabel = priceDisplay ? priceDisplay.textContent.trim() : '';
+        var baseStockClass = stockLine ? stockLine.className : '';
+        var baseStockText = stockLine ? stockLine.textContent.trim() : '';
+        var baseInCart = parseInt(root.dataset.inCart || '0', 10);
+
+        // What the cart already holds of each variation, so the label beside
+        // the stepper follows whichever option is on screen rather than
+        // reporting the first line found for this product.
+        var inCartMap = readJSON('[data-in-cart-map]', {});
+
+        function readJSON(sel, fallback) {
+            var node = $(sel, root);
+            if (!node) return fallback;
+            try { return JSON.parse(node.textContent || '') || fallback; }
+            catch (err) { return fallback; }
         }
 
-        $$('[data-pill]', root).forEach(function (pill) {
-            pill.addEventListener('click', function () {
-                var group = pill.dataset.option;
-                $$('[data-pill][data-option="' + CSS.escape(group) + '"]', root).forEach(function (other) {
-                    other.classList.remove('is-selected');
-                    other.setAttribute('aria-pressed', 'false');
-                });
-                pill.classList.add('is-selected');
-                pill.setAttribute('aria-pressed', 'true');
-                chosen[group] = pill.dataset.value;
+        function setHint(message) {
+            if (!variationHint) return;
+            variationHint.textContent = message || '';
+            variationHint.hidden = !message;
+        }
 
-                var label = $('[data-option-value="' + CSS.escape(group) + '"]', root);
-                if (label) label.textContent = pill.dataset.value;
-                if (cartVariant) cartVariant.value = variantString();
-                syncOrderPanel();
+        // The product's own first photo, kept so that moving from a variation
+        // that has its own image to one that does not puts the product shot
+        // back rather than leaving the previous variation's photo on screen.
+        var baseSlideSrc = '';
+        if (gallery && gallery.slides.length) {
+            var firstImg = gallery.slides[0].querySelector('img');
+            baseSlideSrc = firstImg ? firstImg.src : '';
+        }
+
+        function showVariationImage(url) {
+            if (!gallery || !gallery.slides.length) return;
+            var next = url || baseSlideSrc;
+            if (!next) return;
+            var img = gallery.slides[0].querySelector('img');
+            if (img && img.src !== next) img.src = next;
+            var thumb = gallery.thumbs[0] && gallery.thumbs[0].querySelector('img');
+            if (thumb && thumb.src !== next) thumb.src = next;
+            if (url) gallery.go(0);
+        }
+
+        function paintTiles(activeTile) {
+            tiles.forEach(function (t) {
+                var on = t === activeTile;
+                t.classList.toggle('is-selected', on);
+                t.setAttribute('aria-pressed', on ? 'true' : 'false');
+                // Each enabled option is its own tab stop: the group is a set of
+                // toggles the shopper can switch on and back off, not a radio
+                // group that traps the choice once it is made.
+                t.tabIndex = t.disabled ? -1 : 0;
+            });
+        }
+
+        function selectVariation(tile, moveFocus) {
+            if (!tile || tile.disabled) return;
+
+            // A second activation of the chosen option clears it.
+            if (selectedVariation && selectedVariation.id === tile.dataset.variationId) {
+                clearVariation(tile);
+                return;
+            }
+
+            paintTiles(tile);
+            revealCard(tile);
+            if (moveFocus) tile.focus();
+
+            selectedVariation = {
+                id: tile.dataset.variationId,
+                label: tile.dataset.label || '',
+                price: parseFloat(tile.dataset.price || '0'),
+                stock: parseInt(tile.dataset.stock || '0', 10),
+                image: tile.dataset.image || ''
+            };
+
+            unitPrice = selectedVariation.price;
+            maxStock = selectedVariation.stock;
+
+            if (variationValue) {
+                variationValue.textContent = selectedVariation.label;
+                variationValue.classList.add('is-set');
+            }
+            if (variationClear) variationClear.hidden = false;
+            // The option's own list price and its own quantity-break ladder.
+            // applyBulk(), at the end of syncQuantity(), paints the price row
+            // from these — either the rung's rate or this label.
+            currentPriceLabel = tile.dataset.priceLabel || basePriceLabel;
+            bulkTiers = bulkMap[selectedVariation.id] || [];
+            renderTiers();
+            if (stockLine) {
+                stockLine.className = 'pdp-stock in';
+                stockLine.textContent = 'In stock — ' + selectedVariation.stock + ' available';
+            }
+            if (cartVariant) cartVariant.value = selectedVariation.label;
+            if (cartVariationId) cartVariationId.value = selectedVariation.id;
+
+            needsBtns.forEach(function (btn) {
+                btn.classList.remove('is-awaiting');
+                btn.removeAttribute('aria-disabled');
+            });
+            if (qtyBlock) qtyBlock.removeAttribute('data-locked');
+            setHint('');
+            setInCart(parseInt(inCartMap[selectedVariation.id] || 0, 10));
+
+            showVariationImage(selectedVariation.image);
+            if (qtyInput) {
+                if (maxStock > 0) qtyInput.max = maxStock;
+                qtyInput.value = 1;
+            }
+            if (panel && panel.orderForm) {
+                panel.orderForm.setUnitPrice(unitPrice);
+                panel.orderForm.setMaxQty(maxStock || 99);
+            }
+            syncQuantity();
+        }
+
+        // Back out of a choice: everything selectVariation() touched goes back
+        // to the state captured at load, and the buy buttons re-lock.
+        function clearVariation(focusTile) {
+            if (!selectedVariation) return;
+            selectedVariation = null;
+            paintTiles(null);
+
+            unitPrice = basePrice;
+            maxStock = baseMaxStock;
+
+            if (variationValue) {
+                variationValue.textContent = 'Not chosen yet';
+                variationValue.classList.remove('is-set');
+            }
+            if (variationClear) variationClear.hidden = true;
+            currentPriceLabel = basePriceLabel;
+            bulkTiers = bulkMap['0'] || [];
+            renderTiers();
+            if (stockLine) {
+                stockLine.className = baseStockClass;
+                stockLine.textContent = baseStockText;
+            }
+            if (cartVariant) cartVariant.value = '';
+            if (cartVariationId) cartVariationId.value = '';
+
+            needsBtns.forEach(function (btn) {
+                btn.classList.add('is-awaiting');
+                btn.setAttribute('aria-disabled', 'true');
+            });
+            if (qtyBlock) qtyBlock.setAttribute('data-locked', '');
+            setHint('');
+            setInCart(baseInCart);
+
+            showVariationImage('');
+            if (qtyInput) {
+                if (baseMaxStock > 0) qtyInput.max = baseMaxStock;
+                else qtyInput.removeAttribute('max');
+                qtyInput.value = 1;
+            }
+            if (panel && panel.orderForm) {
+                panel.orderForm.setUnitPrice(basePrice);
+                panel.orderForm.setMaxQty(baseMaxStock || 99);
+            }
+            syncQuantity();
+
+            var target = (focusTile && !focusTile.disabled) ? focusTile : selectable[0];
+            if (target) target.focus();
+        }
+
+        tiles.forEach(function (tile) {
+            tile.tabIndex = tile.disabled ? -1 : 0;
+            if (tile.disabled) return;
+            tile.addEventListener('click', function () { selectVariation(tile); });
+            tile.addEventListener('keydown', function (e) {
+                var step = 0;
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') step = 1;
+                else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') step = -1;
+                else return;
+                e.preventDefault();
+                var at = selectable.indexOf(tile);
+                var next = selectable[(at + step + selectable.length) % selectable.length];
+                if (next) next.focus();
             });
         });
 
-        // Start every group on its first value, so the form is never posted
-        // with a half-chosen variant.
-        $$('[data-option-group]', root).forEach(function (group) {
-            var first = $('[data-pill]', group);
-            if (first) first.click();
-        });
+        if (variationClear) {
+            variationClear.addEventListener('click', function () { clearVariation(); });
+        }
+        // Escape anywhere in the option group drops the current choice.
+        if (variationGroup) {
+            variationGroup.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && selectedVariation) {
+                    e.preventDefault();
+                    clearVariation();
+                }
+            });
+        }
+
+        /* ── the option rail ──
+           Prev / next stay hidden until the track actually overflows, and each
+           end-stops itself when the track is resting against that edge. The
+           step is a little under one viewport so a card is never sliced in
+           half at the fold. */
+        if (variationTrack) {
+            var railStep = function () {
+                var card = variationTrack.querySelector('[data-variation]');
+                var cardW = card ? card.offsetWidth + 10 : 160;   // 10 = track gap
+                var byView = variationTrack.clientWidth * 0.8;
+                return Math.max(cardW, byView);
+            };
+            var scrollRail = function (dir) {
+                variationTrack.scrollBy({ left: dir * railStep(), behavior: 'smooth' });
+            };
+            var updateNav = function () {
+                var overflow = variationTrack.scrollWidth - variationTrack.clientWidth;
+                var scrollable = overflow > 2;
+                if (variationPrev) variationPrev.hidden = !scrollable;
+                if (variationNext) variationNext.hidden = !scrollable;
+                if (!scrollable) return;
+                var x = variationTrack.scrollLeft;
+                if (variationPrev) variationPrev.disabled = x <= 1;
+                if (variationNext) variationNext.disabled = x >= overflow - 1;
+            };
+            if (variationPrev) {
+                variationPrev.addEventListener('click', function () { scrollRail(-1); });
+            }
+            if (variationNext) {
+                variationNext.addEventListener('click', function () { scrollRail(1); });
+            }
+            var navTick = false;
+            variationTrack.addEventListener('scroll', function () {
+                if (navTick) return;
+                navTick = true;
+                window.requestAnimationFrame(function () { navTick = false; updateNav(); });
+            });
+            window.addEventListener('resize', updateNav);
+            window.addEventListener('load', updateNav);
+            updateNav();
+        }
+
+        // Bring a card fully into view when it is picked (matters for the
+        // preselected / deep-linked option, which may start off-screen).
+        // Assigned only when the rail exists; selectVariation guards on it.
+        function revealCard(tile) {
+            if (!variationTrack || !tile) return;
+            var t = tile.offsetLeft;
+            var r = t + tile.offsetWidth;
+            var vl = variationTrack.scrollLeft;
+            var vr = vl + variationTrack.clientWidth;
+            if (t < vl) variationTrack.scrollTo({ left: t - 8, behavior: 'smooth' });
+            else if (r > vr) variationTrack.scrollTo({ left: r - variationTrack.clientWidth + 8, behavior: 'smooth' });
+        }
+
+        /* ── quantity breaks ──
+           One ladder per line: the '0' key for a plain product, one entry per
+           variation id for a variable one, so switching options re-prices
+           without another request. Each rung is also a shortcut — pressing it
+           sets the stepper to that quantity. */
+
+        var bulkBlock = $('[data-bulk]', root);
+        var bulkTierWrap = $('[data-bulk-tiers]', root);
+        var bulkSaved = $('[data-bulk-saved]', root);
+        var bulkNudge = $('[data-bulk-nudge]', root);
+        var bulkFor = $('[data-bulk-for]', root);
+        var bulkAwait = $('[data-bulk-await]', root);
+        // The sticky bar lives outside the buy column and is all a shopper can
+        // see once the price row scrolls away, so it tracks the same figure.
+        var stickyPrice = stickyBar ? $('[data-sticky-price]', stickyBar) : null;
+        var priceWas = $('[data-price-was]', root);
+        var bulkMap = readJSON('[data-bulk-map]', {});
+        // A variable product ships no '0' ladder: with no option picked there
+        // is no price to discount, so the block stays hidden until there is.
+        var bulkTiers = bulkMap['0'] || [];
+        // What the price row reads when no rung is in force. Follows the
+        // chosen option, so clearing a choice puts the range back.
+        var currentPriceLabel = basePriceLabel;
+
+        function tierFor(qty) {
+            // The cheapest applicable rung, not simply the highest min_qty:
+            // a ladder typed out of order can then never charge more for more.
+            var best = null;
+            bulkTiers.forEach(function (t) {
+                if (qty < t.minQty) return;
+                if (!best || t.unitPrice < best.unitPrice) best = t;
+            });
+            return best;
+        }
+
+        function nextTierFor(qty) {
+            var next = null;
+            bulkTiers.forEach(function (t) {
+                if (t.minQty <= qty) return;
+                if (!next || t.minQty < next.minQty) next = t;
+            });
+            return next;
+        }
+
+        // Handed to the order panel so its own stepper re-prices the same way.
+        function effectiveUnit(qty) {
+            var tier = tierFor(qty);
+            return tier ? tier.unitPrice : unitPrice;
+        }
+
+        function renderTiers() {
+            if (!bulkTierWrap) return;
+
+            // Name the option these rungs price, so the summary pill on the
+            // card and the ladder here read as one thing rather than two.
+            if (bulkFor) {
+                var who = (selectedVariation && bulkTiers.length) ? selectedVariation.label : '';
+                bulkFor.textContent = who;
+                bulkFor.hidden = !who;
+            }
+
+            if (!bulkTiers.length) {
+                bulkTierWrap.innerHTML = '';
+                // Nothing picked yet on a variable product: hold the block open
+                // and say what to do. Anything else — an option that simply has
+                // no break, or a plain product with none — has nothing to say,
+                // so the block goes away rather than showing an empty promise.
+                var awaiting = !!bulkAwait && !selectedVariation;
+                if (bulkAwait) bulkAwait.hidden = !awaiting;
+                if (bulkBlock) bulkBlock.hidden = !awaiting;
+                if (bulkSaved) bulkSaved.hidden = true;
+                if (bulkNudge) bulkNudge.hidden = true;
+                return;
+            }
+            if (bulkAwait) bulkAwait.hidden = true;
+            bulkTierWrap.innerHTML = bulkTiers.map(function (t) {
+                return '<button type="button" class="pdp-bulk-tier" data-bulk-tier'
+                    + ' data-min-qty="' + t.minQty + '" aria-pressed="false">'
+                    + '<span class="pdp-bulk-tier-qty">' + t.minQty + 'pcs</span>'
+                    + '<span class="pdp-bulk-tier-save">' + esc(t.badge) + '</span>'
+                    + '<span class="pdp-bulk-tier-each">' + money(t.unitPrice) + ' each</span>'
+                    + '</button>';
+            }).join('');
+            if (bulkBlock) bulkBlock.hidden = false;
+        }
+
+        function applyBulk(qty) {
+            var tier = bulkTiers.length ? tierFor(qty) : null;
+
+            $$('[data-bulk-tier]', root).forEach(function (chip) {
+                var on = !!tier && parseInt(chip.dataset.minQty, 10) === tier.minQty;
+                chip.classList.toggle('is-active', on);
+                chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+
+            if (priceDisplay) {
+                priceDisplay.textContent = tier ? money(tier.unitPrice) : currentPriceLabel;
+                if (stickyPrice) stickyPrice.textContent = priceDisplay.textContent;
+            }
+            if (priceWas) {
+                priceWas.textContent = tier ? currentPriceLabel : '';
+                priceWas.hidden = !tier;
+            }
+            if (bulkSaved) {
+                var saved = tier ? tier.saveEach * qty : 0;
+                bulkSaved.textContent = saved > 0 ? 'You save ' + money(saved) : '';
+                bulkSaved.hidden = saved <= 0;
+            }
+            if (bulkNudge) {
+                var next = bulkTiers.length ? nextTierFor(qty) : null;
+                if (next) {
+                    var more = next.minQty - qty;
+                    var reward = next.type === 'percent'
+                        ? 'save ' + next.savePercent + '%'
+                        : 'pay ' + money(next.unitPrice) + ' each';
+                    bulkNudge.textContent = 'Add ' + more + ' more to ' + reward + '.';
+                    bulkNudge.hidden = false;
+                } else {
+                    bulkNudge.textContent = '';
+                    bulkNudge.hidden = true;
+                }
+            }
+        }
+
+        // Delegated: the rungs are re-rendered whenever the option changes.
+        if (bulkTierWrap) {
+            bulkTierWrap.addEventListener('click', function (e) {
+                var chip = e.target.closest && e.target.closest('[data-bulk-tier]');
+                if (!chip) return;
+                if (!variationChosen()) return;
+                if (qtyInput) qtyInput.value = chip.dataset.minQty;
+                syncQuantity();
+                if (qtyInput) qtyInput.focus();
+            });
+        }
+
+        function variationChosen() {
+            if (!hasVariations || (selectedVariation && selectedVariation.id)) return true;
+            // Say what to do, next to the buttons that were blocked, and put
+            // the shopper on the first option rather than firing a toast at
+            // the far corner of the screen.
+            setHint('Choose an option to continue.');
+            if (selectable[0]) selectable[0].focus();
+            return false;
+        }
 
         /* ── the inline order panel ── */
 
@@ -484,8 +885,10 @@
             panel.orderForm.setQuantity(quantity());
             var variant = cartVariant ? cartVariant.value : '';
             var hidden = panel.querySelector('[data-variant-input]');
+            var varIdInput = panel.querySelector('[data-variation-id-input]');
             var label = panel.querySelector('[data-variant-label]');
             if (hidden) hidden.value = variant;
+            if (varIdInput) varIdInput.value = (selectedVariation && selectedVariation.id) || '';
             if (label) {
                 label.textContent = variant;
                 label.hidden = !variant;
@@ -494,6 +897,7 @@
 
         function openOrderPanel(mode) {
             if (!slot || !panel) return;
+            if (!variationChosen()) return;
             slot.classList.add('is-open');
             // Only once the height transition has finished may the slot stop
             // clipping, or the district dropdown is cut off at its edge.
@@ -524,6 +928,10 @@
         var form = $('[data-add-to-cart]', root);
         if (form) {
             form.addEventListener('submit', function (e) {
+                if (hasVariations && !variationChosen()) {
+                    e.preventDefault();
+                    return;
+                }
                 if (!window.fetch) return;  // let the plain POST happen
                 e.preventDefault();
 
@@ -554,6 +962,11 @@
                         setInCart(data.item_quantity);
                     } else {
                         setInCart(inCart + quantity());
+                    }
+                    // Remember it against the variation, so switching options
+                    // and switching back still reports the right figure.
+                    if (selectedVariation) {
+                        inCartMap[selectedVariation.id] = inCart;
                     }
                     showCartNote({
                         name: (data && data.name) || root.dataset.name || '',
@@ -628,7 +1041,74 @@
             });
         }
 
+        // The order panel has its own stepper, so it needs to re-price the
+        // same way the buy column does rather than holding one fixed rate.
+        if (panel && panel.orderForm && panel.orderForm.setPriceResolver) {
+            panel.orderForm.setPriceResolver(effectiveUnit);
+        }
+
         syncQuantity();
+
+        // Open on a specific option when the URL named one (a shared link, or
+        // "edit" from the cart), otherwise auto-pick when there's only one
+        // buyable option — a choice with one answer is not a choice. Runs last,
+        // once the order panel and in-cart figure are wired up.
+        var preselectTile = tiles.filter(function (t) {
+            return t.dataset.preselect === '1' && !t.disabled;
+        })[0];
+        if (preselectTile) {
+            selectVariation(preselectTile);
+        } else if (hasVariations && selectable.length === 1) {
+            selectVariation(selectable[0]);
+        }
+    }
+
+    /* ====================================================================
+       Back-in-stock: "tell me when it's back" on a sold-out product
+       ==================================================================== */
+
+    function initRestockForm() {
+        var form = $('[data-restock-form]');
+        if (!form) return;
+        var msg = $('[data-restock-msg]', form);
+        var email = $('[data-restock-email]', form);
+        var button = form.querySelector('button[type="submit"]');
+
+        function say(text, ok) {
+            if (!msg) return;
+            msg.textContent = text;
+            msg.hidden = !text;
+            form.classList.toggle('is-done', !!ok);
+        }
+
+        form.addEventListener('submit', function (e) {
+            if (!window.fetch) return;  // let the plain POST through
+            e.preventDefault();
+            if (email && !email.value.trim()) { say('Enter your email first.', false); email.focus(); return; }
+
+            var label = button ? button.textContent : '';
+            if (button) { button.disabled = true; button.textContent = 'Saving…'; }
+
+            fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: { 'X-CSRFToken': csrf(), 'X-Requested-With': 'XMLHttpRequest' }
+            }).then(function (r) {
+                return r.json().catch(function () { return {}; });
+            }).then(function (data) {
+                if (data && data.success) {
+                    say(data.message || "You're on the list.", true);
+                    if (email) email.disabled = true;
+                    if (button) button.textContent = 'Done';
+                    return;
+                }
+                say((data && data.message) || 'Could not save that — try again.', false);
+                if (button) { button.disabled = false; button.textContent = label; }
+            }).catch(function () {
+                say('Network trouble — try again.', false);
+                if (button) { button.disabled = false; button.textContent = label; }
+            });
+        });
     }
 
     /* ==================================================================== */
@@ -639,14 +1119,16 @@
         initAccordions();
         initShare();
         initStarInput();
+        initRestockForm();
 
+        var gallery = null;
         var galleryRoot = $('[data-gallery]');
         if (galleryRoot) {
-            var gallery = new Gallery(galleryRoot);
+            gallery = new Gallery(galleryRoot);
             initLightbox(gallery);
         }
 
-        initBuyColumn();
+        initBuyColumn(gallery);
     }
 
     if (document.readyState === 'loading') {

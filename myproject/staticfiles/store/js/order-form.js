@@ -243,6 +243,21 @@
         this.maxQty = parseInt(this.config.maxQty || 99, 10);
         this.qtyEditable = !!this.config.qtyEditable;
 
+        // A quantity break makes the unit price a function of the quantity.
+        // When the config carries a ladder, the panel re-prices from it on its
+        // own — that is what keeps the standalone quick-checkout page (no
+        // product-page script) honest. The product page installs a resolver of
+        // its own afterwards, which wins.
+        var ladder = this.config.tiers || [];
+        var listPrice = parseFloat(this.config.listPrice || this.unitPrice || 0);
+        this.priceResolver = ladder.length ? function (qty) {
+            var best = listPrice;
+            ladder.forEach(function (t) {
+                if (qty >= t.minQty && t.unitPrice < best) best = t.unitPrice;
+            });
+            return best;
+        } : null;
+
         this.district = '';
         this.branchCode = '';
         this.branchName = '';
@@ -271,6 +286,13 @@
         function apply(value) {
             var v = Math.max(1, Math.min(self.maxQty, parseInt(value, 10) || 1));
             input.value = v;
+            // A quantity break makes the unit price a function of the quantity,
+            // so the owner of the panel may install a resolver. Without one the
+            // rate stays whatever setUnitPrice last set.
+            if (self.priceResolver) {
+                var resolved = parseFloat(self.priceResolver(v));
+                if (!isNaN(resolved) && resolved >= 0) self.unitPrice = resolved;
+            }
             if (minus) minus.disabled = v <= 1;
             if (plus) plus.disabled = v >= self.maxQty;
             var badge = self.q('[data-item-qty]');
@@ -290,6 +312,37 @@
 
     OrderForm.prototype.setQuantity = function (value) {
         if (this.applyQuantity) this.applyQuantity(value);
+    };
+
+    /* Product page calls this when the shopper picks a different variation, so
+       the totals and the item-line price follow the variation's own price. */
+    OrderForm.prototype.setUnitPrice = function (price) {
+        var p = parseFloat(price);
+        if (isNaN(p) || p < 0) return;
+        this.unitPrice = p;
+        this.config.unitPrice = p;
+        var input = this.q('[data-qty-input]');
+        this.setQuantity(input ? input.value : 1);
+    };
+
+    /* Product page calls this with a fn(qty) -> unit price, so the panel's own
+       stepper honours the same quantity breaks the buy column shows. */
+    OrderForm.prototype.setPriceResolver = function (fn) {
+        this.priceResolver = typeof fn === 'function' ? fn : null;
+        var input = this.q('[data-qty-input]');
+        this.setQuantity(input ? input.value : 1);
+    };
+
+    /* Product page calls this to raise/lower the quantity ceiling to the
+       picked variation's stock. */
+    OrderForm.prototype.setMaxQty = function (value) {
+        var n = parseInt(value, 10);
+        this.maxQty = (isNaN(n) || n < 1) ? 99 : n;
+        var input = this.q('[data-qty-input]');
+        if (input) {
+            input.max = this.maxQty;
+            this.setQuantity(input.value);
+        }
     };
 
     /* District + branch */

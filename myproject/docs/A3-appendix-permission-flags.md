@@ -126,6 +126,8 @@ Defaults shown as ✅ (on) / ❌ (off).
 | `can_delete_ncm_orders` | ❌ | Deleting |
 | `can_view_ncm_bulk_logs` | ❌ | Bulk send logs |
 | `can_manage_ncm_bulk_logs` | ❌ | Bulk log trash / bulk actions |
+| `can_export_logistics_orders` | ❌ | Logistics Orders **Export** button — requires `can_view_ncm_orders` too (migration 0045) |
+| `can_export_logistics_bulk_logs` | ❌ | Bulk Logs **Export** button — requires `can_view_ncm_bulk_logs` too (migration 0045) |
 | `can_view_ncm_trash` | ❌ | NCM order trash |
 | `can_sync_ncm_orders` | ❌ | **Manual and bulk sync** |
 | `can_view_ncm_branches` | ❌ | Branch list |
@@ -153,10 +155,16 @@ Defaults shown as ✅ (on) / ❌ (off).
 > Access also leaks through **task assignment** — `todo_access_required`
 > (`todo/views.py:17`) allows any user with a task assigned to or created by them.
 
-## Follow-ups — `:180-183`
+## Follow-ups — `:181-185`
 
-`can_access_follow_ups` ❌ · `can_view_follow_up_report` ❌ ·
-`can_setup_follow_up_status` ❌
+`can_access_follow_ups` ❌ · `can_export_follow_ups` ❌ ·
+`can_view_follow_up_report` ❌ · `can_setup_follow_up_status` ❌
+
+> `can_export_follow_ups` gates the Export button **on top of** `can_access_follow_ups` —
+> both are required. All follow-up flags are checked **inline**, not by decorator.
+> The three `can_export_*` flags (follow-ups + the two logistics ones) were added in
+> `accounts` migration 0045, with 0046 backfilling them from whatever flag gated each
+> export before, so existing users kept their access.
 
 ## Resources — `:186-187`
 

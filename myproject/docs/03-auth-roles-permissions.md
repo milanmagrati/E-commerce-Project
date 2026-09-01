@@ -5,7 +5,7 @@
 **This project does not use Django's permission framework.** No `Permission` objects, no
 `user.has_perm()`, no groups in practice.
 
-Instead, `CustomUser` carries **98 boolean columns** — `can_view_orders`,
+Instead, `CustomUser` carries **~101 boolean columns** — `can_view_orders`,
 `can_create_ncm_orders`, `can_view_hrm_payroll`, and so on. A decorator reads the boolean
 directly with `getattr(user, 'can_do_thing', False)`.
 
@@ -54,7 +54,7 @@ their role changes.
 | `max_discount_percent` | `Decimal` — the only non-boolean permission |
 | `is_deleted`, `deleted_at`, `deleted_by` | Soft delete |
 | `created_by` | Who created this user |
-| 98 `can_*` booleans | The actual permission system |
+| ~101 `can_*` booleans | The actual permission system |
 
 Methods: `is_administrator`, `soft_delete()`, `restore()`,
 `set_default_permissions_by_role()` — the last grants a hardcoded grant-all list for
@@ -162,10 +162,10 @@ Full list in [A3 — Permission flags](./A3-appendix-permission-flags.md). The g
 | Cities | View, add, edit, delete |
 | Content | Content management |
 | Dashboard widgets | Each dashboard tile has its own flag |
-| NCM | View, create, edit, delete, bulk logs, trash, sync, branches |
+| NCM | View, create, edit, delete, bulk logs, **export orders / export bulk logs**, trash, sync, branches |
 | HRM | HR management, assets, attendance, payroll (**sidebar only**) |
 | Todo | Access |
-| Follow-ups | Access, report, status setup |
+| Follow-ups | Access, **export**, report, status setup |
 | Resources | View, create |
 | Sentinel | Audit trail, all-users activity, export, manage sessions, configure |
 

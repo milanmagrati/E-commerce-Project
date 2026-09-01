@@ -131,18 +131,77 @@ class Cart(models.Model):
 class CartItem(models.Model):
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='store_cart_items')
+    # Set for a variable product: which ProductVariation the shopper chose. A
+    # cart may hold several lines for one product, one per variation.
+    variation = models.ForeignKey('dashboard.ProductVariation', on_delete=models.CASCADE,
+                                  null=True, blank=True, related_name='store_cart_items')
     quantity = models.PositiveIntegerField(default=1)
     selected_variant = models.CharField(max_length=500, blank=True, default='')
 
     class Meta:
-        unique_together = ('cart', 'product')
+        unique_together = ('cart', 'product', 'variation')
 
     def __str__(self):
         return f'{self.product.name} x {self.quantity}'
 
     @property
+    def base_unit_price(self):
+        """List price of one unit, before any quantity break — the variation's
+        own price when there is one."""
+        if self.variation:
+            return self.variation.price
+        return self.product.price
+
+    @property
+    def bulk_price(self):
+        """The whole quantity-break picture for this line, priced at the
+        quantity actually in the cart. See :mod:`store.bulk_discounts`."""
+        from . import bulk_discounts
+        # The cart template reads unit_price, line_total, the tier and the
+        # saving off the same row, so the quote is memoised — keyed on the
+        # quantity, the only thing that can change it inside one request.
+        cached = getattr(self, '_bulk_quote', None)
+        if cached and cached[0] == self.quantity:
+            return cached[1]
+        quote = bulk_discounts.price_for(
+            self.product, self.variation, self.quantity, self.base_unit_price)
+        self._bulk_quote = (self.quantity, quote)
+        return quote
+
+    @property
+    def unit_price(self):
+        """Price of one unit as this line is currently priced — the quantity
+        break applies from the moment the cart holds enough units."""
+        return self.bulk_price['unit']
+
+    @property
     def line_total(self):
-        return self.product.price * self.quantity
+        return self.unit_price * self.quantity
+
+    @property
+    def bulk_tier(self):
+        """The rung in force on this line, or None at list price."""
+        return self.bulk_price['tier']
+
+    @property
+    def bulk_saved(self):
+        """Rupees this line is saving against the list price."""
+        return self.bulk_price['saved']
+
+    @property
+    def variant_label(self):
+        """What to show under the product name in the cart / checkout."""
+        if self.variation:
+            return self.variation.display_label
+        return self.selected_variant
+
+    @property
+    def available_stock(self):
+        """Stock ceiling for the quantity stepper — nets off units already
+        promised to orders that have not shipped."""
+        if self.variation:
+            return self.variation.available_stock
+        return self.product.available_stock
 
 
 class DiscountCode(models.Model):
@@ -205,6 +264,224 @@ class DiscountCode(models.Model):
         return min(amount, subtotal).quantize(Decimal('0.01'))
 
 
+class BulkDiscount(models.Model):
+    """A quantity break — "buy 3, save 10%" — administered from
+    Setup → Bulk Discounts.
+
+    One rule points at exactly one target: a single variation, a single
+    product, a category, or the whole shop. It carries a ladder of
+    :class:`BulkDiscountTier` rows, each saying what one unit costs once the
+    shopper takes ``min_qty`` or more.
+
+    :mod:`store.bulk_discounts` picks the most specific live rule for a line
+    (variation ▸ product ▸ category ▸ everything) and prices it. Nothing here
+    is quoted directly to a shopper — always go through that module, so the
+    card, the product page, the cart and the order all agree.
+    """
+
+    SCOPE_VARIATION = 'variation'
+    SCOPE_PRODUCT = 'product'
+    SCOPE_CATEGORY = 'category'
+    SCOPE_ALL = 'all'
+    SCOPE_CHOICES = [
+        (SCOPE_VARIATION, 'One variation'),
+        (SCOPE_PRODUCT, 'One product'),
+        (SCOPE_CATEGORY, 'A whole category'),
+        (SCOPE_ALL, 'Every product'),
+    ]
+    # How specific each scope is. A variation rule beats the product rule it
+    # sits under, which beats the category rule, which beats a shop-wide one.
+    SCOPE_RANK = {
+        SCOPE_VARIATION: 40,
+        SCOPE_PRODUCT: 30,
+        SCOPE_CATEGORY: 20,
+        SCOPE_ALL: 10,
+    }
+
+    name = models.CharField(
+        max_length=140, blank=True, default='',
+        help_text="Internal name, e.g. 'Beard oil — festival bundle'.")
+    scope = models.CharField(max_length=12, choices=SCOPE_CHOICES, default=SCOPE_PRODUCT)
+
+    # Exactly one of these is set, matching `scope`. `product` is also filled in
+    # for a variation rule so the setup page can group and search by product.
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True,
+                                related_name='bulk_discounts')
+    variation = models.ForeignKey('dashboard.ProductVariation', on_delete=models.CASCADE,
+                                  null=True, blank=True, related_name='bulk_discounts')
+    category = models.ForeignKey('dashboard.Category', on_delete=models.CASCADE,
+                                 null=True, blank=True, related_name='bulk_discounts')
+
+    is_active = models.BooleanField(default=True)
+    priority = models.PositiveIntegerField(
+        default=0, help_text="When two rules target the same thing, the higher number wins.")
+    starts_at = models.DateTimeField(null=True, blank=True, help_text="Blank = live immediately.")
+    ends_at = models.DateTimeField(null=True, blank=True, help_text="Blank = never expires.")
+
+    show_on_cards = models.BooleanField(
+        default=True, help_text="Show the offer on listing/home product cards (simple products).")
+    badge_text = models.CharField(
+        max_length=60, blank=True, default='',
+        help_text="Overrides the automatic 'Save 10%' line. Blank = generated.")
+    note = models.CharField(max_length=200, blank=True, default='')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-priority', '-updated_at']
+        indexes = [
+            models.Index(fields=['scope', 'is_active']),
+            models.Index(fields=['product', 'is_active']),
+            models.Index(fields=['variation', 'is_active']),
+        ]
+        verbose_name = 'bulk discount'
+        verbose_name_plural = 'bulk discounts'
+
+    def __str__(self):
+        return self.name or f'{self.get_scope_display()} — {self.target_label}'
+
+    def save(self, *args, **kwargs):
+        # Keep the target columns honest: only the one the scope names is kept,
+        # so a rule edited from 'product' to 'category' cannot go on matching
+        # the product it used to point at.
+        if self.scope == self.SCOPE_VARIATION:
+            # Always re-derived, never merely filled in: a rule re-pointed at
+            # an option of a different product would otherwise keep the old
+            # product on it and turn up under the wrong name on the setup page.
+            if self.variation_id:
+                self.product_id = self.variation.product_id
+            self.category = None
+        elif self.scope == self.SCOPE_PRODUCT:
+            self.variation = None
+            self.category = None
+        elif self.scope == self.SCOPE_CATEGORY:
+            self.product = None
+            self.variation = None
+        else:
+            self.product = None
+            self.variation = None
+            self.category = None
+        super().save(*args, **kwargs)
+
+    @property
+    def scope_rank(self):
+        return self.SCOPE_RANK.get(self.scope, 0)
+
+    @property
+    def target_label(self):
+        """What this rule applies to, in one line, for the setup table."""
+        if self.scope == self.SCOPE_VARIATION and self.variation:
+            return f'{self.variation.product.name} — {self.variation.display_label}'
+        if self.scope == self.SCOPE_PRODUCT and self.product:
+            return self.product.name
+        if self.scope == self.SCOPE_CATEGORY and self.category:
+            return self.category.name
+        if self.scope == self.SCOPE_ALL:
+            return 'Every product'
+        return '— target removed —'
+
+    @property
+    def is_live(self):
+        """Active *and* inside its schedule window right now."""
+        if not self.is_active:
+            return False
+        now = timezone.now()
+        if self.starts_at and now < self.starts_at:
+            return False
+        if self.ends_at and now > self.ends_at:
+            return False
+        return True
+
+    @property
+    def schedule_state(self):
+        """'live' | 'scheduled' | 'expired' | 'off' — drives the status pill."""
+        if not self.is_active:
+            return 'off'
+        now = timezone.now()
+        if self.starts_at and now < self.starts_at:
+            return 'scheduled'
+        if self.ends_at and now > self.ends_at:
+            return 'expired'
+        return 'live'
+
+    @property
+    def base_price(self):
+        """The price the tiers discount from, when the rule has a single
+        target. Category/shop-wide rules have no one price — they are priced
+        per line at quote time."""
+        if self.variation_id:
+            return self.variation.price
+        if self.product_id:
+            return self.product.price
+        return None
+
+    @property
+    def tier_count(self):
+        return self.tiers.count()
+
+
+class BulkDiscountTier(models.Model):
+    """One rung of a :class:`BulkDiscount` ladder: from ``min_qty`` units up,
+    each unit costs what ``discount_type`` + ``value`` work out to."""
+
+    TYPE_PERCENT = 'percent'
+    TYPE_AMOUNT = 'amount'
+    TYPE_PRICE = 'price'
+    TYPE_CHOICES = [
+        (TYPE_PERCENT, '% off each'),
+        (TYPE_AMOUNT, 'Rs. off each'),
+        (TYPE_PRICE, 'Fixed price each'),
+    ]
+
+    rule = models.ForeignKey(BulkDiscount, on_delete=models.CASCADE, related_name='tiers')
+    min_qty = models.PositiveIntegerField(
+        default=2, validators=[MinValueValidator(1)],
+        help_text="Units the shopper must take for this rung to apply.")
+    discount_type = models.CharField(max_length=10, choices=TYPE_CHOICES, default=TYPE_PERCENT)
+    value = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0'))
+    label = models.CharField(
+        max_length=60, blank=True, default='',
+        help_text="Optional name for this rung, e.g. 'Family pack'.")
+
+    class Meta:
+        ordering = ['min_qty']
+        unique_together = [('rule', 'min_qty')]
+        verbose_name = 'bulk discount tier'
+        verbose_name_plural = 'bulk discount tiers'
+
+    def __str__(self):
+        return f'{self.min_qty}+ → {self.offer_label}'
+
+    @property
+    def offer_label(self):
+        """'Save 10%' / 'Rs. 200 off each' / 'Rs. 1,800 each'."""
+        if self.discount_type == self.TYPE_PERCENT:
+            return f'Save {self.value:.0f}%'
+        if self.discount_type == self.TYPE_AMOUNT:
+            return f'Rs. {self.value:,.0f} off each'
+        return f'Rs. {self.value:,.0f} each'
+
+    def unit_price_from(self, base_price):
+        """What one unit costs at this rung, given the undiscounted price.
+
+        Never returns a negative price and never returns more than the base —
+        a mis-typed rule can only fail towards charging the normal price.
+        """
+        base = Decimal(str(base_price or 0))
+        if base <= 0:
+            return Decimal('0.00')
+        if self.discount_type == self.TYPE_PERCENT:
+            pct = max(Decimal('0'), min(self.value, Decimal('100')))
+            price = base * (Decimal('100') - pct) / Decimal('100')
+        elif self.discount_type == self.TYPE_AMOUNT:
+            price = base - max(Decimal('0'), self.value)
+        else:
+            price = max(Decimal('0'), self.value)
+        price = min(max(price, Decimal('0')), base)
+        return price.quantize(Decimal('0.01'))
+
+
 class Order(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -264,6 +541,8 @@ class Order(models.Model):
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, related_name='store_order_items')
+    variation = models.ForeignKey('dashboard.ProductVariation', on_delete=models.SET_NULL,
+                                  null=True, blank=True, related_name='store_order_items')
     quantity = models.PositiveIntegerField(default=1)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     selected_variant = models.CharField(max_length=500, blank=True, default='')
@@ -430,3 +709,44 @@ class DeliveryCharge(models.Model):
     def covered_area_list(self):
         raw = (self.covered_areas or '').replace('\n', ',')
         return [a.strip() for a in raw.split(',') if a.strip()]
+
+
+class BackInStockNotice(models.Model):
+    """A shopper asking to be told when a sold-out product — or one specific
+    variation of it — can be bought again.
+
+    Works for a guest (keyed by session) or a signed-in shopper. One pending
+    row per contact address and target; ``notified_at`` is stamped once the
+    alert has been sent so it never fires twice.
+    """
+    product = models.ForeignKey(Product, on_delete=models.CASCADE,
+                                related_name='back_in_stock_notices')
+    variation = models.ForeignKey('dashboard.ProductVariation', on_delete=models.CASCADE,
+                                  null=True, blank=True,
+                                  related_name='back_in_stock_notices')
+    customer = models.ForeignKey('StoreCustomer', on_delete=models.SET_NULL,
+                                 null=True, blank=True,
+                                 related_name='back_in_stock_notices')
+    session_key = models.CharField(max_length=40, blank=True, default='')
+    email = models.EmailField(blank=True, default='')
+    phone = models.CharField(max_length=20, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    notified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['product', 'notified_at']),
+            models.Index(fields=['variation', 'notified_at']),
+        ]
+        verbose_name = 'back-in-stock notice'
+        verbose_name_plural = 'back-in-stock notices'
+
+    def __str__(self):
+        who = self.email or self.phone or self.session_key or 'guest'
+        what = self.variation.display_label if self.variation else self.product.name
+        return f'{who} -> {what}'
+
+    @property
+    def target_label(self):
+        return self.variation.display_label if self.variation else self.product.name

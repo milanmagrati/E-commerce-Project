@@ -54,7 +54,7 @@
     display: flex;
     align-items: flex-start;
     gap: 12px;
-    padding: 20px 22px 16px;
+    padding: 15px 20px 13px;
     border-bottom: 1px dashed var(--of-line);
 }
 .of-head-icon {
@@ -81,20 +81,20 @@
     line-height: 1.45;
 }
 /* ── Body ─────────────────────────────────────────────────── */
-.of-body { padding: 18px 22px 22px; }
+.of-body { padding: 14px 20px 18px; }
 
 /* ── Item strip ───────────────────────────────────────────── */
 .of-items {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-bottom: 14px;
+    gap: 6px;
+    margin-bottom: 11px;
 }
 .of-item {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px;
+    padding: 8px 10px;
     background: #fff;
     border: 1px solid var(--of-field-line);
     border-radius: 12px;
@@ -150,11 +150,11 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 9px 12px;
+    padding: 8px 12px;
     background: #fff;
     border: 1px solid var(--of-field-line);
     border-radius: 12px;
-    margin-bottom: 14px;
+    margin-bottom: 11px;
 }
 .of-qty-label { font-size: 12.5px; font-weight: 600; color: var(--of-muted); }
 .of-stepper {
@@ -197,12 +197,12 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 12px;
+    padding: 8px 12px;
     border-radius: 11px;
     font-size: 12.5px;
     line-height: 1.45;
     font-weight: 500;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     background: #E8F7EE;
     color: #096B3A;
     border: 1px solid #C4E9D4;
@@ -221,9 +221,9 @@
 .of-fields {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    gap: 10px;
 }
-.of-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.of-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .of-field.of-span-2 { grid-column: 1 / -1; }
 
 .of-label {
@@ -249,7 +249,7 @@
    .of-combo-input and draw a second border inside each combobox. */
 .of-input {
     width: 100%;
-    padding: 11px 13px;
+    padding: 9px 13px;
     font-family: inherit;
     font-size: 13.5px;
     color: var(--of-ink);
@@ -310,7 +310,7 @@ select.of-input {
     align-items: center;
     gap: 8px;
     width: 100%;
-    padding: 11px 13px;
+    padding: 9px 13px;
     background: #fff;
     border: 1.5px solid var(--of-field-line);
     border-radius: 10px;
@@ -401,7 +401,7 @@ select.of-input {
 /* Appears once a district is chosen: the charge for that destination, the
    promised time, and the areas the courier branch actually reaches. */
 .of-delivery {
-    margin-top: 16px;
+    margin-top: 12px;
     border: 1px solid var(--of-field-line);
     border-radius: 13px;
     background: #fff;
@@ -418,7 +418,7 @@ select.of-input {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 11px 13px;
+    padding: 9px 13px;
     background: linear-gradient(180deg, #FFF9EC, #FDF3DE);
     border-bottom: 1px solid #F1E6CE;
 }
@@ -468,7 +468,7 @@ select.of-input {
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    padding: 10px 13px;
+    padding: 8px 13px;
     font-size: 12.5px;
     line-height: 1.5;
     color: #0A6B37;
@@ -482,7 +482,7 @@ select.of-input {
 .of-delivery-eta-np { color: #14803F; font-weight: 600; }
 .of-delivery-eta-np:empty { display: none; }
 
-.of-delivery-areas { padding: 11px 13px 12px; }
+.of-delivery-areas { padding: 9px 13px 10px; }
 .of-delivery-areas[hidden] { display: none; }
 .of-delivery-areas-head {
     display: flex;
@@ -544,7 +544,7 @@ select.of-input {
 .of-delivery-note[hidden] { display: none; }
 
 /* ── Discount row ─────────────────────────────────────────── */
-.of-discount { margin-top: 14px; }
+.of-discount { margin-top: 11px; }
 .of-discount-row { display: flex; gap: 8px; }
 .of-discount-row .of-input { flex: 1; text-transform: uppercase; }
 .of-discount-row .of-input::placeholder { text-transform: none; }
@@ -580,7 +580,7 @@ select.of-input {
 
 /* ── Totals ───────────────────────────────────────────────── */
 .of-totals {
-    margin-top: 16px;
+    margin-top: 12px;
     background: #fff;
     border: 1px solid var(--of-field-line);
     border-radius: 12px;
@@ -591,7 +591,7 @@ select.of-input {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 10px 14px;
+    padding: 8px 14px;
     font-size: 13px;
     color: var(--of-muted);
 }
@@ -603,7 +603,7 @@ select.of-input {
 .of-total-row.of-grand {
     background: linear-gradient(180deg, #FFF8E8, #FDF1D8);
     border-top: 1px solid var(--of-field-line);
-    padding: 13px 14px;
+    padding: 11px 14px;
 }
 .of-total-row.of-grand span:first-child {
     font-size: 13.5px;
@@ -632,7 +632,7 @@ select.of-input {
     display: flex;
     flex-wrap: wrap;
     gap: 6px 14px;
-    margin-top: 12px;
+    margin-top: 10px;
 }
 .of-assurance li {
     list-style: none;
@@ -649,8 +649,8 @@ select.of-input {
 .of-actions {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    margin-top: 18px;
+    gap: 8px;
+    margin-top: 14px;
 }
 .of-submit {
     -webkit-appearance: none;
@@ -660,7 +660,7 @@ select.of-input {
     align-items: center;
     gap: 12px;
     width: 100%;
-    padding: 15px 18px;
+    padding: 13px 18px;
     border-radius: 12px;
     border: 2px solid transparent;
     font-family: inherit;

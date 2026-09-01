@@ -93,6 +93,58 @@ Only one status row is seeded by migration: `"Return Processing"`
 
 ---
 
+## Delivery Charge Setup
+
+**URL** `/setup/delivery-charges/` · **name** `delivery_charge_setup`
+**View** `dashboard/delivery_charge_views.py:60` · **Template** `dashboard/delivery_charge_setup.html`
+**Permission** `@login_required` + `@admin_only` (every route in this file is admin-only)
+
+Storefront delivery pricing, promised times and covered zones. Before Aug 2026 this was
+three hardcoded constants in `store/services.py`.
+
+### Two models — `store/models.py`
+
+| Model | Line | Holds |
+|---|---|---|
+| `DeliverySetting` | `:318` | **One row** (`get_solo()`). Inside-valley charge, fallback `default_charge`, `free_delivery_threshold`, valley district list, default promised-time strings (English + Nepali), show/hide toggles |
+| `DeliveryCharge` | `:373` | One rule per `district`, optionally per `branch_code`. `charge`, `free_above`, `delivery_time` (+ `_np`), `covered_areas`, `is_active`, `sort_order`. `unique_together = ('district', 'branch_code')` |
+
+`district` and `branch_code` are forced uppercase on `save()` so lookups match whatever
+casing NCM returns. A blank `branch_code` = the rule covers the whole district; a rule with
+one set beats it for that branch only.
+
+### Resolution order (storefront quote)
+
+```mermaid
+flowchart TD
+    A[Shopper picks district + branch] --> B{Branch-specific DeliveryCharge?}
+    B -- Yes --> C[Use it -- authoritative]
+    B -- No --> D{District-wide DeliveryCharge?}
+    D -- Yes --> C
+    D -- No --> E["DeliverySetting fallback<br/>valley charge / default_charge<br/>+ free_delivery_threshold"]
+```
+
+**A matched rule is authoritative for its district** — the site-wide "free above Rs. X"
+applies only where no rule matched, so an explicitly configured charge cannot be silently
+zeroed on a large order. `delivery_charge_sync` carries the threshold onto the rules it
+creates so shop-wide free shipping is not switched off by accident.
+
+### Actions — all `@admin_only`, under `/setup/delivery-charges/`
+
+| Action | Route suffix | Notes |
+|---|---|---|
+| Save a rule | `save/` | |
+| Delete / toggle a rule | `<rule_id>/delete/`, `<rule_id>/toggle/` | |
+| Bulk action | `bulk-action/` | activate / deactivate / set-charge / set-time / set-threshold / delete |
+| Site-wide settings | `settings/` | edits the `DeliverySetting` row |
+| Sync districts | `sync/` | creates a rule for every NCM district that has none yet |
+| Export | `export/` | CSV of every rule |
+| Branch list | `branches/` | JSON, for the per-branch rule editor |
+
+The storefront reads all this through `/store/api/quote/` — see [24](./24-storefront.md).
+
+---
+
 ## API Sync Settings
 
 Part of the settings hub, backed by the `APISettings` singleton
@@ -279,6 +331,8 @@ its footer. See [24 — Storefront](./24-storefront.md).
 ## Files that own this
 
 - `dashboard/models.py:1583-1609` — `Setup`
+- `dashboard/delivery_charge_views.py` — Delivery Charge Setup (all `@admin_only`)
+- `store/models.py:318-433` — `DeliverySetting`, `DeliveryCharge`
 - `dashboard/models.py:882-906` — `City`
 - `dashboard/models.py:1540-1579` — `LogisticsAPIConfig`
 - `dashboard/models.py:1878-2081` — `CompanySetup`, landing-page models

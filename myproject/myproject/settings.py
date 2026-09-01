@@ -444,6 +444,13 @@ LOGGING = {
             'level': 'DEBUG',
             'propagate': False,
         },
+        # Storefront: back-in-stock alert flush, and anywhere else store/ code
+        # calls logging.getLogger('store').
+        'store': {
+            'handlers': ['console', 'error_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
         # CRM inbox, Meta sync and the AI auto-reply engine. Without this the
         # reason a reply was skipped ("staff replied recently", "out of credits",
         # "rate limited") was never written anywhere.

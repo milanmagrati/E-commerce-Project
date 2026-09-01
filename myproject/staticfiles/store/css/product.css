@@ -515,6 +515,16 @@
     letter-spacing: -0.01em;
 }
 
+.pdp-price-was {
+    /* The list price, kept beside the rate actually being paid so the shopper
+       can see the break is real rather than being told about it. */
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--pdp-ink-faint);
+    text-decoration: line-through;
+    font-variant-numeric: tabular-nums;
+}
+
 .pdp-price-unit {
     font-size: 13px;
     color: var(--pdp-ink-faint);
@@ -540,57 +550,467 @@
 .pdp-stock.in { color: var(--pdp-ok); }
 .pdp-stock.out { color: var(--pdp-warn); }
 
+/* Before an option is picked there is no availability to report yet, so the
+   line carries no status dot and no status colour. */
+.pdp-stock.is-pending {
+    color: var(--pdp-ink-faint);
+    font-weight: 500;
+}
+.pdp-stock.is-pending::before { display: none; }
+
 .pdp-divider {
     border: 0;
     border-top: 1px solid var(--pdp-line);
     margin: 16px 0;
 }
 
-/* ── variant pills ── */
+/* ── variation picker ──────────────────────────────────────────────────────
+   One card per real ProductVariation, laid out in a horizontal rail the
+   shopper scrolls — a variation is a small record (photo, name, SKU, price,
+   stock) and deserves the room, but a variable product can carry a dozen, so
+   the rail keeps the buy column from growing unbounded. Prev / next buttons
+   appear only when the rail actually overflows. The chosen card is marked by
+   an accent ring and a tick rather than by inverting to solid ink, which
+   would bury the very price and stock line the card exists to show.
+   ------------------------------------------------------------------------ */
 
-.pdp-option {
-    margin-bottom: 14px;
+.pdp-variants {
+    margin-bottom: 18px;
 }
 
-.pdp-option-label {
-    display: block;
-    font-size: 12.5px;
-    font-weight: 600;
-    margin-bottom: 7px;
+.pdp-variants-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 9px;
 }
 
-.pdp-option-label .val {
-    font-weight: 400;
+.pdp-variants-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
     color: var(--pdp-ink-faint);
 }
 
-.pdp-pills {
+.pdp-variants-count {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-variants-chosen {
+    margin-left: auto;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--pdp-ink-faint);
+    text-align: right;
+    max-width: 55%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pdp-variants-chosen.is-set { color: var(--pdp-ink); }
+
+/* Text button, revealed only once an option is active — the storefront lets a
+   shopper back out of a choice as well as into one. */
+.pdp-variants-clear {
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pdp-ink-faint);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.pdp-variants-clear:hover { color: var(--pdp-accent-ink); }
+
+.pdp-variants-clear:focus-visible {
+    outline: 2px solid var(--pdp-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+/* The rail: track flanked by two nav buttons. Overflow is horizontal only;
+   the buttons sit just outside the track and are revealed by JS when there is
+   somewhere to scroll. */
+.pdp-variants-carousel {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pdp-variants-track {
+    display: flex;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scroll-behavior: smooth;
+    padding: 4px 2px 10px;
+    /* thin, unobtrusive scrollbar — the nav buttons are the primary control */
+    scrollbar-width: thin;
+    scrollbar-color: var(--pdp-line-strong) transparent;
+    -webkit-overflow-scrolling: touch;
+}
+
+.pdp-variants-track::-webkit-scrollbar { height: 5px; }
+.pdp-variants-track::-webkit-scrollbar-track { background: transparent; }
+.pdp-variants-track::-webkit-scrollbar-thumb {
+    background: var(--pdp-line-strong);
+    border-radius: 4px;
+}
+
+/* One card per variation. Fixed width so the rail scrolls a predictable step
+   and the cards read as a row of equals. */
+.pdp-variant-card {
+    flex: 0 0 clamp(140px, 44%, 168px);
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px;
+    border: 1px solid var(--pdp-line);
+    border-radius: 10px;
+    background: var(--pdp-paper);
+    font: inherit;
+    color: var(--pdp-ink);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background 0.16s ease,
+                box-shadow 0.16s ease;
+}
+
+.pdp-variant-card:hover {
+    border-color: var(--pdp-line-strong);
+    background: var(--pdp-paper-2);
+}
+
+.pdp-variant-card:focus-visible {
+    outline: 2px solid var(--pdp-accent);
+    outline-offset: 2px;
+}
+
+.pdp-variant-card-media {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 7px;
+    overflow: hidden;
+    background: var(--pdp-paper-2);
+    margin-bottom: 3px;
+}
+
+.pdp-variant-card-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.pdp-variant-card-noimg {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--pdp-ink-faint);
+}
+
+/* Selection tick, tucked into the media corner. Hidden until chosen. */
+.pdp-variant-card-check {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--pdp-accent);
+    color: #fff;
+    transform: scale(0);
+    transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.pdp-variant-card-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.pdp-variant-card-sku {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--pdp-ink-faint);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pdp-variant-card-price {
+    font-size: 14.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    margin-top: auto;
+}
+
+.pdp-variant-card-stock {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--pdp-ok);
+}
+
+.pdp-variant-card-stock.is-low { color: #b26a00; }
+.pdp-variant-card-stock.is-out { color: var(--pdp-ink-faint); }
+
+/* A flag that this option has a quantity break, and how deep it goes. The
+   rungs themselves are drawn once, in the ladder below, for whichever option
+   is chosen — repeating them here made the same numbers appear twice. */
+.pdp-variant-card-bulk {
+    align-self: flex-start;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(26, 127, 75, 0.1);
+    color: var(--pdp-ok);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Chosen. Ring via box-shadow so nothing reflows as the selection moves. */
+.pdp-variant-card.is-selected {
+    border-color: var(--pdp-accent);
+    background: rgba(248, 86, 6, 0.04);
+    box-shadow: 0 0 0 1px var(--pdp-accent);
+}
+
+.pdp-variant-card.is-selected .pdp-variant-card-check { transform: scale(1); }
+
+/* Sold out: dimmed and inert, but still readable — a shopper is entitled to
+   see what the option was and what it cost. */
+.pdp-variant-card.is-out,
+.pdp-variant-card[disabled] {
+    cursor: not-allowed;
+    background: var(--pdp-paper-2);
+    border-color: var(--pdp-line);
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-variant-card.is-out:hover {
+    border-color: var(--pdp-line);
+    background: var(--pdp-paper-2);
+}
+
+.pdp-variant-card.is-out .pdp-variant-card-name { text-decoration: line-through; }
+.pdp-variant-card.is-out .pdp-variant-card-media { opacity: 0.5; }
+
+/* Prev / next. Shown by JS (removing [hidden]) only when the rail overflows;
+   disabled at whichever end the track is resting against. */
+.pdp-variants-nav {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid var(--pdp-line-strong);
+    background: var(--pdp-paper);
+    color: var(--pdp-ink);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    transition: background 0.14s ease, color 0.14s ease, opacity 0.14s ease;
+}
+
+.pdp-variants-nav:hover { background: var(--pdp-paper-2); }
+
+.pdp-variants-nav:focus-visible {
+    outline: 2px solid var(--pdp-accent);
+    outline-offset: 2px;
+}
+
+.pdp-variants-nav[disabled] {
+    opacity: 0.3;
+    cursor: default;
+    box-shadow: none;
+}
+
+/* Only raised once a buy action is attempted with nothing chosen. */
+.pdp-variant-alert {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 10px 0 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--pdp-warn);
+}
+
+.pdp-variant-alert::before {
+    content: '!';
+    display: grid;
+    place-items: center;
+    width: 15px;
+    height: 15px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--pdp-warn);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+/* The stepper stays inert until there is a variation to count units of. */
+.pdp-qty-block[data-locked] .pdp-stepper {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pdp-variant-card,
+    .pdp-variant-card-check,
+    .pdp-variants-nav,
+    .pdp-variants-track,
+    .pdp-variants-clear,
+    .pdp-bulk-tier { transition: none; }
+    .pdp-variants-track { scroll-behavior: auto; }
+}
+
+/* ── quantity breaks ──
+   A row of rungs, each one a shortcut: pressing it sets the stepper to that
+   quantity. The rung the current quantity earns is marked, the price row
+   above re-prices, and the nudge underneath says how close the next one is. */
+
+.pdp-bulk {
+    margin: 16px 0 4px;
+}
+
+.pdp-bulk-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.pdp-bulk-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--pdp-ink-soft);
+}
+
+/* Which option the rungs below price. Ties the ladder to the card the shopper
+   just pressed, instead of leaving two offer blocks competing on screen. */
+.pdp-bulk-for {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pdp-ink-soft);
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pdp-bulk-for::before {
+    content: '· ';
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-bulk-saved {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--pdp-ok);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Held open on a variable product until an option is picked, so the ladder
+   does not pop into existence out of nowhere. */
+.pdp-bulk-await {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-bulk-tiers {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
 
-.pdp-pill {
-    min-height: 36px;
-    padding: 6px 13px;
-    border: 1px solid var(--pdp-line-strong);
-    border-radius: var(--pdp-radius);
-    background: #fff;
+.pdp-bulk-tier {
+    flex: 1 1 96px;
+    min-width: 92px;
+    max-width: 160px;
+    padding: 7px 8px;
+    border: 1px solid var(--pdp-line);
+    border-radius: 8px;
+    background: var(--pdp-paper);
     font: inherit;
-    font-size: 13px;
     color: var(--pdp-ink);
+    text-align: center;
+    line-height: 1.35;
     cursor: pointer;
-    transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+    transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
 }
 
-.pdp-pill:hover {
-    border-color: var(--pdp-ink);
+.pdp-bulk-tier:hover {
+    border-color: var(--pdp-line-strong);
+    background: var(--pdp-paper-2);
 }
 
-.pdp-pill.is-selected {
-    background: var(--pdp-ink);
-    border-color: var(--pdp-ink);
-    color: #fff;
+.pdp-bulk-tier:focus-visible {
+    outline: 2px solid var(--pdp-accent);
+    outline-offset: 2px;
+}
+
+.pdp-bulk-tier-qty {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.pdp-bulk-tier-save {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--pdp-ok);
+}
+
+.pdp-bulk-tier-each {
+    display: block;
+    font-size: 10.5px;
+    color: var(--pdp-ink-faint);
+    font-variant-numeric: tabular-nums;
+}
+
+/* The rung the quantity in the stepper currently earns. */
+.pdp-bulk-tier.is-active {
+    border-color: var(--pdp-ok);
+    background: rgba(26, 127, 75, 0.06);
+    box-shadow: 0 0 0 1px var(--pdp-ok);
+}
+
+.pdp-bulk-nudge {
+    margin: 8px 0 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pdp-accent-ink);
 }
 
 /* ── bundle contents ── */
@@ -777,6 +1197,23 @@
     pointer-events: none;
 }
 
+/* Waiting on a variation. Muted to neutral rather than left as a faded accent,
+   which reads as a broken button — and deliberately still clickable, because
+   pressing it is how a shopper finds out what is missing: the click raises the
+   hint under the buttons instead of doing nothing. */
+.pdp-btn.is-awaiting {
+    background: var(--pdp-paper-2);
+    border-color: var(--pdp-line);
+    color: var(--pdp-ink-faint);
+    box-shadow: none;
+}
+
+.pdp-btn.is-awaiting:hover {
+    background: var(--pdp-paper-2);
+    border-color: var(--pdp-line-strong);
+    box-shadow: none;
+}
+
 .pdp-btn .sub {
     font-size: 11px;
     font-weight: 400;
@@ -810,6 +1247,69 @@
 
 .pdp-save.is-active {
     color: var(--pdp-accent-ink);
+}
+
+/* ── back-in-stock capture on a sold-out product ── */
+
+.pdp-restock {
+    margin: 14px 0 4px;
+    padding: 14px;
+    border: 1px solid var(--pdp-line);
+    border-radius: var(--pdp-radius-lg);
+    background: var(--pdp-paper-2);
+}
+
+.pdp-restock-lead {
+    margin: 0 0 9px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--pdp-ink);
+}
+
+.pdp-restock-row {
+    display: flex;
+    gap: 8px;
+}
+
+.pdp-restock-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 12px;
+    height: 40px;
+    border: 1px solid var(--pdp-line-strong);
+    border-radius: var(--pdp-radius);
+    background: var(--pdp-paper);
+    font: inherit;
+    font-size: 14px;
+    color: var(--pdp-ink);
+}
+
+.pdp-restock-row input:focus-visible {
+    outline: 2px solid var(--pdp-accent);
+    outline-offset: 1px;
+}
+
+.pdp-restock-row input:disabled {
+    color: var(--pdp-ink-faint);
+    background: var(--pdp-paper-2);
+}
+
+.pdp-restock-row .pdp-btn {
+    flex: none;
+    width: auto;
+    padding: 0 16px;
+    height: 40px;
+}
+
+.pdp-restock-msg {
+    margin: 9px 0 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--pdp-warn);
+}
+
+.pdp-restock.is-done .pdp-restock-msg {
+    color: var(--pdp-ok);
 }
 
 /* ── the inline order form slot ── */

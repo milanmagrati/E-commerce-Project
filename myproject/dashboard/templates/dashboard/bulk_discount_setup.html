@@ -1,0 +1,918 @@
+{% extends 'base.html' %}
+{% comment %}
+Setup → Bulk Discounts.
+
+Every quantity break the storefront offers is edited here. One rule targets one
+thing — a variation, a product, a category, or the whole shop — and carries a
+ladder of tiers. The most specific live rule wins on the storefront, which is
+why the table shows the scope so prominently: a variation rule quietly
+overrides the product rule above it, and an administrator has to be able to
+see that at a glance.
+
+The table is one bulk form; per-row actions post through a single hidden form
+so nothing has to nest. The editor is one modal reused for add and edit, filled
+client-side from the payload in #bdRules.
+{% endcomment %}
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --bd-ink: #101828;
+        --bd-muted: #667085;
+        --bd-line: #E4E7EC;
+        --bd-soft: #F7F8FA;
+        --bd-brand: #0F766E;
+        --bd-brand-dark: #115E59;
+        --bd-green: #059669;
+        --bd-amber: #D97706;
+        --bd-red: #DC2626;
+        --bd-radius: 14px;
+    }
+
+    .bd-wrap { max-width: 1500px; margin: 0 auto; padding: 1.75rem 1.25rem 4rem; color: var(--bd-ink); }
+
+    /* ── Header ── */
+    .bd-header {
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(135deg, #0F766E 0%, #0891B2 55%, #0EA5E9 100%);
+        color: #fff;
+        border-radius: 18px;
+        padding: 1.9rem 2rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 18px 40px -18px rgba(15, 118, 110, .65);
+    }
+    .bd-header::after {
+        content: '';
+        position: absolute;
+        right: -70px; top: -90px;
+        width: 300px; height: 300px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, .09);
+    }
+    .bd-header-inner {
+        position: relative; z-index: 1;
+        display: flex; flex-wrap: wrap; gap: 1.25rem;
+        align-items: flex-end; justify-content: space-between;
+    }
+    .bd-eyebrow {
+        display: inline-flex; align-items: center; gap: .45rem;
+        font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+        background: rgba(255, 255, 255, .18);
+        padding: .3rem .7rem; border-radius: 999px; margin-bottom: .7rem;
+    }
+    .bd-header h1 { font-size: 1.65rem; font-weight: 800; margin: 0 0 .4rem; }
+    .bd-header p { margin: 0; max-width: 62ch; opacity: .92; font-size: .92rem; }
+    .bd-header-actions { display: flex; flex-wrap: wrap; gap: .55rem; }
+    .bd-hbtn {
+        display: inline-flex; align-items: center; gap: .45rem;
+        border: 1px solid rgba(255, 255, 255, .35);
+        background: rgba(255, 255, 255, .14);
+        color: #fff; font-size: .84rem; font-weight: 600;
+        padding: .55rem .95rem; border-radius: 10px;
+        text-decoration: none; cursor: pointer; transition: background .15s;
+    }
+    .bd-hbtn:hover { background: rgba(255, 255, 255, .26); color: #fff; }
+    .bd-hbtn.is-solid { background: #fff; color: var(--bd-brand-dark); border-color: #fff; }
+    .bd-hbtn.is-solid:hover { background: #ECFDF5; color: var(--bd-brand-dark); }
+
+    /* ── Stats ── */
+    .bd-stats {
+        display: grid; gap: .85rem; margin-bottom: 1.35rem;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    }
+    .bd-stat {
+        display: flex; align-items: center; gap: .85rem;
+        background: #fff; border: 1px solid var(--bd-line);
+        border-radius: var(--bd-radius); padding: .95rem 1.05rem;
+    }
+    .bd-stat-icon {
+        width: 40px; height: 40px; flex: none; border-radius: 11px;
+        display: grid; place-items: center; font-size: 1rem;
+    }
+    .bd-stat-value { font-size: 1.4rem; font-weight: 800; line-height: 1.1; }
+    .bd-stat-label { font-size: .76rem; color: var(--bd-muted); font-weight: 600; }
+
+    /* ── Cards ── */
+    .bd-card {
+        background: #fff; border: 1px solid var(--bd-line);
+        border-radius: var(--bd-radius); margin-bottom: 1.25rem; overflow: hidden;
+    }
+    .bd-card-head {
+        display: flex; flex-wrap: wrap; gap: .75rem;
+        align-items: center; justify-content: space-between;
+        padding: 1rem 1.15rem; border-bottom: 1px solid var(--bd-line);
+        background: var(--bd-soft);
+    }
+    .bd-card-title { font-size: 1rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: .5rem; }
+    .bd-card-sub { font-size: .8rem; color: var(--bd-muted); margin: .2rem 0 0; }
+    .bd-card-body { padding: 1.1rem 1.15rem; }
+
+    /* ── Toolbar ── */
+    .bd-toolbar { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+    .bd-input, .bd-select {
+        border: 1px solid var(--bd-line); border-radius: 9px;
+        padding: .48rem .7rem; font-size: .85rem; background: #fff; color: var(--bd-ink);
+    }
+    .bd-input:focus, .bd-select:focus { outline: 2px solid rgba(15, 118, 110, .35); outline-offset: 1px; }
+    .bd-search { min-width: 240px; flex: 1 1 240px; }
+
+    .bd-btn {
+        display: inline-flex; align-items: center; gap: .4rem;
+        border: 1px solid var(--bd-line); background: #fff; color: var(--bd-ink);
+        font-size: .84rem; font-weight: 600; padding: .5rem .85rem;
+        border-radius: 9px; cursor: pointer; text-decoration: none; transition: .15s;
+    }
+    .bd-btn:hover { background: var(--bd-soft); color: var(--bd-ink); }
+    .bd-btn-primary { background: var(--bd-brand); border-color: var(--bd-brand); color: #fff; }
+    .bd-btn-primary:hover { background: var(--bd-brand-dark); border-color: var(--bd-brand-dark); color: #fff; }
+    .bd-btn-danger { color: var(--bd-red); border-color: #FECACA; }
+    .bd-btn-danger:hover { background: #FEF2F2; color: var(--bd-red); }
+    .bd-btn-sm { padding: .34rem .6rem; font-size: .78rem; }
+
+    /* ── Table ── */
+    .bd-table-scroll { overflow-x: auto; }
+    .bd-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+    .bd-table th {
+        text-align: left; font-size: .7rem; text-transform: uppercase;
+        letter-spacing: .08em; color: var(--bd-muted); font-weight: 700;
+        padding: .7rem .8rem; border-bottom: 1px solid var(--bd-line);
+        background: var(--bd-soft); white-space: nowrap;
+    }
+    .bd-table td { padding: .8rem; border-bottom: 1px solid var(--bd-line); vertical-align: top; }
+    .bd-table tbody tr:hover { background: #FAFDFC; }
+    .bd-rule-name { font-weight: 700; }
+    .bd-rule-note { font-size: .76rem; color: var(--bd-muted); margin-top: .15rem; }
+    .bd-target { font-size: .82rem; }
+    .bd-target-gone { color: var(--bd-red); font-weight: 600; }
+
+    .bd-pill {
+        display: inline-flex; align-items: center; gap: .3rem;
+        font-size: .7rem; font-weight: 700; padding: .2rem .55rem;
+        border-radius: 999px; white-space: nowrap;
+    }
+    .bd-pill.scope-variation { background: #EEF2FF; color: #4338CA; }
+    .bd-pill.scope-product   { background: #ECFEFF; color: #0E7490; }
+    .bd-pill.scope-category  { background: #FEF3C7; color: #92400E; }
+    .bd-pill.scope-all       { background: #F3E8FF; color: #7E22CE; }
+    .bd-pill.state-live      { background: #ECFDF3; color: #027A48; }
+    .bd-pill.state-scheduled { background: #EFF8FF; color: #175CD3; }
+    .bd-pill.state-expired   { background: #FEF3F2; color: #B42318; }
+    .bd-pill.state-off       { background: #F2F4F7; color: #475467; }
+
+    /* Ladder chips inside the table */
+    .bd-ladder { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .bd-rung {
+        border: 1px solid var(--bd-line); border-radius: 8px;
+        padding: .25rem .5rem; background: #fff; line-height: 1.3; text-align: center;
+    }
+    .bd-rung b { display: block; font-size: .76rem; }
+    .bd-rung span { display: block; font-size: .72rem; color: var(--bd-green); font-weight: 700; }
+    .bd-rung em { display: block; font-size: .68rem; color: var(--bd-muted); font-style: normal; }
+
+    .bd-actions { display: flex; gap: .3rem; flex-wrap: wrap; justify-content: flex-end; }
+    .bd-icon-btn {
+        width: 30px; height: 30px; display: grid; place-items: center;
+        border: 1px solid var(--bd-line); background: #fff; border-radius: 8px;
+        color: var(--bd-muted); cursor: pointer; font-size: .78rem; transition: .15s;
+    }
+    .bd-icon-btn:hover { background: var(--bd-soft); color: var(--bd-ink); }
+    .bd-icon-btn.is-danger:hover { background: #FEF2F2; color: var(--bd-red); border-color: #FECACA; }
+
+    .bd-empty { padding: 3rem 1rem; text-align: center; color: var(--bd-muted); }
+    .bd-empty i { font-size: 2rem; opacity: .35; display: block; margin-bottom: .6rem; }
+
+    /* ── Bulk bar ── */
+    .bd-bulkbar {
+        display: none; flex-wrap: wrap; gap: .55rem; align-items: center;
+        padding: .75rem 1.15rem; background: #ECFDF5;
+        border-bottom: 1px solid #A7F3D0;
+    }
+    .bd-bulkbar.is-on { display: flex; }
+    .bd-bulkbar-count { font-weight: 700; font-size: .85rem; margin-right: .3rem; }
+
+    /* ── Editor modal ── */
+    .bd-field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .9rem; }
+    .bd-field label { font-size: .78rem; font-weight: 700; color: var(--bd-ink); }
+    .bd-help { font-size: .72rem; color: var(--bd-muted); }
+    .bd-grid { display: grid; gap: .9rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    .bd-span-2 { grid-column: 1 / -1; }
+
+    .bd-scopes { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    .bd-scope {
+        border: 1px solid var(--bd-line); border-radius: 11px; padding: .65rem .75rem;
+        cursor: pointer; transition: .15s; background: #fff;
+    }
+    .bd-scope:hover { border-color: #99F6E4; background: #F0FDFA; }
+    .bd-scope input { margin-right: .4rem; }
+    .bd-scope b { font-size: .84rem; }
+    .bd-scope small { display: block; color: var(--bd-muted); font-size: .72rem; margin-top: .1rem; }
+    .bd-scope.is-on { border-color: var(--bd-brand); background: #F0FDFA; box-shadow: 0 0 0 1px var(--bd-brand); }
+
+    /* Tier rows */
+    .bd-tier-row {
+        display: grid; gap: .5rem; align-items: end; margin-bottom: .55rem;
+        grid-template-columns: 90px 1fr 120px 1fr 34px;
+    }
+    @media (max-width: 720px) { .bd-tier-row { grid-template-columns: 1fr 1fr; } }
+    .bd-tier-row .bd-field { margin-bottom: 0; }
+
+    /* Live preview */
+    .bd-preview {
+        border: 1px dashed #99F6E4; background: #F0FDFA;
+        border-radius: 11px; padding: .85rem 1rem;
+    }
+    .bd-preview-head { font-size: .72rem; font-weight: 800; letter-spacing: .08em;
+        text-transform: uppercase; color: var(--bd-brand-dark); margin-bottom: .5rem; }
+    .bd-preview-rows { display: grid; gap: .3rem; font-size: .84rem; }
+    .bd-preview-row { display: flex; justify-content: space-between; gap: 1rem; }
+    .bd-preview-row b { font-variant-numeric: tabular-nums; }
+    .bd-preview-save { color: var(--bd-green); font-weight: 800; }
+    .bd-preview-msg { font-size: .8rem; color: var(--bd-muted); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bd-wrap">
+
+    <!-- ══ Header ══ -->
+    <div class="bd-header">
+        <div class="bd-header-inner">
+            <div>
+                <span class="bd-eyebrow"><i class="fas fa-layer-group"></i> Storefront pricing</span>
+                <h1>Bulk Discount Setup</h1>
+                <p>Quantity breaks — “take 3, save 10%”. Set them per variation, per product,
+                   per category or across the shop. Shoppers see the offer on the product card
+                   and on the product page, and the price they are charged is worked out from
+                   exactly these rules.</p>
+            </div>
+            <div class="bd-header-actions">
+                <a class="bd-hbtn" href="{% url 'bulk_discount_export' %}">
+                    <i class="fas fa-file-csv"></i> Export CSV
+                </a>
+                <button type="button" class="bd-hbtn is-solid" data-bd-add>
+                    <i class="fas fa-plus"></i> New discount
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ Stats ══ -->
+    <div class="bd-stats">
+        <div class="bd-stat">
+            <span class="bd-stat-icon" style="background:#F0FDFA;color:#0F766E;"><i class="fas fa-layer-group"></i></span>
+            <div><div class="bd-stat-value">{{ stats.total }}</div><div class="bd-stat-label">Rules</div></div>
+        </div>
+        <div class="bd-stat">
+            <span class="bd-stat-icon" style="background:#ECFDF3;color:#059669;"><i class="fas fa-bolt"></i></span>
+            <div><div class="bd-stat-value">{{ stats.live }}</div><div class="bd-stat-label">Live right now</div></div>
+        </div>
+        <div class="bd-stat">
+            <span class="bd-stat-icon" style="background:#EFF8FF;color:#175CD3;"><i class="fas fa-clock"></i></span>
+            <div><div class="bd-stat-value">{{ stats.scheduled }}</div><div class="bd-stat-label">Starting later</div></div>
+        </div>
+        <div class="bd-stat">
+            <span class="bd-stat-icon" style="background:#F2F4F7;color:#475467;"><i class="fas fa-pause"></i></span>
+            <div><div class="bd-stat-value">{{ stats.off }}</div><div class="bd-stat-label">Paused</div></div>
+        </div>
+        <div class="bd-stat">
+            <span class="bd-stat-icon" style="background:#FEF3C7;color:#92400E;"><i class="fas fa-stairs"></i></span>
+            <div><div class="bd-stat-value">{{ stats.tiers }}</div><div class="bd-stat-label">Tiers in total</div></div>
+        </div>
+    </div>
+
+    <!-- ══ Filters ══ -->
+    <div class="bd-card">
+        <div class="bd-card-body">
+            <form method="GET" class="bd-toolbar">
+                <input class="bd-input bd-search" type="search" name="q" value="{{ search }}"
+                       placeholder="Search rules, products, variations, categories…">
+                <select class="bd-select" name="scope">
+                    <option value="">Every scope</option>
+                    {% for value, label in scope_choices %}
+                    <option value="{{ value }}" {% if scope == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <select class="bd-select" name="status">
+                    <option value="">Any status</option>
+                    <option value="live" {% if status == 'live' %}selected{% endif %}>Live now</option>
+                    <option value="scheduled" {% if status == 'scheduled' %}selected{% endif %}>Starting later</option>
+                    <option value="expired" {% if status == 'expired' %}selected{% endif %}>Expired</option>
+                    <option value="off" {% if status == 'off' %}selected{% endif %}>Paused</option>
+                </select>
+                <select class="bd-select" name="sort">
+                    <option value="priority" {% if sort == 'priority' %}selected{% endif %}>Priority</option>
+                    <option value="name" {% if sort == 'name' %}selected{% endif %}>Name</option>
+                    <option value="scope" {% if sort == 'scope' %}selected{% endif %}>Scope</option>
+                    <option value="updated" {% if sort == 'updated' %}selected{% endif %}>Last edited</option>
+                    <option value="created" {% if sort == 'created' %}selected{% endif %}>Newest</option>
+                </select>
+                <button class="bd-btn bd-btn-primary bd-btn-sm" type="submit"><i class="fas fa-filter"></i> Apply</button>
+                <a class="bd-btn bd-btn-sm" href="{% url 'bulk_discount_setup' %}"><i class="fas fa-xmark"></i> Clear</a>
+            </form>
+        </div>
+    </div>
+
+    <!-- ══ Rules ══ -->
+    <form method="POST" action="{% url 'bulk_discount_bulk_action' %}" id="bdBulkForm">
+        {% csrf_token %}
+        <div class="bd-card">
+            <div class="bd-card-head">
+                <div>
+                    <h2 class="bd-card-title"><i class="fas fa-tags"></i> Discount rules</h2>
+                    <p class="bd-card-sub">The most specific live rule wins: a variation rule beats its
+                       product’s, which beats its category’s, which beats a shop-wide one.</p>
+                </div>
+                <button type="button" class="bd-btn bd-btn-primary bd-btn-sm" data-bd-add>
+                    <i class="fas fa-plus"></i> New discount
+                </button>
+            </div>
+
+            <div class="bd-bulkbar" data-bd-bulkbar>
+                <span class="bd-bulkbar-count"><span data-bd-count>0</span> selected</span>
+                <button class="bd-btn bd-btn-sm" type="submit" name="action" value="activate">
+                    <i class="fas fa-play"></i> Activate
+                </button>
+                <button class="bd-btn bd-btn-sm" type="submit" name="action" value="deactivate">
+                    <i class="fas fa-pause"></i> Pause
+                </button>
+                <button class="bd-btn bd-btn-sm" type="submit" name="action" value="clear_schedule">
+                    <i class="fas fa-calendar-xmark"></i> Clear schedule
+                </button>
+                <span style="display:inline-flex;gap:.3rem;align-items:center;">
+                    <input class="bd-input bd-btn-sm" type="number" min="0" name="bulk_priority"
+                           style="width:90px" placeholder="Priority">
+                    <button class="bd-btn bd-btn-sm" type="submit" name="action" value="set_priority">Set</button>
+                </span>
+                <button class="bd-btn bd-btn-sm bd-btn-danger" type="submit" name="action" value="delete"
+                        data-bd-confirm="Delete every selected discount rule? This cannot be undone.">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
+            </div>
+
+            {% if rules %}
+            <div class="bd-table-scroll">
+                <table class="bd-table">
+                    <thead>
+                        <tr>
+                            <th style="width:34px"><input type="checkbox" data-bd-all aria-label="Select all"></th>
+                            <th>Rule</th>
+                            <th>Applies to</th>
+                            <th>Tiers</th>
+                            <th>Status</th>
+                            <th>Schedule</th>
+                            <th style="width:60px">Priority</th>
+                            <th style="width:150px"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rule in rules %}
+                        <tr>
+                            <td><input type="checkbox" name="selected_ids" value="{{ rule.id }}" data-bd-row
+                                       aria-label="Select {{ rule }}"></td>
+                            <td>
+                                <div class="bd-rule-name">{{ rule.name|default:rule }}</div>
+                                {% if rule.note %}<div class="bd-rule-note">{{ rule.note }}</div>{% endif %}
+                                {% if not rule.show_on_cards %}
+                                <div class="bd-rule-note"><i class="fas fa-eye-slash"></i> Hidden on listing cards</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="bd-pill scope-{{ rule.scope }}">{{ rule.get_scope_display }}</span>
+                                <div class="bd-target {% if '— target removed —' in rule.target_label %}bd-target-gone{% endif %}">
+                                    {{ rule.target_label }}
+                                </div>
+                                {% if rule.base_price %}
+                                <div class="bd-rule-note">List price Rs. {{ rule.base_price|floatformat:"-2" }}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="bd-ladder">
+                                    {% for rung in rule.ladder %}
+                                    <div class="bd-rung">
+                                        <b>{{ rung.min_qty }}pcs</b>
+                                        <span>{{ rung.offer }}</span>
+                                        {% if rung.each %}<em>{{ rung.each }}</em>{% endif %}
+                                    </div>
+                                    {% empty %}
+                                    <span class="bd-rule-note">No tiers — this rule does nothing.</span>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                            <td><span class="bd-pill state-{{ rule.schedule_state }}">{{ rule.schedule_state|title }}</span></td>
+                            <td class="bd-rule-note">
+                                {% if rule.starts_at %}From {{ rule.starts_at|date:"j M Y, H:i" }}<br>{% endif %}
+                                {% if rule.ends_at %}Until {{ rule.ends_at|date:"j M Y, H:i" }}{% endif %}
+                                {% if not rule.starts_at and not rule.ends_at %}Always{% endif %}
+                            </td>
+                            <td>{{ rule.priority }}</td>
+                            <td>
+                                <div class="bd-actions">
+                                    <button type="button" class="bd-icon-btn" data-bd-edit="{{ rule.id }}" title="Edit">
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                    <button type="button" class="bd-icon-btn" title="{% if rule.is_active %}Pause{% else %}Activate{% endif %}"
+                                            data-bd-post="{% url 'bulk_discount_toggle' rule.id %}">
+                                        <i class="fas fa-{% if rule.is_active %}pause{% else %}play{% endif %}"></i>
+                                    </button>
+                                    <button type="button" class="bd-icon-btn" title="Duplicate"
+                                            data-bd-post="{% url 'bulk_discount_duplicate' rule.id %}">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                    {% if rule.scope == 'variation' %}
+                                    <button type="button" class="bd-icon-btn" title="Copy this ladder onto every other variation of this product"
+                                            data-bd-post="{% url 'bulk_discount_spread' rule.id %}"
+                                            data-bd-confirm="Copy this ladder onto every other variation of {{ rule.product.name }}? Variations that already have their own rule are left alone.">
+                                        <i class="fas fa-clone"></i>
+                                    </button>
+                                    {% endif %}
+                                    <button type="button" class="bd-icon-btn is-danger" title="Delete"
+                                            data-bd-post="{% url 'bulk_discount_delete' rule.id %}"
+                                            data-bd-confirm="Delete “{{ rule }}”? This cannot be undone.">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="bd-empty">
+                <i class="fas fa-tags"></i>
+                {% if search or scope or status %}
+                <p>No rule matches those filters.</p>
+                <a class="bd-btn bd-btn-sm" href="{% url 'bulk_discount_setup' %}">Clear filters</a>
+                {% else %}
+                <p>No quantity breaks yet. Add one and it goes live on the storefront immediately.</p>
+                <button type="button" class="bd-btn bd-btn-primary bd-btn-sm" data-bd-add>
+                    <i class="fas fa-plus"></i> New discount
+                </button>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<!-- Per-row actions post through this one form, so nothing has to nest. -->
+<form method="POST" id="bdActionForm" hidden>{% csrf_token %}</form>
+
+<!-- ══ Editor ══ -->
+<div class="modal fade" id="bdEditor" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <form class="modal-content" method="POST" action="{% url 'bulk_discount_save' %}" id="bdForm">
+            {% csrf_token %}
+            <input type="hidden" name="rule_id" data-bd-id value="">
+            <div class="modal-header">
+                <h5 class="modal-title" data-bd-title>New bulk discount</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+
+                <div class="bd-field">
+                    <label>What does this apply to?</label>
+                    <div class="bd-scopes">
+                        {% for value, label in scope_choices %}
+                        <label class="bd-scope" data-bd-scope-card="{{ value }}">
+                            <input type="radio" name="scope" value="{{ value }}"
+                                   {% if value == 'product' %}checked{% endif %} data-bd-scope>
+                            <b>{{ label }}</b>
+                            <small>
+                                {% if value == 'variation' %}One option of a variable product{% endif %}
+                                {% if value == 'product' %}A simple, variable or bundle product{% endif %}
+                                {% if value == 'category' %}Every product in one category{% endif %}
+                                {% if value == 'all' %}A shop-wide fallback{% endif %}
+                            </small>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="bd-grid" data-bd-target="product variation">
+                    <div class="bd-field bd-span-2">
+                        <label for="bdProductFilter">Find a product</label>
+                        <input class="bd-input" type="search" id="bdProductFilter"
+                               placeholder="Type to narrow the list…" data-bd-product-filter>
+                    </div>
+                    <div class="bd-field bd-span-2">
+                        <label for="bdProduct">Product</label>
+                        <select class="bd-select" id="bdProduct" name="product" data-bd-product></select>
+                    </div>
+                </div>
+
+                <div class="bd-field" data-bd-target="variation" hidden>
+                    <label for="bdVariation">Variation</label>
+                    <select class="bd-select" id="bdVariation" name="variation" data-bd-variation></select>
+                    <span class="bd-help">Only products with live variations list anything here.</span>
+                </div>
+
+                <div class="bd-field" data-bd-target="category" hidden>
+                    <label for="bdCategory">Category</label>
+                    <select class="bd-select" id="bdCategory" name="category">
+                        <option value="">— pick a category —</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <hr>
+
+                <div class="bd-grid">
+                    <div class="bd-field bd-span-2">
+                        <label for="bdName">Name</label>
+                        <input class="bd-input" type="text" id="bdName" name="name" maxlength="140"
+                               placeholder="e.g. Beard oil — festival 3-pack">
+                        <span class="bd-help">Internal only. Blank falls back to the scope and target.</span>
+                    </div>
+                    <div class="bd-field">
+                        <label for="bdPriority">Priority</label>
+                        <input class="bd-input" type="number" id="bdPriority" name="priority" min="0" value="0">
+                        <span class="bd-help">Higher wins when two rules target the same thing.</span>
+                    </div>
+                    <div class="bd-field">
+                        <label for="bdBadge">Badge text</label>
+                        <input class="bd-input" type="text" id="bdBadge" name="badge_text" maxlength="60"
+                               placeholder="Save 10%">
+                        <span class="bd-help">Blank generates it from each tier.</span>
+                    </div>
+                    <div class="bd-field">
+                        <label for="bdStarts">Starts</label>
+                        <input class="bd-input" type="datetime-local" id="bdStarts" name="starts_at">
+                        <span class="bd-help">Blank = live immediately.</span>
+                    </div>
+                    <div class="bd-field">
+                        <label for="bdEnds">Ends</label>
+                        <input class="bd-input" type="datetime-local" id="bdEnds" name="ends_at">
+                        <span class="bd-help">Blank = never expires.</span>
+                    </div>
+                    <div class="bd-field bd-span-2">
+                        <label for="bdNote">Note</label>
+                        <input class="bd-input" type="text" id="bdNote" name="note" maxlength="200"
+                               placeholder="Why this exists — for whoever reads this next.">
+                    </div>
+                    <div class="bd-field">
+                        <label><input type="checkbox" name="is_active" checked> Active</label>
+                        <span class="bd-help">Off keeps the rule but stops it applying.</span>
+                    </div>
+                    <div class="bd-field">
+                        <label><input type="checkbox" name="show_on_cards" checked> Show on listing cards</label>
+                        <span class="bd-help">Variable products always show theirs on the product page instead.</span>
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="bd-field">
+                    <label>Tiers <span class="bd-help">— up to {{ max_tiers }}</span></label>
+                    <span class="bd-help">Each row: from this many units, one unit costs this.
+                        A shopper always gets the cheapest tier they qualify for.</span>
+                </div>
+                <div data-bd-tiers></div>
+                <button type="button" class="bd-btn bd-btn-sm" data-bd-add-tier>
+                    <i class="fas fa-plus"></i> Add tier
+                </button>
+
+                <hr>
+
+                <div class="bd-preview" data-bd-preview>
+                    <div class="bd-preview-head"><i class="fas fa-calculator"></i> What a shopper pays</div>
+                    <div class="bd-toolbar" style="margin-bottom:.6rem">
+                        <!-- A category or shop-wide rule has no single target,
+                             so the preview needs a product to price against. -->
+                        <select class="bd-select bd-btn-sm" style="max-width:260px"
+                                data-bd-preview-product hidden
+                                aria-label="Product to preview this rule against"></select>
+                        <label class="bd-help" for="bdPreviewQty">Quantity</label>
+                        <input class="bd-input bd-btn-sm" style="width:90px" type="number" min="1" value="3"
+                               id="bdPreviewQty" data-bd-preview-qty>
+                        <button type="button" class="bd-btn bd-btn-sm" data-bd-preview-run>
+                            <i class="fas fa-rotate"></i> Check
+                        </button>
+                    </div>
+                    <div class="bd-preview-rows" data-bd-preview-out>
+                        <p class="bd-preview-msg">Prices the rules already saved, so you can see what is
+                           live for this product right now — including a more specific rule shadowing it.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="bd-btn" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="bd-btn bd-btn-primary"><i class="fas fa-check"></i> Save discount</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script type="application/json" id="bdRules">{{ rules_json|safe }}</script>
+<script type="application/json" id="bdProducts">{{ products_json|safe }}</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    'use strict';
+
+    var RULES = JSON.parse(document.getElementById('bdRules').textContent || '[]');
+    var PRODUCTS = JSON.parse(document.getElementById('bdProducts').textContent || '[]');
+    var TYPES = [
+        {% for value, label in type_choices %}{ value: '{{ value }}', label: '{{ label }}' }{% if not forloop.last %},{% endif %}{% endfor %}
+    ];
+    var MAX_TIERS = {{ max_tiers }};
+    var PREVIEW_URL = '{% url 'bulk_discount_preview' %}';
+
+    var modalEl = document.getElementById('bdEditor');
+    var modal = modalEl ? new bootstrap.Modal(modalEl) : null;
+    var form = document.getElementById('bdForm');
+    var actionForm = document.getElementById('bdActionForm');
+
+    function q(sel, root) { return (root || document).querySelector(sel); }
+    function qa(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /* ── per-row actions: one hidden form, retargeted ── */
+    qa('[data-bd-post]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var ask = btn.dataset.bdConfirm;
+            if (ask && !window.confirm(ask)) return;
+            actionForm.action = btn.dataset.bdPost;
+            actionForm.submit();
+        });
+    });
+
+    qa('[data-bd-confirm]').forEach(function (btn) {
+        if (btn.dataset.bdPost) return;   // already handled above
+        btn.addEventListener('click', function (e) {
+            if (!window.confirm(btn.dataset.bdConfirm)) e.preventDefault();
+        });
+    });
+
+    /* ── selection ── */
+    var allBox = q('[data-bd-all]');
+    var rowBoxes = qa('[data-bd-row]');
+    var bulkBar = q('[data-bd-bulkbar]');
+    var countEl = q('[data-bd-count]');
+
+    function syncSelection() {
+        var n = rowBoxes.filter(function (b) { return b.checked; }).length;
+        if (countEl) countEl.textContent = n;
+        if (bulkBar) bulkBar.classList.toggle('is-on', n > 0);
+        if (allBox) {
+            allBox.checked = n > 0 && n === rowBoxes.length;
+            allBox.indeterminate = n > 0 && n < rowBoxes.length;
+        }
+    }
+    if (allBox) {
+        allBox.addEventListener('change', function () {
+            rowBoxes.forEach(function (b) { b.checked = allBox.checked; });
+            syncSelection();
+        });
+    }
+    rowBoxes.forEach(function (b) { b.addEventListener('change', syncSelection); });
+    syncSelection();
+
+    /* ── scope ── */
+    function currentScope() {
+        var picked = q('[data-bd-scope]:checked');
+        return picked ? picked.value : 'product';
+    }
+
+    function paintScope() {
+        var scope = currentScope();
+        qa('[data-bd-scope-card]').forEach(function (card) {
+            card.classList.toggle('is-on', card.dataset.bdScopeCard === scope);
+        });
+        // Each target block lists the scopes it belongs to, so the product
+        // select stays on screen for a variation rule (you pick the product
+        // first, then its option).
+        qa('[data-bd-target]').forEach(function (block) {
+            var scopes = block.dataset.bdTarget.split(' ');
+            block.hidden = scopes.indexOf(scope) === -1;
+        });
+    }
+    qa('[data-bd-scope]').forEach(function (r) { r.addEventListener('change', paintScope); });
+
+    /* ── product + variation selects ── */
+    var productSelect = q('[data-bd-product]');
+    var variationSelect = q('[data-bd-variation]');
+    var productFilter = q('[data-bd-product-filter]');
+
+    function fillProducts(keep) {
+        var needle = (productFilter && productFilter.value || '').trim().toLowerCase();
+        var scope = currentScope();
+        var rows = PRODUCTS.filter(function (p) {
+            // A variation rule can only target a product that has variations.
+            if (scope === 'variation' && !p.variations.length) return false;
+            return !needle || p.name.toLowerCase().indexOf(needle) > -1;
+        });
+        productSelect.innerHTML = '<option value="">— pick a product —</option>' +
+            rows.map(function (p) {
+                return '<option value="' + p.id + '">' + esc(p.name) +
+                    ' — Rs. ' + p.price.toLocaleString('en-IN') + '</option>';
+            }).join('');
+        if (keep) productSelect.value = keep;
+        fillVariations();
+    }
+
+    function fillVariations(keep) {
+        if (!variationSelect) return;
+        var product = PRODUCTS.filter(function (p) {
+            return String(p.id) === String(productSelect.value);
+        })[0];
+        var rows = product ? product.variations : [];
+        variationSelect.innerHTML = rows.length
+            ? '<option value="">— pick a variation —</option>' + rows.map(function (v) {
+                return '<option value="' + v.id + '">' + esc(v.label) +
+                    ' — Rs. ' + v.price.toLocaleString('en-IN') + '</option>';
+            }).join('')
+            : '<option value="">This product has no live variations</option>';
+        if (keep) variationSelect.value = keep;
+    }
+
+    if (productFilter) productFilter.addEventListener('input', function () { fillProducts(productSelect.value); });
+    if (productSelect) productSelect.addEventListener('change', function () { fillVariations(); });
+    qa('[data-bd-scope]').forEach(function (r) {
+        r.addEventListener('change', function () { fillProducts(productSelect.value); });
+    });
+
+    /* ── tier rows ── */
+    var tierWrap = q('[data-bd-tiers]');
+
+    function tierRow(tier) {
+        tier = tier || {};
+        var options = TYPES.map(function (t) {
+            var on = t.value === (tier.type || 'percent') ? ' selected' : '';
+            return '<option value="' + t.value + '"' + on + '>' + esc(t.label) + '</option>';
+        }).join('');
+        var row = document.createElement('div');
+        row.className = 'bd-tier-row';
+        row.innerHTML =
+            '<div class="bd-field"><label>From</label>' +
+            '<input class="bd-input" type="number" min="1" name="tier_min_qty" value="' +
+            esc(tier.min_qty || '') + '" placeholder="3"></div>' +
+            '<div class="bd-field"><label>Discount</label>' +
+            '<select class="bd-select" name="tier_type">' + options + '</select></div>' +
+            '<div class="bd-field"><label>Amount</label>' +
+            '<input class="bd-input" type="number" step="0.01" min="0" name="tier_value" value="' +
+            esc(tier.value || '') + '" placeholder="10"></div>' +
+            '<div class="bd-field"><label>Label</label>' +
+            '<input class="bd-input" type="text" maxlength="60" name="tier_label" value="' +
+            esc(tier.label || '') + '" placeholder="optional"></div>' +
+            '<button type="button" class="bd-icon-btn is-danger" data-bd-drop-tier title="Remove tier">' +
+            '<i class="fas fa-xmark"></i></button>';
+        return row;
+    }
+
+    function addTier(tier) {
+        if (tierWrap.children.length >= MAX_TIERS) return;
+        tierWrap.appendChild(tierRow(tier));
+    }
+
+    q('[data-bd-add-tier]').addEventListener('click', function () { addTier(); });
+    tierWrap.addEventListener('click', function (e) {
+        var drop = e.target.closest && e.target.closest('[data-bd-drop-tier]');
+        if (!drop) return;
+        drop.parentNode.remove();
+        // Never leave the ladder with nothing to fill in.
+        if (!tierWrap.children.length) addTier();
+    });
+
+    /* ── open the editor ── */
+    function openEditor(rule) {
+        form.reset();
+        tierWrap.innerHTML = '';
+        q('[data-bd-id]').value = rule ? rule.id : '';
+        q('[data-bd-title]').textContent = rule ? 'Edit bulk discount' : 'New bulk discount';
+
+        var scope = rule ? rule.scope : 'product';
+        var scopeInput = q('[data-bd-scope][value="' + scope + '"]');
+        if (scopeInput) scopeInput.checked = true;
+        paintScope();
+
+        if (productFilter) productFilter.value = '';
+        fillProducts(rule ? String(rule.product || '') : '');
+        if (rule) fillVariations(String(rule.variation || ''));
+
+        q('#bdCategory').value = rule ? String(rule.category || '') : '';
+        q('#bdName').value = rule ? rule.name : '';
+        q('#bdPriority').value = rule ? rule.priority : 0;
+        q('#bdBadge').value = rule ? rule.badge_text : '';
+        q('#bdStarts').value = rule ? rule.starts_at : '';
+        q('#bdEnds').value = rule ? rule.ends_at : '';
+        q('#bdNote').value = rule ? rule.note : '';
+        q('[name="is_active"]').checked = rule ? rule.is_active : true;
+        q('[name="show_on_cards"]').checked = rule ? rule.show_on_cards : true;
+
+        var tiers = (rule && rule.tiers.length) ? rule.tiers : [{ min_qty: 3, type: 'percent', value: '10' }];
+        tiers.forEach(addTier);
+
+        fillPreviewProducts();
+        resetPreview();
+        modal.show();
+    }
+
+    qa('[data-bd-add]').forEach(function (btn) {
+        btn.addEventListener('click', function () { openEditor(null); });
+    });
+    qa('[data-bd-edit]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var rule = RULES.filter(function (r) {
+                return String(r.id) === String(btn.dataset.bdEdit);
+            })[0];
+            if (rule) openEditor(rule);
+        });
+    });
+
+    /* ── live preview ──
+       Prices what is *saved*, through the same module the storefront uses, so
+       it also reveals a rule being shadowed by a more specific one. */
+    var previewOut = q('[data-bd-preview-out]');
+    var previewProduct = q('[data-bd-preview-product]');
+
+    // For a category or shop-wide rule there is no target to price, so the
+    // preview offers a product to price against — narrowed to the category
+    // when the rule names one.
+    function fillPreviewProducts() {
+        if (!previewProduct) return;
+        var scope = currentScope();
+        var standalone = scope === 'category' || scope === 'all';
+        previewProduct.hidden = !standalone;
+        if (!standalone) return;
+        var categoryId = q('#bdCategory').value;
+        var rows = PRODUCTS.filter(function (p) {
+            return scope !== 'category' || String(p.category) === String(categoryId);
+        });
+        previewProduct.innerHTML = rows.length
+            ? rows.map(function (p) {
+                return '<option value="' + p.id + '">' + esc(p.name) + '</option>';
+            }).join('')
+            : '<option value="">No product in this category yet</option>';
+    }
+
+    q('#bdCategory').addEventListener('change', fillPreviewProducts);
+    qa('[data-bd-scope]').forEach(function (r) {
+        r.addEventListener('change', fillPreviewProducts);
+    });
+
+    function resetPreview() {
+        previewOut.innerHTML = '<p class="bd-preview-msg">Prices the rules already saved, so you can ' +
+            'see what is live for this product right now — including a more specific rule shadowing it.</p>';
+    }
+
+    function runPreview() {
+        var scope = currentScope();
+        var standalone = scope === 'category' || scope === 'all';
+        var params = new URLSearchParams({
+            product: (standalone ? (previewProduct && previewProduct.value) : productSelect.value) || '',
+            variation: (scope === 'variation' && variationSelect.value) || '',
+            qty: q('[data-bd-preview-qty]').value || '1'
+        });
+        previewOut.innerHTML = '<p class="bd-preview-msg">Checking…</p>';
+        fetch(PREVIEW_URL + '?' + params.toString(), {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        }).then(function (r) { return r.json(); }).then(function (d) {
+            if (!d.ok) {
+                previewOut.innerHTML = '<p class="bd-preview-msg">' + esc(d.message) + '</p>';
+                return;
+            }
+            var rows = '' +
+                '<div class="bd-preview-row"><span>' + esc(d.target) + ' × ' + d.quantity +
+                '</span><b>Rs. ' + d.line_total + '</b></div>' +
+                '<div class="bd-preview-row"><span>Per unit</span><b>Rs. ' + d.unit +
+                (d.unit !== d.base_unit ? ' <s style="opacity:.6">Rs. ' + d.base_unit + '</s>' : '') + '</b></div>';
+            if (parseFloat(d.saved) > 0) {
+                rows += '<div class="bd-preview-row"><span>Saving</span>' +
+                    '<b class="bd-preview-save">Rs. ' + d.saved + '</b></div>';
+            }
+            rows += '<div class="bd-preview-row"><span>Rule in force</span><b>' +
+                (d.rule || d.rule_scope || 'none — list price') + '</b></div>';
+            if (d.tier) {
+                rows += '<div class="bd-preview-row"><span>Tier</span><b>' + esc(d.tier) + '</b></div>';
+            }
+            if (d.next_tier) {
+                rows += '<div class="bd-preview-row"><span>Next tier</span><b>' + esc(d.next_tier) + '</b></div>';
+            }
+            previewOut.innerHTML = rows;
+        }).catch(function () {
+            previewOut.innerHTML = '<p class="bd-preview-msg">Could not reach the server.</p>';
+        });
+    }
+
+    q('[data-bd-preview-run]').addEventListener('click', runPreview);
+    q('[data-bd-preview-qty]').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); runPreview(); }
+    });
+
+    paintScope();
+    if (productSelect) fillProducts('');
+    fillPreviewProducts();
+}());
+</script>
+{% endblock %}

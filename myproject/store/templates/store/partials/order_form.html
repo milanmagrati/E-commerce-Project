@@ -39,6 +39,7 @@ Context it expects:
         <input type="hidden" name="order_type" value="{{ of_mode|default:'confirmed' }}" data-order-type>
         <!-- Set by the product page when a variant chip is picked -->
         <input type="hidden" name="selected_variant" value="{{ of_variant|default:'' }}" data-variant-input>
+        <input type="hidden" name="selected_variation" value="{{ of_variation_id|default:'' }}" data-variation-id-input>
 
         <!-- What is being ordered. Skipped where the page already shows the
              product and its quantity directly above this panel; the quantity

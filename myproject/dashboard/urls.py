@@ -2,6 +2,7 @@
 from django.urls import path
 from . import views
 from . import followup_setup_views
+from . import bulk_discount_views
 from . import delivery_charge_views
 from . import page_views
 
@@ -252,6 +253,17 @@ urlpatterns = [
     path('setup/delivery-charges/sync/', delivery_charge_views.delivery_charge_sync, name='delivery_charge_sync'),
     path('setup/delivery-charges/export/', delivery_charge_views.delivery_charge_export, name='delivery_charge_export'),
     path('setup/delivery-charges/branches/', delivery_charge_views.delivery_charge_branches, name='delivery_charge_branches'),
+
+    # Setup → Bulk Discounts (storefront quantity breaks)
+    path('setup/bulk-discounts/', bulk_discount_views.bulk_discount_setup, name='bulk_discount_setup'),
+    path('setup/bulk-discounts/save/', bulk_discount_views.bulk_discount_save, name='bulk_discount_save'),
+    path('setup/bulk-discounts/<int:rule_id>/delete/', bulk_discount_views.bulk_discount_delete, name='bulk_discount_delete'),
+    path('setup/bulk-discounts/<int:rule_id>/toggle/', bulk_discount_views.bulk_discount_toggle, name='bulk_discount_toggle'),
+    path('setup/bulk-discounts/<int:rule_id>/duplicate/', bulk_discount_views.bulk_discount_duplicate, name='bulk_discount_duplicate'),
+    path('setup/bulk-discounts/<int:rule_id>/spread/', bulk_discount_views.bulk_discount_spread, name='bulk_discount_spread'),
+    path('setup/bulk-discounts/bulk-action/', bulk_discount_views.bulk_discount_bulk_action, name='bulk_discount_bulk_action'),
+    path('setup/bulk-discounts/preview/', bulk_discount_views.bulk_discount_preview, name='bulk_discount_preview'),
+    path('setup/bulk-discounts/export/', bulk_discount_views.bulk_discount_export, name='bulk_discount_export'),
 
     # Company Setup (branding & themes)
     path('settings/company/', views.company_setup, name='company_setup'),

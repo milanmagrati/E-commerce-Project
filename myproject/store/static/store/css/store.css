@@ -748,6 +748,44 @@ img {
     background: var(--primary-dark);
 }
 
+/* ─── Quantity-break chip on a card ───
+   Three lines, tightest first: how many, what it saves, what each one then
+   costs. It is a link, not a button: the shopper lands on the product page
+   with that quantity already in the stepper. */
+.product-card-bulk {
+    display: block;
+    margin: 0 12px 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--border, #e5e5e5);
+    border-radius: 6px;
+    background: #fff;
+    text-align: center;
+    line-height: 1.35;
+    transition: border-color 0.16s ease, background 0.16s ease;
+}
+.product-card-bulk:hover {
+    border-color: var(--primary);
+    background: rgba(248, 86, 6, 0.04);
+}
+.product-card-bulk-qty {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text, #212121);
+}
+.product-card-bulk-save {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: #1a7f4b;
+}
+.product-card-bulk-each {
+    display: block;
+    font-size: 10.5px;
+    color: var(--text-muted, #757575);
+    font-variant-numeric: tabular-nums;
+}
+
 /* Load more */
 .load-more-wrap {
     text-align: center;
@@ -1481,6 +1519,30 @@ button.checkout-action-btn:hover .cab-arrow {
 }
 .cart-item-name:hover { color: var(--primary); }
 .cart-item-price { color: var(--text-muted); margin-top: 4px; }
+.cart-item-was {
+    margin-left: 6px;
+    font-size: 12px;
+    text-decoration: line-through;
+    opacity: 0.75;
+}
+.cart-item-bulk {
+    display: flex;
+    gap: 8px;
+    margin-top: 3px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #1a7f4b;
+}
+.cart-item-variant {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #f1f1f1;
+    color: #555;
+    font-size: 12px;
+    font-weight: 600;
+}
 .cart-item-total { font-weight: 600; white-space: nowrap; }
 .cart-item-remove {
     background: none;
@@ -2394,6 +2456,34 @@ body {
     background: linear-gradient(135deg, var(--error), #cc1111);
     box-shadow: 0 2px 6px rgba(230,41,41,0.28);
 }
+
+/* —— Product-type badge (variable / bundle) —— */
+.product-card-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+}
+.product-card-badge.is-options { background: linear-gradient(135deg, #2563eb, #1e40af); }
+.product-card-badge.is-bundle  { background: linear-gradient(135deg, #7c3aed, #5b21b6); }
+
+/* "Select Options" renders as an <a> — kill the underline and keep the button look */
+a.product-card-cart-btn { text-decoration: none; }
+.product-card-cart-btn.is-disabled {
+    background: #d0d0d0;
+    color: #fff;
+    cursor: not-allowed;
+    filter: none;
+}
+.product-card:hover .product-card-cart-btn.is-disabled { background: #d0d0d0; }
 
 /* —— Flash sale section premium —— */
 .flash-sale-section {
