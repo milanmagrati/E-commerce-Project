@@ -1,6 +1,7 @@
 """
-Re-decide the return stage ('return_processing' vs 'return') of orders that
-NCM's own sync already classified, by asking NCM again.
+Re-decide the return stage ('return_processing' vs 'return_arrived' vs
+'return') of orders that NCM's own sync already classified, by asking NCM
+again.
 
 Background: the vendor_return flag was read as "this return is finished", but
 NCM sets it the moment an order is marked RTV and keeps reporting it on every
@@ -13,8 +14,9 @@ the orders the background sync skips.
 This command re-fetches each one's current NCM status and re-applies the
 corrected resolution, in both directions:
 
-  * still travelling back  -> 'return_processing'
-  * confirmed back with us -> stays 'return'
+  * still travelling back        -> 'return_processing'
+  * at NCM's return counter      -> 'return_arrived'
+  * confirmed back with us       -> stays 'return'
 
 Orders whose status staff set by hand are left alone, as are cancelled orders.
 
@@ -34,11 +36,11 @@ from services.status_override import manual_override_holds
 #: The stages this command is allowed to move an order between. 'returned' is
 #: excluded on purpose: staff scanned that parcel in physically, which outranks
 #: anything NCM reports.
-REPAIRABLE_STATUSES = ('return', 'return_processing')
+REPAIRABLE_STATUSES = ('return', 'return_arrived', 'return_processing')
 
 
 class Command(BaseCommand):
-    help = "Re-derive return_processing/return from NCM for orders in the return pipeline"
+    help = "Re-derive return_processing/return_arrived/return from NCM for orders in the return pipeline"
 
     def add_arguments(self, parser):
         parser.add_argument('--limit', type=int, default=100,

@@ -1012,6 +1012,7 @@
     .order-status-delivered { color: #10b981 !important; font-size: 0.9rem; }
     .order-status-cancelled, .order-status-return, .order-status-returned { color: #ef4444 !important; font-size: 0.9rem; }
     .order-status-return_processing { color: #fd7e14 !important; font-size: 0.9rem; }
+    .order-status-return_arrived { color: #c2410c !important; font-size: 0.9rem; }
     .order-status-dispatched { color: #8b5cf6 !important; font-size: 0.9rem; }
 
     /* Bulk Actions Styling */
@@ -2602,6 +2603,7 @@ function notifyStatusUpdateInList(orderNumber, oldStatus, newStatus) {
         'delivered': `✅ ${orderNumber}: Delivered!`,
         'return': `↩️ ${orderNumber}: Return`,
         'return_processing': `🚚 ${orderNumber}: Return Processing`,
+        'return_arrived': `🏬 ${orderNumber}: Return Arrived — at the courier's return branch`,
         'processing': `⏳ ${orderNumber}: Processing`,
         'shipped': `📦 ${orderNumber}: Shipped`
     };

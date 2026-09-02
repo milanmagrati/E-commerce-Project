@@ -741,7 +741,7 @@ class ProductVariation(models.Model):
     _SETTLED_ORDER_STATUSES = {
         'dispatched', 'packed', 'shipped', 'in_transit', 'in transit',
         'out_for_delivery', 'delivered', 'return', 'returned',
-        'return_processing', 'redirected', 'cancelled', 'canceled',
+        'return_processing', 'return_arrived', 'redirected', 'cancelled', 'canceled',
         'rejected', 'trash', 'pickup_created', 'pickup created', 'inquiry',
     }
 

@@ -5091,12 +5091,15 @@ def return_orders_list(request):
     import pytz
 
     # Get all orders with "Return" status (including the in-transit
-    # "Return Processing" stage, so this monitoring page reflects the whole
-    # active return pipeline, not just items already physically arrived)
+    # "Return Processing" and at-the-return-counter "Return Arrived" stages, so
+    # this monitoring page reflects the whole active return pipeline, not just
+    # items already physically arrived)
     orders = Order.objects.filter(
         is_deleted=False,
     ).filter(
-        Q(order_status__iexact='return') | Q(order_status__iexact='return_processing')
+        Q(order_status__iexact='return')
+        | Q(order_status__iexact='return_processing')
+        | Q(order_status__iexact='return_arrived')
     ).select_related(
         'customer', 'created_by', 'status_setup',
         'payment_setup', 'payment_status_setup'
@@ -5156,16 +5159,21 @@ def return_orders_list(request):
             pass
 
     # Return stage: 'processing' is still travelling back from the customer,
-    # 'completed' has arrived. Staff need them apart - only an arrived parcel
-    # can be inspected, restocked or refunded. Applied last, and counted just
-    # before it is applied, so the dropdown keeps showing both totals for the
-    # search/date/payment selection currently in force.
+    # 'arrived' has reached NCM's return counter (past the point a redirect is
+    # possible, but not yet ours to open), 'completed' is back with us. Staff
+    # need them apart - only an arrived parcel can be inspected, restocked or
+    # refunded, and only a not-yet-arrived one can still be redirected. Applied
+    # last, and counted just before it is applied, so the dropdown keeps showing
+    # every total for the search/date/payment selection currently in force.
     stage_counts = {
         'processing': orders.filter(order_status__iexact='return_processing').count(),
+        'arrived': orders.filter(order_status__iexact='return_arrived').count(),
         'completed': orders.filter(order_status__iexact='return').count(),
     }
     if stage_filter == 'processing':
         orders = orders.filter(order_status__iexact='return_processing')
+    elif stage_filter == 'arrived':
+        orders = orders.filter(order_status__iexact='return_arrived')
     elif stage_filter == 'completed':
         orders = orders.filter(order_status__iexact='return')
     else:
@@ -5406,6 +5414,11 @@ NON_REDIRECTABLE_RTV_STATUSES = ('returned', 'delivered', 'sent to vendor')
 #: exact match.
 NON_REDIRECTABLE_NCM_STATUS_REGEX = r'delivered|returned|sent to vendor'
 
+#: The linked order's own system status, when it is already past redirection.
+#: 'return_arrived' is the stage NCM's "Arrived at RETURN (BRANCH)" resolves to —
+#: the parcel finished the journey back, so there is nothing left to redirect.
+NON_REDIRECTABLE_ORDER_STATUSES = frozenset(('delivered', 'return_arrived'))
+
 
 def _rtv_is_non_redirectable(rtv_last_status, local_order=None):
     """Python mirror of the exclusions possible_redirection_list applies in SQL.
@@ -5419,32 +5432,99 @@ def _rtv_is_non_redirectable(rtv_last_status, local_order=None):
         return False
     if re.search(NON_REDIRECTABLE_NCM_STATUS_REGEX, (local_order.ncm_status or ''), re.IGNORECASE):
         return True
-    return 'delivered' in (
+    # 'return_arrived' alongside 'delivered': both are end states for
+    # redirection. The parcel is at the courier's return counter, which is the
+    # same verdict the ncm_status check above reaches from the raw wording —
+    # kept here too so a blank or lagging ncm_status cannot lose it.
+    return bool(NON_REDIRECTABLE_ORDER_STATUSES & {
         (local_order.status or '').strip().lower(),
         (local_order.order_status or '').strip().lower(),
-    )
+    })
 
 
 #: Statuses NCM's own redirect endpoint accepts — from its rejection message,
 #: "Order can only be redirected when status is: Arrived, Pickup Complete,
 #: Returned to Warehouse". Matched as a prefix (case-insensitive) so branch-
-#: qualified variants NCM appends ("Arrived at RETURN (TINKUNE)") still count.
+#: qualified variants NCM appends ("Arrived at BUTWAL") still count.
 REDIRECT_ELIGIBLE_STATUS_PREFIXES = ('arrived', 'pickup complete', 'returned to warehouse')
 
 
 def _rtv_is_redirect_eligible(rtv_last_status, local_ncm_status=None):
-    """True once NCM reports the package is actually at a branch/warehouse.
+    """True once NCM reports the package is at a branch it can be redirected FROM.
 
-    A parcel still travelling back ("Dispatched to Return (...)") is not a
-    redirection candidate: NCM's redirect endpoint refuses it outright. This
-    gates both what possible_redirection_list shows (its SQL filter mirrors
+    Two ways to fail. A parcel still travelling ("Dispatched to Return (...)")
+    is not a candidate: NCM's redirect endpoint refuses it outright. Nor is one
+    that has already finished the journey back — "Arrived at RETURN (BRANCH)"
+    starts with the same word as a parcel waiting at its delivery branch, but
+    the parcel is at NCM's return counter, past the point where a redirect is
+    physically possible. Only an arrival at a *delivery* branch counts, which
+    is what NCM's own "Arrived" in that rejection message means.
+
+    That distinction is the whole difference between:
+
+        "Arrived at POKHARA"             -> redirect it to another Pokhara
+                                            customer, saving the return leg
+        "Arrived at RETURN NAYA BUSPARK" -> too late, it came all the way back
+
+    This gates what possible_redirection_list shows (its SQL filter mirrors
     this function) and what the save endpoints accept.
+
+    A return-leg arrival on EITHER stored copy vetoes the row, rather than just
+    failing that one copy. Everywhere else the two copies are OR'd, because
+    either can lag and "at a branch" is a state a parcel enters and leaves. A
+    return-leg arrival is not like that: it is monotonic — a parcel does not
+    un-arrive at the return counter — so the copy reporting it is the fresher
+    one by definition, whatever the other says. This is not hypothetical: NCM's
+    vendor/orders endpoint (which feeds RTVOrder.last_status) answers with the
+    coarse word "Arrived", while the tracking endpoint that writes
+    Order.ncm_status gives the branch-qualified "Arrived at RETURN NAYA
+    BUSPARK". OR-ing those left the parcel listed on the coarse copy alone.
     """
-    for text in (rtv_last_status, local_ncm_status):
-        normalized = ' '.join((text or '').strip().lower().split())
-        if any(normalized.startswith(p) for p in REDIRECT_ELIGIBLE_STATUS_PREFIXES):
-            return True
-    return False
+    # Imported here, not at module level: services.ncm_service imports from
+    # dashboard, so a top-level import would close the cycle.
+    from services.ncm_service import NCMService
+
+    normalized = [
+        ' '.join((text or '').strip().lower().split())
+        for text in (rtv_last_status, local_ncm_status)
+    ]
+    if any(NCMService.is_return_arrival(text) for text in normalized):
+        return False
+    return any(
+        text.startswith(prefix)
+        for text in normalized
+        for prefix in REDIRECT_ELIGIBLE_STATUS_PREFIXES
+    )
+
+
+def _redirect_ineligible_message(*statuses):
+    """Why NCM will not redirect this package, in the operator's words.
+
+    Two very different reasons share one gate, and telling an operator a parcel
+    that has already come all the way back is "still in transit" sends them
+    looking for a redirect that will never unlock.
+
+    Takes every status copy the caller holds and names the one that actually
+    blocked it: a return-leg arrival wins, since it is what vetoed the row, and
+    it is frequently on the copy the caller would not have quoted first (the RTV
+    row usually carries NCM's coarse "Arrived").
+    """
+    from services.ncm_service import NCMService
+
+    known = [(s or '').strip() for s in statuses if (s or '').strip()]
+    status = next((s for s in known if NCMService.is_return_arrival(s)),
+                  known[0] if known else 'unknown')
+    if NCMService.is_return_arrival(status):
+        return (
+            f"This package has already returned to the courier's return branch "
+            f"(NCM status: {status}). Redirection is only possible while it is still "
+            "at the delivery branch — this one has to be received back instead."
+        )
+    return (
+        f"This package is still in transit (NCM status: {status}). "
+        "Redirect becomes available once NCM marks it Arrived at the delivery "
+        "branch, Pickup Complete, or Returned to Warehouse."
+    )
 
 
 def _rtv_listed_on_stale_order_status(rtv_last_status, local_ncm_status):
@@ -5471,7 +5551,7 @@ def _rtv_listed_on_stale_order_status(rtv_last_status, local_ncm_status):
       one every sync refreshes; the order's is simply behind. Nothing to do.
     * RTV says in transit, order says at-branch — the failure. The systematically
       refreshed copy says the parcel has moved on, and a stale
-      ``"Arrived at RETURN (…)"`` frozen on the order is all that still lists it.
+      ``"Arrived at (BRANCH)"`` frozen on the order is all that still lists it.
       The operator finds out only when NCM refuses the redirect, and the row used
       to clear itself only when somebody opened the order detail page — the other
       writer of ``Order.ncm_status``.
@@ -5482,6 +5562,11 @@ def _rtv_listed_on_stale_order_status(rtv_last_status, local_ncm_status):
     back to both copies.
 
     A blank status abstains: it means "never synced", not "not at a branch".
+
+    Note this only ever sees rows the list view kept, so a return-leg arrival
+    ("Arrived at RETURN (…)") never reaches it: that is a settled fact on either
+    copy, not a disagreement to resolve, and _rtv_is_redirect_eligible() has
+    already vetoed the row outright.
     """
     if not (rtv_last_status or '').strip() or not (local_ncm_status or '').strip():
         return False
@@ -5529,8 +5614,20 @@ def _rtv_redirect_eligibility(rtv_rec, local_ncm_status, ncm_order_id, api_confi
     Neither stored copy can settle that, so ask NCM. One extra request, only on
     the ambiguous open of a single modal — and the answer is written back to the
     RTV row so the Possible Redirection page stops asking it again.
+
+    A return-leg arrival on either copy short-circuits all of that: it is
+    monotonic, so there is nothing for NCM to settle, and the status reported
+    back is the one that actually blocked the button. The RTV copy is often
+    NCM's coarse "Arrived" (vendor/orders) while the order copy carries the
+    branch-qualified "Arrived at RETURN …", and naming the coarse one would tell
+    the operator to wait for something that has already happened.
     """
+    from services.ncm_service import NCMService
+
     stored = rtv_rec.last_status if rtv_rec else ''
+    for text in (stored, local_ncm_status):
+        if NCMService.is_return_arrival(text):
+            return False, text
     if _rtv_listed_on_stale_order_status(stored, local_ncm_status):
         live = _live_ncm_status(ncm_order_id, api_config_id)
         if live:
@@ -5676,18 +5773,19 @@ def possible_redirection_list(request):
 
     rtvs = rtvs.exclude(order_id__in=_terminal_ncm_ids)
 
-    # Also exclude RTVs where the linked local Order is already marked delivered
-    _delivered_ncm_ids = Order.objects.filter(
+    # Also exclude RTVs whose linked local Order is already past redirection —
+    # delivered, or back at the courier's return counter (NON_REDIRECTABLE_ORDER_STATUSES).
+    _past_redirection_q = Q(ncm_status__iexact='Delivered')
+    for _ors in NON_REDIRECTABLE_ORDER_STATUSES:
+        _past_redirection_q |= Q(status__iexact=_ors) | Q(order_status__iexact=_ors)
+
+    _past_redirection_ncm_ids = Order.objects.filter(
         is_deleted=False,
         ncm_order_id__isnull=False,
         ncm_order_id__in=rtvs.values('order_id'),
-    ).filter(
-        Q(status__iexact='delivered') |
-        Q(order_status__iexact='delivered') |
-        Q(ncm_status__iexact='Delivered')
-    ).values('ncm_order_id')
+    ).filter(_past_redirection_q).values('ncm_order_id')
 
-    rtvs = rtvs.exclude(order_id__in=_delivered_ncm_ids)
+    rtvs = rtvs.exclude(order_id__in=_past_redirection_ncm_ids)
 
     # Keep ONLY packages NCM has confirmed are physically sitting at a branch or
     # warehouse. NCM's redirect endpoint rejects anything else ("Order can only
@@ -5698,12 +5796,32 @@ def possible_redirection_list(request):
     # reports the arrival and the RTV sync writes that status through.
     #
     # SQL mirror of _rtv_is_redirect_eligible(): istartswith so branch-qualified
-    # variants ("Arrived at RETURN (TINKUNE)") still count.
+    # variants ("Arrived at BUTWAL") still count.
     _eligible_rtv_q = Q()
     _eligible_order_q = Q()
     for _prefix in REDIRECT_ELIGIBLE_STATUS_PREFIXES:
         _eligible_rtv_q |= Q(last_status__istartswith=_prefix)
         _eligible_order_q |= Q(ncm_status__istartswith=_prefix)
+
+    # ...minus the return-leg arrivals ("Arrived at RETURN NAYA BUSPARK"): same
+    # leading word, but the parcel has come all the way back and NCM will not
+    # redirect it from there. Applied as a veto over the whole row rather than
+    # per status copy, matching _rtv_is_redirect_eligible() — a return-leg
+    # arrival is monotonic, so whichever copy reports it is the fresher one. In
+    # practice the RTV copy carries NCM's coarse "Arrived" (from vendor/orders)
+    # while the order copy carries the branch-qualified wording, so OR-ing them
+    # kept the parcel listed on the coarse copy alone.
+    _return_leg_ncm_ids = Order.objects.filter(
+        is_deleted=False,
+        ncm_order_id__isnull=False,
+        ncm_order_id__in=rtvs.values('order_id'),
+        ncm_status__istartswith='arrived',
+        ncm_status__icontains='return',
+    ).values('ncm_order_id')
+
+    rtvs = rtvs.exclude(
+        Q(last_status__istartswith='arrived') & Q(last_status__icontains='return')
+    ).exclude(order_id__in=_return_leg_ncm_ids)
 
     # The linked local order's ncm_status counts too: the NCM webhook and the
     # order detail page's load-time sync both write it, and either can be ahead
@@ -6208,14 +6326,17 @@ def possible_redirection_refresh_status(request):
                     #    back to the vendor is still recognised as a return),
                     #    and the returned/sent-to-vendor texts map into the
                     #    return states either way;
-                    #  * the fresh status says the parcel is NOT at a branch
-                    #    while the order's stored ncm_status still claims it is.
-                    #    That stored value is half of the list view's
-                    #    eligibility test, so leaving it stale re-lists the row
-                    #    on the very reload this endpoint asks for — the reason
-                    #    a "Dispatched to Return" parcel stayed on the page
-                    #    until somebody opened its order detail page, that
-                    #    page's sync being the only other writer of ncm_status.
+                    #  * the fresh status says the parcel is NOT at a branch it
+                    #    can be redirected from — still travelling ("Dispatched
+                    #    to Return"), or already back at the return counter
+                    #    ("Arrived at RETURN …") — while the order's stored
+                    #    ncm_status still claims it is. That stored value is half
+                    #    of the list view's eligibility test, so leaving it stale
+                    #    re-lists the row on the very reload this endpoint asks
+                    #    for — the reason a "Dispatched to Return" parcel stayed
+                    #    on the page until somebody opened its order detail page,
+                    #    that page's sync being the only other writer of
+                    #    ncm_status.
                     #
                     # Anything else is left alone. The bulk endpoint answers
                     # with a bare status string carrying no vendor_return flag,
@@ -6644,16 +6765,11 @@ def redirect_order_save(request, order_id):
             if not _rtv_is_redirect_eligible(
                 _rtv_for_check.last_status if _rtv_for_check else '', order.ncm_status
             ):
-                _current_status = (
-                    (_rtv_for_check.last_status if _rtv_for_check else '')
-                    or order.ncm_status or 'unknown'
-                )
                 return JsonResponse({
                     'status': 'error',
-                    'message': (
-                        f"This package is still in transit (NCM status: {_current_status}). "
-                        "Redirect becomes available once NCM marks it Arrived, Pickup Complete, "
-                        "or Returned to Warehouse."
+                    'message': _redirect_ineligible_message(
+                        _rtv_for_check.last_status if _rtv_for_check else '',
+                        order.ncm_status,
                     ),
                 }, status=400)
 
@@ -7045,10 +7161,11 @@ def redirect_rtv_get(request, ncm_order_id):
             rtv_rec, local_order.ncm_status, ncm_order_id, api_config_id,
         )
         rtv_extra['redirect_eligible'] = _eligible
-        if rtv_rec:
-            # Report whatever the eligibility verdict was actually based on, so
-            # the disabled option's "still in transit (…)" text names the status
-            # that disabled it rather than the one it overruled.
+        # Report whatever the eligibility verdict was actually based on, so the
+        # disabled option's explanation names the status that disabled it rather
+        # than the one it overruled. Set even without an RTVOrder row: the
+        # blocking status can come from the linked order's ncm_status alone.
+        if rtv_rec or _shown_status:
             rtv_extra['last_status'] = _shown_status
         return JsonResponse({'status': 'success', 'order': data, 'rtv': rtv_extra})
     except Order.DoesNotExist:
@@ -7170,17 +7287,11 @@ def redirect_rtv_save(request, ncm_order_id):
             _rtv_for_check.last_status if _rtv_for_check else '',
             _local_for_check.ncm_status if _local_for_check else None,
         ):
-            _current_status = (
-                (_rtv_for_check.last_status if _rtv_for_check else '')
-                or (_local_for_check.ncm_status if _local_for_check else '')
-                or 'unknown'
-            )
             return JsonResponse({
                 'status': 'error',
-                'message': (
-                    f"This package is still in transit (NCM status: {_current_status}). "
-                    "Redirect becomes available once NCM marks it Arrived, Pickup Complete, "
-                    "or Returned to Warehouse."
+                'message': _redirect_ineligible_message(
+                    _rtv_for_check.last_status if _rtv_for_check else '',
+                    _local_for_check.ncm_status if _local_for_check else '',
                 ),
             }, status=400)
 
@@ -18785,7 +18896,7 @@ def staff_performance_analytics(request):
         # Determine effective status
         if status in ['delivered', 'completed'] or order_status in ['delivered', 'completed']:
             status_breakdown['delivered'] += 1
-        elif status in ['returned', 'return', 'return_processing'] or order_status in ['returned', 'return', 'return_processing']:
+        elif status in ['returned', 'return', 'return_processing', 'return_arrived'] or order_status in ['returned', 'return', 'return_processing', 'return_arrived']:
             status_breakdown['returns'] += 1
         elif status in ['pending', 'processing'] or order_status in ['pending', 'processing']:
             status_breakdown['pending'] += 1
@@ -18993,6 +19104,7 @@ def api_product_staff_orders(request):
             'returned': '#374151',
             'return': '#374151',
             'return_processing': '#f97316',
+            'return_arrived': '#c2410c',
             'pending': '#f59e0b',
         }
         order_status = (order.order_status or order.status or 'processing').lower()
@@ -19105,6 +19217,7 @@ def api_product_staff_orders(request):
         'returned': '#374151',
         'return': '#374151',
         'return_processing': '#f97316',
+        'return_arrived': '#c2410c',
         'pending': '#f59e0b',
         'inquiry': '#374151',
     }
@@ -27493,6 +27606,37 @@ NCM_STATUS_COLOURS = {
 }
 NCM_STATUS_FALLBACK = '#94a3b8'
 
+#: A parcel back at the courier's return counter — "Arrived at RETURN (BRANCH)".
+#: Its own colour rather than Arrived's amber, because it is the opposite fact:
+#: the return leg is over and the parcel can no longer be redirected.
+NCM_STATUS_RETURN_ARRIVED = '#dc2626'
+
+
+def ncm_status_colour(status):
+    """Chart/badge colour for one NCM status string.
+
+    RTVOrder.last_status arrives from two endpoints with different vocabularies:
+    NCM's vendor/orders answers with the bare word ("Arrived"), while the
+    tracking endpoint — which the redirection page's refresh writes back —
+    answers branch-qualified ("Arrived at RETURN NAYA BUSPARK", "Returned to
+    Warehouse (TINKUNE)"). An exact-match lookup coloured the second group grey,
+    so the same parcel changed colour depending on which sync last touched it.
+    """
+    from services.ncm_service import NCMService
+
+    text = (status or '').strip()
+    if not text:
+        return NCM_STATUS_FALLBACK
+    if text in NCM_STATUS_COLOURS:
+        return NCM_STATUS_COLOURS[text]
+    if NCMService.is_return_arrival(text):
+        return NCM_STATUS_RETURN_ARRIVED
+    lowered = text.lower()
+    for known, colour in NCM_STATUS_COLOURS.items():
+        if lowered.startswith(known.lower()):
+            return colour
+    return NCM_STATUS_FALLBACK
+
 RTV_REASON_NO_COMMENT = ('no_comment', 'No Comment Recorded', '#cbd5e1')
 RTV_REASON_OTHER = ('other', 'Uncategorised', '#94a3b8')
 
@@ -27742,9 +27886,7 @@ def rtv_report(request):
             # nearly everything. The report leads with NCM's and keeps the local
             # one alongside rather than showing an empty column.
             'ncm_status': (rtv.last_status or '').strip(),
-            'ncm_status_colour': NCM_STATUS_COLOURS.get(
-                (rtv.last_status or '').strip(), NCM_STATUS_FALLBACK
-            ),
+            'ncm_status_colour': ncm_status_colour(rtv.last_status),
             'status_name': rtv.rtv_status.name if rtv.rtv_status else None,
             'status_colour': rtv.rtv_status.color if rtv.rtv_status else None,
             'portal': rtv.api_config.api_name if rtv.api_config else None,

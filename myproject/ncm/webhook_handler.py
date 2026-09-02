@@ -74,7 +74,9 @@ class NCMWebhookHandler:
     }
     # Note: a 'Delivered' carrying vendor_return=True is a delivery back to the
     # vendor, not to the customer - NCMService.resolve_delivered_status is what
-    # tells the two apart and is what actually runs. Every other RTV status,
+    # tells the two apart and is what actually runs. NCM's branch-qualified
+    # "Arrived at RETURN (BRANCH)" has no fixed key here; it resolves to
+    # 'return_arrived' via NCMService.is_return_arrival. Every other RTV status,
     # flagged or not, stays at 'return_processing' until NCM confirms arrival.
 
     PAYMENT_STATUS_MAPPING = {
@@ -478,8 +480,8 @@ class NCMWebhookHandler:
                 return
 
             # Map resolved system status to notification type.
-            # 'return_processing' and 'return' are the two statuses NCMService
-            # actually resolves to for the RTV pipeline (see
+            # 'return_processing', 'return_arrived' and 'return' are the three
+            # statuses NCMService actually resolves to for the RTV pipeline (see
             # resolve_delivered_status/map_ncm_status_to_system);
             # 'returned'/'return_initiated'/'return_approved' are kept for
             # any legacy/other callers that still produce those values.
@@ -487,7 +489,8 @@ class NCMWebhookHandler:
                 notification_status = 'delivered'
             elif status in ['in_transit', 'shipped']:
                 notification_status = 'in_transit'
-            elif status in ['return', 'return_processing', 'returned', 'return_initiated', 'return_approved']:
+            elif status in ['return', 'return_arrived', 'return_processing', 'returned',
+                            'return_initiated', 'return_approved']:
                 notification_status = 'returned'
             else:
                 return

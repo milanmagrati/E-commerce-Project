@@ -674,10 +674,11 @@ class NCMService:
     RETURN_STATUS_KEYWORDS = ('return', 'rtv', 'sent to vendor')
 
     #: NCM status texts that mean the return leg is FINISHED - the parcel has
-    #: physically arrived back with the vendor/warehouse. Everything else in the
-    #: RTV pipeline ("Order Marked Return", "Sent to Vendor", an "Arrived at
-    #: RETURN (BRANCH)" hop) is still in transit and must stay at the
-    #: intermediate 'return_processing' stage.
+    #: physically arrived back with the vendor/warehouse. The earlier hops
+    #: ("Order Marked Return", "Sent to Vendor", "Dispatched to RETURN
+    #: (BRANCH)") are still in transit and stay at 'return_processing'; the
+    #: "Arrived at RETURN (BRANCH)" hop sits between the two and resolves to
+    #: 'return_arrived' (see is_return_arrival).
     #:
     #: 'Delivered'/'Confirmed' only count as a completed return when they carry
     #: the vendor_return flag - NCM reuses the same words for a delivery to the
@@ -696,6 +697,37 @@ class NCMService:
     #: Return Management when staff physically scan the parcel back in.
     COMPLETED_RETURN_SYSTEM_STATUSES = frozenset(('return', 'returned'))
 
+    #: The stages before that: the parcel is somewhere on the way back.
+    #: A later NCM report may move an order freely between these two, but none
+    #: of them may pull an order back out of COMPLETED_RETURN_SYSTEM_STATUSES -
+    #: see sync_order_status_fields.
+    RETURN_IN_PROGRESS_SYSTEM_STATUSES = frozenset(('return_processing', 'return_arrived'))
+
+    @staticmethod
+    def is_return_arrival(ncm_status) -> bool:
+        """True for NCM's "Arrived at RETURN <branch>" hop.
+
+        NCM appends the branch a parcel just reached to its movement statuses,
+        and marks the return leg by prefixing that branch with the word RETURN:
+
+            "Arrived at POKHARA"                -> at the delivery branch
+            "Dispatched to RETURN NAYA BUSPARK" -> travelling back
+            "Arrived at RETURN NAYA BUSPARK"    -> at NCM's return counter
+
+        Only the middle one reads as in-transit today; the last one starts with
+        "Arrived", which used to make it indistinguishable from a parcel sitting
+        at its *delivery* branch. That mattered twice over: the parcel is past
+        the point where NCM will accept a redirect, and 'return_processing'
+        ("still on its way back") understates where it actually is.
+
+        Matched as "starts with Arrived AND names a RETURN branch" - the same
+        test dashboard.views mirrors in SQL, so the two can never disagree.
+        "Returned to Warehouse" is NOT this: it starts with "Returned" and is a
+        completed return (see is_return_completed).
+        """
+        text = ' '.join((ncm_status or '').strip().lower().split())
+        return text.startswith('arrived') and 'return' in text
+
     @staticmethod
     def is_return_completed(ncm_status) -> bool:
         """True when an NCM status text means the parcel is back with the vendor.
@@ -704,7 +736,7 @@ class NCMService:
         ("Returned to Warehouse (TINKUNE)") still count, while an in-pipeline
         hop that merely mentions the return branch ("Arrived at RETURN
         (TINKUNE)", "Dispatched to RETURN (TINKUNE)") does not - those start
-        with a transit verb and are still on the way back.
+        with a transit verb and are not yet back with the vendor.
         """
         text = ' '.join((ncm_status or '').strip().lower().split())
         if not text:
@@ -720,13 +752,15 @@ class NCMService:
         This mapping is aligned with NCMWebhookHandler.STATUS_MAPPING to ensure
         consistent behavior between webhook updates and manual sync operations.
 
-        Every RTV status other than a confirmed arrival back at the warehouse
-        resolves to 'return_processing'; only 'Returned to Warehouse' (and, via
-        resolve_delivered_status, a vendor_return 'Delivered') ends the pipeline
-        at 'return'. Each value produced here has a matching Setup row so the
-        order's status_setup FK and its status strings never disagree - which is
-        what made the order detail header badge show "RETURN" while the status
-        dropdown still read "Return Processing".
+        The RTV pipeline resolves in three steps: everything still moving back
+        is 'return_processing', NCM's "Arrived at RETURN (BRANCH)" hop is
+        'return_arrived' (at the return counter, no longer redirectable), and
+        only 'Returned to Warehouse' - or, via resolve_delivered_status, a
+        vendor_return 'Delivered' - ends the pipeline at 'return'. Each value
+        produced here has a matching Setup row so the order's status_setup FK
+        and its status strings never disagree - which is what made the order
+        detail header badge show "RETURN" while the status dropdown still read
+        "Return Processing".
         """
         mapping = {
             'Pickup Order Created': 'Pickup Created',
@@ -749,6 +783,13 @@ class NCMService:
         }
         if ncm_status in mapping:
             return mapping[ncm_status]
+
+        # "Arrived at RETURN (BRANCH)" - the return leg is over even though
+        # NCM has not said "Returned to Warehouse" yet. Checked before the
+        # keyword fallback below, which would otherwise swallow it as plain
+        # 'return_processing'.
+        if NCMService.is_return_arrival(ncm_status):
+            return 'return_arrived'
 
         # Fallback: any status mentioning a return/RTV keyword (including
         # branch-qualified variants NCM doesn't send a fixed key for) means
@@ -785,6 +826,8 @@ class NCMService:
 
         * vendor_return + a completed-return text ("Delivered" back to the
           vendor, "Returned to Warehouse") -> 'return', the parcel is back;
+        * vendor_return + "Arrived at RETURN (BRANCH)" -> 'return_arrived', it
+          finished the journey back and is waiting at NCM's return counter;
         * vendor_return + anything else -> 'return_processing', still moving;
         * no vendor_return -> the ordinary mapping, where "Delivered" is a real
           delivery to the customer.
@@ -816,6 +859,8 @@ class NCMService:
             # In the RTV pipeline - completed only once NCM says it arrived back.
             if NCMService.is_return_completed(ncm_status):
                 return ('return', None)
+            if NCMService.is_return_arrival(ncm_status):
+                return ('return_arrived', None)
             return ('return_processing', None)
 
         if ncm_status == 'Delivered':
@@ -1064,10 +1109,13 @@ class NCMService:
         # reporting vendor_return (and can replay in-pipeline hops late or out
         # of order) after the parcel is already back, and staff scanning it in
         # on the Return Management page sets 'returned' - a stronger signal
-        # than anything NCM reports. Either way, resolving 'return_processing'
-        # afterwards would be a downgrade, so keep what the order already has.
+        # than anything NCM reports. Either way, resolving to an in-progress
+        # return stage afterwards would be a downgrade, so keep what the order
+        # already has. Both in-progress stages are covered: a replayed "Arrived
+        # at RETURN (...)" must no more reopen a scanned-in parcel than a
+        # replayed "Sent to Vendor" does.
         if (not allow_return_reopen
-                and system_status == 'return_processing'
+                and system_status in NCMService.RETURN_IN_PROGRESS_SYSTEM_STATUSES
                 and (order.status or '').strip().lower() in NCMService.COMPLETED_RETURN_SYSTEM_STATUSES):
             system_status = order.status
 

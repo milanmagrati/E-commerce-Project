@@ -100,7 +100,8 @@ class SMSService:
             message = f"Your order {order_number} has been delivered. Thank you for your purchase! 🎉"
         elif status_lower in ['in_transit', 'out_for_delivery', 'shipped']:
             message = f"Your order {order_number} is out for delivery. 📦 Track it in the system for real-time updates."
-        elif status_lower in ['returned', 'return', 'return_processing', 'return_initiated']:
+        elif status_lower in ['returned', 'return', 'return_processing', 'return_arrived',
+                              'return_initiated']:
             message = f"Your order {order_number} has been marked for return. Please contact support for details."
         elif status_lower in ['cod_collected', 'payment_collected']:
             amount = additional_info or ""

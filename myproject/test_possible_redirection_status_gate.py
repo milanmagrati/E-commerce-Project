@@ -100,12 +100,29 @@ def main():
           _rtv_is_redirect_eligible('Returned to Warehouse') is True)
     check("'Arrived' IS eligible",
           _rtv_is_redirect_eligible('Arrived') is True)
-    check("branch-qualified 'Arrived at RETURN (TINKUNE)' IS eligible",
-          _rtv_is_redirect_eligible('Arrived at RETURN (TINKUNE)') is True)
+    check("branch-qualified 'Arrived at POKHARA' IS eligible",
+          _rtv_is_redirect_eligible('Arrived at POKHARA') is True)
     check("'Pickup Complete' IS eligible",
           _rtv_is_redirect_eligible('Pickup Complete') is True)
     check("falls back to the linked local order's ncm_status when RTV's own is blank",
           _rtv_is_redirect_eligible('', 'Returned to Warehouse') is True)
+
+    # The return leg: same leading word, opposite meaning. The parcel has come
+    # all the way back to NCM's return counter, so there is nothing left to
+    # redirect — NCM refuses these outright.
+    check("'Arrived at RETURN NAYA BUSPARK' is NOT eligible",
+          _rtv_is_redirect_eligible('Arrived at RETURN NAYA BUSPARK') is False)
+    check("'Arrived at RETURN (TINKUNE)' is NOT eligible",
+          _rtv_is_redirect_eligible('Arrived at RETURN (TINKUNE)') is False)
+    # A return-leg arrival vetoes the whole row, not just the copy carrying it:
+    # a parcel does not un-arrive at the return counter, so whichever copy says
+    # so is the fresher one. NCM's vendor/orders endpoint answers with the
+    # coarse "Arrived" while its tracking endpoint gives the branch-qualified
+    # wording, so OR-ing them left the parcel listed on the coarse copy alone.
+    check("a return-leg order copy vetoes a coarse 'Arrived' on the RTV row",
+          _rtv_is_redirect_eligible('Arrived', 'Arrived at RETURN NAYA BUSPARK') is False)
+    check("...and a return-leg RTV copy vetoes an at-branch order copy",
+          _rtv_is_redirect_eligible('Arrived at RETURN NAYA BUSPARK', 'Arrived at POKHARA') is False)
 
     user = CustomUser.objects.filter(is_superuser=True).first()
     if not user:
@@ -144,7 +161,7 @@ def main():
           'data-order-num="ZZ-GATE-CANDIDATE"' not in body)
 
     # ...and it appears the moment NCM reports the arrival, with the match intact.
-    RTVOrder.objects.filter(order_id=NCM_ID_TRANSIT).update(last_status='Arrived at RETURN (TINKUNE)')
+    RTVOrder.objects.filter(order_id=NCM_ID_TRANSIT).update(last_status=f'Arrived at {BRANCH}')
     resp_arrived = client.get('/orders/possible-redirection/')
     entry_arrived = entry_for(resp_arrived, NCM_ID_TRANSIT)
     check("once NCM reports it arrived, the RTV IS listed", entry_arrived is not None)

@@ -22,7 +22,7 @@ ncm_service = NCMService()
 #: Statuses meaning "this parcel is going back to, or is back with, the vendor".
 #: Used to decide when the bulk endpoint's bare status string is not trustworthy
 #: enough to write through - see _sync_one_order.
-RETURN_PIPELINE_STATUSES = ('return_processing', 'return', 'returned')
+RETURN_PIPELINE_STATUSES = ('return_processing', 'return_arrived', 'return', 'returned')
 
 
 def _carries_vendor_return(entry):

@@ -105,6 +105,9 @@
                     <option value="processing" {% if stage_filter == 'processing' %}selected{% endif %}>
                         Return Processing ({{ stage_counts.processing }})
                     </option>
+                    <option value="arrived" {% if stage_filter == 'arrived' %}selected{% endif %}>
+                        Return Arrived ({{ stage_counts.arrived }})
+                    </option>
                     <option value="completed" {% if stage_filter == 'completed' %}selected{% endif %}>
                         Returned ({{ stage_counts.completed }})
                     </option>
@@ -212,6 +215,10 @@
                             {% if order.order_status|lower == 'return_processing' %}
                                 <span class="badge bg-warning text-dark" title="Marked for return by the courier and still on its way back - not yet received">
                                     <i class="fas fa-truck"></i> Return Processing
+                                </span>
+                            {% elif order.order_status|lower == 'return_arrived' %}
+                                <span class="badge" style="background-color:#c2410c" title="Arrived at the courier's return branch - too late to redirect, not yet received by us">
+                                    <i class="fas fa-warehouse"></i> Return Arrived
                                 </span>
                             {% else %}
                                 <span class="badge bg-danger" title="Confirmed back with us - ready to inspect, restock or refund">

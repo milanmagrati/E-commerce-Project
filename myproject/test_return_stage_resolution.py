@@ -101,8 +101,16 @@ def main():
                  'Dispatched to RETURN ( TINKUNE)', 'Arrived at BARDAGHAT', 'In Transit', ''):
         check(f"{text!r} is NOT a completed return", not NCMService.is_return_completed(text))
 
+    print("\n1b. is_return_arrival - the hop that ends the return leg")
+    for text in ('Arrived at RETURN ( TINKUNE)', 'Arrived at RETURN NAYA BUSPARK',
+                 'arrived at return naya buspark'):
+        check(f"{text!r} is a return-leg arrival", NCMService.is_return_arrival(text))
+    for text in ('Arrived at BARDAGHAT', 'Arrived', 'Dispatched to RETURN ( TINKUNE)',
+                 'Returned to Warehouse', 'Sent to Vendor', ''):
+        check(f"{text!r} is NOT a return-leg arrival", not NCMService.is_return_arrival(text))
+
     print("\n2. resolve_delivered_status walks the real RTV timeline")
-    expected = ['return', 'return_processing', 'return_processing',
+    expected = ['return', 'return_processing', 'return_arrived',
                 'return_processing', 'return_processing', 'return_processing']
     for entry, want in zip(RTV_TIMELINE, expected):
         got, _ = NCMService.resolve_delivered_status(entry)
@@ -117,7 +125,8 @@ def main():
 
     print("\n4. Every RTV stage maps to a status that HAS a Setup row")
     for ncm_status in ('Order Marked Return', 'Sent to Vendor', 'Return Initiated',
-                       'Return Approved', 'Returned to Warehouse'):
+                       'Return Approved', 'Returned to Warehouse',
+                       'Arrived at RETURN ( TINKUNE)'):
         system = NCMService.map_ncm_status_to_system(ncm_status)
         setup = NCMService._resolve_setup('status', system)
         check(f"{ncm_status!r} -> {system!r} has a Setup",
@@ -160,11 +169,18 @@ def main():
     eq("a late in-pipeline hop changes nothing", changed, [])
     eq("status stays 'return'", done.status, 'return')
 
+    changed = NCMService.sync_order_status_fields(done, 'return_arrived')
+    eq("a replayed return-leg arrival changes nothing either", changed, [])
+    eq("status still 'return'", done.status, 'return')
+
     scanned = make_order('ZZ-RS-SCANNED')
     NCMService.sync_order_status_fields(scanned, 'returned')
     scanned.save()
     NCMService.sync_order_status_fields(scanned, 'return_processing')
     eq("a parcel staff scanned in stays 'returned'", scanned.status, 'returned')
+    NCMService.sync_order_status_fields(scanned, 'return_arrived')
+    eq("...and a replayed 'Arrived at RETURN' does not reopen it either",
+       scanned.status, 'returned')
 
     print("\n8. ...except for the repair command, which may reopen it")
     stuck = make_order('ZZ-RS-STUCK')
@@ -188,7 +204,9 @@ def main():
     bulk_sync._sync_one_order(svc, in_return, 'Arrived', None, fetch_event_times=False)
     in_return.refresh_from_db()
     check("the full entry was re-fetched", svc.calls == 1, f"(got {svc.calls})")
-    eq("it stays in the return pipeline", in_return.status, 'return_processing')
+    eq("it stays in the return pipeline, now at the return counter",
+       in_return.status, 'return_arrived')
+    eq("badge agrees", in_return.status_setup.name, 'Return Arrived')
     eq("and the raw NCM status is recorded", in_return.ncm_status, 'Arrived at RETURN ( TINKUNE)')
 
     print("\n10. The last hop completes the return")

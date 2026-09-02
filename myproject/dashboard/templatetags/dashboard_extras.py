@@ -20,6 +20,7 @@ def order_badge(status):
         'returned': 'dark',
         'return': 'dark',
         'return_processing': 'warning',
+        'return_arrived': 'danger',
     }
     return badge_classes.get(status, 'secondary')
 
@@ -38,6 +39,7 @@ def get_badge_class(status):
         'returned': 'dark',
         'return': 'dark',
         'return_processing': 'warning',
+        'return_arrived': 'danger',
         'in_stock': 'success',
         'low_stock': 'warning',
         'out_of_stock': 'danger',
@@ -125,6 +127,7 @@ def status_icon(status):
         'returned': 'fa-undo',
         'return': 'fa-box-open',
         'return_processing': 'fa-truck',
+        'return_arrived': 'fa-warehouse',
     }
     return icons.get(status, 'fa-question-circle')
 
@@ -157,6 +160,7 @@ def get_order_status_color(status):
         'returned': '#343a40',
         'return': '#343a40',
         'return_processing': '#fd7e14',
+        'return_arrived': '#c2410c',
     }
     return colors.get(status, '#6c757d')
 

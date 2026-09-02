@@ -23,8 +23,8 @@ What is checked here:
 
 The second half covers the same symptom from the other side, which is what the
 operator actually hit: the RTV row correctly read "Dispatched to RETURN (…)"
-while the LINKED ORDER's ncm_status was frozen at a stale "Arrived at RETURN
-(…)". Eligibility accepts either copy, so the stale one kept the row listed;
+while the LINKED ORDER's ncm_status was frozen at a stale "Arrived at (BRANCH)".
+Eligibility accepts either copy, so the stale one kept the row listed;
 the refresh endpoint then declined to correct it (it only wrote terminal
 statuses through) and, reading the same stale copy, never reported it dropped.
 The page sat wrong until someone opened the order detail page. Checked here:
@@ -233,7 +233,10 @@ def main():
         'ZZ-RF-STALE', [('ZZ Refresh Balm', 1)],
         ncm_order_id=STALE_ORDER_NCM_ID,
     )
-    stale_local.ncm_status = 'Arrived at RETURN (TINKUNE)'
+    # A delivery-branch arrival, which IS an eligible status — that is what makes
+    # this copy able to keep the row listed on its own. ("Arrived at RETURN …"
+    # would not: a parcel that finished the return leg is excluded outright.)
+    stale_local.ncm_status = f'Arrived at {BRANCH}'
     stale_local.status = 'return'
     stale_local.order_status = 'return'
     stale_local.save(update_fields=['ncm_status', 'status', 'order_status'])
@@ -354,7 +357,7 @@ def main():
           "enabling its button")
     # Put the row back into the contradicted state the operator would click on.
     Order.objects.filter(ncm_order_id=STALE_ORDER_NCM_ID).update(
-        ncm_status='Arrived at RETURN (TINKUNE)',
+        ncm_status=f'Arrived at {BRANCH}',
     )
     _ncm_module.NCMService = StubNCMService
     try:
