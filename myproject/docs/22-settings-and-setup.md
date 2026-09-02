@@ -88,8 +88,9 @@ unique constraint would reject one anyway (`services/ncm_service.py:1068`).
 > `status_setup IS NULL` branch in the orders-list filter handles
 > ([05](./05-orders-list.md)).
 
-Only one status row is seeded by migration: `"Return Processing"`
-(`dashboard/migrations/0077_return_processing_status_setup.py`).
+Only two status rows are seeded by migration: `"Return Processing"`
+(`dashboard/migrations/0077_return_processing_status_setup.py`) and `"Return Arrived"`
+(`0088_return_arrived_status_setup.py`).
 
 ---
 
@@ -206,6 +207,124 @@ The editor **warns when a new rule duplicates an existing target**, and names wh
 - **A discount code stacks on top** of the bulk-discounted subtotal.
 - **Category and shop-wide rules have no `base_price`** — there is no single price to discount,
   so their ladder is priced per line at quote time and the editor's preview asks for a product.
+
+---
+
+## Invoice Customizer
+
+**URL** `/setup/invoice/` · **name** `invoice_customizer`
+**View** `dashboard/invoice_customizer_views.py` · **Template** `dashboard/invoice_customizer.html`
+**Permission** `@login_required` + `@admin_only` (every route in this file is admin-only)
+
+The design of the printable invoice that opens from the orders list
+([05](./05-orders-list.md)). Added Sep 2026. Before this, `order_invoice.html` was a fixed
+layout — the shop's VAT/PAN number, phone and address could only be added by editing the
+template. Now nothing about the invoice is hardcoded: `dashboard/views.py:order_invoice`
+resolves everything through `dashboard/invoice_config.build_invoice_context()`, and the
+customizer edits what that reads.
+
+### Two models — `dashboard/models.py`
+
+| Model | Holds |
+|---|---|
+| `InvoiceTemplate` | Singleton (`pk=1`, enforced in `save()`). Business identity, section/column switches, totals wording, currency, footer copy, paper + typography + colour, `custom_css` |
+| `InvoiceElement` | One printable **line** — a label plus a value — in a named region. FK to the template |
+
+`InvoiceTemplate.get_solo()` creates the row and seeds the stock lines on first access, so
+the page cannot 500 on an empty database. `save()` clamps `base_font_size` (8–18),
+`logo_height` (16–160), `corner_radius` (0–24) and `watermark_opacity` (1–40) rather than
+trusting the form.
+
+### Lines are rows, not code
+
+The stock invoice lines — `Invoice #`, `Date`, `Name :-`, `Phone number :-`, `Location :-` —
+are seeded as ordinary `InvoiceElement` rows by migration `0090`, flagged `is_builtin`. That
+flag is **informational only**: a built-in line is renamed, reordered, hidden or deleted
+exactly like one an admin adds. There is no privileged set.
+
+A line's value comes from one of two places:
+
+| `source` | Value | Notes |
+|---|---|---|
+| `field` | `token`, resolved through `invoice_config.TOKENS` | The token is a **whitelist key**, never an attribute path — the page cannot dereference arbitrary model internals |
+| `static` | `static_value` | Fixed text |
+
+An unrecognised token is rejected on save (the line falls back to `static`), and a token that
+somehow survives resolves to `''` at render time inside a `try` — one bad row can never take
+an invoice down.
+
+### Regions — `InvoiceElement.SECTION_CHOICES`
+
+| `section` | Where it prints |
+|---|---|
+| `brand` | Under the business name in the header |
+| `meta` | The invoice meta box (number / date / time) |
+| `bill_to` | The Bill To panel |
+| `ship_to` | The Ship To panel — the section is off by default, its lines are pre-seeded |
+| `items_note` | Between the items table and the totals |
+| `totals` | Extra rows inside the totals box, above the grand total |
+| `footer` | The footer |
+
+`hide_if_empty` (on by default) is what makes the business identity fields work: the seeded
+`brand` lines for VAT/PAN, phone, email and address print **the moment those fields are
+filled in** and stay invisible until then.
+
+### Tokens — `invoice_config.TOKENS`
+
+49 whitelisted values in five groups, rendered as `<optgroup>`s in the line editor:
+
+| Group | Examples |
+|---|---|
+| Order | number (with `invoice_number_prefix`), date, time, status, payment status/method, tracking number, courier, source, dispatch/delivery dates, weight, line count, total qty, NCM delivery type + destination branch, notes |
+| Customer | name, phone, email, shipping address, city, landmark |
+| Amounts | subtotal, discount, shipping, delivery, tax + tax percent, grand total, paid, due, COD collected, **grand total in words** |
+| Business | name, tagline, VAT/PAN, registration, phone, alternate phone, email, website, address |
+| System | printed by, printed at, today |
+
+Money runs through `format_money()` (symbol, position, optional grouping);
+`amount_in_words()` uses **Nepali/Indian grouping** — crore ▸ lakh ▸ thousand — and appends
+paisa.
+
+### One context builder, two callers
+
+`build_invoice_context(order, items, cfg, user, labels, preview)` returns flat lists — the
+resolved lines per region, `columns`, `rows`, `totals`, style variables — and
+`order_invoice.html` only iterates over them. It has **no ORM access left**. Both the print
+view and the customizer's preview iframe call it, so a preview cannot drift from the paper.
+
+The builder reads the order defensively (`getattr` throughout, `_dec()` for every amount), so
+it also accepts the lightweight `invoice_config.sample_order()` stand-in the preview falls
+back to when the database has no orders.
+
+### Actions — all `@admin_only`, under `/setup/invoice/`
+
+| Action | Route suffix | Notes |
+|---|---|---|
+| Save the design | *(POST to the page)* | Booleans, text (length-capped), colours (`#rrggbb` or the default), choices (whitelisted) and clamped numbers. Multipart — carries the logo upload |
+| Preview | `preview/` | Renders `order_invoice.html` against the newest real order, or `?sample=1` for the neutral sample. `@xframe_options_sameorigin` |
+| Add / edit a line | `lines/save/` | One endpoint for both; `element_id` decides |
+| Delete / hide a line | `lines/<id>/delete/`, `lines/<id>/toggle/` | Toggle answers JSON to `X-Requested-With` |
+| Reorder | `lines/<id>/move/` (up/down), `lines/reorder/` (JSON list) | `move/` renumbers the section before swapping, so sort-order collisions from a section change cannot wedge it |
+| Reset | `reset/` | `scope=lines` reseeds the stock layout, `scope=style` rolls every field back to its model default, `scope=all` does both. **Business identity and the logo are never touched** |
+
+### Gotchas
+
+- **The preview iframe needs `@xframe_options_sameorigin`.** The project leaves
+  `X_FRAME_OPTIONS` at Django's `DENY` default, which blanks even a same-origin iframe with
+  *"127.0.0.1 refused to connect"*. Only `invoice_preview` carries the exemption; the
+  printable `order_invoice` stays `DENY`.
+- **`custom_css` is injected with `|safe`** into the invoice's `<style>` block. That is
+  deliberate — it is the advanced escape hatch — and it is why every route here is
+  `@admin_only`. Element labels and values are escaped normally.
+- **Clearing a text field restores its default, not blank**, for fields that have one:
+  emptying "Document title" gives back `INVOICE`. Genuinely optional copy (`footer_note`,
+  `watermark_text`, and the whole business block) defaults to `''` and stays cleared.
+- **Deleting every line in a region is fine** — the region simply stops printing. So is
+  switching off every optional column; the Product column always remains.
+- **`hide_zero_totals` is per-row, not per-section.** A discount of exactly 0 vanishes even
+  with "Discount" switched on.
+- The customizer's tab state lives in `sessionStorage`; colour and size sliders push straight
+  into the preview's CSS variables for feedback, but **only saving persists them**.
 
 ---
 
@@ -385,9 +504,9 @@ its footer. See [24 — Storefront](./24-storefront.md).
 - **`base_urls` order matters** — `[0]` is v1, `[1]` is v2. Getting them backwards breaks
   branches and vendor/RTV endpoints while leaving order creation working.
 - **Cities auto-create too**, from the order form.
-- **Delivery Charge Setup and Bulk Discount Setup are `@admin_only`**, unlike the rest of
-  `/setup/`, which runs on `can_view_orders` / `can_create_orders`. No permission flag opens
-  them — the role has to be `administrator`.
+- **Delivery Charge Setup, Bulk Discount Setup and Invoice Customizer are `@admin_only`**,
+  unlike the rest of `/setup/`, which runs on `can_view_orders` / `can_create_orders`. No
+  permission flag opens them — the role has to be `administrator`.
 - Maintenance mode does not stop the NCM heartbeat — admins keeping a tab open will still
   drive background syncs.
 - City management, purchases and several reports check permissions **inline** rather than by
@@ -400,6 +519,9 @@ its footer. See [24 — Storefront](./24-storefront.md).
 - `dashboard/models.py:1583-1609` — `Setup`
 - `dashboard/delivery_charge_views.py` — Delivery Charge Setup (all `@admin_only`)
 - `dashboard/bulk_discount_views.py` — Bulk Discount Setup (all `@admin_only`)
+- `dashboard/invoice_customizer_views.py` — Invoice Customizer (all `@admin_only`)
+- `dashboard/invoice_config.py` — invoice token whitelist, default layout, context builder
+- `dashboard/models.py` — `InvoiceTemplate`, `InvoiceElement` (end of file)
 - `store/models.py:597-712` — `DeliverySetting`, `DeliveryCharge`
 - `store/models.py:267-482` — `BulkDiscount`, `BulkDiscountTier`
 - `store/bulk_discounts.py` — the pricing module both the storefront and the preview use

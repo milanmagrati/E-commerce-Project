@@ -2703,3 +2703,267 @@ class MediaAsset(models.Model):
 
     def __str__(self):
         return self.title or f"Media {self.pk}"
+
+
+# ============================================================================
+#  INVOICE CUSTOMIZER  (Setup → Invoice Customizer)
+# ============================================================================
+#  The order invoice printed from the orders list is not hardcoded any more.
+#  `InvoiceTemplate` is a singleton holding the paper/style/section switches,
+#  and `InvoiceElement` holds the actual *lines* (label + value) that print in
+#  each region, so staff can add a VAT number, a second phone, a delivery note
+#  — or delete a stock line — without a code change. Defaults are seeded as
+#  real InvoiceElement rows so built-in lines are editable like custom ones.
+#  Rendering helpers live in `dashboard/invoice_config.py`.
+# ============================================================================
+
+
+class InvoiceTemplate(models.Model):
+    """Singleton configuration for the printable order invoice."""
+
+    PAPER_CHOICES = [
+        ('a4', 'A4 (210 x 297 mm)'),
+        ('a5', 'A5 (148 x 210 mm)'),
+        ('letter', 'Letter (8.5 x 11 in)'),
+        ('thermal80', 'Thermal roll (80 mm)'),
+    ]
+    FONT_CHOICES = [
+        ("'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", 'Segoe UI (default)'),
+        ("'Helvetica Neue', Helvetica, Arial, sans-serif", 'Helvetica / Arial'),
+        ("'Inter', 'Segoe UI', sans-serif", 'Inter'),
+        ("Georgia, 'Times New Roman', serif", 'Georgia (serif)'),
+        ("'Courier New', Courier, monospace", 'Courier (monospace)'),
+        ("'Trebuchet MS', 'Segoe UI', sans-serif", 'Trebuchet MS'),
+    ]
+    HEADER_LAYOUT_CHOICES = [
+        ('split', 'Brand left / logo centre / meta right'),
+        ('brand_left', 'Brand + logo left / meta right'),
+        ('centered', 'Everything centred'),
+        ('meta_left', 'Meta left / brand right'),
+    ]
+    TABLE_STYLE_CHOICES = [
+        ('bordered', 'Fully bordered'),
+        ('striped', 'Striped rows'),
+        ('minimal', 'Minimal / lines only'),
+    ]
+    CURRENCY_POSITION_CHOICES = [
+        ('before', 'Before amount'),
+        ('after', 'After amount'),
+    ]
+    ACCENT_MODE_CHOICES = [
+        ('mono', 'Monochrome (ink only)'),
+        ('accent', 'Accent colour'),
+        ('filled', 'Filled accent bands'),
+    ]
+
+    # -- Business identity ------------------------------------------------
+    business_name = models.CharField(
+        max_length=200, blank=True, default='',
+        help_text='Leave blank to use the company name from Company Setup.'
+    )
+    business_tagline = models.CharField(max_length=300, blank=True, default='')
+    vat_number = models.CharField('VAT / PAN number', max_length=60, blank=True, default='')
+    registration_number = models.CharField('Registration number', max_length=60, blank=True, default='')
+    business_phone = models.CharField(max_length=60, blank=True, default='')
+    business_alt_phone = models.CharField(max_length=60, blank=True, default='')
+    business_email = models.CharField(max_length=120, blank=True, default='')
+    business_website = models.CharField(max_length=160, blank=True, default='')
+    business_address = models.TextField(blank=True, default='')
+    logo = models.ImageField(
+        upload_to='invoice/', blank=True, null=True,
+        help_text='Leave blank to use the Company Setup logo.'
+    )
+    show_logo = models.BooleanField(default=True)
+    logo_height = models.PositiveSmallIntegerField(default=50, help_text='Printed logo height in pixels.')
+
+    # -- Document ---------------------------------------------------------
+    document_title = models.CharField(max_length=60, default='INVOICE')
+    invoice_number_prefix = models.CharField(max_length=20, blank=True, default='')
+    header_layout = models.CharField(max_length=20, choices=HEADER_LAYOUT_CHOICES, default='split')
+
+    # -- Section switches -------------------------------------------------
+    show_header = models.BooleanField(default=True)
+    show_meta = models.BooleanField(default=True)
+    show_bill_to = models.BooleanField(default=True)
+    bill_to_title = models.CharField(max_length=60, default='Bill To')
+    show_ship_to = models.BooleanField(default=False)
+    ship_to_title = models.CharField(max_length=60, default='Ship To')
+    show_items = models.BooleanField(default=True)
+    show_totals = models.BooleanField(default=True)
+    show_footer = models.BooleanField(default=True)
+
+    # -- Item table -------------------------------------------------------
+    col_index = models.BooleanField(default=True)
+    col_index_label = models.CharField(max_length=40, default='#')
+    col_product_label = models.CharField(max_length=40, default='Product')
+    col_sku = models.BooleanField(default=True)
+    col_type_tag = models.BooleanField(default=True)
+    col_variant = models.BooleanField(default=True)
+    col_bundle_components = models.BooleanField(default=True)
+    col_qty = models.BooleanField(default=True)
+    col_qty_label = models.CharField(max_length=40, default='Qty')
+    col_price = models.BooleanField(default=True)
+    col_price_label = models.CharField(max_length=40, default='Unit Price')
+    col_total = models.BooleanField(default=True)
+    col_total_label = models.CharField(max_length=40, default='Total')
+    empty_items_text = models.CharField(max_length=120, default='No items found.')
+
+    # -- Totals -----------------------------------------------------------
+    show_subtotal = models.BooleanField(default=True)
+    label_subtotal = models.CharField(max_length=40, default='Subtotal')
+    show_discount = models.BooleanField(default=True)
+    label_discount = models.CharField(max_length=40, default='Discount')
+    show_shipping = models.BooleanField(default=True)
+    label_shipping = models.CharField(max_length=40, default='Shipping')
+    show_delivery = models.BooleanField(default=True)
+    label_delivery = models.CharField(max_length=40, default='Delivery Charge')
+    show_tax = models.BooleanField(default=True)
+    label_tax = models.CharField(max_length=40, default='Tax')
+    label_grand_total = models.CharField(max_length=40, default='Grand Total')
+    hide_zero_totals = models.BooleanField(
+        default=True, help_text='Hide discount / shipping / delivery / tax rows when they are zero.'
+    )
+    show_amount_in_words = models.BooleanField(default=False)
+    label_amount_in_words = models.CharField(max_length=60, default='In words')
+
+    # -- Currency ---------------------------------------------------------
+    currency_symbol = models.CharField(max_length=10, default='रू')
+    currency_position = models.CharField(max_length=10, choices=CURRENCY_POSITION_CHOICES, default='before')
+    thousand_separator = models.BooleanField(default=True)
+
+    # -- Footer -----------------------------------------------------------
+    show_payment_method = models.BooleanField(default=True)
+    show_partial_payment = models.BooleanField(default=True)
+    show_admin_notes = models.BooleanField(default=True)
+    admin_notes_title = models.CharField(max_length=60, default='Admin Notes')
+    show_customer_notes = models.BooleanField(default=False)
+    customer_notes_title = models.CharField(max_length=60, default='Order Notes')
+    show_terms = models.BooleanField(default=False)
+    terms_title = models.CharField(max_length=60, default='Terms & Conditions')
+    terms_text = models.TextField(blank=True, default='', help_text='One condition per line.')
+    thank_you_text = models.CharField(max_length=200, default='Thank you for shopping with {company}!')
+    footer_note = models.CharField(max_length=200, default='Computer-generated invoice - no signature required.')
+    show_printed_by = models.BooleanField(default=False)
+    show_signature = models.BooleanField(default=False)
+    signature_left_label = models.CharField(max_length=60, default='Customer Signature')
+    signature_right_label = models.CharField(max_length=60, default='Authorised Signature')
+
+    # -- Style ------------------------------------------------------------
+    paper_size = models.CharField(max_length=20, choices=PAPER_CHOICES, default='a4')
+    accent_mode = models.CharField(max_length=10, choices=ACCENT_MODE_CHOICES, default='mono')
+    accent_color = models.CharField(max_length=7, default='#111827')
+    text_color = models.CharField(max_length=7, default='#000000')
+    muted_color = models.CharField(max_length=7, default='#4b5563')
+    border_color = models.CharField(max_length=7, default='#000000')
+    page_background = models.CharField(max_length=7, default='#ffffff')
+    font_family = models.CharField(max_length=120, default="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif")
+    base_font_size = models.PositiveSmallIntegerField(default=12, help_text='Base body font size in px (8-18).')
+    table_style = models.CharField(max_length=20, choices=TABLE_STYLE_CHOICES, default='bordered')
+    corner_radius = models.PositiveSmallIntegerField(default=8, help_text='Outer border radius in px.')
+    compact_mode = models.BooleanField(default=False, help_text='Tighter padding - fits more rows per page.')
+    show_outer_border = models.BooleanField(default=True)
+    show_watermark = models.BooleanField(default=False)
+    watermark_text = models.CharField(max_length=60, blank=True, default='PAID')
+    watermark_opacity = models.PositiveSmallIntegerField(default=8, help_text='Watermark opacity, 1-40 (%).')
+    custom_css = models.TextField(
+        blank=True, default='',
+        help_text='Advanced: extra CSS appended to the invoice stylesheet.'
+    )
+
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='invoice_template_edits'
+    )
+
+    class Meta:
+        verbose_name = 'Invoice Template'
+        verbose_name_plural = 'Invoice Template'
+
+    def __str__(self):
+        return self.business_name or 'Invoice Template'
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        # Keep the numeric knobs inside sane print ranges rather than trusting the form.
+        self.base_font_size = min(max(int(self.base_font_size or 12), 8), 18)
+        self.logo_height = min(max(int(self.logo_height or 50), 16), 160)
+        self.corner_radius = min(max(int(self.corner_radius or 0), 0), 24)
+        self.watermark_opacity = min(max(int(self.watermark_opacity or 8), 1), 40)
+        super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('invoice_template_v1')
+
+    @classmethod
+    def get_solo(cls):
+        obj, created = cls.objects.get_or_create(pk=1)
+        if created:
+            InvoiceElement.seed_defaults(obj)
+        return obj
+
+
+class InvoiceElement(models.Model):
+    """One printable line inside an invoice region.
+
+    A line either prints a fixed string (``source='static'``) or a value pulled
+    from the order via a whitelisted token (``source='field'`` - see
+    ``dashboard/invoice_config.TOKENS``). Both stock and custom lines are rows
+    here, so anything on the invoice can be renamed, reordered or removed.
+    """
+
+    SECTION_CHOICES = [
+        ('brand', 'Header - under the business name'),
+        ('meta', 'Header - invoice meta box'),
+        ('bill_to', 'Bill To box'),
+        ('ship_to', 'Ship To box'),
+        ('items_note', 'Between items and totals'),
+        ('totals', 'Totals box (extra rows)'),
+        ('footer', 'Footer'),
+    ]
+    SOURCE_CHOICES = [
+        ('field', 'Order / customer data'),
+        ('static', 'Fixed text'),
+    ]
+
+    template = models.ForeignKey(
+        InvoiceTemplate, on_delete=models.CASCADE, related_name='elements'
+    )
+    section = models.CharField(max_length=20, choices=SECTION_CHOICES, default='bill_to')
+    label = models.CharField(max_length=80, blank=True, default='')
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='field')
+    token = models.CharField(
+        max_length=60, blank=True, default='',
+        help_text="Data token, e.g. 'customer.phone'. Only used when source is 'field'."
+    )
+    static_value = models.CharField(max_length=400, blank=True, default='')
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    hide_if_empty = models.BooleanField(default=True)
+    is_bold = models.BooleanField(default=False)
+    full_width = models.BooleanField(
+        default=True, help_text='Print on its own line instead of sharing the row.'
+    )
+    is_builtin = models.BooleanField(
+        default=False, help_text='Seeded with the default layout; still editable and deletable.'
+    )
+
+    class Meta:
+        ordering = ['section', 'sort_order', 'id']
+        verbose_name = 'Invoice Element'
+        verbose_name_plural = 'Invoice Elements'
+
+    def __str__(self):
+        return f"{self.get_section_display()} - {self.label or self.token or self.static_value}"
+
+    @classmethod
+    def seed_defaults(cls, template=None, wipe=False):
+        """Create (or restore) the stock invoice lines."""
+        from dashboard.invoice_config import DEFAULT_ELEMENTS
+        template = template or InvoiceTemplate.objects.get_or_create(pk=1)[0]
+        if wipe:
+            cls.objects.filter(template=template).delete()
+        elif cls.objects.filter(template=template).exists():
+            return
+        cls.objects.bulk_create([
+            cls(template=template, is_builtin=True, **spec) for spec in DEFAULT_ELEMENTS
+        ])

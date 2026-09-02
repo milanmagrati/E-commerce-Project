@@ -158,7 +158,7 @@ For every order **on the current page**:
 | Trash | link | `orders_trash` → `/orders/trash/` | |
 | Row → View | link | `order_detail` → `/orders/<id>/` | [06](./06-order-detail.md) |
 | Row → Edit | link | `order_edit` → `/orders/<id>/edit/` | |
-| Row → Invoice | link | `order_invoice` → `/orders/<id>/invoice/` | Printable |
+| Row → Invoice | link | `order_invoice` → `/orders/<id>/invoice/` | Printable. Its whole layout is data-driven — see [22](./22-settings-and-setup.md#invoice-customizer) |
 
 The bulk "Mark as …" dropdown is generated from `Setup` rows, so it always matches whatever
 statuses the business has configured (`:3281-3288`).
@@ -220,7 +220,7 @@ Several other screens are "the orders list, filtered differently":
 |---|---|---|---|
 | Orders trash | `/orders/trash/` | `orders_trash` | `is_deleted=True` |
 | On-hold orders | `/orders/on-hold/` | `on_hold_orders_list` (`views.py:7477`) | Setup rows named "On Hold" + "Inquiry", matched by FK **or** string (`:7483-7503`) |
-| Return orders | `/orders/returns/` | `return_orders_list` (`views.py:5084`) | `order_status IN ('return', 'return_processing')` (`:5095-5102`), with a `stage` param of `processing` / `completed` (`:5166-5171`) |
+| Return orders | `/orders/returns/` | `return_orders_list` (`views.py:5084`) | `order_status IN ('return', 'return_arrived', 'return_processing')`, with a `stage` param of `processing` / `arrived` / `completed` |
 | WooCommerce orders | `/orders/woocommerce/` | `woocommerce_orders` | Staged Woo orders — [27](./27-sheets-and-woocommerce.md) |
 | Logistics orders | `/logistics/orders/` | `logistics_orders_list` (`views.py:21005`) | Courier-centric view, `?provider=ncm\|pnd` — [12](./12-ncm-sync-and-scheduler.md) |
 | Possible redirection | `/orders/possible-redirection/` | `possible_redirection_list` | [14](./14-rtv-and-redirection.md) |

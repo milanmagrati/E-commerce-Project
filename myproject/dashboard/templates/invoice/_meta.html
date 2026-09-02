@@ -1,0 +1,14 @@
+{% comment %}Invoice meta box (document title + the "meta" section lines).{% endcomment %}
+<div class="invoice-meta">
+    {% if cfg.document_title %}<div class="inv-title">{{ cfg.document_title }}</div>{% endif %}
+    {% if meta_lines %}
+    <table>
+        {% for line in meta_lines %}
+        <tr {% if line.bold %}class="bold"{% endif %}>
+            <td class="k">{{ line.label }}</td>
+            <td class="v">{{ line.value }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+</div>

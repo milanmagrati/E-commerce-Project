@@ -199,11 +199,59 @@ The same duplication exists on the PND side (`dashboard/views.py:20252` bypasses
 
 ### `NCMWebhookHandler.STATUS_MAPPING` is documentation only
 
-`ncm/webhook_handler.py:56-74` is byte-identical to the live mapping at
-`services/ncm_service.py:653-671`, and its own comment (`:52-55`) says it is **not
-referenced**. Changing one does not change the other.
+`ncm/webhook_handler.py:56-74` holds the same fixed keys as the live mapping in
+`services/ncm_service.py` (`map_ncm_status_to_system`), and its own comment says it is
+**not referenced**. Changing one does not change the other.
+
+It is also now *incomplete* rather than merely redundant: the live mapping has fallbacks
+that no fixed key can express — `is_return_arrival()` → `return_arrived`, then the
+`RETURN_STATUS_KEYWORDS` catch-all → `return_processing`. Reading this dict alone will
+tell you `"Arrived at RETURN NAYA BUSPARK"` is unmapped. It is not.
 
 `PAYMENT_STATUS_MAPPING` (`:80-85`) is likewise unreferenced in the update path.
+
+### `"Arrived"` means two opposite things, and the rule has four mirrors
+
+NCM appends the branch a parcel reached to its movement statuses, and marks the return leg
+by prefixing that branch with `RETURN`:
+
+| Status | Where the parcel is |
+|---|---|
+| `Arrived at POKHARA` | at its **delivery** branch — redirectable |
+| `Arrived at RETURN NAYA BUSPARK` | at the courier's **return counter** — the journey back is over |
+
+Anything that reads `"arrived"` as "sitting at a branch we can redirect from" has to tell
+those apart. The definition lives once, in `NCMService.is_return_arrival()` — *starts with
+`arrived` **and** contains `return`* — but it is necessarily mirrored in three more places
+that cannot call it:
+
+| Mirror | File |
+|---|---|
+| the Possible Redirection list's SQL filter (`istartswith` + `icontains`) | `dashboard/views.py` |
+| `isReturnLegArrival()` for the disabled-button copy | `dashboard/templates/possible_redirection.html` |
+| `_is_returning()` for the logistics badge colour | `dashboard/logistics_status.py` |
+
+Change the rule in one and the others drift. `test_return_arrived_stage.py` exercises the
+Python helper *and* the SQL filter for exactly this reason.
+
+### The same RTV status arrives in two vocabularies
+
+`RTVOrder.last_status` is written by two different NCM endpoints:
+
+- **`vendor/orders`** (the RTV list sync) answers with the bare word — `"Arrived"`;
+- **the tracking/bulk-status endpoint** (the Possible Redirection refresh, and
+  `_live_ncm_status()`) answers branch-qualified — `"Arrived at RETURN NAYA BUSPARK"`.
+
+So the *same* parcel's stored status changes vocabulary depending on which sync last ran.
+Anything matching `RTVOrder.last_status` exactly will therefore work for some rows and not
+others — this is why the redirection gates match on prefixes, and why
+`ncm_status_colour()` (`dashboard/views.py`) falls back to a prefix match instead of
+colouring branch-qualified statuses grey.
+
+It is also why the return-leg exclusion is a **veto on either stored copy** rather than a
+per-copy filter: the RTV copy said `"Arrived"` while the order copy said
+`"Arrived at RETURN NAYA BUSPARK"`, so OR-ing them kept the parcel listed. See
+[14 — RTV & redirection](./14-rtv-and-redirection.md).
 
 ### `OrderActivityLog.action_type` values not in `ACTION_TYPES`
 
@@ -264,8 +312,8 @@ Four code paths create status rows on demand:
 | `NCMService._resolve_setup()` | `services/ncm_service.py:1082` |
 
 The table drifts toward whatever strings the code has ever produced. Only
-`"Return Processing"` is seeded by migration
-(`dashboard/migrations/0077_return_processing_status_setup.py`).
+`"Return Processing"` (`dashboard/migrations/0077_return_processing_status_setup.py`) and
+`"Return Arrived"` (`0088_return_arrived_status_setup.py`) are seeded by migration.
 
 Cities do the same thing from the order form (`views.py:3474-3488`).
 
@@ -332,3 +380,36 @@ One real bug that this work fixed, worth knowing because the same trap is easy t
 into: **a variable product's `Product.price` is a parent value nobody is charged.** The mobile
 sticky bar was quoting it, so a product whose options sell at Rs. 700 / Rs. 400 advertised
 Rs. 400 regardless of the pick. Quote `variation_price_range` or the chosen variation.
+
+---
+
+## 16. `X_FRAME_OPTIONS` is `DENY`, project-wide and unset
+
+`myproject/settings.py` loads `django.middleware.clickjacking.XFrameOptionsMiddleware`
+(`:93`) but never sets `X_FRAME_OPTIONS`, so Django's default applies: **`DENY`**. Not
+`SAMEORIGIN` — `DENY`. Nothing in this project may be framed, including by itself.
+
+That is a sane default and worth keeping, but it has one non-obvious consequence: **any new
+admin screen that previews another of its own pages in an `<iframe>` will render an empty box
+reading "127.0.0.1 refused to connect"**, with no server-side error and nothing in the logs.
+The request succeeds with a 200; the browser throws the response away.
+
+The fix is per-view, never global — decorate only the page being framed:
+
+```python
+from django.views.decorators.clickjacking import xframe_options_sameorigin
+
+@login_required
+@admin_only
+@xframe_options_sameorigin
+def invoice_preview(request):
+    ...
+```
+
+`dashboard/invoice_customizer_views.py:invoice_preview` is currently the only view carrying
+it, added Sep 2026 for the Invoice Customizer's live preview pane
+([22](./22-settings-and-setup.md#invoice-customizer)). The printable invoice it renders,
+`order_invoice`, deliberately stays `DENY` — only the read-only preview route is exempt.
+
+`test_invoice_customizer.py` asserts both headers, so the exemption cannot be dropped and the
+`DENY` cannot spread to the printable route without a failure.

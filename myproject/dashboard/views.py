@@ -8060,7 +8060,10 @@ def update_order_next_followup(request, order_id):
 @login_required
 @permission_required('can_view_orders')
 def order_invoice(request, order_id):
-    from decimal import Decimal
+    """The printable invoice. Its layout, wording and styling come from
+    Setup → Invoice Customizer (`dashboard.invoice_config`), not from this view."""
+    from dashboard import invoice_config
+
     # Allow admins/managers to view any invoice; restrict regular staff to their own
     queryset = Order.objects.select_related(
         'api_config', 'status_setup', 'payment_setup', 'payment_status_setup'
@@ -8076,13 +8079,6 @@ def order_invoice(request, order_id):
         'product__bundle_components__component_product'
     ).all()
 
-    subtotal = sum(item.total for item in order_items) or Decimal('0.00')
-    discount = order.discount_amount or Decimal('0.00')
-    after_discount = subtotal - discount
-    tax_amount = (after_discount * (order.tax_percent or Decimal('0'))) / Decimal('100')
-    shipping = order.shipping_charge or Decimal('0.00')
-    delivery = order.delivery_charge or Decimal('0.00')
-
     order_status_label = (
         order.status_setup.name if order.status_setup else (order.order_status or order.status or 'pending')
     )
@@ -8093,19 +8089,16 @@ def order_invoice(request, order_id):
         order.payment_setup.name if order.payment_setup else (order.payment_method or 'N/A')
     )
 
-    return render(request, "order_invoice.html", {
-        "order": order,
-        "order_items": order_items,
-        "subtotal": subtotal,
-        "tax_amount": tax_amount,
-        "shipping": shipping,
-        "delivery": delivery,
-        "discount": discount,
-        "order_status_label": order_status_label,
-        "payment_status_label": payment_status_label,
-        "payment_method_label": payment_method_label,
-        "user": request.user,
-    })
+    context = invoice_config.build_invoice_context(
+        order, order_items, user=request.user,
+        labels={
+            'status': order_status_label,
+            'payment_status': payment_status_label,
+            'payment_method': payment_method_label,
+        },
+    )
+    context['user'] = request.user
+    return render(request, "order_invoice.html", context)
 
 
 # API Endpoints for AJAX

@@ -4,6 +4,7 @@ from . import views
 from . import followup_setup_views
 from . import bulk_discount_views
 from . import delivery_charge_views
+from . import invoice_customizer_views
 from . import page_views
 
 
@@ -265,6 +266,16 @@ urlpatterns = [
     path('setup/bulk-discounts/bulk-action/', bulk_discount_views.bulk_discount_bulk_action, name='bulk_discount_bulk_action'),
     path('setup/bulk-discounts/preview/', bulk_discount_views.bulk_discount_preview, name='bulk_discount_preview'),
     path('setup/bulk-discounts/export/', bulk_discount_views.bulk_discount_export, name='bulk_discount_export'),
+
+    # Invoice Customizer (design of the printable order invoice)
+    path('setup/invoice/', invoice_customizer_views.invoice_customizer, name='invoice_customizer'),
+    path('setup/invoice/preview/', invoice_customizer_views.invoice_preview, name='invoice_preview'),
+    path('setup/invoice/reset/', invoice_customizer_views.invoice_customizer_reset, name='invoice_customizer_reset'),
+    path('setup/invoice/lines/save/', invoice_customizer_views.invoice_element_save, name='invoice_element_save'),
+    path('setup/invoice/lines/reorder/', invoice_customizer_views.invoice_element_reorder, name='invoice_element_reorder'),
+    path('setup/invoice/lines/<int:element_id>/delete/', invoice_customizer_views.invoice_element_delete, name='invoice_element_delete'),
+    path('setup/invoice/lines/<int:element_id>/toggle/', invoice_customizer_views.invoice_element_toggle, name='invoice_element_toggle'),
+    path('setup/invoice/lines/<int:element_id>/move/', invoice_customizer_views.invoice_element_move, name='invoice_element_move'),
 
     # Company Setup (branding & themes)
     path('settings/company/', views.company_setup, name='company_setup'),
