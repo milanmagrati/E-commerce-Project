@@ -51,7 +51,7 @@ app).
 | `/orders/trash/bulk-action/`, `/orders/trash/empty/` | `orders_trash_bulk_action`, `empty_orders_trash` | `can_delete_orders` | |
 | `/orders/on-hold/` | `on_hold_orders_list` | `can_view_on_hold_orders` | [19](./19-customers-and-followups.md) |
 | `/orders/returns/` | `return_orders_list` | `can_view_orders` | [15](./15-returns.md) |
-| `/orders/woocommerce/`, `/orders/woocommerce/sync/` | `woocommerce_orders`, `woocommerce_orders_sync` | login | [27](./27-sheets-and-woocommerce.md) |
+| `/orders/woocommerce/`, `/orders/woocommerce/sync/`, `/orders/woocommerce/export/` | `woocommerce_orders`, `woocommerce_orders_sync`, `woocommerce_orders_export` | login + admin-only body check | [27](./27-sheets-and-woocommerce.md) |
 | `/orders/export/selected/` | `export_selected_orders_excel` | login | |
 | `/orders/<id>/export/` | `export_order_details` | `can_export_data` | |
 | `/orders/import/excel/` | `import_orders_excel` | login | [08](./08-order-create-edit-bulk.md) |

@@ -172,14 +172,22 @@ Blank → `Pickup Order Created` (NCM) or `Order Created` (PND).
 
 ## WooCommerce → `store.Order`
 
-`integrations/services.py:13-21`
+`integrations/services.py` — `WOO_STATUS_MAP`
 
 | Woo | Internal |
 |---|---|
 | `pending`, `on-hold` | `pending` |
 | `processing` | `confirmed` |
-| `completed` | `delivered` |
+| `completed`, `delivered` | `delivered` |
+| `shipped` | `shipped` |
 | `cancelled`, `refunded`, `failed` | `cancelled` |
+
+`delivered` and `shipped` are **custom statuses** this store registers on top of
+WooCommerce's seven core ones — they arrive over the API with the `wc-` prefix already
+stripped, exactly like the core ones. `delivered` is not a rare edge case: it is the single
+largest bucket in the live store (~2,875 of 4,954 orders). Anything unrecognised still falls
+back to `pending`, so a new plugin status silently lands there — check `WOO_STATUS_MAP`
+before assuming an order is genuinely awaiting payment.
 
 ---
 

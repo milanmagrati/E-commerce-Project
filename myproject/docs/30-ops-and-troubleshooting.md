@@ -65,7 +65,8 @@ All under `logs/`, rotating (10 MB × 5, except SMS at 5 MB × 3).
 | `fix_decimal_corruption` | `dashboard` | Repair them |
 | `cleanup_decimals` | `dashboard` | Tidy up |
 | `reset_stock_counters` | `inventory` | Recalculate `reserved_qty` / `backordered_qty` from order data |
-| `sync_woocommerce_orders --since-hours N` | `integrations` | Poll WooCommerce (webhook fallback) |
+| `sync_woocommerce_orders --since-hours N` | `integrations` | Poll WooCommerce for recently-modified orders (webhook fallback) |
+| `sync_woocommerce_orders --full` | `integrations` | Crawl the **whole** Woo order history. Run once per store — neither the webhook nor the windowed poll ever backfills, and an un-backfilled dashboard looks stuck in a single status with no error. Takes minutes on a ~5k-order store |
 | `sentinel_prune` | `sentinel` | Apply audit retention |
 | `crm_poll_meta` | `trendycrm` | Poll Meta for messages |
 | `reclassify_crm_intents` | `trendycrm` | Re-run intent classification |
