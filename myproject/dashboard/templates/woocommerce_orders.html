@@ -310,6 +310,109 @@
         color: #2c3e50;
     }
 
+    .woo-filtered-hint {
+        color: #21759b;
+        font-weight: 600;
+    }
+
+    /* Status quick-filter chips */
+    .woo-status-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-bottom: 0.9rem;
+    }
+
+    .woo-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.75rem;
+        border-radius: 50px;
+        border: 1.5px solid #e3e6f0;
+        background: white;
+        color: #5a5c69;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.18s ease;
+    }
+
+    .woo-chip:hover {
+        border-color: #21759b;
+        color: #21759b;
+        transform: translateY(-1px);
+    }
+
+    .woo-chip.active {
+        background: #21759b;
+        border-color: #21759b;
+        color: white;
+    }
+
+    .woo-chip-count {
+        font-size: 0.72rem;
+        padding: 0.05rem 0.4rem;
+        border-radius: 50px;
+        background: rgba(0, 0, 0, 0.06);
+    }
+
+    .woo-chip.active .woo-chip-count {
+        background: rgba(255, 255, 255, 0.22);
+    }
+
+    .btn-export {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.9rem;
+        border-radius: 8px;
+        border: 1.5px solid #e3e6f0;
+        background: white;
+        color: #1cc88a;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-decoration: none;
+        margin-bottom: 0.75rem;
+        transition: all 0.2s ease;
+    }
+
+    .btn-export:hover {
+        border-color: #1cc88a;
+        color: #13855c;
+        background: rgba(28, 200, 138, 0.06);
+    }
+
+    /* Sortable headers */
+    .woo-sort-link {
+        color: inherit;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        white-space: nowrap;
+    }
+
+    .woo-sort-link i {
+        opacity: 0.35;
+        font-size: 0.8em;
+    }
+
+    .woo-sort-link:hover,
+    .woo-sort-link.active {
+        color: #21759b;
+    }
+
+    .woo-sort-link.active i {
+        opacity: 1;
+    }
+
+    .woo-synced-hint {
+        color: #b7b9c5;
+        font-size: 0.7rem;
+        font-style: italic;
+    }
+
     .woo-table-card {
         border-radius: 16px;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
@@ -676,10 +779,34 @@
     </form>
 </div>
 
-<p class="woo-result-count">
-    Showing <strong>{{ page_obj.start_index|default:0 }}-{{ page_obj.end_index|default:0 }}</strong>
-    of <strong>{{ result_count }}</strong> order{{ result_count|pluralize }}
-</p>
+<div class="woo-status-chips">
+    <a href="?{% if querystring_nostatus %}{{ querystring_nostatus }}&{% endif %}status="
+       class="woo-chip {% if not status_filter %}active{% endif %}">
+        All <span class="woo-chip-count">{{ stats.total }}</span>
+    </a>
+    {% for choice in status_choices %}
+        {% if choice.count %}
+        <a href="?{% if querystring_nostatus %}{{ querystring_nostatus }}&{% endif %}status={{ choice.value }}"
+           class="woo-chip woo-chip-{{ choice.value }} {% if status_filter == choice.value %}active{% endif %}">
+            {{ choice.label }} <span class="woo-chip-count">{{ choice.count }}</span>
+        </a>
+        {% endif %}
+    {% endfor %}
+</div>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <p class="woo-result-count mb-0">
+        Showing <strong>{{ page_obj.start_index|default:0 }}-{{ page_obj.end_index|default:0 }}</strong>
+        of <strong>{{ result_count }}</strong> order{{ result_count|pluralize }}
+        {% if status_filter or search or sync_filter or date_from or date_to %}
+            <span class="woo-filtered-hint">(filtered)</span>
+        {% endif %}
+    </p>
+    <a href="{% url 'woocommerce_orders_export' %}{% if querystring %}?{{ querystring }}{% endif %}"
+       class="btn-export" title="Download the current filter selection as CSV">
+        <i class="fas fa-file-csv"></i> Export CSV
+    </a>
+</div>
 
 <div class="row">
     <div class="col-12">
@@ -688,12 +815,12 @@
                 <table class="table woo-table">
                     <thead>
                         <tr>
-                            <th>WooCommerce ID</th>
-                            <th>Customer Details</th>
-                            <th>Total Amount</th>
-                            <th>Order Status</th>
+                            {% include 'partials/woo_sort_header.html' with label='WooCommerce ID' key='id' %}
+                            {% include 'partials/woo_sort_header.html' with label='Customer Details' key='customer' %}
+                            {% include 'partials/woo_sort_header.html' with label='Total Amount' key='total' %}
+                            {% include 'partials/woo_sort_header.html' with label='Order Status' key='status' %}
                             <th>Sync Status</th>
-                            <th>Created At</th>
+                            {% include 'partials/woo_sort_header.html' with label='Order Date' key='date' %}
                             <th class="text-center">Details</th>
                         </tr>
                     </thead>
@@ -743,8 +870,15 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <span class="text-muted"><i class="far fa-calendar-alt me-1"></i> {{ order.created_at|date:"M d, Y" }}</span><br>
-                                <small class="text-muted"><i class="far fa-clock me-1"></i> {{ order.created_at|date:"H:i" }}</small>
+                                {% if order.woo_date_created %}
+                                    <span class="text-muted"><i class="far fa-calendar-alt me-1"></i> {{ order.woo_date_created|date:"M d, Y" }}</span><br>
+                                    <small class="text-muted"><i class="far fa-clock me-1"></i> {{ order.woo_date_created|date:"H:i" }}</small>
+                                    <small class="d-block woo-synced-hint" title="When this row was pulled into the dashboard">
+                                        synced {{ order.created_at|date:"M d" }}
+                                    </small>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
                             </td>
                             <td class="text-center">
                                 <button type="button" class="btn-view-order" onclick="showOrderDetails('{{ order.woo_order_id }}')" title="View details">
@@ -779,8 +913,11 @@
                     <span class="d-none d-md-inline">&middot; {{ result_count }} order{{ result_count|pluralize }} total</span>
                 </span>
                 <ul class="pagination woo-pagination">
-                    {# Every arrow is guarded: resolving previous_page_number / next_page_number
-                       when there is no such page raises EmptyPage and 500s the whole page. #}
+                    {% comment %}
+                    Every arrow is guarded: resolving previous_page_number /
+                    next_page_number when there is no such page raises
+                    EmptyPage and 500s the whole page.
+                    {% endcomment %}
                     {% if page_obj.has_previous %}
                     <li class="page-item">
                         <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page=1" title="First page">
@@ -1018,9 +1155,26 @@ function showOrderDetails(wooOrderId) {
                     <span>${escapeHtml(data.total || '')} ${escapeHtml(data.currency || '')}</span>
                 </div>
             </div>
+            ${data.customer_note ? `
             <div class="col-12">
-                <div class="woo-modal-section-title">Sync Info</div>
-                <span class="badge-soft badge-soft-secondary">${escapeHtml(data.sync_source || 'unknown')}</span>
+                <div class="woo-modal-section-title">Customer Note</div>
+                <div style="font-size:0.9rem;">${escapeHtml(data.customer_note)}</div>
+            </div>` : ''}
+            <div class="col-12">
+                <div class="woo-modal-section-title">Order Info</div>
+                <div class="row g-2" style="font-size:0.9rem;">
+                    <div class="col-sm-6"><span class="text-muted">Status:</span> <strong>${escapeHtml(data.status_label || data.status || '')}</strong></div>
+                    <div class="col-sm-6"><span class="text-muted">Payment:</span> <strong>${escapeHtml(data.payment_method || 'Not recorded')}</strong></div>
+                    <div class="col-sm-6"><span class="text-muted">Placed:</span> <strong>${escapeHtml(data.placed_at || 'Unknown')}</strong></div>
+                    <div class="col-sm-6"><span class="text-muted">Synced:</span> <strong>${escapeHtml(data.synced_at || '')}</strong></div>
+                </div>
+            </div>
+            <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span class="badge-soft badge-soft-secondary">via ${escapeHtml(data.sync_source || 'unknown')}</span>
+                ${data.wc_admin_url ? `
+                <a href="${escapeAttr(data.wc_admin_url)}" target="_blank" rel="noopener noreferrer" class="btn-export">
+                    <i class="fab fa-wordpress"></i> Open in WooCommerce
+                </a>` : ''}
             </div>
         </div>
     `;
@@ -1033,6 +1187,12 @@ function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+}
+
+// escapeHtml leaves quotes intact, which is fine for text nodes but would let a
+// value break out of an href="..." - attribute interpolation needs these too.
+function escapeAttr(str) {
+    return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 </script>
 {% endblock %}

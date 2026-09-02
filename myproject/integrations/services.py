@@ -1,7 +1,10 @@
 import logging
+from datetime import timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from store.models import Order
 from .models import WooCommerceOrder
@@ -24,6 +27,29 @@ WOO_STATUS_MAP = {
     'delivered': 'delivered',
     'shipped': 'shipped',
 }
+
+
+def parse_woo_datetime(raw: dict):
+    """Pull the order's real placement time out of a WooCommerce payload.
+
+    WooCommerce sends `date_created_gmt` (UTC, no offset) alongside
+    `date_created` (the shop's local wall clock, also unmarked). Prefer the GMT
+    one and stamp UTC onto it; fall back to the local field only if it's
+    missing, since with USE_TZ a naive value would otherwise be read as
+    Asia/Kathmandu and land the order ~5h45m off.
+    """
+    value = raw.get('date_created_gmt') or raw.get('date_created')
+    if not value:
+        return None
+    try:
+        parsed = parse_datetime(value)
+    except ValueError:
+        return None
+    if parsed is None:
+        return None
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, dt_timezone.utc)
+    return parsed
 
 
 def get_woocommerce_system_user():
@@ -49,7 +75,8 @@ def get_woocommerce_system_user():
 
 def upsert_woocommerce_order(*, woo_order_id, status, currency, total: Decimal,
                               billing: dict, shipping: dict, line_items: list,
-                              raw_payload: dict, sync_source: str):
+                              raw_payload: dict, sync_source: str,
+                              woo_date_created=None):
     """Upsert one WooCommerce order into store.Order + WooCommerceOrder.
 
     Shared by the webhook receiver and the REST API poller - both normalize
@@ -85,22 +112,31 @@ def upsert_woocommerce_order(*, woo_order_id, status, currency, total: Decimal,
         },
     )
 
+    defaults = {
+        'order': order,
+        'status': status,
+        'currency': currency,
+        'total': total,
+        'customer_name': customer_name,
+        'customer_email': billing.get('email', ''),
+        'billing_phone': billing.get('phone', ''),
+        'billing_data': billing,
+        'shipping_data': shipping,
+        'line_items_json': line_items,
+        'raw_payload': raw_payload,
+        'sync_source': sync_source,
+    }
+
+    # Only write the order date when this payload actually carries one - a
+    # webhook sender that omits it must not blank out a date an earlier poll
+    # already resolved.
+    placed_at = woo_date_created or parse_woo_datetime(raw_payload)
+    if placed_at is not None:
+        defaults['woo_date_created'] = placed_at
+
     woo_obj, woo_created = WooCommerceOrder.objects.update_or_create(
         woo_order_id=woo_order_id,
-        defaults={
-            'order': order,
-            'status': status,
-            'currency': currency,
-            'total': total,
-            'customer_name': customer_name,
-            'customer_email': billing.get('email', ''),
-            'billing_phone': billing.get('phone', ''),
-            'billing_data': billing,
-            'shipping_data': shipping,
-            'line_items_json': line_items,
-            'raw_payload': raw_payload,
-            'sync_source': sync_source,
-        },
+        defaults=defaults,
     )
 
     action = 'created' if woo_created else 'updated'

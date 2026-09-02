@@ -25866,6 +25866,65 @@ WOO_STATUS_LABELS = {
 
 WOO_PER_PAGE_CHOICES = [25, 50, 100, 200]
 
+#: Sortable columns, keyed by the `sort` query param. Every ordering falls back
+#: to woo_order_id so pagination stays stable across ties (thousands of these
+#: orders share a date, and an unstable sort silently repeats/drops rows
+#: between pages).
+WOO_SORT_FIELDS = {
+    '-date': ['-woo_date_created', '-woo_order_id'],
+    'date': ['woo_date_created', 'woo_order_id'],
+    '-total': ['-total', '-woo_order_id'],
+    'total': ['total', 'woo_order_id'],
+    '-id': ['-woo_order_id'],
+    'id': ['woo_order_id'],
+    'status': ['status', '-woo_order_id'],
+    '-status': ['-status', '-woo_order_id'],
+    'customer': ['customer_name', '-woo_order_id'],
+    '-customer': ['-customer_name', '-woo_order_id'],
+}
+
+
+def _apply_woo_order_filters(queryset, *, search='', status='', sync='',
+                             date_from='', date_to=''):
+    """Shared filter pipeline for the WooCommerce order list and its CSV
+    export, so "export" always means exactly the rows on screen."""
+    from django.utils.dateparse import parse_date
+    from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
+
+    if search:
+        search_filter = Q(customer_name__icontains=search) | \
+            Q(customer_email__icontains=search) | \
+            Q(billing_phone__icontains=search)
+        if search.isdigit():
+            search_filter |= Q(woo_order_id=search)
+        queryset = queryset.filter(search_filter)
+
+    if status:
+        queryset = queryset.filter(status=status)
+
+    if sync == 'synced':
+        queryset = queryset.filter(order__isnull=False)
+    elif sync == 'failed':
+        queryset = queryset.filter(order__isnull=True)
+
+    # Dates filter on when the shopper placed the order in WooCommerce, not on
+    # when we happened to sync the row - for a backfilled store the latter is
+    # the same day for every order and the filter would be meaningless.
+    #
+    # Compared as explicit Nepal-time boundaries rather than with __date__gte:
+    # that lookup compiles to CONVERT_TZ() on MySQL, which returns NULL on this
+    # server (mysql.time_zone_name is empty) and silently matches zero rows.
+    # See dashboard/timezone_utils.nepali_day_start().
+    parsed_from = parse_date(date_from) if date_from else None
+    if parsed_from:
+        queryset = queryset.filter(woo_date_created__gte=nepali_day_start(parsed_from))
+
+    parsed_to = parse_date(date_to) if date_to else None
+    if parsed_to:
+        queryset = queryset.filter(woo_date_created__lt=nepali_day_end_exclusive(parsed_to))
+
+    return queryset
+
 
 @login_required
 def woocommerce_orders_list(request):
@@ -25877,8 +25936,8 @@ def woocommerce_orders_list(request):
         from django.shortcuts import redirect
         return redirect('dashboard')
 
-    from django.utils.dateparse import parse_date
     from integrations.models import WooCommerceOrder
+    from .timezone_utils import format_nepali_datetime
 
     all_orders = WooCommerceOrder.objects.all()
 
@@ -25887,32 +25946,12 @@ def woocommerce_orders_list(request):
     sync_filter = request.GET.get('sync', '').strip()
     date_from = request.GET.get('date_from', '').strip()
     date_to = request.GET.get('date_to', '').strip()
+    sort = request.GET.get('sort', '').strip() or '-date'
 
-    orders = all_orders.order_by('-created_at')
-
-    if search:
-        search_filter = Q(customer_name__icontains=search) | \
-            Q(customer_email__icontains=search) | \
-            Q(billing_phone__icontains=search)
-        if search.isdigit():
-            search_filter |= Q(woo_order_id=search)
-        orders = orders.filter(search_filter)
-
-    if status_filter:
-        orders = orders.filter(status=status_filter)
-
-    if sync_filter == 'synced':
-        orders = orders.filter(order__isnull=False)
-    elif sync_filter == 'failed':
-        orders = orders.filter(order__isnull=True)
-
-    parsed_from = parse_date(date_from) if date_from else None
-    if parsed_from:
-        orders = orders.filter(created_at__date__gte=parsed_from)
-
-    parsed_to = parse_date(date_to) if date_to else None
-    if parsed_to:
-        orders = orders.filter(created_at__date__lte=parsed_to)
+    orders = _apply_woo_order_filters(
+        all_orders, search=search, status=status_filter, sync=sync_filter,
+        date_from=date_from, date_to=date_to,
+    ).order_by(*WOO_SORT_FIELDS.get(sort, WOO_SORT_FIELDS['-date']))
 
     stats = {
         'total': all_orders.count(),
@@ -25933,6 +25972,15 @@ def woocommerce_orders_list(request):
 
     querystring = request.GET.copy()
     querystring.pop('page', None)
+
+    # Sortable column headers rebuild the sort param themselves, and the export
+    # link must not carry paging.
+    querystring_nosort = querystring.copy()
+    querystring_nosort.pop('sort', None)
+
+    # The status chips replace the status param rather than appending to it.
+    querystring_nostatus = querystring.copy()
+    querystring_nostatus.pop('status', None)
 
     # Status filter options come from what's actually in the store, not a fixed
     # list - this WooCommerce install adds custom statuses (`delivered`,
@@ -25956,10 +26004,13 @@ def woocommerce_orders_list(request):
                 'count': count,
             })
 
+    woo_site_url = (getattr(settings, 'WOOCOMMERCE_SITE_URL', '') or '').rstrip('/')
+
     orders_detail_map = {
         str(o.woo_order_id): {
             'order_number': o.order.order_number if o.order_id else None,
             'status': o.status,
+            'status_label': WOO_STATUS_LABELS.get(o.status, o.status.replace('-', ' ').title()),
             'currency': o.currency,
             'total': str(o.total),
             'customer_name': o.customer_name,
@@ -25969,6 +26020,16 @@ def woocommerce_orders_list(request):
             'shipping': o.shipping_data,
             'items': o.line_items_json,
             'sync_source': o.sync_source,
+            'placed_at': format_nepali_datetime(o.woo_date_created) if o.woo_date_created else '',
+            'synced_at': format_nepali_datetime(o.created_at) if o.created_at else '',
+            'payment_method': (o.raw_payload or {}).get('payment_method_title', ''),
+            'customer_note': (o.raw_payload or {}).get('customer_note', ''),
+            # Deep link straight into wp-admin for this order, so an operator
+            # can jump from a suspicious row to the source of truth.
+            'wc_admin_url': (
+                f'{woo_site_url}/wp-admin/post.php?post={o.woo_order_id}&action=edit'
+                if woo_site_url else ''
+            ),
         }
         for o in page_obj.object_list
     }
@@ -25988,11 +26049,73 @@ def woocommerce_orders_list(request):
         'orders_detail_map': orders_detail_map,
         'per_page': per_page,
         'per_page_choices': WOO_PER_PAGE_CHOICES,
+        'sort': sort,
+        'woo_site_url': woo_site_url,
+        'querystring_nosort': querystring_nosort.urlencode(),
+        'querystring_nostatus': querystring_nostatus.urlencode(),
         # A store with thousands of orders yields hundreds of pages; hand the
         # template a windowed range instead of making it walk page_range.
         'page_window': paginator.get_elided_page_range(page_obj.number, on_each_side=2, on_ends=1),
     }
     return render(request, 'woocommerce_orders.html', context)
+
+
+@login_required
+def woocommerce_orders_export(request):
+    """Stream the current filter selection out as CSV.
+
+    Goes through the same _apply_woo_order_filters() the list page uses, so the
+    file always contains exactly the rows the operator was looking at - just
+    without the paging. Streamed because an unfiltered export is ~5k rows.
+    """
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
+
+    import csv
+    from django.http import StreamingHttpResponse
+    from integrations.models import WooCommerceOrder
+    from .timezone_utils import format_nepali_datetime, get_nepali_now
+
+    sort = request.GET.get('sort', '').strip() or '-date'
+    orders = _apply_woo_order_filters(
+        WooCommerceOrder.objects.select_related('order'),
+        search=request.GET.get('q', '').strip(),
+        status=request.GET.get('status', '').strip(),
+        sync=request.GET.get('sync', '').strip(),
+        date_from=request.GET.get('date_from', '').strip(),
+        date_to=request.GET.get('date_to', '').strip(),
+    ).order_by(*WOO_SORT_FIELDS.get(sort, WOO_SORT_FIELDS['-date']))
+
+    class Echo:
+        def write(self, value):
+            return value
+
+    writer = csv.writer(Echo())
+
+    def rows():
+        yield writer.writerow([
+            'WooCommerce ID', 'Order Date', 'Customer', 'Email', 'Phone',
+            'Status', 'Total', 'Currency', 'Internal Order', 'Sync Source', 'Synced At',
+        ])
+        for o in orders.iterator(chunk_size=500):
+            yield writer.writerow([
+                o.woo_order_id,
+                format_nepali_datetime(o.woo_date_created) if o.woo_date_created else '',
+                o.customer_name,
+                o.customer_email,
+                o.billing_phone,
+                WOO_STATUS_LABELS.get(o.status, o.status),
+                o.total,
+                o.currency,
+                o.order.order_number if o.order_id else '',
+                o.sync_source,
+                format_nepali_datetime(o.created_at) if o.created_at else '',
+            ])
+
+    stamp = get_nepali_now().strftime('%Y%m%d_%H%M')
+    response = StreamingHttpResponse(rows(), content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="woocommerce_orders_{stamp}.csv"'
+    return response
 
 
 @login_required
