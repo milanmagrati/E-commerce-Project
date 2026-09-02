@@ -25850,6 +25850,23 @@ def stop_notice(request, notice_id):
             
     return JsonResponse({'status': 'error', 'message': 'Invalid method'}, status=405)
 
+#: Human labels for WooCommerce's seven core statuses plus the custom ones this
+#: store registers. Anything else is title-cased from its slug at render time.
+WOO_STATUS_LABELS = {
+    'pending': 'Pending Payment',
+    'processing': 'Processing',
+    'on-hold': 'On Hold',
+    'completed': 'Completed',
+    'cancelled': 'Cancelled',
+    'refunded': 'Refunded',
+    'failed': 'Failed',
+    'delivered': 'Delivered',
+    'shipped': 'Shipped',
+}
+
+WOO_PER_PAGE_CHOICES = [25, 50, 100, 200]
+
+
 @login_required
 def woocommerce_orders_list(request):
     """View to list WooCommerce orders received via webhook/API poll, with
@@ -25904,21 +25921,40 @@ def woocommerce_orders_list(request):
         'total_revenue': all_orders.aggregate(total=Sum('total'))['total'] or 0,
     }
 
-    paginator = Paginator(orders, 20)
+    try:
+        per_page = int(request.GET.get('per_page', 25))
+    except (TypeError, ValueError):
+        per_page = 25
+    if per_page not in WOO_PER_PAGE_CHOICES:
+        per_page = 25
+
+    paginator = Paginator(orders, per_page)
     page_obj = paginator.get_page(request.GET.get('page'))
 
     querystring = request.GET.copy()
     querystring.pop('page', None)
 
-    status_choices = [
-        ('pending', 'Pending'),
-        ('processing', 'Processing'),
-        ('on-hold', 'On Hold'),
-        ('completed', 'Completed'),
-        ('cancelled', 'Cancelled'),
-        ('refunded', 'Refunded'),
-        ('failed', 'Failed'),
-    ]
+    # Status filter options come from what's actually in the store, not a fixed
+    # list - this WooCommerce install adds custom statuses (`delivered`,
+    # `shipped`) on top of the seven core ones, and a hardcoded list would hide
+    # thousands of orders behind an "All Statuses" the operator can't narrow.
+    status_counts = {
+        row['status']: row['count']
+        for row in all_orders.values('status').annotate(count=Count('id'))
+    }
+    seen = set()
+    status_choices = []
+    for value in list(WOO_STATUS_LABELS) + sorted(status_counts):
+        if value in seen:
+            continue
+        seen.add(value)
+        count = status_counts.get(value, 0)
+        if count or value in WOO_STATUS_LABELS:
+            status_choices.append({
+                'value': value,
+                'label': WOO_STATUS_LABELS.get(value, value.replace('-', ' ').replace('_', ' ').title()),
+                'count': count,
+            })
 
     orders_detail_map = {
         str(o.woo_order_id): {
@@ -25950,14 +25986,29 @@ def woocommerce_orders_list(request):
         'querystring': querystring.urlencode(),
         'result_count': paginator.count,
         'orders_detail_map': orders_detail_map,
+        'per_page': per_page,
+        'per_page_choices': WOO_PER_PAGE_CHOICES,
+        # A store with thousands of orders yields hundreds of pages; hand the
+        # template a windowed range instead of making it walk page_range.
+        'page_window': paginator.get_elided_page_range(page_obj.number, on_each_side=2, on_ends=1),
     }
     return render(request, 'woocommerce_orders.html', context)
 
 
 @login_required
 def woocommerce_orders_sync(request):
-    """Pull recent orders from the WooCommerce REST API on demand - the
-    on-page 'Refresh Data' action, for use before the push webhook is set up."""
+    """Pull orders from the WooCommerce REST API on demand.
+
+    Two modes, both driven by the on-page sync controls:
+    - mode=recent (default): last 30 days, in one request - the quick
+      "Refresh Data" action, for use before the push webhook is set up.
+    - mode=full: crawls the *entire* order history, one small batch of
+      pages per request. A store with thousands of orders takes minutes to
+      fully page through - far longer than a single request/gunicorn worker
+      should be held open - so the frontend calls this repeatedly with an
+      advancing `page` cursor (returned as `next_page`) until `done: true`,
+      showing progress from `total_pages`/`total_count` along the way.
+    """
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required'}, status=405)
     if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
@@ -25966,14 +26017,37 @@ def woocommerce_orders_sync(request):
     from integrations.services import ingest_polled_order
     from services.woocommerce_service import WooCommerceService
 
+    mode = request.POST.get('mode', 'recent')
+    try:
+        start_page = max(1, int(request.POST.get('page', 1)))
+    except (TypeError, ValueError):
+        start_page = 1
+
     try:
         service = WooCommerceService()
-        since = timezone.now() - timezone.timedelta(days=30)
+
+        if mode == 'full':
+            batch = service.fetch_orders_batch(start_page=start_page, batch_pages=4, per_page=50)
+        else:
+            since = timezone.now() - timezone.timedelta(days=30)
+            batch = service.fetch_orders_batch(
+                start_page=start_page, batch_pages=10, per_page=50,
+                modified_after=since.isoformat(),
+            )
+
         synced = 0
-        for raw in service.fetch_all_orders(modified_after=since.isoformat(), max_pages=10):
+        for raw in batch['orders']:
             ingest_polled_order(raw)
             synced += 1
-        return JsonResponse({'success': True, 'synced': synced})
+
+        return JsonResponse({
+            'success': True,
+            'synced': synced,
+            'next_page': batch['next_page'],
+            'done': batch['next_page'] is None,
+            'total_pages': batch['total_pages'],
+            'total_count': batch['total_count'],
+        })
     except Exception as e:
         logger.exception('WooCommerce manual sync failed')
         return JsonResponse({'success': False, 'error': str(e)}, status=500)

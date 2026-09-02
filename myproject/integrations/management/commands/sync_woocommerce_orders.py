@@ -19,16 +19,23 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             '--since-hours', type=int, default=24,
-            help='Only fetch orders modified in the last N hours (default: 24)',
+            help='Only fetch orders modified in the last N hours (default: 24). Ignored with --full.',
+        )
+        parser.add_argument(
+            '--full', action='store_true',
+            help='Ignore --since-hours and crawl every order in the store (one-off historical backfill).',
         )
 
     def handle(self, *args, **options):
-        since = timezone.now() - timezone.timedelta(hours=options['since_hours'])
         service = WooCommerceService()
+        modified_after = None
+        if not options['full']:
+            since = timezone.now() - timezone.timedelta(hours=options['since_hours'])
+            modified_after = since.isoformat()
 
         synced = 0
         try:
-            for raw in service.fetch_all_orders(modified_after=since.isoformat()):
+            for raw in service.fetch_all_orders(modified_after=modified_after, max_pages=10_000):
                 ingest_polled_order(raw)
                 synced += 1
         except Exception:

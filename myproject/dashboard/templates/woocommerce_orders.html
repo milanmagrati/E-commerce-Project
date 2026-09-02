@@ -92,9 +92,67 @@
         animation: spin-once 0.8s ease;
     }
 
+    .btn-refresh-full {
+        background: #21759b;
+        color: white;
+        border-color: #21759b;
+    }
+
+    .btn-refresh-full:hover:not(:disabled) {
+        background: #185a78;
+        color: white;
+        border-color: #185a78;
+    }
+
     @keyframes spin-once {
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
+    }
+
+    /* Sync progress bar */
+    .woo-sync-progress-wrap {
+        position: relative;
+        margin-top: 1.25rem;
+        padding-top: 1rem;
+        border-top: 1px dashed #e3e6f0;
+    }
+
+    .woo-sync-progress-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #2c3e50;
+    }
+
+    .woo-sync-progress-count {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #21759b;
+    }
+
+    .woo-sync-progress-track {
+        width: 100%;
+        height: 8px;
+        border-radius: 8px;
+        background: #eef1f8;
+        overflow: hidden;
+    }
+
+    .woo-sync-progress-bar {
+        height: 100%;
+        border-radius: 8px;
+        background: linear-gradient(90deg, #21759b, #4e9cbf);
+        transition: width 0.3s ease;
+    }
+
+    .woo-sync-progress-bar.indeterminate {
+        width: 30% !important;
+        animation: woo-progress-indeterminate 1.2s ease-in-out infinite;
+    }
+
+    @keyframes woo-progress-indeterminate {
+        0% { margin-left: 0%; }
+        50% { margin-left: 70%; }
+        100% { margin-left: 0%; }
     }
 
     /* Stat cards */
@@ -344,6 +402,7 @@
     .badge-soft-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
     .badge-soft-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
     .badge-soft-secondary { background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
+    .badge-soft-info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
 
     .sync-badge {
         display: inline-flex;
@@ -513,10 +572,22 @@
                 <p class="woo-subtitle mb-0">Monitor and manage all orders synchronized seamlessly from your WooCommerce site.</p>
             </div>
         </div>
-        <div>
-            <button class="btn-refresh" id="wooSyncBtn" onclick="wooSyncNow();">
-                <i class="fas fa-sync-alt"></i> Refresh Data
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn-refresh" id="wooSyncBtn" onclick="wooSyncNow();" title="Pull orders modified in the last 30 days">
+                <i class="fas fa-sync-alt"></i> Refresh Recent
             </button>
+            <button class="btn-refresh btn-refresh-full" id="wooFullSyncBtn" onclick="wooFullSyncNow();" title="Crawl the entire WooCommerce order history - use once to backfill, then Refresh Recent keeps it current">
+                <i class="fas fa-cloud-download-alt"></i> Full Sync (All Orders)
+            </button>
+        </div>
+    </div>
+    <div id="wooSyncProgressWrap" class="woo-sync-progress-wrap" hidden>
+        <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="woo-sync-progress-label" id="wooSyncProgressLabel">Syncing...</span>
+            <span class="woo-sync-progress-count" id="wooSyncProgressCount"></span>
+        </div>
+        <div class="woo-sync-progress-track">
+            <div class="woo-sync-progress-bar" id="wooSyncProgressBar" style="width: 0%;"></div>
         </div>
     </div>
 </div>
@@ -562,9 +633,11 @@
         <div class="woo-filter-group">
             <label for="wooStatus">Order Status</label>
             <select class="form-select" id="wooStatus" name="status" onchange="document.getElementById('wooFilterForm').submit();">
-                <option value="">All Statuses</option>
-                {% for value, display in status_choices %}
-                <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ display }}</option>
+                <option value="">All Statuses ({{ stats.total }})</option>
+                {% for choice in status_choices %}
+                <option value="{{ choice.value }}" {% if status_filter == choice.value %}selected{% endif %}>
+                    {{ choice.label }} ({{ choice.count }})
+                </option>
                 {% endfor %}
             </select>
         </div>
@@ -583,6 +656,14 @@
         <div class="woo-filter-group">
             <label for="wooDateTo">To</label>
             <input type="date" class="form-control" id="wooDateTo" name="date_to" value="{{ date_to }}">
+        </div>
+        <div class="woo-filter-group">
+            <label for="wooPerPage">Per Page</label>
+            <select class="form-select" id="wooPerPage" name="per_page" onchange="document.getElementById('wooFilterForm').submit();">
+                {% for choice in per_page_choices %}
+                <option value="{{ choice }}" {% if per_page == choice %}selected{% endif %}>{{ choice }}</option>
+                {% endfor %}
+            </select>
         </div>
         <div class="woo-filter-actions">
             <button type="submit" class="btn-apply-filter">
@@ -635,17 +716,23 @@
                             </td>
                             <td>
                                 {% if order.status == 'pending' %}
-                                    <span class="badge-soft badge-soft-warning"><i class="fas fa-clock me-1"></i> Pending</span>
+                                    <span class="badge-soft badge-soft-warning"><i class="fas fa-clock me-1"></i> Pending Payment</span>
                                 {% elif order.status == 'processing' %}
                                     <span class="badge-soft badge-soft-primary"><i class="fas fa-cog fa-spin me-1"></i> Processing</span>
                                 {% elif order.status == 'on-hold' %}
                                     <span class="badge-soft badge-soft-warning"><i class="fas fa-pause me-1"></i> On Hold</span>
                                 {% elif order.status == 'completed' %}
                                     <span class="badge-soft badge-soft-success"><i class="fas fa-check me-1"></i> Completed</span>
-                                {% elif order.status == 'cancelled' or order.status == 'failed' or order.status == 'refunded' %}
+                                {% elif order.status == 'delivered' %}
+                                    <span class="badge-soft badge-soft-success"><i class="fas fa-truck me-1"></i> Delivered</span>
+                                {% elif order.status == 'shipped' %}
+                                    <span class="badge-soft badge-soft-info"><i class="fas fa-shipping-fast me-1"></i> Shipped</span>
+                                {% elif order.status == 'refunded' %}
+                                    <span class="badge-soft badge-soft-secondary"><i class="fas fa-undo me-1"></i> Refunded</span>
+                                {% elif order.status == 'cancelled' or order.status == 'failed' %}
                                     <span class="badge-soft badge-soft-danger"><i class="fas fa-times me-1"></i> {{ order.status|title }}</span>
                                 {% else %}
-                                    <span class="badge-soft badge-soft-secondary">{{ order.status|title|default:"Unknown" }}</span>
+                                    <span class="badge-soft badge-soft-secondary">{{ order.status|cut:"-"|title|default:"Unknown" }}</span>
                                 {% endif %}
                             </td>
                             <td>
@@ -689,37 +776,54 @@
             <div class="woo-pagination-wrap">
                 <span class="text-muted" style="font-size: 0.85rem;">
                     Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                    <span class="d-none d-md-inline">&middot; {{ result_count }} order{{ result_count|pluralize }} total</span>
                 </span>
                 <ul class="pagination woo-pagination">
-                    <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
-                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page=1">
+                    {# Every arrow is guarded: resolving previous_page_number / next_page_number
+                       when there is no such page raises EmptyPage and 500s the whole page. #}
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page=1" title="First page">
                             <i class="fas fa-angle-double-left"></i>
                         </a>
                     </li>
-                    <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
-                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">
+                    <li class="page-item">
+                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.previous_page_number }}" title="Previous page">
                             <i class="fas fa-angle-left"></i>
                         </a>
                     </li>
-                    {% for num in page_obj.paginator.page_range %}
-                        {% if num == page_obj.number %}
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link"><i class="fas fa-angle-double-left"></i></span></li>
+                    <li class="page-item disabled"><span class="page-link"><i class="fas fa-angle-left"></i></span></li>
+                    {% endif %}
+
+                    {% for num in page_window %}
+                        {% if num == page_obj.paginator.ELLIPSIS %}
+                        <li class="page-item disabled"><span class="page-link">{{ num }}</span></li>
+                        {% elif num == page_obj.number %}
                         <li class="page-item active"><span class="page-link">{{ num }}</span></li>
-                        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                        {% else %}
                         <li class="page-item">
                             <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ num }}">{{ num }}</a>
                         </li>
                         {% endif %}
                     {% endfor %}
-                    <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
-                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.next_page_number }}">
+
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.next_page_number }}" title="Next page">
                             <i class="fas fa-angle-right"></i>
                         </a>
                     </li>
-                    <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
-                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.paginator.num_pages }}">
+                    <li class="page-item">
+                        <a class="page-link" href="?{% if querystring %}{{ querystring }}&{% endif %}page={{ page_obj.paginator.num_pages }}" title="Last page">
                             <i class="fas fa-angle-double-right"></i>
                         </a>
                     </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link"><i class="fas fa-angle-right"></i></span></li>
+                    <li class="page-item disabled"><span class="page-link"><i class="fas fa-angle-double-right"></i></span></li>
+                    {% endif %}
                 </ul>
             </div>
             {% endif %}
@@ -747,15 +851,47 @@
 
 {% block extra_js %}
 <script>
+function wooSetButtonsDisabled(disabled) {
+    document.getElementById('wooSyncBtn').disabled = disabled;
+    document.getElementById('wooFullSyncBtn').disabled = disabled;
+}
+
+function wooShowProgress(label) {
+    const wrap = document.getElementById('wooSyncProgressWrap');
+    const bar = document.getElementById('wooSyncProgressBar');
+    wrap.hidden = false;
+    bar.classList.add('indeterminate');
+    bar.style.width = '';
+    document.getElementById('wooSyncProgressLabel').textContent = label;
+    document.getElementById('wooSyncProgressCount').textContent = '';
+}
+
+function wooUpdateProgress(label, syncedSoFar, page, totalPages) {
+    const bar = document.getElementById('wooSyncProgressBar');
+    document.getElementById('wooSyncProgressLabel').textContent = label;
+    document.getElementById('wooSyncProgressCount').textContent =
+        totalPages ? `Page ${Math.min(page, totalPages)} of ${totalPages} - ${syncedSoFar} order(s) synced` : `${syncedSoFar} order(s) synced`;
+    if (totalPages) {
+        bar.classList.remove('indeterminate');
+        bar.style.width = Math.min(100, Math.round((page / totalPages) * 100)) + '%';
+    }
+}
+
+function wooHideProgress() {
+    document.getElementById('wooSyncProgressWrap').hidden = true;
+}
+
 function wooSyncNow() {
     const btn = document.getElementById('wooSyncBtn');
     const originalHtml = btn.innerHTML;
-    btn.disabled = true;
+    wooSetButtonsDisabled(true);
     btn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Syncing...';
+    wooShowProgress('Pulling orders modified in the last 30 days...');
 
     fetch("{% url 'woocommerce_orders_sync' %}", {
         method: 'POST',
         headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+        body: new URLSearchParams({ mode: 'recent', page: '1' }),
     })
         .then(response => response.json())
         .then(data => {
@@ -764,15 +900,67 @@ function wooSyncNow() {
                 location.reload();
             } else {
                 alertify.error(data.error || 'Sync failed.');
-                btn.disabled = false;
+                wooSetButtonsDisabled(false);
                 btn.innerHTML = originalHtml;
+                wooHideProgress();
             }
         })
         .catch(() => {
             alertify.error('Sync failed - could not reach the server.');
-            btn.disabled = false;
+            wooSetButtonsDisabled(false);
             btn.innerHTML = originalHtml;
+            wooHideProgress();
         });
+}
+
+function wooFullSyncNow() {
+    if (!confirm('This crawls every order in your WooCommerce store history. It can take a few minutes for large stores - continue?')) {
+        return;
+    }
+
+    const btn = document.getElementById('wooFullSyncBtn');
+    const originalHtml = btn.innerHTML;
+    wooSetButtonsDisabled(true);
+    btn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Full Sync Running...';
+    wooShowProgress('Starting full sync...');
+
+    let totalSynced = 0;
+
+    const runBatch = (page) => {
+        fetch("{% url 'woocommerce_orders_sync' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+            body: new URLSearchParams({ mode: 'full', page: String(page) }),
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    alertify.error(data.error || 'Full sync failed.');
+                    wooSetButtonsDisabled(false);
+                    btn.innerHTML = originalHtml;
+                    wooHideProgress();
+                    return;
+                }
+
+                totalSynced += data.synced;
+                wooUpdateProgress('Crawling WooCommerce order history...', totalSynced, page, data.total_pages);
+
+                if (data.done) {
+                    alertify.success(`Full sync complete - ${totalSynced} order(s) synced from WooCommerce.`);
+                    location.reload();
+                } else {
+                    runBatch(data.next_page);
+                }
+            })
+            .catch(() => {
+                alertify.error('Full sync failed - could not reach the server.');
+                wooSetButtonsDisabled(false);
+                btn.innerHTML = originalHtml;
+                wooHideProgress();
+            });
+    };
+
+    runBatch(1);
 }
 
 const wooOrdersDetailData = JSON.parse(document.getElementById('woo-orders-detail-data').textContent);

@@ -9,7 +9,10 @@ from .models import WooCommerceOrder
 logger = logging.getLogger('integrations')
 User = get_user_model()
 
-# Map WooCommerce order statuses to internal Order statuses
+# Map WooCommerce order statuses to internal Order statuses.
+# Beyond WooCommerce's seven core statuses this store also uses custom ones
+# registered by plugins/themes (`delivered`, `shipped`) - they arrive over the
+# API with the `wc-` prefix already stripped, same as the core ones.
 WOO_STATUS_MAP = {
     'pending': 'pending',
     'processing': 'confirmed',
@@ -18,6 +21,8 @@ WOO_STATUS_MAP = {
     'cancelled': 'cancelled',
     'refunded': 'cancelled',
     'failed': 'cancelled',
+    'delivered': 'delivered',
+    'shipped': 'shipped',
 }
 
 
