@@ -57,10 +57,12 @@ There is also an **order-centric** view of the same thing:
 
 | Page | URL | View | Shows |
 |---|---|---|---|
-| Return orders | `/orders/returns/` | `return_orders_list` (`views.py:5084`) | Orders whose `order_status` is `return` or `return_processing` (`:5095-5102`) |
+| Return orders | `/orders/returns/` | `return_orders_list` (`views.py:5084`) | Orders whose `order_status` is `return`, `return_arrived` or `return_processing` |
 
-That page has a `stage` parameter — `processing` or `completed` — with counts computed at
-`:5162-5165` and applied at `:5166-5171`.
+That page has a `stage` parameter — `processing` (still travelling back), `arrived` (at the
+courier's return counter; past the point a redirect is possible, but not ours yet) or
+`completed` (back with us) — with the counts computed just before the filter is applied, so
+the dropdown keeps showing every total for the current search/date/payment selection.
 
 ---
 
@@ -114,9 +116,9 @@ to **`returned`** via `sync_order_status_fields(order, 'returned')`.
 Two guards:
 
 - It is a **no-op if the order is already `cancelled` or `returned`** (`:12634-12635`).
-- `returned` is in `COMPLETED_RETURN_SYSTEM_STATUSES` (`services/ncm_service.py:619`), so a
-  later NCM sync reporting `return_processing` **cannot** downgrade it. A staff scan is a
-  stronger signal than anything NCM reports.
+- `returned` is in `COMPLETED_RETURN_SYSTEM_STATUSES` (`services/ncm_service.py`), so a
+  later NCM sync reporting `return_processing` or `return_arrived` **cannot** downgrade it.
+  A staff scan is a stronger signal than anything NCM reports.
 
 ---
 

@@ -278,7 +278,7 @@ When `event == 'order_marked_rtv'`, the handler additionally upserts an `RTVOrde
 |---|---|
 | `delivered` | `delivered` |
 | `in_transit`, `shipped` | `in_transit` |
-| `return`, `return_processing`, `returned`, `return_initiated`, `return_approved` | `returned` |
+| `return`, `return_arrived`, `return_processing`, `returned`, `return_initiated`, `return_approved` | `returned` |
 | anything else | **no SMS** |
 
 Delivery goes through `services/sms_service.py`, which abstracts over `SMS_PROVIDER`

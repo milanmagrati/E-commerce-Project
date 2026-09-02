@@ -88,7 +88,8 @@ flowchart TD
     D --> F[NCM reports movement<br/>status = in_transit]
     F --> G[Delivered<br/>status = delivered<br/>payment = paid]
     F --> H[Return started<br/>status = return_processing]
-    H --> I[Back with vendor<br/>status = return]
+    H --> H2[At courier's return branch<br/>status = return_arrived]
+    H2 --> I[Back with vendor<br/>status = return]
     I --> J[Scanned back in<br/>status = returned]
 
     A --> K[Cancelled<br/>status = cancelled]

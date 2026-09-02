@@ -268,8 +268,9 @@ by order and sorts newest-first.
 
 `unique_together = ('setup_type', 'name')`, ordered by `setup_type, sort_order, name`.
 
-**Only one status row is seeded by migration** — `"Return Processing"`
-(`dashboard/migrations/0077_return_processing_status_setup.py`). Everything else is either
+**Only two status rows are seeded by migration** — `"Return Processing"`
+(`dashboard/migrations/0077_return_processing_status_setup.py`) and `"Return Arrived"`
+(`0088_return_arrived_status_setup.py`). Everything else is either
 created by an admin in Setup Management, or **auto-created by code** when a status name
 appears that has no row yet. Three places do that:
 
@@ -376,4 +377,5 @@ than approximate.
 - `dashboard/models.py` — every model in this chapter
 - `dashboard/signals.py` — the single order signal
 - `dashboard/decimal_utils.py` — `safe_decimal`, `validate_decimal_fields`
-- `dashboard/migrations/0077_return_processing_status_setup.py` — the only seeded status
+- `dashboard/migrations/0077_return_processing_status_setup.py`,
+  `0088_return_arrived_status_setup.py` — the only seeded statuses

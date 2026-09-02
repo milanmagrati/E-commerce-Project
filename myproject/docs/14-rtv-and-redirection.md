@@ -16,12 +16,12 @@ flowchart TD
     A[Order delivered to NCM] --> B{Delivery fails}
     B --> C["NCM marks vendor_return<br/>status: Order Marked Return"]
     C --> D["RTVOrder row created<br/>system status: return_processing"]
-    D --> E["Sent to Vendor"]
-    E --> F["Arrived at RETURN (BRANCH)"]
-    F --> G{Redirect it?}
+    D --> G{"Redirect it?<br/>only while NCM says<br/>Arrived at (DELIVERY BRANCH)"}
     G -- Yes --> H["Possible Redirection page<br/>match to a new customer"]
     H --> I["NCM redirect call<br/>order status: redirected"]
-    G -- No --> J["Returned to Warehouse<br/>system status: return"]
+    G -- No --> E["Sent to Vendor · Dispatched to RETURN (BRANCH)<br/>system status: return_processing"]
+    E --> F["Arrived at RETURN (BRANCH)<br/>system status: return_arrived<br/>— too late to redirect"]
+    F --> J["Returned to Warehouse<br/>system status: return"]
     J --> K["Staff scan it back in<br/>system status: returned"]
 
     style I fill:#16a34a,color:#fff
@@ -180,12 +180,12 @@ A row is excluded if **any** of:
 |---|---|
 | The RTV's `last_status` is one of | `returned`, `delivered`, `sent to vendor` |
 | The linked order's `ncm_status` matches the regex | `delivered\|returned\|sent to vendor` |
-| The linked order's `status` or `order_status` is | `delivered` |
+| The linked order's `status` or `order_status` is one of `NON_REDIRECTABLE_ORDER_STATUSES` | `delivered`, `return_arrived` |
 
 The regex exists because the local order's stored NCM status can carry branch-qualified
 variants (`"Returned to Warehouse"`) rather than an exact match.
 
-**Gate 2 — redirect-eligible** (`:5431-5446`)
+**Gate 2 — redirect-eligible**
 
 ```python
 REDIRECT_ELIGIBLE_STATUS_PREFIXES = ('arrived', 'pickup complete', 'returned to warehouse')
@@ -195,9 +195,44 @@ Taken **verbatim from NCM's own rejection message**: *"Order can only be redirec
 status is: Arrived, Pickup Complete, Returned to Warehouse."*
 
 Matched as a case-insensitive **prefix**, so branch-qualified variants like
-`"Arrived at RETURN (TINKUNE)"` still count. A parcel still travelling back
+`"Arrived at POKHARA"` still count, **minus** the return-leg arrivals
+(`NCMService.is_return_arrival()`). A parcel still travelling back
 (`"Dispatched to Return (…)"`) is **not** a candidate — NCM's redirect endpoint refuses it
 outright.
+
+> **The `arrived` prefix means two opposite things.** NCM names the branch a parcel just
+> reached, and prefixes that branch with `RETURN` on the way back:
+>
+> | Status | Where the parcel is | Redirectable |
+> |---|---|---|
+> | `Arrived at POKHARA` | at its **delivery** branch | ✅ redirect it to another Pokhara customer |
+> | `Dispatched to RETURN NAYA BUSPARK` | moving back | ❌ still travelling |
+> | `Arrived at RETURN NAYA BUSPARK` | at NCM's **return counter** | ❌ came all the way back |
+>
+> The last row used to pass this gate on its `arrived` prefix, so a parcel that had
+> finished the whole return journey sat on the Possible Redirection page offering a
+> redirect NCM would always refuse. `is_return_arrival()` (`services/ncm_service.py`) —
+> *starts with `arrived` **and** contains `return`* — is the single definition of that
+> difference; the list view's SQL filter, `_rtv_is_redirect_eligible()`, and
+> `isReturnLegArrival()` in `possible_redirection.html` all mirror it, and the same hop
+> resolves the order to the `return_arrived` status (see
+> [07 — Order statuses](./07-order-statuses.md)).
+>
+> **A return-leg arrival on *either* stored copy vetoes the row** — this is the one place
+> the two-copy OR below does not apply. Everywhere else either copy may lag, and "at a
+> branch" is a state a parcel enters and leaves. A return-leg arrival is *monotonic*: a
+> parcel does not un-arrive at the return counter, so whichever copy reports it is the
+> fresher one by definition.
+>
+> That is not a theoretical nicety — it is the shape the bug actually had. NCM's
+> `vendor/orders` endpoint, which feeds `RTVOrder.last_status`, answers with the coarse
+> word **`"Arrived"`**, while the tracking endpoint behind `Order.ncm_status` gives
+> **`"Arrived at RETURN NAYA BUSPARK"`**. OR-ing them kept the parcel listed on the coarse
+> copy alone, so a per-copy exclusion would have fixed nothing.
+>
+> The linked order's own system status `return_arrived` is a third veto
+> (`NON_REDIRECTABLE_ORDER_STATUSES`), so a blank or lagging `ncm_status` cannot lose the
+> fact either.
 
 Both gates read **two** stored copies of the parcel's NCM status and accept the row if
 *either* says "at a branch". That is deliberate, and it is also where the page's one
@@ -207,7 +242,9 @@ persistent bug lived — see the next section.
 flowchart TD
     A[All RTV rows] --> B{Non-redirectable?<br/>returned / delivered / sent to vendor}
     B -- Yes --> C[Excluded]
-    B -- No --> D{Redirect-eligible?<br/>arrived / pickup complete / returned to warehouse}
+    B -- No --> R{"Return-leg arrival?<br/>Arrived at RETURN (BRANCH)"}
+    R -- Yes --> S["Excluded -- already back<br/>at the return counter"]
+    R -- No --> D{Redirect-eligible?<br/>arrived / pickup complete / returned to warehouse}
     D -- No --> E["Excluded -- still in transit,<br/>NCM would refuse"]
     D -- Yes --> F{Already redirected?}
     F -- Yes --> G[Excluded]
@@ -361,7 +398,8 @@ Covered in full in [07 — Order statuses](./07-order-statuses.md). The short ve
 | `Order Marked Return` | `return_processing` |
 | `Sent to Vendor` | `return_processing` |
 | `Return Initiated` / `Return Approved` | `return_processing` |
-| `Arrived at RETURN (…)` and other unmatched return-worded strings | `return_processing` (keyword fallback) |
+| `Dispatched to RETURN (…)` and other unmatched return-worded strings | `return_processing` (keyword fallback) |
+| `Arrived at RETURN (…)` | `return_arrived` (`is_return_arrival`, checked before the keyword fallback) |
 | `Returned to Warehouse` | `return` |
 | `Returned` | `returned` |
 | `Delivered` **with** `vendor_return` | `return` if the text reads as completed, else `return_processing` |
@@ -372,7 +410,7 @@ The keyword fallback triggers on `return`, `rtv`, or `sent to vendor`
 **Two guards keep the pipeline honest:**
 
 1. `sync_order_status_fields` never downgrades a finished return (`return` / `returned`)
-   back to `return_processing` (`ncm_service.py:991-994`).
+   back to an in-progress stage (`return_processing` / `return_arrived`).
 2. Bulk sync never moves an order out of the return pipeline on a verdict not backed by an
    actual `vendor_return` flag (`ncm/bulk_sync.py:312-318`).
 
@@ -395,8 +433,10 @@ The keyword fallback triggers on `return`, `rtv`, or `sent to vendor`
   them. Cast before doing arithmetic.
 - **The redirect window is narrow.** Both gates must pass, and they mirror NCM's own rules —
   loosening them locally just moves the rejection to NCM.
-- **Redirect eligibility is a prefix match.** `"Arrived at RETURN (TINKUNE)"` passes;
-  `"Dispatched to RETURN (TINKUNE)"` does not.
+- **Redirect eligibility is a prefix match, minus the return leg.** `"Arrived at POKHARA"`
+  passes; `"Dispatched to RETURN (TINKUNE)"` and `"Arrived at RETURN (TINKUNE)"` do not.
+  The last one is the trap: it shares the `arrived` prefix but the parcel has already
+  come all the way back, so it resolves to `return_arrived` and never lists here.
 - **A listed row is not proof the parcel is still at the branch.** Eligibility reads two
   copies of the status and accepts either, so one stale copy can list a parcel that has moved
   on. The page corrects itself by asking NCM on load — do not "simplify" that away, and do

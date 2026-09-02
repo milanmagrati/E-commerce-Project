@@ -33,7 +33,8 @@ A one-page cheat sheet. Full explanations in [07 — Order statuses](./07-order-
 | `packed` | Business-specific |
 | `delivered` | Delivered to the customer |
 | `cancelled` | **Protected — no sync overwrites it** |
-| `return_processing` | In the return-to-vendor pipeline |
+| `return_processing` | Still travelling back to the vendor |
+| `return_arrived` | At the courier's **return** branch — return leg over, no longer redirectable |
 | `return` | Confirmed back with the vendor |
 | `returned` | Physically scanned back in |
 | `redirected` | Redirected to a different customer |
@@ -66,8 +67,14 @@ Payment: `pending`, `paid`, `partial`, `cod_pending`
 | `Order Marked Return` | `return_processing` |
 | `Sent to Vendor` | `return_processing` |
 | `Returned to Warehouse` | `return` |
+| *starts with `arrived` **and** names a `RETURN` branch* | `return_arrived` |
 | *contains `return` / `rtv` / `sent to vendor`* | `return_processing` |
 | *anything else* | `processing` |
+
+The `return_arrived` row is checked **before** the keyword fallback, which would otherwise
+swallow it. `Arrived at POKHARA` (delivery branch, redirectable) and
+`Arrived at RETURN NAYA BUSPARK` (came all the way back, not redirectable) differ only in
+that `RETURN` — `NCMService.is_return_arrival()` is the single test for it.
 
 ## Payment mapping
 
@@ -102,13 +109,16 @@ Payment: `pending`, `paid`, `partial`, `cod_pending`
 | false | `Delivered` | `('delivered', 'paid')` |
 | false | anything else | ordinary mapping |
 | **true** | reads as completed | `('return', None)` |
+| **true** | is a return-leg arrival | `('return_arrived', None)` |
 | **true** | anything else | `('return_processing', None)` |
 
 "Reads as completed" = starts with `delivered`, `confirmed`, `returned`,
 `returned to warehouse`, or `return completed`.
 
 - ✅ `Returned to Warehouse (TINKUNE)` → completed
-- ❌ `Arrived at RETURN (TINKUNE)` → still travelling
+- 🟠 `Arrived at RETURN (TINKUNE)` → return-leg arrival: back at the courier's return
+  counter, past the point a redirect is possible, not yet received by us
+- ❌ `Dispatched to RETURN (TINKUNE)` → still travelling
 
 `vendor_return` arrives as the **string** `'True'` / `'False'`.
 
@@ -120,7 +130,8 @@ Payment: `pending`, `paid`, `partial`, `cod_pending`
 |---|---|---|
 | `PROTECTED_STATUSES` (`ncm/bulk_sync.py:52`) | `cancelled` | **Never** overwritten by any sync, regardless of settings |
 | `DEFAULT_TERMINAL_STATUSES` (`:40-43`) | `cancelled`, `delivered`, `return`, `returned`, `return_initiated`, `return_approved` | Skipped by the background sync. **Overridable** via `APISettings.bulk_sync_included_statuses` |
-| `COMPLETED_RETURN_SYSTEM_STATUSES` (`ncm_service.py:619`) | `return`, `returned` | Never downgraded to `return_processing` |
+| `COMPLETED_RETURN_SYSTEM_STATUSES` (`ncm_service.py`) | `return`, `returned` | Never downgraded to an in-progress stage |
+| `RETURN_IN_PROGRESS_SYSTEM_STATUSES` (`ncm_service.py`) | `return_processing`, `return_arrived` | The verdicts the guard above refuses |
 
 ---
 
@@ -150,7 +161,8 @@ Consulted by: webhook · per-order sync · bulk sync · sync-all · order recove
 |---|---|
 | `Delivered`, `Confirmed` | `bg-success` |
 | `In Transit`, `Dispatched`, `Arrived`, `Sent for Delivery`, `Out for Delivery` | `bg-primary` |
-| `Returned`, `Return Initiated`, `Return Approved`, `Order Marked Return`, `Sent to Vendor`, `Returned to Warehouse` | `bg-danger` |
+| `Returned`, `Return Initiated`, `Return Approved`, `Order Marked Return`, `Sent to Vendor`, `Returned to Warehouse` — matched as a **prefix**, so `Returned to Warehouse (TINKUNE)` counts | `bg-danger` |
+| anything naming a `RETURN` branch (`Arrived at RETURN NAYA BUSPARK`, `Dispatched to RETURN ( TINKUNE)`) — whole-word match | `bg-danger` |
 | `Cancelled` | `bg-danger` |
 | `Order Created`, `Pickup Order Created`, `Drop off Order Created`, `Pickup Complete`, `Drop off Order Collected` | `bg-warning text-dark` |
 | anything else | `bg-secondary` |
@@ -165,8 +177,12 @@ Blank → `Pickup Order Created` (NCM) or `Order Created` (PND).
 
 | Gate | Rule |
 |---|---|
-| **Non-redirectable** | RTV `last_status` in `returned` / `delivered` / `sent to vendor`, **or** the order's `ncm_status` matches `delivered\|returned\|sent to vendor`, **or** the order is `delivered` |
-| **Redirect-eligible** | Status starts with `arrived`, `pickup complete`, or `returned to warehouse` (NCM's own rule) |
+| **Non-redirectable** | RTV `last_status` in `returned` / `delivered` / `sent to vendor`, **or** the order's `ncm_status` matches `delivered\|returned\|sent to vendor`, **or** the order's status is `delivered` / `return_arrived` |
+| **Redirect-eligible** | Status starts with `arrived`, `pickup complete`, or `returned to warehouse` (NCM's own rule) — **minus** return-leg arrivals (`is_return_arrival`), which share the `arrived` prefix but mean the parcel already came home |
+
+A return-leg arrival on **either** stored copy vetoes the row; every other rule OR-s the two.
+It is monotonic, so the copy reporting it is the fresher one — and in practice the RTV copy
+carries NCM's coarse `"Arrived"` while the order copy carries `"Arrived at RETURN …"`.
 
 ---
 

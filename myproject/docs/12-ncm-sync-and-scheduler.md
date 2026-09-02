@@ -215,6 +215,14 @@ flowchart TD
 `DEFAULT_TERMINAL_STATUSES` (`:40-43`) =
 `cancelled`, `delivered`, `return`, `returned`, `return_initiated`, `return_approved`.
 
+> **`return_arrived` is deliberately *not* in that set**, exactly like
+> `return_processing`. The parcel has reached the courier's return counter but NCM has not
+> said `Returned to Warehouse` yet, so the sync has to keep asking — putting it in the
+> terminal set would freeze the order one hop short of the end of the pipeline, which is
+> the failure mode `manage.py repair_return_stage` exists to clean up. It *is* in
+> `RETURN_PIPELINE_STATUSES` (`:25`), so the guard that refuses to take an order out of the
+> return pipeline on a verdict with no `vendor_return` flag covers it too.
+
 `PROTECTED_STATUSES` (`:52`) is enforced **regardless of selection**, because
 `bulk_sync_included_statuses` is admin-configurable and could otherwise be set to include
 `cancelled`.

@@ -50,8 +50,10 @@ actions and `sync_order_status_fields()` for courier-driven ones.
 Because `status` has no `choices`, the list of valid statuses lives in the **`Setup` table**
 (`dashboard/models.py:1583`), rows with `setup_type='status'`.
 
-Only **one** row is seeded by migration: `"Return Processing"`
-(`dashboard/migrations/0077_return_processing_status_setup.py`). Everything else is either
+Only **two** rows are seeded by migration: `"Return Processing"`
+(`dashboard/migrations/0077_return_processing_status_setup.py`) and `"Return Arrived"`
+(`0088_return_arrived_status_setup.py`, which also backfills the orders already in that
+stage). Everything else is either
 created by an admin at *Settings → Setup Management*, or **auto-created by code** when a
 status name appears with no matching row. Three places do that:
 
@@ -80,7 +82,8 @@ These are the values the code actually produces:
 | `packed` | Business-specific | Setup / staff |
 | `delivered` | Delivered to the customer | NCM mapping |
 | `cancelled` | Cancelled locally. **Protected — no sync overwrites it** | Staff |
-| `return_processing` | Somewhere in the return-to-vendor pipeline | NCM mapping |
+| `return_processing` | Still travelling back to the vendor | NCM mapping |
+| `return_arrived` | Arrived at the courier's **return** branch — the return leg is over, so it can no longer be redirected, but it is not ours yet | NCM mapping |
 | `return` | Confirmed back with the vendor | NCM mapping |
 | `returned` | Physically scanned back in by staff | Return Management |
 | `redirected` | Redirected to a different customer | Redirection flow |
@@ -113,6 +116,8 @@ stateDiagram-v2
     pickup_created --> return_processing: NCM marks return
     delivered --> return_processing: customer returns later
 
+    return_processing --> return_arrived: NCM reports "Arrived at RETURN (BRANCH)"
+    return_arrived --> return: NCM confirms back at warehouse
     return_processing --> return: NCM confirms back at warehouse
     return --> returned: staff scan it back in
     return_processing --> redirected: redirected to a new customer
@@ -158,14 +163,26 @@ Two things this diagram encodes that are easy to miss:
 | `Order Marked Return` | `return_processing` |
 | `Sent to Vendor` | `return_processing` |
 | `Returned to Warehouse` | `return` |
+| *`Arrived at RETURN …`* (no fixed key — see the fallbacks below) | `return_arrived` |
 
-**Two fallbacks** (`:675-682`):
+**Three fallbacks**, in this order:
 
-1. Any unmatched status containing `return`, `rtv`, or `sent to vendor`
-   (`RETURN_STATUS_KEYWORDS`, `:596`, case-insensitive) → **`return_processing`**.
-   This catches the branch-qualified variants NCM emits from its tracking endpoints,
-   e.g. `"Arrived at RETURN (TINKUNE)"`, `"Dispatched to RETURN ( TINKUNE)"`.
-2. Everything else → **`processing`**.
+1. `is_return_arrival(status)` — a status that **starts with `arrived` and names a
+   `RETURN` branch**, e.g. `"Arrived at RETURN NAYA BUSPARK"`,
+   `"Arrived at RETURN (TINKUNE)"` → **`return_arrived`**. Checked before the keyword
+   fallback below, which would otherwise swallow it.
+2. Any other unmatched status containing `return`, `rtv`, or `sent to vendor`
+   (`RETURN_STATUS_KEYWORDS`, case-insensitive) → **`return_processing`**. This catches
+   the remaining branch-qualified variants, e.g. `"Dispatched to RETURN ( TINKUNE)"`.
+3. Everything else → **`processing`**.
+
+> **`Arrived at POKHARA` and `Arrived at RETURN NAYA BUSPARK` are opposite facts that
+> share a first word.** The first is a parcel waiting at its delivery branch — the only
+> state a redirect is physically possible from. The second is a parcel that travelled all
+> the way back to the courier's return counter. Every rule that reads "arrived" as
+> "sitting at a branch we can redirect from" has to tell them apart; that is what
+> `is_return_arrival()` is for, and both `dashboard/views.py` (in Python **and** in the
+> Possible Redirection SQL filter) and `possible_redirection.html` mirror it.
 
 ### Payment mapping
 
@@ -292,7 +309,9 @@ flowchart TD
     C -- No --> E["(map_ncm_status_to_system(status), None)"]
     B -- Yes --> F{"is_return_completed(status)?"}
     F -- Yes --> G["('return', None)<br/>parcel is back"]
-    F -- No --> H["('return_processing', None)<br/>still travelling back"]
+    F -- No --> I{"is_return_arrival(status)?"}
+    I -- Yes --> J["('return_arrived', None)<br/>at the return counter"]
+    I -- No --> H["('return_processing', None)<br/>still travelling back"]
 
     style D fill:#16a34a,color:#fff
     style G fill:#ea580c,color:#fff
@@ -338,9 +357,11 @@ Three behaviours worth knowing:
 **Empty status is refused** (`:982-983`). A caller passing `None` would otherwise blank the
 order's status.
 
-**A finished return never reopens** (`:991-994`). If the incoming verdict is
-`return_processing` but the order is already `return` or `returned`
-(`COMPLETED_RETURN_SYSTEM_STATUSES`, `:619`), the existing status is kept. NCM replays
+**A finished return never reopens.** If the incoming verdict is one of
+`RETURN_IN_PROGRESS_SYSTEM_STATUSES` (`return_processing`, `return_arrived`) but the order
+is already `return` or `returned` (`COMPLETED_RETURN_SYSTEM_STATUSES`), the existing
+status is kept — a replayed `"Arrived at RETURN (…)"` must no more reopen a scanned-in
+parcel than a replayed `"Sent to Vendor"` does. NCM replays
 in-pipeline hops late and out of order, and a staff scan-in (`returned`) is a stronger
 signal than anything NCM reports. Only `manage.py repair_return_stage` passes
 `allow_return_reopen=True`.
