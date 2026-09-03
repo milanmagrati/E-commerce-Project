@@ -369,6 +369,9 @@ def unit_price_for(product, variation=None, quantity=1, base_price=None):
 # ── JSON for the browser ────────────────────────────────────────────────
 
 def _tier_json(tier):
+    # `lineTotal`/`wasTotal`/`saveTotal` are what a rung is actually offering —
+    # the price of *that many* units. Theme 2's bundle cards quote them
+    # directly; Theme 1 ignores them and keeps using the unit price.
     return {
         'minQty': tier['min_qty'],
         'label': tier['label'],
@@ -378,6 +381,9 @@ def _tier_json(tier):
         'unitPrice': float(tier['unit_price']),
         'saveEach': float(tier['save_each']),
         'savePercent': float(tier['save_percent']),
+        'lineTotal': float(tier['unit_price'] * tier['min_qty']),
+        'wasTotal': float((tier['unit_price'] + tier['save_each']) * tier['min_qty']),
+        'saveTotal': float(tier['save_each'] * tier['min_qty']),
     }
 
 

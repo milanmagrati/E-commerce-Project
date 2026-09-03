@@ -830,6 +830,10 @@ class ProductPageTheme(models.Model):
     stat_image = models.CharField(max_length=300, blank=True, default='')
     benefit_text = models.CharField(max_length=300, blank=True, default='')
     benefit_image = models.CharField(max_length=300, blank=True, default='')
+    before_after_title = models.CharField(max_length=80, blank=True, default='')
+    before_after = models.TextField(
+        blank=True, default='',
+        help_text="One pair per line: before image | after image | caption.")
     steps_title = models.CharField(max_length=80, blank=True, default='')
     steps = models.TextField(
         blank=True, default='',
@@ -904,6 +908,7 @@ class ProductThemeOverride(models.Model):
     stat_image = models.CharField(max_length=300, blank=True, default='')
     benefit_text = models.CharField(max_length=300, blank=True, default='')
     benefit_image = models.CharField(max_length=300, blank=True, default='')
+    before_after = models.TextField(blank=True, default='')
     steps = models.TextField(blank=True, default='')
     ingredients = models.TextField(blank=True, default='')
     ship_fee = models.CharField(max_length=40, blank=True, default='')
@@ -955,3 +960,72 @@ class ReviewVote(models.Model):
     def key_for(customer, session_key):
         """The one identifier a vote is deduplicated on."""
         return 'c:%s' % customer.pk if customer else 's:%s' % (session_key or '')
+
+
+class ThemeMedia(models.Model):
+    """A photo or clip uploaded for the Theme 2 product page.
+
+    Deliberately not `dashboard.MediaAsset`: that field is an `ImageField` and
+    would reject the 9:16 MP4s the "See it in action" strip is built from. This
+    holds both kinds so one uploader and one picker serve every media field on
+    the theme settings screen.
+
+    The theme's own text fields store the file's **URL**, not this row's id, so
+    a reference keeps working exactly as long as the file does — and an admin
+    who prefers to paste a CDN link is not forced through here at all.
+    """
+
+    KIND_IMAGE = 'image'
+    KIND_VIDEO = 'video'
+    KIND_CHOICES = [(KIND_IMAGE, 'Photo'), (KIND_VIDEO, 'Video')]
+
+    IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif')
+    VIDEO_EXTENSIONS = ('.mp4', '.webm', '.mov', '.m4v')
+
+    # A 9:16 product clip that is bigger than this is a clip that will not play
+    # on the phone it was made for.
+    MAX_IMAGE_BYTES = 8 * 1024 * 1024
+    MAX_VIDEO_BYTES = 64 * 1024 * 1024
+
+    file = models.FileField(upload_to='product_theme/%Y/%m/')
+    kind = models.CharField(max_length=6, choices=KIND_CHOICES, default=KIND_IMAGE)
+    title = models.CharField(max_length=255, blank=True, default='')
+    file_size = models.PositiveIntegerField(default=0)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='theme_media')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'product page media'
+        verbose_name_plural = 'product page media'
+
+    def __str__(self):
+        return self.title or (self.file.name.rsplit('/', 1)[-1] if self.file else 'media')
+
+    @classmethod
+    def kind_for(cls, filename):
+        """'image', 'video', or '' when the extension is not one we serve."""
+        lowered = (filename or '').lower()
+        if lowered.endswith(cls.IMAGE_EXTENSIONS):
+            return cls.KIND_IMAGE
+        if lowered.endswith(cls.VIDEO_EXTENSIONS):
+            return cls.KIND_VIDEO
+        return ''
+
+    @property
+    def url(self):
+        try:
+            return self.file.url
+        except ValueError:
+            return ''
+
+    @property
+    def size_label(self):
+        size = self.file_size or 0
+        if size >= 1024 * 1024:
+            return '%.1f MB' % (size / (1024 * 1024))
+        if size >= 1024:
+            return '%d KB' % (size // 1024)
+        return '%d B' % size

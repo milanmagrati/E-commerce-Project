@@ -76,6 +76,8 @@ DEFAULTS = {
     'stat_image': '',
     'benefit_text': '',
     'benefit_image': '',
+    'before_after_title': 'Real results',
+    'before_after': '',
     'steps_title': 'How to use',
     'steps': '',
     'ingredients_title': 'Key ingredients',
@@ -93,7 +95,7 @@ OVERRIDABLE = (
     'highlights', 'pay_chips', 'pay_bullets',
     'return_value', 'warranty_value', 'shipping_value',
     'videos', 'stat_text', 'stat_image', 'benefit_text', 'benefit_image',
-    'steps', 'ingredients', 'ship_fee',
+    'before_after', 'steps', 'ingredients', 'ship_fee',
 )
 
 # Icon keys the trust row and the rail are allowed to name. An unknown key
@@ -321,6 +323,88 @@ def benefit(product, override=None):
     return {'text': text, 'image': image}
 
 
+def before_after(product, override=None):
+    """`before image | after image | caption` lines → the results pairs.
+
+    A pair only renders when it has both halves: a before with no after is a
+    photo of a problem, which is not what this block is for.
+    """
+    out = []
+    for line in lines(field(product, 'before_after', override)):
+        before, after, caption = cells(line, 3)
+        before, after = media_url(before), media_url(after)
+        if not before or not after:
+            continue
+        out.append({'before': before, 'after': after, 'caption': caption})
+    return out
+
+
+def ladder(product, variation=None, qty=1):
+    """The Bundle & Save rungs, as the buy box draws them.
+
+    Two departures from the raw `bulk_discounts` ladder, both about what a
+    shopper is actually choosing between:
+
+    * a **Buy 1** rung is prepended, so the block is a chooser rather than a
+      column of upsells with no way to say "just the one";
+    * each rung shows the **line total** for its quantity, not the unit price,
+      because that is the number that will be charged.
+
+    `qty` marks the rung actually in force — the deepest one this quantity has
+    reached, not the one whose number matches it exactly, so arriving on
+    ``?qty=3`` with rungs at 1 and 2 still opens with a rung selected.
+    """
+    from . import bulk_discounts
+
+    tiers = bulk_discounts.tiers_for(product, variation)
+    if not tiers:
+        return []
+
+    base = bulk_discounts.base_price_for(product, variation)
+    if base <= 0:
+        return []
+
+    # Read the caller's quantity now: the loop below has its own per-rung
+    # quantity, and reusing the name here would quietly hand the selection
+    # logic the last rung's figure instead of the shopper's.
+    try:
+        wanted = max(1, int(qty))
+    except (TypeError, ValueError):
+        wanted = 1
+
+    deepest = max(tiers, key=lambda t: t['save_each'])
+    rows = [{
+        'qty': 1,
+        'name': 'Buy 1 piece',
+        'save': '',
+        'total': base,
+        'was': base,
+        'popular': False,
+        'discounted': False,
+    }]
+    for tier in tiers:
+        tier_qty = tier['min_qty']
+        rows.append({
+            'qty': tier_qty,
+            # An administrator's own wording for the rung wins; otherwise the
+            # plain reading of what the button does.
+            'name': tier['label'] or ('Buy %d pieces' % tier_qty),
+            'save': 'You save Rs. %s' % f"{tier['save_each'] * tier_qty:,.0f}",
+            'total': tier['unit_price'] * tier_qty,
+            'was': base * tier_qty,
+            'popular': tier is deepest and len(tiers) > 1,
+            'discounted': True,
+        })
+
+    chosen = rows[0]
+    for row in rows:
+        if wanted >= row['qty']:
+            chosen = row
+    for row in rows:
+        row['selected'] = row is chosen
+    return rows
+
+
 def steps(product, override=None):
     """`title | instruction | image` lines → numbered how-to steps.
 
@@ -413,6 +497,8 @@ def content_blocks(product, override=None):
         'video_title': field(product, 'video_title', override),
         'stat': trust_stat(product, override),
         'benefit': benefit(product, override),
+        'before_after': before_after(product, override),
+        'before_after_title': field(product, 'before_after_title', override),
         'steps': steps(product, override),
         'steps_title': field(product, 'steps_title', override),
         'ingredients': ingredients(product, override),

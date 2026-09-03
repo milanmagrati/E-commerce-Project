@@ -130,12 +130,48 @@ Traps that are already paid for, and must stay paid for:
   constraints: production is MySQL, which silently declines to create conditional
   constraints, leaving "one vote per visitor" a promise nothing keeps.
 
+**Photos and clips are uploaded, not pasted.** `store.ThemeMedia` holds both
+(`dashboard.MediaAsset` is an `ImageField` and would reject an MP4). What the
+theme's text fields store is the file's **URL**, never the row id, so a pasted
+CDN link is equally valid input and nothing is locked to that table. Uploads are
+refused by **extension**, not by the browser's content type, which is trivially
+forged.
+
+**The list fields stay `a | b | c` text.** Videos, before/after pairs, how-to
+steps and ingredients are each one line per row, and
+`dashboard/static/dashboard/js/product-theme-setup.js` draws a repeater *on top
+of* the hidden textarea rather than replacing it. The textarea is still what the
+plain form post carries — no extra endpoint, no second save path, and "Edit as
+text" is one click away. A cell's pipes and newlines are stripped on write,
+because either would split the row somewhere the author did not intend.
+
+**The bundle rungs quote line totals, not unit prices** (`theme2.ladder()`), and
+a **Buy 1** rung is prepended so the block is a chooser rather than a column of
+upsells with no way to say "just the one". The rung marked selected is the
+deepest one the current quantity has *reached*, never the one whose number
+matches exactly — otherwise `?qty=5` against rungs at 1 and 3 opens with nothing
+selected. `theme2.ladder()` and `ladderRows()` in `pdp-theme2.js` build the same
+shape; change one and change the other.
+
 Load-bearing markup contracts (renaming these breaks the script silently): every
 `data-p2-*` attribute in `product_detail_conversion.html`, and the
 `data-p2-bulk-map` JSON, whose keys are `'0'` for a plain product and the
 variation id otherwise — the same shape `product.js` consumes for Theme 1.
 
-Verification: `python test_product_page_theme.py` (65 checks — fee parsing, the
-precedence rules, `quote()` refusals and clamping, the router, and an end-to-end
-order whose total, delivery line, tier price, stock movement and untouched cart
-are all asserted).
+Two traps that cost real time here, both about page config:
+
+- **A top-level `const` is not a property of `window`.** `window.LX_P2` and
+  `window.PT_SETUP` are assigned explicitly for exactly this reason; declaring
+  them with `const` leaves the script reading `undefined` and fetching
+  `undefined` as a URL.
+- **Switching the global design switches every product page**, so the Theme 1
+  verification scripts fail wholesale while it is set to Theme 2. If several
+  unrelated store suites break at once, check
+  `ProductPageTheme.get_solo().layout` before reading any further.
+
+Verification: `python test_product_page_theme.py` (89 checks — fee parsing, the
+precedence rules, `quote()` refusals and clamping, the ladder's shape and which
+rung it selects, the before/after pairing rule, the upload endpoint's extension
+and size refusals and its admin-only gate, the router, and an end-to-end order
+whose total, delivery line, tier price, stock movement and untouched cart are
+all asserted).

@@ -99,8 +99,13 @@ fixed to the viewport and the other covers it, and nesting either inside a
 
             {% if review_count %}
             <div class="lx-p2-rating">
+                {% comment %}
+                Stars round *down* — 4 filled for a 4.4, never 5. The exact
+                figure is on the reviews block, which is where somebody who
+                wants the decimal is going anyway.
+                {% endcomment %}
                 <span class="lx-p2-stars" aria-hidden="true">{% for i in "12345" %}<span class="{% if forloop.counter <= avg_rating %}on{% endif %}">&#9733;</span>{% endfor %}</span>
-                <a href="#lx-p2-reviews">{{ avg_rating }} · {{ review_count }} review{{ review_count|pluralize }}</a>
+                <a href="#lx-p2-reviews">{{ review_count }} review{{ review_count|pluralize }}</a>
             </div>
             {% endif %}
 
@@ -140,23 +145,32 @@ fixed to the viewport and the other covers it, and nesting either inside a
             The rungs are re-rendered per option from `data-p2-bulk-map`.
             {% endcomment %}
             {% if product.storefront_available %}
-            <div class="lx-p2-bundle" data-p2-bundle{% if not bulk_tiers and not has_variations %} hidden{% endif %}>
+            <div class="lx-p2-bundle" data-p2-bundle{% if not t2_ladder and not has_variations %} hidden{% endif %}>
                 <div class="lx-p2-bundle-head"><span>Bundle &amp; Save</span></div>
+                {% comment %}
+                Each rung quotes the line total for its own quantity, not a
+                unit price: the total is the number that will be charged, and
+                a ladder of unit prices makes the shopper do the multiplication
+                to find out what they are actually choosing between. The first
+                rung is "Buy 1", so this is a chooser and not a column of
+                upsells with no way to say "just the one".
+                {% endcomment %}
                 <div class="lx-p2-tiers" data-p2-tiers role="group" aria-label="Quantity offers">
-                    {% for tier in bulk_tiers %}
-                    <button type="button" class="lx-p2-tier" data-p2-tier data-min-qty="{{ tier.min_qty }}"
-                            aria-pressed="false">
+                    {% for row in t2_ladder %}
+                    <button type="button" class="lx-p2-tier{% if row.popular %} is-popular{% endif %}{% if row.selected %} is-selected{% endif %}"
+                            data-p2-tier data-min-qty="{{ row.qty }}"
+                            aria-pressed="{% if row.selected %}true{% else %}false{% endif %}">
                         <span class="lx-p2-tier-thumb">
                             {% if product_image_url %}<img src="{{ product_image_url }}" alt="" loading="lazy">{% endif %}
-                            <span class="lx-p2-tier-qty">{{ tier.min_qty }}×</span>
+                            <span class="lx-p2-tier-qty">{{ row.qty }}×</span>
                         </span>
                         <span class="lx-p2-tier-text">
-                            <span class="lx-p2-tier-name">Buy {{ tier.min_qty }} pieces</span>
-                            <span class="lx-p2-tier-save">{{ tier.badge }}</span>
+                            <span class="lx-p2-tier-name">{{ row.name }}</span>
+                            {% if row.save %}<span class="lx-p2-tier-save">{{ row.save }}</span>{% endif %}
                         </span>
                         <span class="lx-p2-tier-price">
-                            <span class="now">Rs. {% p2_amount tier.unit_price %}</span>
-                            <span class="was">Rs. {% p2_amount product.price %}</span>
+                            <span class="now">Rs. {% p2_amount row.total %}</span>
+                            {% if row.discounted %}<span class="was">Rs. {% p2_amount row.was %}</span>{% endif %}
                         </span>
                     </button>
                     {% endfor %}
@@ -185,9 +199,11 @@ fixed to the viewport and the other covers it, and nesting either inside a
                         <span class="lx-p2-variant-media">
                             {% if v.image %}<img src="{{ v.image }}" alt="" loading="lazy">{% endif %}
                         </span>
-                        <span class="lx-p2-variant-name">{{ v.label }}</span>
-                        <span class="lx-p2-variant-price">{{ v.price_display }}</span>
-                        {% if not v.in_stock %}<span class="lx-p2-variant-out">Sold out</span>{% endif %}
+                        <span class="lx-p2-variant-text">
+                            <span class="lx-p2-variant-name">{{ v.label }}</span>
+                            {% if not v.in_stock %}<span class="lx-p2-variant-out">Sold out</span>
+                            {% else %}<span class="lx-p2-variant-price">{{ v.price_display }}</span>{% endif %}
+                        </span>
                     </button>
                     {% endfor %}
                 </div>
@@ -282,7 +298,7 @@ fixed to the viewport and the other covers it, and nesting either inside a
 
             {% if t2.videos %}
             <section class="lx-p2-card lx-p2-block">
-                <h2 class="lx-p2-blockhead">{{ t2.video_title }}</h2>
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.video_title }}</h2>
                 <div class="lx-p2-videos">
                     {% for clip in t2.videos %}
                     <div class="lx-p2-video" data-p2-video>
@@ -325,15 +341,30 @@ fixed to the viewport and the other covers it, and nesting either inside a
             </section>
             {% endif %}
 
+            {% if t2.before_after %}
+            <section class="lx-p2-card lx-p2-block">
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.before_after_title }}</h2>
+                <div class="lx-p2-bas">
+                    {% for pair in t2.before_after %}
+                    <div class="lx-p2-ba">
+                        <figure><img src="{{ pair.before }}" alt="Before" loading="lazy"><figcaption class="is-before">Before</figcaption></figure>
+                        <figure><img src="{{ pair.after }}" alt="After" loading="lazy"><figcaption class="is-after">After</figcaption></figure>
+                        {% if pair.caption %}<p class="lx-p2-ba-cap">{{ pair.caption }}</p>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
             {% if t2.steps %}
             <section class="lx-p2-card lx-p2-block">
-                <h2 class="lx-p2-blockhead">{{ t2.steps_title }}</h2>
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.steps_title }}</h2>
                 <ol class="lx-p2-steps">
                     {% for step in t2.steps %}
                     <li class="lx-p2-step">
                         <span class="lx-p2-step-n" aria-hidden="true">{{ step.number }}</span>
                         <div class="lx-p2-step-body">
-                            {% if step.title %}<h3>{{ step.title }}</h3>{% endif %}
+                            <h3><span class="lx-p2-step-lead">Step {{ step.number }}:</span>{% if step.title %} {{ step.title }}{% endif %}</h3>
                             {% if step.instruction %}<p>{{ step.instruction }}</p>{% endif %}
                         </div>
                         {% if step.image %}<img src="{{ step.image }}" alt="" loading="lazy">{% endif %}
@@ -345,7 +376,7 @@ fixed to the viewport and the other covers it, and nesting either inside a
 
             {% if t2.ingredients %}
             <section class="lx-p2-card lx-p2-block">
-                <h2 class="lx-p2-blockhead">{{ t2.ingredients_title }}</h2>
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.ingredients_title }}</h2>
                 <div class="lx-p2-ing-grid">
                     {% for ing in t2.ingredients %}
                     <figure class="lx-p2-ing">
@@ -362,7 +393,7 @@ fixed to the viewport and the other covers it, and nesting either inside a
 
             {% if product.description %}
             <section class="lx-p2-card lx-p2-block">
-                <h2 class="lx-p2-blockhead">{{ t2.info_title }}</h2>
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.info_title }}</h2>
                 <div class="lx-p2-prose">{{ product.description|linebreaks }}</div>
             </section>
             {% endif %}
@@ -371,7 +402,7 @@ fixed to the viewport and the other covers it, and nesting either inside a
         <!-- ═══════════════ A3 · Reviews ═══════════════ -->
         <div class="lx-p2-reviews" id="lx-p2-reviews">
             <section class="lx-p2-card lx-p2-block">
-                <h2 class="lx-p2-blockhead">Customer reviews</h2>
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>Customer reviews</h2>
 
                 <div class="lx-p2-rev-head">
                     <div class="lx-p2-rev-score">

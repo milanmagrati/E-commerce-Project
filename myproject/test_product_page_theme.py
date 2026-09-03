@@ -305,6 +305,128 @@ def test_flat_fee(fx):
           q.get('shipping_source') == 'district', q.get('shipping_source'))
 
 
+def test_ladder(fx):
+    section('Bundle ladder')
+    simple, variable, var_a = fx['simple'], fx['variable'], fx['var_a']
+    set_global(layout='theme2')
+
+    rows = theme2.ladder(simple)
+    check('the ladder opens with a Buy 1 rung',
+          bool(rows) and rows[0]['qty'] == 1 and not rows[0]['discounted'], rows[:1])
+    check('the Buy 1 rung is the plain price',
+          rows[0]['total'] == Decimal('1000.00'), rows[0]['total'])
+
+    tier_row = rows[1]
+    check('a discounted rung quotes the line total, not the unit price',
+          tier_row['total'] == Decimal('2700.00'), tier_row['total'])
+    check('the struck figure is the undiscounted line',
+          tier_row['was'] == Decimal('3000.00'), tier_row['was'])
+    check('the saving is stated for the whole line',
+          tier_row['save'] == 'You save Rs. 300', tier_row['save'])
+    check('a single rung is not labelled most popular',
+          tier_row['popular'] is False, tier_row['popular'])
+
+    check('a product with no quantity break has no ladder',
+          theme2.ladder(variable, var_a) == [])
+
+    # Arriving on ?qty=5 with rungs at 1 and 3 must still open with the rung
+    # that is actually in force selected, not with nothing selected.
+    rows = theme2.ladder(simple, qty=5)
+    chosen = [r for r in rows if r['selected']]
+    check('exactly one rung is marked selected', len(chosen) == 1, chosen)
+    check('the rung in force is the deepest one reached',
+          chosen and chosen[0]['qty'] == 3, chosen)
+    rows = theme2.ladder(simple, qty=1)
+    check('at quantity one the Buy 1 rung is selected',
+          rows[0]['selected'] is True and not rows[1]['selected'])
+
+
+def test_before_after(fx):
+    section('Before / after pairs')
+    simple = fx['simple']
+    rows = [
+        '/media/a.jpg | /media/b.jpg | Four weeks apart',
+        '/media/only-before.jpg',
+        ' | /media/only-after.jpg | orphan',
+    ]
+    set_global(layout='theme2', before_after=chr(10).join(rows))
+    pairs = theme2.before_after(simple)
+    check('a complete pair renders', len(pairs) == 1, pairs)
+    check('the caption survives',
+          pairs and pairs[0]['caption'] == 'Four weeks apart', pairs)
+    check('a half-pair is dropped rather than half-drawn',
+          all(p['before'] and p['after'] for p in pairs))
+    set_global(before_after='')
+    check('a blank field renders nothing', theme2.before_after(simple) == [])
+
+
+def test_media_uploads():
+    section('Media uploads')
+    from django.contrib.auth import get_user_model
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from store.models import ThemeMedia
+
+    User = get_user_model()
+    admin = (User.objects.filter(is_superuser=True).first()
+             or User.objects.filter(role='administrator').first())
+    if admin is None:
+        check('an administrator exists to upload as', False, 'none found')
+        return
+
+    client = Client()
+    client.force_login(admin)
+
+    # A one-pixel PNG, so the check is about the endpoint and not about Pillow.
+    png = bytes.fromhex(
+        '89504e470d0a1a0a0000000d494844520000000100000001080600000'
+        '01f15c4890000000a49444154789c6300010000050001'
+        '0d0a2db40000000049454e44ae426082')
+
+    before = ThemeMedia.objects.count()
+    res = client.post('/setup/product-theme/media/upload/',
+                      {'file': SimpleUploadedFile('probe.png', png, content_type='image/png')})
+    payload = res.json() if res.status_code < 500 else {}
+    check('a png uploads', res.status_code == 200 and payload.get('success'),
+          '%s %s' % (res.status_code, payload))
+    check('the response hands back a usable URL',
+          bool(payload.get('media', {}).get('url', '').startswith('/')), payload.get('media'))
+    check('it is filed as a photo', payload.get('media', {}).get('kind') == 'image')
+
+    # A content type is trivially forged, so the extension is what decides.
+    res = client.post('/setup/product-theme/media/upload/',
+                      {'file': SimpleUploadedFile('payload.svg', b'<svg/>',
+                                                  content_type='image/png')})
+    check('an unsupported extension is refused even with an image content type',
+          res.status_code == 400, res.status_code)
+
+    res = client.post('/setup/product-theme/media/upload/',
+                      {'file': SimpleUploadedFile('huge.png', b'x' * (9 * 1024 * 1024),
+                                                  content_type='image/png')})
+    check('an oversized photo is refused', res.status_code == 400, res.status_code)
+
+    res = client.get('/setup/product-theme/media/?kind=image')
+    check('the picker lists photos', res.status_code == 200 and
+          any(m['kind'] == 'image' for m in res.json().get('media', [])))
+    res = client.get('/setup/product-theme/media/?kind=video')
+    check('filtering by kind excludes photos',
+          all(m['kind'] == 'video' for m in res.json().get('media', [])))
+
+    media_id = payload.get('media', {}).get('id')
+    if media_id:
+        res = client.post('/setup/product-theme/media/%s/delete/' % media_id)
+        check('deleting removes the row', res.status_code == 200
+              and not ThemeMedia.objects.filter(pk=media_id).exists())
+    check('nothing was left behind', ThemeMedia.objects.count() == before,
+          ThemeMedia.objects.count())
+
+    # And it stays admin-only.
+    stranger = Client()
+    res = stranger.post('/setup/product-theme/media/upload/',
+                        {'file': SimpleUploadedFile('probe.png', png, content_type='image/png')})
+    check('an anonymous visitor cannot upload', res.status_code in (302, 403),
+          res.status_code)
+
+
 def test_router(fx):
     section('Router')
     simple = fx['simple']
@@ -438,6 +560,7 @@ def main():
     fx = build_fixtures()
     original = ProductPageTheme.get_solo()
     original_layout, original_fee = original.layout, original.ship_fee
+    original_ba = original.before_after
     try:
         test_fee_parsing()
         test_parsers()
@@ -445,11 +568,15 @@ def main():
         test_field_precedence(fx)
         test_quote(fx)
         test_flat_fee(fx)
+        test_ladder(fx)
+        test_before_after(fx)
+        test_media_uploads()
         test_router(fx)
         test_place_order(fx)
         test_order_rejections(fx)
     finally:
-        set_global(layout=original_layout, ship_fee=original_fee)
+        set_global(layout=original_layout, ship_fee=original_fee,
+                   before_after=original_ba)
         teardown(fx)
 
     print('\n%d passed, %d failed' % (len(PASSED), len(FAILED)))

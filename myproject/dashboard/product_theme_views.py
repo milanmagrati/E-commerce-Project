@@ -22,7 +22,7 @@ from accounts.decorators import admin_only
 from dashboard.models import Product
 from store import theme2
 from store.models import (LAYOUT_CHOICES, PRODUCT_LAYOUT_CHOICES,
-                          ProductPageTheme, ProductThemeOverride)
+                          ProductPageTheme, ProductThemeOverride, ThemeMedia)
 
 # The global settings screen writes exactly these, and nothing else. Every one
 # is a text input or a select on purpose: no checkboxes, so a partially
@@ -35,6 +35,7 @@ GLOBAL_TEXT_FIELDS = (
     'ship_fee', 'checkout_title', 'place_label', 'cod_label',
     'phone_prefix', 'phone_hint',
     'stat_text', 'stat_image', 'benefit_text', 'benefit_image',
+    'before_after_title', 'before_after',
     'steps_title', 'steps', 'ingredients_title', 'ingredients',
     'footer_address', 'footer_phone', 'footer_credit',
 )
@@ -53,18 +54,17 @@ def _meta_fields():
         'warranty_value': ('Warranty', 1, ''),
         'shipping_value': ('Shipping line', 1, ''),
         'videos': ('Videos', 4,
-                   'One clip per line: video | poster | creator. Self-hosted files '
-                   'only — a YouTube or Vimeo embed cannot take the play, mute and '
-                   'expand controls. Each of video and poster may be a Media Library '
-                   'id or a URL.'),
+                   'Self-hosted clips only — a YouTube or Vimeo embed cannot take '
+                   'the play, mute and expand controls. Vertical 9:16 fits the strip.'),
         'stat_text': ('Trust stat', 3, 'First line is the big figure, the rest is the supporting copy.'),
-        'stat_image': ('Trust stat image', 1, 'Media Library id, or a URL.'),
+        'stat_image': ('Trust stat image', 1, 'Upload a photo, or paste a URL.'),
         'benefit_text': ('Benefit tagline', 1, ''),
-        'benefit_image': ('Benefit image', 1, 'Media Library id, or a URL.'),
+        'benefit_image': ('Benefit image', 1, 'Upload a photo, or paste a URL.'),
+        'before_after': ('Before &amp; after', 4,
+                         'One pair per line. A pair needs both halves to render.'),
         'steps': ('How to use', 5,
-                  'One step per line: title | instruction | image. Numbers come from '
-                  'the line order — do not type them.'),
-        'ingredients': ('Key ingredients', 4, 'One per line: name | image | short note.'),
+                  'Numbers come from the order of the rows.'),
+        'ingredients': ('Key ingredients', 4, 'Drawn as a picture-and-label grid.'),
         'ship_fee': ('Delivery fee', 1,
                      'A flat fee for this product’s one-step checkout. Blank uses '
                      'the store-wide fee, and a blank store-wide fee uses Delivery '
@@ -212,3 +212,81 @@ def product_theme_product_reset(request, product_id):
     product = get_object_or_404(Product, pk=product_id, is_deleted=False)
     ProductThemeOverride.objects.filter(product=product).delete()
     return _saved(request, f'🗑️ {product.name} is back to the global settings.')
+
+
+# ──────────────────── Uploads ────────────────────
+# Photos and clips are uploaded here rather than pasted as URLs, because
+# knowing a media URL is not a thing a shop owner should have to do. What gets
+# written into the theme's text fields is still the file's URL, so a pasted CDN
+# link keeps working and nothing is locked to this table.
+
+
+def _media_payload(row):
+    return {
+        'id': row.pk,
+        'url': row.url,
+        'kind': row.kind,
+        'title': str(row),
+        'size': row.size_label,
+    }
+
+
+@login_required
+@admin_only
+def product_theme_media_list(request):
+    """The uploaded photos and clips, newest first, for the picker grid."""
+    kind = (request.GET.get('kind') or '').strip()
+    rows = ThemeMedia.objects.all()
+    if kind in (ThemeMedia.KIND_IMAGE, ThemeMedia.KIND_VIDEO):
+        rows = rows.filter(kind=kind)
+    return JsonResponse({'media': [_media_payload(r) for r in rows[:120]]})
+
+
+@login_required
+@admin_only
+@require_POST
+def product_theme_media_upload(request):
+    """Take one uploaded photo or clip and hand back the URL to insert.
+
+    Refuses by extension and by size rather than trusting the browser's
+    content type, which is trivially wrong and trivially forged.
+    """
+    upload = request.FILES.get('file')
+    if upload is None:
+        return JsonResponse({'success': False, 'message': 'No file was sent.'}, status=400)
+
+    kind = ThemeMedia.kind_for(upload.name)
+    if not kind:
+        return JsonResponse({
+            'success': False,
+            'message': 'That file type is not supported. Use %s for photos, or %s for clips.' % (
+                ', '.join(e.lstrip('.') for e in ThemeMedia.IMAGE_EXTENSIONS),
+                ', '.join(e.lstrip('.') for e in ThemeMedia.VIDEO_EXTENSIONS)),
+        }, status=400)
+
+    ceiling = (ThemeMedia.MAX_VIDEO_BYTES if kind == ThemeMedia.KIND_VIDEO
+               else ThemeMedia.MAX_IMAGE_BYTES)
+    if upload.size > ceiling:
+        return JsonResponse({
+            'success': False,
+            'message': 'That file is %.1f MB. The limit for a %s is %d MB.' % (
+                upload.size / (1024 * 1024), kind, ceiling // (1024 * 1024)),
+        }, status=400)
+
+    row = ThemeMedia.objects.create(
+        file=upload, kind=kind, title=upload.name[:255],
+        file_size=upload.size, uploaded_by=request.user)
+    return JsonResponse({'success': True, 'media': _media_payload(row)})
+
+
+@login_required
+@admin_only
+@require_POST
+def product_theme_media_delete(request, media_id):
+    """Remove one upload. The file goes too — an orphaned blob nobody can see
+    in the picker is just disk that never comes back."""
+    row = get_object_or_404(ThemeMedia, pk=media_id)
+    if row.file:
+        row.file.delete(save=False)
+    row.delete()
+    return JsonResponse({'success': True})

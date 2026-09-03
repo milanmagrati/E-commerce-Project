@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     ProductReview, Cart, CartItem, Order, OrderItem, Wishlist, DiscountCode,
     StoreCustomer, DeliveryCharge, DeliverySetting,
-    ProductPageTheme, ProductThemeOverride, ReviewVote,
+    ProductPageTheme, ProductThemeOverride, ReviewVote, ThemeMedia,
 )
 
 
@@ -106,3 +106,9 @@ class ProductThemeOverrideAdmin(admin.ModelAdmin):
 class ReviewVoteAdmin(admin.ModelAdmin):
     list_display = ('review', 'value', 'customer', 'created_at')
     list_filter = ('value',)
+
+
+@admin.register(ThemeMedia)
+class ThemeMediaAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'kind', 'size_label', 'uploaded_by', 'created_at')
+    list_filter = ('kind',)

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% comment %}
 Setup → Product Page Theme.
 
@@ -125,7 +126,98 @@ that always submits a value cannot half-save.
     .pt-drawer-foot { padding: 1rem 1.25rem; border-top: 1px solid #E4E7EC; display: flex; gap: .6rem; }
     .pt-x { border: 0; background: none; font-size: 1.6rem; line-height: 1; color: #667085; cursor: pointer; }
 
+    /* ── Media field: preview, URL box, upload, clear ── */
+    .ptf { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto auto; gap: .4rem; align-items: center; }
+    .ptf-thumb {
+        width: 46px; height: 46px; border-radius: 8px; overflow: hidden;
+        background: #F2F4F7; border: 1px solid #E4E7EC; display: grid; place-items: center;
+    }
+    .ptf-thumb img, .ptf-thumb video { width: 100%; height: 100%; object-fit: cover; }
+    .ptf-thumb.is-empty::after { content: '—'; color: #98A2B3; font-size: .8rem; }
+    .ptf .ptf-url {
+        width: 100%; padding: .5rem .65rem; border: 1px solid #D0D5DD; border-radius: 8px;
+        font-size: .82rem; font-family: inherit; color: #101828; background: #fff;
+    }
+    .ptf-btn { padding: .45rem .7rem; font-size: .78rem; }
+
+    /* ── Repeater ── */
+    .ptr { border: 1px solid #E4E7EC; border-radius: 11px; background: #FCFCFD; }
+    .ptr-rows { padding: .6rem; display: flex; flex-direction: column; gap: .6rem; }
+    .ptr-row {
+        display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: .6rem;
+        align-items: start; background: #fff; border: 1px solid #E4E7EC;
+        border-radius: 10px; padding: .6rem;
+    }
+    .ptr-n {
+        width: 26px; height: 26px; border-radius: 50%; background: #FDEFE6; color: #C2410C;
+        font-size: .75rem; font-weight: 800; display: grid; place-items: center;
+    }
+    .ptr-body { display: flex; flex-direction: column; gap: .45rem; min-width: 0; }
+    .ptr-cell input[type="text"] {
+        width: 100%; padding: .5rem .65rem; border: 1px solid #D0D5DD; border-radius: 8px;
+        font-size: .84rem; font-family: inherit; color: #101828; background: #fff;
+    }
+    .ptr-flag { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem; color: #475467; }
+    .ptr-tools { display: flex; flex-direction: column; gap: .25rem; }
+    .ptr-move {
+        width: 26px; height: 24px; border: 1px solid #D0D5DD; background: #fff;
+        border-radius: 6px; cursor: pointer; font-size: .8rem; line-height: 1; color: #475467;
+    }
+    .ptr-move:hover { background: #F9FAFB; }
+    .ptr-move.is-del { color: #B42318; border-color: #FDA29B; }
+    .ptr-empty { margin: .4rem; font-size: .82rem; color: #667085; }
+    .ptr-foot { display: flex; gap: .5rem; padding: 0 .6rem .6rem; }
+    .ptr-foot .pt-btn { padding: .42rem .8rem; font-size: .8rem; }
+    .ptr.is-raw + textarea { display: block; }
+
+    /* ── Media picker ── */
+    .ptm { position: fixed; inset: 0; z-index: 1090; display: none; }
+    .ptm.is-open { display: block; }
+    .ptm-veil { position: absolute; inset: 0; background: rgba(16, 24, 40, .5); }
+    .ptm-panel {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        width: min(720px, 94vw); max-height: 88vh; overflow-y: auto;
+        background: #fff; border-radius: 14px; box-shadow: 0 24px 70px rgba(16, 24, 40, .3);
+    }
+    .ptm-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 1rem 1.25rem; border-bottom: 1px solid #E4E7EC; position: sticky; top: 0; background: #fff;
+    }
+    .ptm-head h3 { margin: 0; font-size: 1rem; font-weight: 700; }
+    .ptm-drop {
+        margin: 1.25rem; padding: 1.5rem; border: 2px dashed #D0D5DD; border-radius: 12px;
+        text-align: center; display: flex; flex-direction: column; align-items: center; gap: .6rem;
+    }
+    .ptm-drop.is-over { border-color: #E8590C; background: #FFF7F2; }
+    .ptm-drop strong { font-size: .9rem; color: #344054; }
+    .ptm-limits { font-size: .76rem; color: #667085; }
+    .ptm-status { margin: 0 1.25rem; font-size: .82rem; color: #059669; }
+    .ptm-status.is-error { color: #B42318; }
+    .ptm-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: .7rem; padding: 1.25rem;
+    }
+    .ptm-card {
+        position: relative; border: 1px solid #E4E7EC; border-radius: 10px; overflow: hidden;
+        cursor: pointer; background: #F9FAFB;
+    }
+    .ptm-card:hover { border-color: #E8590C; }
+    .ptm-card img, .ptm-card video { width: 100%; height: 100px; object-fit: cover; display: block; }
+    .ptm-name {
+        display: block; padding: .35rem .5rem; font-size: .72rem; color: #475467;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ptm-del {
+        position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border: 0;
+        border-radius: 50%; background: rgba(16, 24, 40, .65); color: #fff; cursor: pointer;
+        font-size: .9rem; line-height: 1;
+    }
+    .ptm-empty { grid-column: 1 / -1; margin: 0; font-size: .85rem; color: #667085; }
+
     @media (max-width: 720px) {
+        .ptf { grid-template-columns: 40px minmax(0, 1fr); }
+        .ptr-row { grid-template-columns: 24px minmax(0, 1fr); }
+        .ptr-tools { grid-column: 1 / -1; flex-direction: row; }
         .pt-table thead { display: none; }
         .pt-table td { display: block; border: 0; padding: .35rem 1rem; }
         .pt-table tr { display: block; border-bottom: 1px solid #E4E7EC; padding: .6rem 0; }
@@ -268,6 +360,10 @@ that always submits a value cannot half-save.
                             <input type="text" id="pt-stepstitle" name="steps_title" value="{{ setting.steps_title }}" placeholder="How to use">
                         </div>
                         <div class="pt-field">
+                            <label for="pt-batitle">Before &amp; after section title</label>
+                            <input type="text" id="pt-batitle" name="before_after_title" value="{{ setting.before_after_title }}" placeholder="Real results">
+                        </div>
+                        <div class="pt-field">
                             <label for="pt-ingtitle">Ingredients section title</label>
                             <input type="text" id="pt-ingtitle" name="ingredients_title" value="{{ setting.ingredients_title }}" placeholder="Key ingredients">
                         </div>
@@ -279,23 +375,28 @@ that always submits a value cannot half-save.
                     <div class="pt-grid is-wide" style="margin-top:1rem;">
                         <div class="pt-field">
                             <label for="pt-videos">Videos</label>
-                            <textarea id="pt-videos" name="videos" rows="4" placeholder="video | poster | creator">{{ setting.videos }}</textarea>
+                            <textarea id="pt-videos" name="videos" rows="4" data-pt-repeater="videos">{{ setting.videos }}</textarea>
                             <span class="pt-help">
-                                One clip per line: <code>video | poster | creator</code>. Self-hosted
-                                files only — a YouTube or Vimeo embed cannot be given the play, mute
-                                and expand controls. Video and poster each accept a Media Library id
-                                or a URL; poster and the literal word <code>creator</code> are optional.
+                                Upload the clips themselves — self-hosted files only, because the
+                                play, mute and expand controls are bound to a real video element and
+                                a YouTube or Vimeo embed cannot take them. Vertical 9:16 is what the
+                                strip is shaped for. A poster is the still shown before playback.
                             </span>
                         </div>
                         <div class="pt-field">
                             <label for="pt-steps">How to use</label>
-                            <textarea id="pt-steps" name="steps" rows="4" placeholder="title | instruction | image">{{ setting.steps }}</textarea>
-                            <span class="pt-help">One step per line. Numbers come from the line order — do not type them.</span>
+                            <textarea id="pt-steps" name="steps" rows="4" data-pt-repeater="steps">{{ setting.steps }}</textarea>
+                            <span class="pt-help">Numbers come from the order of the rows — drag them with the arrows rather than renumbering by hand.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-ba">Before &amp; after</label>
+                            <textarea id="pt-ba" name="before_after" rows="4" data-pt-repeater="before_after">{{ setting.before_after }}</textarea>
+                            <span class="pt-help">Both halves are required — a before with no after is a photo of a problem.</span>
                         </div>
                         <div class="pt-field">
                             <label for="pt-ing">Key ingredients</label>
-                            <textarea id="pt-ing" name="ingredients" rows="4" placeholder="name | image | short note">{{ setting.ingredients }}</textarea>
-                            <span class="pt-help">One per line.</span>
+                            <textarea id="pt-ing" name="ingredients" rows="4" data-pt-repeater="ingredients">{{ setting.ingredients }}</textarea>
+                            <span class="pt-help">Shown as a picture-and-label grid, not as tabs.</span>
                         </div>
                         <div class="pt-field">
                             <label for="pt-stat">Trust stat</label>
@@ -306,7 +407,7 @@ that always submits a value cannot half-save.
                     <div class="pt-grid" style="margin-top:1rem;">
                         <div class="pt-field">
                             <label for="pt-statimg">Trust stat image</label>
-                            <input type="text" id="pt-statimg" name="stat_image" value="{{ setting.stat_image }}" placeholder="Media Library id or URL">
+                            <input type="text" id="pt-statimg" name="stat_image" value="{{ setting.stat_image }}" data-pt-media="image">
                         </div>
                         <div class="pt-field">
                             <label for="pt-benefit">Benefit tagline</label>
@@ -314,7 +415,7 @@ that always submits a value cannot half-save.
                         </div>
                         <div class="pt-field">
                             <label for="pt-benefitimg">Benefit image</label>
-                            <input type="text" id="pt-benefitimg" name="benefit_image" value="{{ setting.benefit_image }}" placeholder="Media Library id or URL">
+                            <input type="text" id="pt-benefitimg" name="benefit_image" value="{{ setting.benefit_image }}" data-pt-media="image">
                         </div>
                     </div>
                 </div>
@@ -497,7 +598,13 @@ that always submits a value cannot half-save.
                 {% for field in meta_fields %}
                 <div class="pt-field">
                     <label for="pt-d-{{ field.key }}">{{ field.label }}</label>
-                    {% if field.rows > 1 %}
+                    {% if field.key == 'videos' or field.key == 'steps' or field.key == 'ingredients' or field.key == 'before_after' %}
+                    <textarea id="pt-d-{{ field.key }}" name="{{ field.key }}" rows="{{ field.rows }}"
+                              data-pt-field="{{ field.key }}" data-pt-repeater="{{ field.key }}"></textarea>
+                    {% elif field.key == 'stat_image' or field.key == 'benefit_image' %}
+                    <input type="text" id="pt-d-{{ field.key }}" name="{{ field.key }}"
+                           data-pt-field="{{ field.key }}" data-pt-media="image">
+                    {% elif field.rows > 1 %}
                     <textarea id="pt-d-{{ field.key }}" name="{{ field.key }}" rows="{{ field.rows }}"
                               data-pt-field="{{ field.key }}"></textarea>
                     {% else %}
@@ -520,6 +627,20 @@ that always submits a value cannot half-save.
 {% endblock %}
 
 {% block extra_js %}
+<script>
+    // Defined before the editor loads, and on `window` rather than as a
+    // top-level `const` — the latter is a lexical binding the script could not
+    // see.
+    window.PT_SETUP = {
+        csrf: "{{ csrf_token }}",
+        listUrl: "{% url 'product_theme_media_list' %}",
+        uploadUrl: "{% url 'product_theme_media_upload' %}",
+        // The trailing id is substituted client-side; 0 is a placeholder no
+        // row can ever have.
+        deleteUrlBase: "{% url 'product_theme_media_delete' media_id=0 %}"
+    };
+</script>
+<script src="{% static 'dashboard/js/product-theme-setup.js' %}"></script>
 <script>
 (function () {
     var drawer = document.getElementById('pt-drawer');
@@ -556,6 +677,7 @@ that always submits a value cannot half-save.
                         var inherited = (data.inherited[key] || '').split('\n')[0];
                         input.setAttribute('placeholder', inherited ? ('Global: ' + inherited) : '');
                     });
+                    if (window.ptRefresh) window.ptRefresh(form);
                     drawer.classList.add('is-open');
                 })
                 .catch(function () { drawer.classList.add('is-open'); });

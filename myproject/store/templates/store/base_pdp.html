@@ -84,7 +84,9 @@ meant to look like the rest of the shop.
     <div id="lx-p2-toast" class="lx-p2-toast" role="status" aria-live="polite" hidden></div>
 
     <script>
-        const LX_P2 = {
+        // `window.` on purpose: a top-level `const` is a lexical binding, not a
+        // property of window, and pdp-theme2.js reads it off window.
+        window.LX_P2 = {
             csrf: "{{ csrf_token }}",
             productId: {{ product.id }},
             quoteUrl: "{% url 'store:theme2_quote' product_id=product.id %}",

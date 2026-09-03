@@ -148,45 +148,89 @@
         return img ? img.getAttribute('src') : '';
     }
 
+    /* Admin-authored strings (a rung's label, an image URL) go through this
+       before they are concatenated into markup. split/join rather than regex
+       literals so the quote case is spelled out rather than hidden inside a
+       pattern. */
+    function escapeHtml(value) {
+        return String(value === undefined || value === null ? '' : value)
+            .split('&').join('&amp;')
+            .split('<').join('&lt;')
+            .split('>').join('&gt;')
+            .split('"').join('&quot;');
+    }
+
+    /* The rungs the buy box draws, in the shape store/theme2.py::ladder builds
+       them server-side: a "Buy 1" rung first so the block is a chooser rather
+       than a column of upsells, and every rung quoting the *line total* for its
+       own quantity, which is the number that will actually be charged. */
+    function ladderRows() {
+        var tiers = currentTiers();
+        if (!tiers.length) return [];
+        var base = currentBase();
+        if (base <= 0) return [];
+
+        var deepest = tiers.length > 1
+            ? tiers.reduce(function (a, b) { return b.saveEach > a.saveEach ? b : a; })
+            : null;
+
+        var rows = [{
+            qty: 1, name: 'Buy 1 piece', save: '',
+            total: base, was: base, popular: false, discounted: false
+        }];
+        tiers.forEach(function (tier) {
+            rows.push({
+                qty: tier.minQty,
+                name: tier.label || ('Buy ' + tier.minQty + ' pieces'),
+                save: 'You save ' + money(tier.saveEach * tier.minQty),
+                // Priced off the option's own base, so a variant switch
+                // re-prices the whole ladder rather than the headline alone.
+                total: tier.unitPrice * tier.minQty,
+                was: base * tier.minQty,
+                popular: deepest ? tier === deepest : false,
+                discounted: true
+            });
+        });
+        return rows;
+    }
+
     function renderTierTotals() {
         var box = $('[data-p2-tiers]', root);
         var wrap = $('[data-p2-bundle]', root);
         if (!box || !wrap) return;
 
-        var tiers = currentTiers();
         var awaiting = $('[data-p2-bundle-await]', root);
         if (awaiting) awaiting.hidden = !(state.hasVariations && !state.variationId);
 
-        if (!tiers.length) {
+        var rows = ladderRows();
+        if (!rows.length) {
             box.innerHTML = '';
             wrap.hidden = !(state.hasVariations && !state.variationId);
             return;
         }
         wrap.hidden = false;
 
-        var base = currentBase();
-        var thumb = tierThumb();
-        // "Most popular" is the deepest saving on offer, and only worth a pill
-        // when there is more than one rung to compare it against.
-        var deepest = tiers.length > 1
-            ? tiers.reduce(function (a, b) { return b.saveEach > a.saveEach ? b : a; })
-            : null;
+        // The rung in force is the deepest one this quantity has reached.
+        var active = rows[0];
+        rows.forEach(function (row) { if (state.qty >= row.qty) active = row; });
 
-        box.innerHTML = tiers.map(function (tier) {
-            var selected = activeTier(state.qty) === tier ? ' is-selected' : '';
-            var popular = (deepest && tier === deepest) ? ' is-popular' : '';
+        var thumb = tierThumb();
+        box.innerHTML = rows.map(function (row) {
+            var selected = row === active ? ' is-selected' : '';
+            var popular = row.popular ? ' is-popular' : '';
             return '<button type="button" class="lx-p2-tier' + selected + popular + '"' +
-                ' data-p2-tier data-min-qty="' + tier.minQty + '"' +
+                ' data-p2-tier data-min-qty="' + row.qty + '"' +
                 ' aria-pressed="' + (selected ? 'true' : 'false') + '">' +
                 '<span class="lx-p2-tier-thumb">' +
-                (thumb ? '<img src="' + thumb + '" alt="" loading="lazy">' : '') +
-                '<span class="lx-p2-tier-qty">' + tier.minQty + '×</span></span>' +
+                (thumb ? '<img src="' + escapeHtml(thumb) + '" alt="" loading="lazy">' : '') +
+                '<span class="lx-p2-tier-qty">' + row.qty + '×</span></span>' +
                 '<span class="lx-p2-tier-text">' +
-                '<span class="lx-p2-tier-name">Buy ' + tier.minQty + ' pieces</span>' +
-                '<span class="lx-p2-tier-save">' + (tier.badge || '') + '</span></span>' +
-                '<span class="lx-p2-tier-price"><span class="now">' + money(tier.unitPrice) + '</span>' +
-                '<span class="was">' + money(base) + '</span></span>' +
-                '</button>';
+                '<span class="lx-p2-tier-name">' + escapeHtml(row.name) + '</span>' +
+                (row.save ? '<span class="lx-p2-tier-save">' + escapeHtml(row.save) + '</span>' : '') +
+                '</span>' +
+                '<span class="lx-p2-tier-price"><span class="now">' + money(row.total) + '</span>' +
+                (row.discounted ? '<span class="was">' + money(row.was) + '</span>' : '') +
+                '</span></button>';
         }).join('');
     }
 

@@ -343,7 +343,14 @@
     font-size: 13px;
     color: var(--lx-p2-muted);
 }
-.lx-p2-rating a { color: var(--lx-p2-muted); border-bottom: 1px solid var(--lx-p2-line); }
+.lx-p2-rating a {
+    color: var(--lx-p2-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--lx-p2-line);
+}
 
 .lx-p2-stars { color: var(--lx-p2-line); letter-spacing: 1px; }
 .lx-p2-stars .on { color: var(--lx-p2-star); }
@@ -530,17 +537,20 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
 }
+/* Row, not column: a swatch is a thumbnail with a name beside it, and a
+   stacked card wastes the width the two-column grid just bought. */
 .lx-p2-variant {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-    padding: 10px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+    gap: 10px;
+    padding: 9px 11px;
     border: 1.5px solid var(--lx-p2-line);
     border-radius: var(--lx-p2-radius-sm);
     background: #fff;
     cursor: pointer;
-    text-align: left;
     transition: border-color .12s ease, background .12s ease;
 }
 .lx-p2-variant:hover { border-color: var(--lx-p2-accent); }
@@ -550,16 +560,25 @@
 }
 .lx-p2-variant.is-out { opacity: .48; cursor: not-allowed; }
 .lx-p2-variant-media {
-    width: 100%;
-    aspect-ratio: 1 / 1;
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
     border-radius: 8px;
     background: #f7f4ef;
     overflow: hidden;
 }
 .lx-p2-variant-media img { width: 100%; height: 100%; object-fit: cover; }
-.lx-p2-variant-name { font-size: 13px; font-weight: 700; }
-.lx-p2-variant-price { font-size: 12px; color: var(--lx-p2-muted); }
-.lx-p2-variant-out { font-size: 11px; color: #b42318; font-weight: 600; }
+.lx-p2-variant-text { min-width: 0; }
+.lx-p2-variant-name {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+}
+.lx-p2-variant-price { display: block; font-size: 11.5px; color: var(--lx-p2-muted); }
+.lx-p2-variant-out { display: block; font-size: 11px; color: #b42318; font-weight: 600; }
 
 /* ── BUY NOW ─────────────────────────────────────────────────────────── */
 
@@ -572,7 +591,7 @@
     margin-top: 20px;
     padding: 15px 18px;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--lx-p2-radius-sm);
     background: var(--lx-p2-accent);
     color: #fff;
     font-size: 15px;
@@ -693,12 +712,24 @@
 /* ── Column A content blocks ─────────────────────────────────────────── */
 
 .lx-p2-blockhead {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 12px;
     font-weight: 700;
     letter-spacing: .12em;
     text-transform: uppercase;
     color: var(--lx-p2-muted);
     margin-bottom: 16px;
+}
+.lx-p2-blockicon {
+    flex: 0 0 16px;
+    width: 16px;
+    height: 13px;
+    border-radius: 3px;
+    background: var(--lx-p2-accent-soft);
+    border: 1.5px solid var(--lx-p2-accent);
+    border-top-width: 4px;
 }
 
 .lx-p2-videos {
@@ -767,24 +798,71 @@
 .lx-p2-stat-text { flex: 1 1 auto; min-width: 0; }
 .lx-p2-stat-figure {
     margin: 0;
-    font-size: 34px;
+    font-size: 26px;
     font-weight: 800;
-    line-height: 1.1;
-    color: var(--lx-p2-accent);
-    letter-spacing: -.02em;
+    font-style: italic;
+    line-height: 1.25;
+    color: var(--lx-p2-ink);
+    letter-spacing: -.01em;
 }
-.lx-p2-stat-sub { margin: 6px 0 0; font-size: 14.5px; color: var(--lx-p2-muted); line-height: 1.5; }
+/* The lines under the figure are claims in their own right, not a caption for
+   it — so they stay bold and dark rather than dropping to muted body copy. */
+.lx-p2-stat-sub {
+    margin: 6px 0 0;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--lx-p2-ink);
+    line-height: 1.4;
+}
+.lx-p2-stat-sub:first-of-type { font-style: italic; font-size: 22px; }
 .lx-p2-stat-img { flex: 0 0 38%; }
 .lx-p2-stat-img img { border-radius: var(--lx-p2-radius-sm); }
 
-.lx-p2-benefit { text-align: center; }
+.lx-p2-benefit { text-align: left; }
 .lx-p2-benefit-text {
     margin: 0 0 14px;
-    font-size: 21px;
+    font-size: 19px;
     font-weight: 700;
     line-height: 1.35;
+    text-align: left;
 }
 .lx-p2-benefit img { border-radius: var(--lx-p2-radius-sm); width: 100%; }
+
+.lx-p2-bas { display: flex; flex-direction: column; gap: 16px; }
+.lx-p2-ba {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.lx-p2-ba figure { margin: 0; position: relative; }
+.lx-p2-ba img {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: var(--lx-p2-radius-sm);
+    background: #f7f4ef;
+}
+/* Bottom-left, over the photo: a label above the image reads as a heading for
+   the pair rather than as a tag on the half it belongs to. */
+.lx-p2-ba figcaption {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: #fff;
+}
+.lx-p2-ba figcaption.is-before { background: var(--lx-p2-teal); }
+.lx-p2-ba figcaption.is-after { background: var(--lx-p2-ink); }
+.lx-p2-ba-cap {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 13px;
+    color: var(--lx-p2-muted);
+}
 
 .lx-p2-steps { list-style: none; margin: 0; padding: 0; }
 .lx-p2-step {
@@ -809,6 +887,7 @@
 }
 .lx-p2-step-body { flex: 1 1 auto; min-width: 0; }
 .lx-p2-step-body h3 { font-size: 15px; font-weight: 700; }
+.lx-p2-step-lead { color: var(--lx-p2-accent); }
 .lx-p2-step-body p { margin: 4px 0 0; font-size: 14px; color: var(--lx-p2-muted); line-height: 1.55; }
 .lx-p2-step > img { flex: 0 0 84px; width: 84px; border-radius: 8px; }
 
@@ -850,6 +929,11 @@
     border-radius: 999px;
 }
 .lx-p2-prose .lx-p2-step { border: 0; padding: 8px 0; }
+
+/* The buy box card. No styling of its own — `.lx-p2-card` dresses it and the
+   script finds it by data attribute — but it is the name the layout is read
+   by, so it is declared here rather than left looking like an orphan. */
+.lx-p2-buybox { position: relative; }
 
 /* ── Reviews ─────────────────────────────────────────────────────────── */
 
@@ -958,6 +1042,7 @@
 }
 .lx-p2-sticky-price { display: block; font-size: 17px; font-weight: 800; }
 .lx-p2-sticky .lx-p2-buybtn { width: auto; margin: 0; padding: 12px 24px; flex: 0 0 auto; }
+.lx-p2-rev-form button { border-radius: var(--lx-p2-radius-sm); }
 
 /* ── Checkout modal ──────────────────────────────────────────────────── */
 

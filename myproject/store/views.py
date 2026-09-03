@@ -516,13 +516,14 @@ def product_detail(request, slug):
     # ── The router. Four lines, and Theme 1 below is untouched. ──
     override = theme2.override_for(product)
     if theme2.is_theme2(product, override):
-        context.update(_theme2_context(request, product, override, variation_rows))
+        context.update(_theme2_context(request, product, override, variation_rows,
+                                       preselect_qty))
         return render(request, 'store/product_detail_conversion.html', context)
 
     return render(request, 'store/product_detail.html', context)
 
 
-def _theme2_context(request, product, override, variation_rows):
+def _theme2_context(request, product, override, variation_rows, preselect_qty=1):
     """Everything the conversion landing page needs that the classic page does not.
 
     Kept out of `product_detail` so the shared context above stays the one
@@ -565,12 +566,25 @@ def _theme2_context(request, product, override, variation_rows):
             voter_key=ReviewVote.key_for(customer, session_key),
         ).values_list('review_id', flat=True))
 
+    # The bundle rungs for whichever option the page opens on. product.js's
+    # payload (`bulk_tiers_json`) carries every option's rungs so the script can
+    # re-draw them on a switch; this is the server-rendered opening state, and
+    # the reason the ladder is right before any script runs.
+    opening_row = next((v for v in variation_rows if v.pk == opening_variation), None)
+    ladder = theme2.ladder(product, opening_row, qty=preselect_qty)
+
+    # The courier catalogue is only needed by the modal's district select, and
+    # on a cache miss it reaches out to NCM — not something a page with no modal
+    # should ever wait on.
+    districts = services.get_locations()['districts'] if use_modal else []
+
     return {
         't2': blocks,
         't2_use_modal': use_modal,
         't2_quote': opening,
+        't2_ladder': ladder,
         't2_voted': voted,
-        't2_districts': services.get_locations()['districts'],
+        't2_districts': districts,
     }
 
 

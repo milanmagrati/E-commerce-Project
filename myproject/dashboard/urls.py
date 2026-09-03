@@ -272,6 +272,9 @@ urlpatterns = [
     # ── Setup → Product Page Theme (storefront product page design) ──
     path('setup/product-theme/', product_theme_views.product_theme_setup, name='product_theme_setup'),
     path('setup/product-theme/save/', product_theme_views.product_theme_save, name='product_theme_save'),
+    path('setup/product-theme/media/', product_theme_views.product_theme_media_list, name='product_theme_media_list'),
+    path('setup/product-theme/media/upload/', product_theme_views.product_theme_media_upload, name='product_theme_media_upload'),
+    path('setup/product-theme/media/<int:media_id>/delete/', product_theme_views.product_theme_media_delete, name='product_theme_media_delete'),
     path('setup/product-theme/<int:product_id>/', product_theme_views.product_theme_product_json, name='product_theme_product_json'),
     path('setup/product-theme/<int:product_id>/save/', product_theme_views.product_theme_product_save, name='product_theme_product_save'),
     path('setup/product-theme/<int:product_id>/reset/', product_theme_views.product_theme_product_reset, name='product_theme_product_reset'),
