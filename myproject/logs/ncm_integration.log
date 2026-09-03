@@ -9658,3 +9658,6 @@ RuntimeError: NCM exploded
 [WARNING] 2026-09-02 17:48:23 views.bulk_sync_ncm_orders_json:625 Bulk sync denied for _test_ncm_sync_perms - missing can_sync_ncm_orders
 [INFO] 2026-09-02 17:53:07 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
 [INFO] 2026-09-02 18:13:21 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-09-02 18:21:13 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-09-03 18:57:27 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-09-03 19:02:07 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)

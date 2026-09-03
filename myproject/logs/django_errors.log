@@ -9451,3 +9451,93 @@ Traceback (most recent call last):
   File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
     raise DisallowedHost(msg)
 django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-09-03 18:48:22 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-09-03 18:48:23 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-09-03 18:48:23 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-09-03 18:48:23 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-09-03 18:48:23 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-09-03 18:48:23 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-09-03 18:48:23 exception.response_for_exception:124 Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\utils\deprecation.py", line 119, in __call__
+    response = self.process_request(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\middleware\common.py", line 48, in process_request
+    host = request.get_host()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\http\request.py", line 186, in get_host
+    raise DisallowedHost(msg)
+django.core.exceptions.DisallowedHost: Invalid HTTP_HOST header: 'testserver'. You may need to add 'testserver' to ALLOWED_HOSTS.
+[ERROR] 2026-09-03 19:32:39 log.log_response:248 Internal Server Error: /store/products/zz-theme2-probe-simple/
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\store\views.py", line 519, in product_detail
+    context.update(_theme2_context(request, product, override, variation_rows))
+                   ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\store\views.py", line 573, in _theme2_context
+    ladder = theme2.ladder(product, opening_row, qty=preselect_qty)
+                                                     ^^^^^^^^^^^^^
+NameError: name 'preselect_qty' is not defined
