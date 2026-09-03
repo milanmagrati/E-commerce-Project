@@ -12,10 +12,10 @@ from dashboard.models import Category, Product
 from dashboard.models import Order as DashOrder, OrderItem as DashOrderItem
 from dashboard.models import Customer as DashCustomer, Setup
 from .models import (ProductReview, Cart, CartItem, Order, OrderItem, Wishlist, Page,
-                     DiscountCode, StoreCustomer, BackInStockNotice)
+                     DiscountCode, StoreCustomer, BackInStockNotice, ReviewVote)
 from .forms import (GuestOrderForm, ReviewForm, OrderTrackForm, CustomerLoginForm,
                     CustomerRegisterForm, CustomerProfileForm, PasswordChangeForm)
-from . import bulk_discounts, services
+from . import bulk_discounts, services, theme2, theme2_checkout
 from .customer_auth import (get_customer, login_customer, logout_customer,
                             customer_required, safe_next)
 
@@ -380,7 +380,12 @@ def product_list(request):
 def product_detail(request, slug):
     product = get_object_or_404(Product, slug=slug, is_active=True, is_deleted=False)
     images = product.images.all().order_by('order')
-    reviews = product.store_reviews.select_related('user').all()
+    # Vote tallies ride along on the review rows so Theme 2's helpful /
+    # not-helpful counters cost no extra query; Theme 1 simply ignores them.
+    reviews = product.store_reviews.select_related('user', 'customer').annotate(
+        up_votes=Count('votes', filter=Q(votes__value=ReviewVote.UP)),
+        down_votes=Count('votes', filter=Q(votes__value=ReviewVote.DOWN)),
+    )
     related_products = _active_products().filter(
         category=product.category
     ).exclude(pk=product.pk)[:6]
@@ -390,8 +395,14 @@ def product_detail(request, slug):
     rating_counts = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0}
     for r in reviews:
         rating_counts[r.rating] = rating_counts.get(r.rating, 0) + 1
+    # `percent` is the share of all reviews; `bar` is the width relative to the
+    # tallest row, which is what makes a histogram readable when four of the
+    # five rows are single digits.
+    busiest = max(rating_counts.values()) if review_count else 0
     rating_dist = [
-        {'star': s, 'count': rating_counts[s], 'percent': round(rating_counts[s] / review_count * 100) if review_count else 0}
+        {'star': s, 'count': rating_counts[s],
+         'percent': round(rating_counts[s] / review_count * 100) if review_count else 0,
+         'bar': round(rating_counts[s] / busiest * 100) if busiest else 0}
         for s in [5, 4, 3, 2, 1]
     ]
 
@@ -471,7 +482,7 @@ def product_detail(request, slug):
         ceiling = available_stock if available_stock > 0 else wanted_qty
         preselect_qty = max(1, min(wanted_qty, ceiling))
 
-    return render(request, 'store/product_detail.html', {
+    context = {
         'product': product,
         'images': images,
         'reviews': reviews,
@@ -500,7 +511,67 @@ def product_detail(request, slug):
         'preselect_qty': preselect_qty,
         'product_image_url': _get_product_image(product),
         'free_delivery_threshold': services.free_delivery_threshold(),
-    })
+    }
+
+    # ── The router. Four lines, and Theme 1 below is untouched. ──
+    override = theme2.override_for(product)
+    if theme2.is_theme2(product, override):
+        context.update(_theme2_context(request, product, override, variation_rows))
+        return render(request, 'store/product_detail_conversion.html', context)
+
+    return render(request, 'store/product_detail.html', context)
+
+
+def _theme2_context(request, product, override, variation_rows):
+    """Everything the conversion landing page needs that the classic page does not.
+
+    Kept out of `product_detail` so the shared context above stays the one
+    both designs are built from — the two pages must never disagree about
+    price, stock or what is in the cart.
+    """
+    blocks = theme2.content_blocks(product, override)
+
+    # One boolean gates the BUY NOW button, the sticky bar and the modal, so
+    # they cannot end up disagreeing about what a click does. The modal is off
+    # when the administrator asked for the classic add-to-cart path, and when
+    # there is nothing to sell.
+    # The opening quote must come from a variation a shopper can actually buy:
+    # a variable product's first row may well be sold out, and its price is not
+    # one anybody is being offered. It is also what the buy box prints, so it
+    # is computed whether or not the modal is in play.
+    opening_variation = next(
+        (v.pk for v in variation_rows if v.available_stock > 0),
+        (variation_rows[0].pk if variation_rows else ''))
+    opening = theme2_checkout.quote(
+        product.pk, variation_id=opening_variation, qty=1)
+    if opening.get('error'):
+        opening = None
+
+    # One boolean gates the BUY NOW button, the sticky bar and the modal, so
+    # they cannot end up disagreeing about what a click does. The modal is off
+    # when the administrator asked for the classic add-to-cart path, when there
+    # is nothing to sell, and when the opening quote already refuses — a modal
+    # that can only ever show an error is not worth rendering.
+    use_modal = (blocks['checkout']['action'] == 'modal'
+                 and product.storefront_available
+                 and opening is not None)
+
+    voted = set()
+    customer = get_customer(request)
+    session_key = request.session.session_key
+    if customer or session_key:
+        voted = set(ReviewVote.objects.filter(
+            review__product=product,
+            voter_key=ReviewVote.key_for(customer, session_key),
+        ).values_list('review_id', flat=True))
+
+    return {
+        't2': blocks,
+        't2_use_modal': use_modal,
+        't2_quote': opening,
+        't2_voted': voted,
+        't2_districts': services.get_locations()['districts'],
+    }
 
 
 def category_products(request, slug):
@@ -886,17 +957,26 @@ def quote_json(request):
     })
 
 
-def _place_order(request, form, items, order_type, delivery_district):
+def _place_order(request, form, items, order_type, delivery_district,
+                 delivery_override=None):
     """Shared tail of every checkout: price it, persist it, mirror it to the
     dashboard, allocate stock. `items` is [{'product', 'quantity', 'price',
-    'variant', 'variation'}] ('variation' optional). Returns the store Order."""
+    'variant', 'variation'}] ('variation' optional). Returns the store Order.
+
+    `delivery_override` is the delivery figure a caller was already quoted;
+    Theme 2's one-step checkout passes the one its modal displayed so the order
+    cannot be written at a different delivery charge than the shopper agreed
+    to. Left None — every other flow — delivery is priced by district here as
+    it always was.
+    """
     from django.db import transaction
 
     subtotal = sum(Decimal(str(i['price'])) * i['quantity'] for i in items)
     discount, _msg = services.lookup_discount(form.cleaned_data.get('discount_code'), subtotal)
 
     branch_code = (form.cleaned_data.get('courier_branch_code') or '').strip().upper()
-    totals = services.price_order(subtotal, delivery_district, discount, branch_code)
+    totals = services.price_order(subtotal, delivery_district, discount, branch_code,
+                                  delivery_override=delivery_override)
     branch = services.resolve_branch(delivery_district, branch_code)
     branch_name = branch['name'] if branch else (form.cleaned_data.get('courier_branch') or '')
 
@@ -1245,10 +1325,146 @@ def add_review(request, product_id):
             rating=form.cleaned_data['rating'],
             comment=form.cleaned_data['comment'],
         )
+        if _is_ajax(request):
+            return JsonResponse({
+                'success': True,
+                'message': 'Thanks — your review has been posted.',
+            })
         messages.success(request, 'Thanks — your review has been posted.')
     else:
+        if _is_ajax(request):
+            return JsonResponse({
+                'success': False,
+                'message': 'Please add your name and a rating.',
+                'errors': {f: [str(e) for e in errs] for f, errs in form.errors.items()},
+            }, status=400)
         messages.error(request, 'Please add your name and a rating.')
     return redirect('store:product_detail', slug=product.slug)
+
+
+@require_POST
+def review_vote(request, review_id):
+    """One helpful / not-helpful vote on one review.
+
+    A second click from the same visitor is refused rather than counted again:
+    a signed-in shopper is matched on their account, a guest on the session, so
+    the vote survives a reload without demanding one.
+    """
+    review = get_object_or_404(ProductReview, pk=review_id)
+    value = (request.POST.get('value') or '').strip().lower()
+    if value not in (ReviewVote.UP, ReviewVote.DOWN):
+        return JsonResponse({'success': False, 'message': 'Unknown vote.'}, status=400)
+
+    from django.db import IntegrityError
+
+    customer = get_customer(request)
+    session_key = _session_key(request)
+    voter_key = ReviewVote.key_for(customer, session_key)
+
+    try:
+        _vote, created = ReviewVote.objects.get_or_create(
+            review=review, voter_key=voter_key,
+            defaults={'customer': customer,
+                      'session_key': '' if customer else session_key,
+                      'value': value})
+    except IntegrityError:
+        created = False
+    if not created:
+        return JsonResponse({
+            'success': False,
+            'message': 'You have already voted on this review.',
+        }, status=409)
+
+    counts = ReviewVote.objects.filter(review=review)
+    return JsonResponse({
+        'success': True,
+        'up': counts.filter(value=ReviewVote.UP).count(),
+        'down': counts.filter(value=ReviewVote.DOWN).count(),
+    })
+
+
+# ──────────────────── Theme 2: the one-step COD checkout ────────────────────
+# Both endpoints are open to guests on purpose — the whole point of a
+# cash-on-delivery funnel is buying without an account.
+
+
+@require_POST
+def theme2_quote(request, product_id):
+    """Re-price on a quantity, option or district change; returns the summary."""
+    result = theme2_checkout.quote(
+        product_id,
+        variation_id=request.POST.get('variation', ''),
+        qty=request.POST.get('quantity', 1),
+        district=request.POST.get('district', ''),
+        branch_code=request.POST.get('courier_branch_code', ''),
+    )
+    if result.get('error'):
+        return JsonResponse({'success': False, 'message': result['error']}, status=400)
+    return JsonResponse({'success': True, 'quote': theme2_checkout.quote_json(result)})
+
+
+@require_POST
+def theme2_place_order(request, product_id):
+    """Place the order the modal is showing.
+
+    Every figure is re-quoted here and nothing about price is read from the
+    request, so a forged total changes nothing: the order is written at what
+    `theme2_checkout.quote()` says it costs.
+    """
+    result = theme2_checkout.quote(
+        product_id,
+        variation_id=request.POST.get('variation', ''),
+        qty=request.POST.get('quantity', 1),
+        district=request.POST.get('district', ''),
+        branch_code=request.POST.get('courier_branch_code', ''),
+    )
+    if result.get('error'):
+        if _is_ajax(request):
+            return JsonResponse({'success': False, 'message': result['error']}, status=400)
+        return _order_error(request, get_object_or_404(Product, pk=product_id),
+                            result['error'])
+
+    form = GuestOrderForm(request.POST)
+    if not form.is_valid():
+        if _is_ajax(request):
+            return JsonResponse({
+                'success': False,
+                'message': 'Please correct the highlighted fields.',
+                'errors': {f: [str(e) for e in errs] for f, errs in form.errors.items()},
+            }, status=400)
+        # Without scripting the modal is a plain form; re-rendering the whole
+        # landing page for one bad field would lose the shopper's place, so the
+        # first error is reported and they come back to the page they were on.
+        first = next(iter(form.errors.values()))[0]
+        return _order_error(request, result['product'], str(first))
+
+    product = result['product']
+    order = _place_order(
+        request, form,
+        items=[{
+            'product': product,
+            'quantity': result['qty'],
+            'price': result['unit'],
+            'variant': result['variant_label'],
+            'variation': result['variation'],
+        }],
+        order_type='confirmed',
+        delivery_district=form.cleaned_data['district'],
+        # The delivery figure the modal displayed, so the order cannot be
+        # written at a charge the shopper never saw.
+        delivery_override=result['shipping'],
+    )
+
+    if not _is_ajax(request):
+        messages.success(request, f'Order confirmed! Order #{order.order_number}')
+        return redirect('store:order_detail', order_number=order.order_number)
+
+    return JsonResponse({
+        'success': True,
+        'order_number': order.order_number,
+        'total': str(order.total_price),
+        'redirect': f'/store/orders/{order.order_number}/',
+    })
 
 
 # ──────────────────── Static pages ────────────────────

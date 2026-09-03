@@ -5,6 +5,7 @@ from . import followup_setup_views
 from . import bulk_discount_views
 from . import delivery_charge_views
 from . import invoice_customizer_views
+from . import product_theme_views
 from . import page_views
 
 
@@ -268,6 +269,13 @@ urlpatterns = [
     path('setup/bulk-discounts/export/', bulk_discount_views.bulk_discount_export, name='bulk_discount_export'),
 
     # Invoice Customizer (design of the printable order invoice)
+    # ── Setup → Product Page Theme (storefront product page design) ──
+    path('setup/product-theme/', product_theme_views.product_theme_setup, name='product_theme_setup'),
+    path('setup/product-theme/save/', product_theme_views.product_theme_save, name='product_theme_save'),
+    path('setup/product-theme/<int:product_id>/', product_theme_views.product_theme_product_json, name='product_theme_product_json'),
+    path('setup/product-theme/<int:product_id>/save/', product_theme_views.product_theme_product_save, name='product_theme_product_save'),
+    path('setup/product-theme/<int:product_id>/reset/', product_theme_views.product_theme_product_reset, name='product_theme_product_reset'),
+
     path('setup/invoice/', invoice_customizer_views.invoice_customizer, name='invoice_customizer'),
     path('setup/invoice/preview/', invoice_customizer_views.invoice_preview, name='invoice_preview'),
     path('setup/invoice/reset/', invoice_customizer_views.invoice_customizer_reset, name='invoice_customizer_reset'),

@@ -2,6 +2,7 @@ from django.contrib import admin
 from .models import (
     ProductReview, Cart, CartItem, Order, OrderItem, Wishlist, DiscountCode,
     StoreCustomer, DeliveryCharge, DeliverySetting,
+    ProductPageTheme, ProductThemeOverride, ReviewVote,
 )
 
 
@@ -85,3 +86,23 @@ class DeliveryChargeAdmin(admin.ModelAdmin):
 class DeliverySettingAdmin(admin.ModelAdmin):
     list_display = ('__str__', 'inside_valley_charge', 'default_charge',
                     'free_delivery_threshold', 'updated_at')
+
+
+# The product page theme is edited at Setup → Product Page Theme; these are
+# here only so the rows are inspectable when something needs checking.
+
+@admin.register(ProductPageTheme)
+class ProductPageThemeAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'buy_action', 'ship_fee', 'updated_at')
+
+
+@admin.register(ProductThemeOverride)
+class ProductThemeOverrideAdmin(admin.ModelAdmin):
+    list_display = ('product', 'layout', 'updated_at')
+    search_fields = ('product__name',)
+
+
+@admin.register(ReviewVote)
+class ReviewVoteAdmin(admin.ModelAdmin):
+    list_display = ('review', 'value', 'customer', 'created_at')
+    list_filter = ('value',)

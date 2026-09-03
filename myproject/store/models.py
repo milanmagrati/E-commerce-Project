@@ -750,3 +750,208 @@ class BackInStockNotice(models.Model):
     @property
     def target_label(self):
         return self.variation.display_label if self.variation else self.product.name
+
+
+# ============================================================================
+#  PRODUCT PAGE THEME  (Setup → Product Page Theme)
+# ============================================================================
+#  The storefront ships two product-page designs. Theme 1 is the classic
+#  layout in `store/product_detail.html`; Theme 2 is the three-column
+#  conversion landing page in `store/product_detail_conversion.html`.
+#
+#  `ProductPageTheme` is the singleton holding the global choice plus every
+#  piece of Theme 2 copy. `ProductThemeOverride` is the per-product row: a
+#  blank field there means "inherit the global", which is the whole precedence
+#  rule. Resolution lives in `store/theme2.py` — never read these rows
+#  directly from a view or a template.
+# ============================================================================
+
+
+LAYOUT_THEME1 = 'theme1'
+LAYOUT_THEME2 = 'theme2'
+
+LAYOUT_CHOICES = [
+    (LAYOUT_THEME1, 'Theme 1 - Classic (current design)'),
+    (LAYOUT_THEME2, 'Theme 2 - Conversion landing page'),
+]
+
+# The per-product select adds one more option on top of those: '' = inherit.
+PRODUCT_LAYOUT_CHOICES = [('', 'Use the global setting')] + LAYOUT_CHOICES
+
+
+class ProductPageTheme(models.Model):
+    """Site-wide product-page design + every default string Theme 2 renders.
+
+    Singleton, read through `store.theme2.settings_snapshot()` which caches it;
+    the setup page busts that cache after each write.
+    """
+
+    layout = models.CharField(
+        max_length=10, choices=LAYOUT_CHOICES, default=LAYOUT_THEME1,
+        help_text="Which design every product page uses unless the product overrides it.")
+
+    # -- Column C: the info rail --
+    highlights = models.TextField(
+        blank=True, default='',
+        help_text="PRODUCT HIGHLIGHTS bullets - one per line.")
+    pay_chips = models.CharField(
+        max_length=300, blank=True, default='',
+        help_text="Payment chips, comma separated (e.g. Prepaid, COD).")
+    pay_bullets = models.TextField(
+        blank=True, default='',
+        help_text="PAYMENT & OFFERS bullets - one per line.")
+
+    return_label = models.CharField(max_length=80, blank=True, default='')
+    return_value = models.CharField(max_length=160, blank=True, default='')
+    warranty_label = models.CharField(max_length=80, blank=True, default='')
+    warranty_value = models.CharField(max_length=160, blank=True, default='')
+    shipping_label = models.CharField(max_length=80, blank=True, default='')
+    shipping_value = models.CharField(max_length=160, blank=True, default='')
+
+    # -- Column B: the buy box --
+    trust_json = models.TextField(
+        blank=True, default='',
+        help_text='Trust row, as JSON: [{"icon": "delivery", "text": "..."}]. '
+                  'Icons: delivery, payment, secure, return, warranty.')
+    buy_label = models.CharField(max_length=60, blank=True, default='')
+
+    # -- Column A: media and content --
+    info_title = models.CharField(max_length=80, blank=True, default='')
+    video_title = models.CharField(max_length=80, blank=True, default='')
+    videos = models.TextField(
+        blank=True, default='',
+        help_text="One clip per line: video | poster | creator. Self-hosted "
+                  "files only - a YouTube/Vimeo embed cannot take the custom "
+                  "play, mute and expand controls.")
+    stat_text = models.TextField(
+        blank=True, default='',
+        help_text="Trust stat. First line is the big figure, the rest is the "
+                  "supporting copy.")
+    stat_image = models.CharField(max_length=300, blank=True, default='')
+    benefit_text = models.CharField(max_length=300, blank=True, default='')
+    benefit_image = models.CharField(max_length=300, blank=True, default='')
+    steps_title = models.CharField(max_length=80, blank=True, default='')
+    steps = models.TextField(
+        blank=True, default='',
+        help_text="One step per line: title | instruction | image. Numbers are "
+                  "generated from the line order - do not type them.")
+    ingredients_title = models.CharField(max_length=80, blank=True, default='')
+    ingredients = models.TextField(
+        blank=True, default='',
+        help_text="One per line: name | image | short note.")
+
+    # -- The one-step COD checkout --
+    buy_action = models.CharField(
+        max_length=10,
+        choices=[('modal', 'Open the one-step COD checkout'),
+                 ('checkout', 'Add to cart and go to the checkout page')],
+        default='modal')
+    ship_fee = models.CharField(
+        max_length=40, blank=True, default='',
+        help_text="Flat delivery fee for Theme 2 orders. Leave blank to use "
+                  "Setup > Delivery Charge Setup, which prices by district.")
+    checkout_title = models.CharField(max_length=80, blank=True, default='')
+    place_label = models.CharField(max_length=60, blank=True, default='')
+    cod_label = models.CharField(max_length=80, blank=True, default='')
+    phone_prefix = models.CharField(max_length=10, blank=True, default='')
+    phone_hint = models.CharField(max_length=160, blank=True, default='')
+
+    # -- The minimal shell --
+    footer_address = models.CharField(max_length=300, blank=True, default='')
+    footer_phone = models.CharField(max_length=120, blank=True, default='')
+    footer_credit = models.CharField(max_length=200, blank=True, default='')
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'product page theme'
+        verbose_name_plural = 'product page theme'
+
+    def __str__(self):
+        return dict(LAYOUT_CHOICES).get(self.layout, self.layout)
+
+    @classmethod
+    def get_solo(cls):
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls.objects.create()
+        return obj
+
+
+class ProductThemeOverride(models.Model):
+    """One product's departures from the global Theme 2 settings.
+
+    Every text field here is blank by default and blank means *inherit* - so a
+    product with a row that only sets `shipping_value` still shows the global
+    highlights, videos and stat.
+    """
+
+    product = models.OneToOneField(
+        Product, on_delete=models.CASCADE, related_name='page_theme')
+
+    layout = models.CharField(
+        max_length=10, choices=PRODUCT_LAYOUT_CHOICES, blank=True, default='',
+        help_text="Blank inherits the global product-page design.")
+
+    highlights = models.TextField(blank=True, default='')
+    pay_chips = models.CharField(max_length=300, blank=True, default='')
+    pay_bullets = models.TextField(blank=True, default='')
+    return_value = models.CharField(max_length=160, blank=True, default='')
+    warranty_value = models.CharField(max_length=160, blank=True, default='')
+    shipping_value = models.CharField(max_length=160, blank=True, default='')
+    videos = models.TextField(blank=True, default='')
+    stat_text = models.TextField(blank=True, default='')
+    stat_image = models.CharField(max_length=300, blank=True, default='')
+    benefit_text = models.CharField(max_length=300, blank=True, default='')
+    benefit_image = models.CharField(max_length=300, blank=True, default='')
+    steps = models.TextField(blank=True, default='')
+    ingredients = models.TextField(blank=True, default='')
+    ship_fee = models.CharField(max_length=40, blank=True, default='')
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'product page override'
+        verbose_name_plural = 'product page overrides'
+
+    def __str__(self):
+        return 'Theme settings for %s' % self.product.name
+
+
+class ReviewVote(models.Model):
+    """One helpful / not-helpful vote on one review, from one visitor.
+
+    A signed-in shopper is matched on `customer`; a guest on `session_key`, so
+    the vote survives a reload without an account.
+
+    `voter_key` is what the uniqueness is actually enforced on: `c:<id>` for an
+    account, `s:<session>` for a guest. A pair of partial unique constraints
+    would read more naturally, but the production database is MySQL, which
+    silently declines to create conditional constraints — leaving one click per
+    visitor as a promise nothing keeps. One always-populated column is a rule
+    the database can hold.
+    """
+
+    UP = 'up'
+    DOWN = 'down'
+    VALUE_CHOICES = [(UP, 'Helpful'), (DOWN, 'Not helpful')]
+
+    review = models.ForeignKey(ProductReview, on_delete=models.CASCADE,
+                               related_name='votes')
+    customer = models.ForeignKey('StoreCustomer', on_delete=models.CASCADE,
+                                 null=True, blank=True, related_name='review_votes')
+    session_key = models.CharField(max_length=40, blank=True, default='', db_index=True)
+    voter_key = models.CharField(max_length=48, db_index=True)
+    value = models.CharField(max_length=4, choices=VALUE_CHOICES, default=UP)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('review', 'voter_key')
+
+    def __str__(self):
+        return '%s on review %s' % (self.value, self.review_id)
+
+    @staticmethod
+    def key_for(customer, session_key):
+        """The one identifier a vote is deduplicated on."""
+        return 'c:%s' % customer.pk if customer else 's:%s' % (session_key or '')

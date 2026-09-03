@@ -152,3 +152,17 @@ def of_error(form, name):
         return ''
     errors = form[name].errors
     return errors[0] if errors else ''
+
+
+# ── Theme 2 (the conversion product page) ──────────────────────────────
+# The buy box prints the currency code as a micro-label and the amount as a
+# bare number underneath it, so the number itself carries no symbol.
+
+@register.simple_tag
+def p2_amount(value):
+    """'1,299' — grouped, and only carrying paisa when there are any."""
+    try:
+        n = float(value or 0)
+    except (TypeError, ValueError):
+        n = 0
+    return f'{n:,.0f}' if abs(n - round(n)) < 0.005 else f'{n:,.2f}'

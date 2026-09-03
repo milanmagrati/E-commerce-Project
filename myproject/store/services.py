@@ -290,10 +290,19 @@ def lookup_discount(code, subtotal):
     return discount, label
 
 
-def price_order(subtotal, district='', discount=None, branch_code=''):
-    """Final money for an order: {'subtotal', 'delivery', 'discount', 'total'}."""
+def price_order(subtotal, district='', discount=None, branch_code='',
+                delivery_override=None):
+    """Final money for an order: {'subtotal', 'delivery', 'discount', 'total'}.
+
+    `delivery_override` lets a caller that has already been quoted a delivery
+    figure pass it in rather than have it recomputed — the Theme 2 one-step
+    checkout does this, because a flat theme fee would otherwise be shown in
+    the modal and then silently re-priced by district when the order is
+    written. A free-delivery coupon still wins over it.
+    """
     subtotal = Decimal(str(subtotal or 0))
-    delivery = delivery_charge_for(subtotal, district, branch_code)
+    delivery = (Decimal(str(delivery_override)) if delivery_override is not None
+                else delivery_charge_for(subtotal, district, branch_code))
     discount_amount = Decimal('0')
     if discount is not None:
         discount_amount = discount.discount_for(subtotal)

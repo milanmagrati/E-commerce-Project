@@ -1,0 +1,464 @@
+"""Verification for the Theme 2 product page (Setup -> Product Page Theme).
+
+Standalone, the way the rest of this repo's checks are written: it sets Django
+up by hand, exercises the real models and the real views against the real
+database, and cleans up after itself.
+
+What it is actually guarding:
+
+* The shipping-fee parser. `Rs. 100` must be a hundred rupees. Stripping
+  non-digits leaves `.100` behind, which is ten paisa, and nothing about that
+  failure is visible until a customer is charged.
+* `theme2_checkout.quote()` as the single pricing authority: quantity clamped
+  to stock, the quantity break applied, a foreign variation refused, a Theme 1
+  product refused, and a forged total ignored.
+* The router: Theme 1 renders when Theme 1 is selected, and only the design
+  changes when it is not.
+* An order placed through the modal matching, to the rupee, what the modal
+  showed — including the delivery line.
+
+Run:  python test_product_page_theme.py
+"""
+
+import os
+import sys
+from decimal import Decimal
+
+import django
+
+# The Nepali rupee sign and the Devanagari fee string below are the point of
+# one of these checks, and a cp1252 console would abort on printing them.
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except (AttributeError, ValueError):
+    pass
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'myproject.settings')
+django.setup()
+
+from django.core.cache import cache  # noqa: E402
+from django.test import Client  # noqa: E402
+from django.test.utils import setup_test_environment  # noqa: E402
+
+# Allows `testserver` as a host, and — the reason it is here — connects the
+# signal that records which templates a response actually rendered. Without it
+# `response.templates` is silently empty and the router checks below would
+# pass by never looking at anything.
+setup_test_environment()
+
+from dashboard.models import Product, ProductVariation  # noqa: E402
+from store import theme2, theme2_checkout  # noqa: E402
+from store.models import (BulkDiscount, BulkDiscountTier, CartItem, Order,
+                          ProductPageTheme, ProductThemeOverride)  # noqa: E402
+
+PASSED = []
+FAILED = []
+
+
+def check(label, condition, detail=''):
+    if condition:
+        PASSED.append(label)
+        print('  PASS  %s' % label)
+    else:
+        FAILED.append(label)
+        print('  FAIL  %s%s' % (label, ('  -> %s' % detail) if detail else ''))
+
+
+def section(title):
+    print('\n== %s ==' % title)
+
+
+# ── fixtures ────────────────────────────────────────────────────────────
+
+def build_fixtures():
+    from django.contrib.auth import get_user_model
+    from django.utils.text import slugify
+
+    User = get_user_model()
+    owner = User.objects.order_by('pk').first()
+    if owner is None:
+        raise SystemExit('No users in the database — create one before running this.')
+
+    simple = Product.objects.create(
+        user=owner, name='ZZ Theme2 Probe Simple', slug=slugify('zz-theme2-probe-simple'),
+        description='A probe product.', product_type='simple',
+        price=Decimal('1000.00'), cost_price=Decimal('500.00'),
+        stock=25, is_active=True)
+
+    variable = Product.objects.create(
+        user=owner, name='ZZ Theme2 Probe Variable', slug=slugify('zz-theme2-probe-variable'),
+        description='A probe product with options.', product_type='variable',
+        price=Decimal('900.00'), cost_price=Decimal('400.00'),
+        stock=0, is_active=True)
+    var_a = ProductVariation.objects.create(
+        product=variable, variation_name='Red', sku='ZZ-T2-RED',
+        price=Decimal('800.00'), stock=6, status='active', is_active=True)
+    var_b = ProductVariation.objects.create(
+        product=variable, variation_name='Blue', sku='ZZ-T2-BLUE',
+        price=Decimal('850.00'), stock=0, status='out_of_stock', is_active=True)
+
+    # A quantity break on the simple product: 3+ takes 10% off.
+    rule = BulkDiscount.objects.create(
+        name='ZZ Theme2 probe rule', scope=BulkDiscount.SCOPE_PRODUCT,
+        product=simple, is_active=True)
+    BulkDiscountTier.objects.create(rule=rule, min_qty=3, discount_type='percent',
+                                    value=Decimal('10'))
+
+    return {'owner': owner, 'simple': simple, 'variable': variable,
+            'var_a': var_a, 'var_b': var_b, 'rule': rule}
+
+
+def teardown(fx):
+    Order.objects.filter(items__product__in=[fx['simple'], fx['variable']]).distinct().delete()
+    CartItem.objects.filter(product__in=[fx['simple'], fx['variable']]).delete()
+    fx['rule'].delete()
+    ProductThemeOverride.objects.filter(
+        product__in=[fx['simple'], fx['variable']]).delete()
+    fx['var_a'].delete()
+    fx['var_b'].delete()
+    fx['simple'].delete()
+    fx['variable'].delete()
+
+
+def set_global(**kwargs):
+    row = ProductPageTheme.get_solo()
+    for key, value in kwargs.items():
+        setattr(row, key, value)
+    row.save()
+    theme2.invalidate_cache()
+    cache.delete('store:bulk_discounts:v1')
+
+
+# ── the checks ──────────────────────────────────────────────────────────
+
+def test_fee_parsing():
+    section('Shipping fee parsing')
+    cases = [
+        ('Rs. 100', Decimal('100')),   # the bug: naive stripping gives 0.1
+        ('रू 250', Decimal('250')),
+        ('Rs. 1,000', Decimal('1000')),  # thousands separator must not truncate
+        ('100', Decimal('100')),
+        ('99.50', Decimal('99.50')),
+        ('0', Decimal('0')),
+        ('  ', None),
+        ('', None),
+        ('free', None),
+        (None, None),
+    ]
+    for raw, expected in cases:
+        got = theme2.parse_fee(raw)
+        check('parse_fee(%r) == %s' % (raw, expected), got == expected, 'got %s' % got)
+
+
+def test_parsers():
+    section('Shared parsers')
+    check('lines() drops blanks',
+          theme2.lines('one\n\n  two  \n') == ['one', 'two'])
+    check('csv_list() trims',
+          theme2.csv_list('Prepaid,  COD , ') == ['Prepaid', 'COD'])
+    check('cells() pads short lines',
+          theme2.cells('only a title', 3) == ['only a title', '', ''])
+    check('cells() truncates long lines',
+          theme2.cells('a|b|c|d', 3) == ['a', 'b', 'c'])
+    check('cells() trims each cell',
+          theme2.cells(' a | b ', 2) == ['a', 'b'])
+
+
+def test_layout_resolution(fx):
+    section('Layout resolution')
+    simple = fx['simple']
+
+    set_global(layout='theme1')
+    check('global theme1 -> theme1', theme2.layout_for(simple) == 'theme1')
+
+    set_global(layout='theme2')
+    check('global theme2 -> theme2', theme2.layout_for(simple) == 'theme2')
+
+    row = ProductThemeOverride.objects.create(product=simple, layout='theme1')
+    theme2.invalidate_cache()
+    check('per-product theme1 beats global theme2',
+          theme2.layout_for(simple) == 'theme1')
+
+    row.layout = ''
+    row.save()
+    theme2.invalidate_cache()
+    check('blank override inherits the global',
+          theme2.layout_for(simple) == 'theme2')
+
+    row.layout = 'nonsense'
+    row.save()
+    theme2.invalidate_cache()
+    check('an unrecognised override falls back to the global',
+          theme2.layout_for(simple) == 'theme2')
+    row.delete()
+    theme2.invalidate_cache()
+
+
+def test_field_precedence(fx):
+    section('Field precedence')
+    simple = fx['simple']
+    set_global(layout='theme2', shipping_value='Global shipping line')
+
+    check('global value is used when there is no override',
+          theme2.field(simple, 'shipping_value') == 'Global shipping line')
+
+    row = ProductThemeOverride.objects.create(
+        product=simple, shipping_value='Product shipping line')
+    check('a filled override wins',
+          theme2.field(simple, 'shipping_value', row) == 'Product shipping line')
+
+    row.shipping_value = '   '
+    row.save()
+    check('a whitespace-only override still inherits',
+          theme2.field(simple, 'shipping_value', row) == 'Global shipping line')
+
+    set_global(shipping_value='')
+    check('a blank global falls through to the shipped default',
+          theme2.field(simple, 'shipping_value', row) == theme2.DEFAULTS['shipping_value'])
+    row.delete()
+
+
+def test_quote(fx):
+    section('quote() — the single pricing authority')
+    simple, variable, var_a, var_b = fx['simple'], fx['variable'], fx['var_a'], fx['var_b']
+    set_global(layout='theme2', ship_fee='')
+
+    q = theme2_checkout.quote(simple.pk, qty=1)
+    check('simple product quotes at list price',
+          q.get('unit') == Decimal('1000.00'), q.get('error') or q.get('unit'))
+    check('subtotal is unit x qty', q.get('subtotal') == Decimal('1000.00'))
+
+    q = theme2_checkout.quote(simple.pk, qty=3)
+    check('the 3+ tier applies', q.get('unit') == Decimal('900.00'), q.get('unit'))
+    check('was-price is the undiscounted line', q.get('was') == Decimal('3000.00'))
+    check('saved is the difference', q.get('saved') == Decimal('300.00'))
+    check('discount percent is derived, not asserted', q.get('discount_percent') == 10)
+
+    q = theme2_checkout.quote(simple.pk, qty=2)
+    check('below the threshold there is a nudge', bool(q.get('nudge')))
+    check('the nudge asks for exactly the shortfall',
+          q['nudge']['need'] == 1 and q['nudge']['min_qty'] == 3)
+
+    q = theme2_checkout.quote(simple.pk, qty=9999)
+    check('quantity is clamped to available stock',
+          q.get('qty') == simple.available_stock, q.get('qty'))
+
+    q = theme2_checkout.quote(simple.pk, qty=0)
+    check('quantity is floored at one', q.get('qty') == 1)
+
+    q = theme2_checkout.quote(simple.pk, qty='not a number')
+    check('a junk quantity does not raise', q.get('qty') == 1, q.get('error'))
+
+    q = theme2_checkout.quote(variable.pk, qty=1)
+    check('a variable product refuses without an option',
+          q.get('error') == 'Please choose an option first.', q)
+
+    q = theme2_checkout.quote(variable.pk, variation_id=var_a.pk, qty=1)
+    check('a chosen option prices at its own price',
+          q.get('unit') == Decimal('800.00'), q.get('error') or q.get('unit'))
+
+    q = theme2_checkout.quote(variable.pk, variation_id=var_b.pk, qty=1)
+    check('a sold-out option is refused', bool(q.get('error')), q)
+
+    # The important one: a variation id belonging to another product.
+    q = theme2_checkout.quote(simple.pk, variation_id=var_a.pk, qty=1)
+    check('a foreign variation is refused, not silently priced',
+          bool(q.get('error')), q)
+
+    q = theme2_checkout.quote(999999999, qty=1)
+    check('an unknown product is refused', bool(q.get('error')))
+
+    # Theme 1 must not be orderable through the Theme 2 path.
+    row = ProductThemeOverride.objects.create(product=simple, layout='theme1')
+    theme2.invalidate_cache()
+    q = theme2_checkout.quote(simple.pk, qty=1)
+    check('a Theme 1 product cannot be quoted here',
+          q.get('error') == 'This product cannot be ordered this way.', q)
+    row.delete()
+    theme2.invalidate_cache()
+
+
+def test_flat_fee(fx):
+    section('Flat delivery fee')
+    simple = fx['simple']
+
+    set_global(layout='theme2', ship_fee='Rs. 100')
+    q = theme2_checkout.quote(simple.pk, qty=1)
+    check('a "Rs. 100" fee is charged as 100, not 0.10',
+          q.get('shipping') == Decimal('100.00'), q.get('shipping'))
+    check('total = subtotal + delivery',
+          q.get('total') == Decimal('1100.00'), q.get('total'))
+    check('the source is reported as the flat override',
+          q.get('shipping_source') == 'flat')
+
+    row = ProductThemeOverride.objects.create(product=simple, ship_fee='Rs. 250')
+    theme2.invalidate_cache()
+    q = theme2_checkout.quote(simple.pk, qty=1)
+    check('a per-product fee beats the store-wide one',
+          q.get('shipping') == Decimal('250.00'), q.get('shipping'))
+    row.delete()
+    theme2.invalidate_cache()
+
+    set_global(ship_fee='')
+    q = theme2_checkout.quote(simple.pk, qty=1, district='KATHMANDU')
+    check('a blank fee falls back to the district engine',
+          q.get('shipping_source') == 'district', q.get('shipping_source'))
+
+
+def test_router(fx):
+    section('Router')
+    simple = fx['simple']
+    client = Client()
+
+    set_global(layout='theme1')
+    response = client.get('/store/products/%s/' % simple.slug)
+    names = [t.name for t in response.templates if t.name]
+    check('Theme 1 renders the classic template',
+          'store/product_detail.html' in names, names[:4])
+    check('Theme 1 does not load the Theme 2 stylesheet',
+          b'pdp-theme2.css' not in response.content)
+
+    set_global(layout='theme2')
+    response = client.get('/store/products/%s/' % simple.slug)
+    names = [t.name for t in response.templates if t.name]
+    check('Theme 2 renders the conversion template',
+          'store/product_detail_conversion.html' in names, names[:4])
+    check('Theme 2 loads its own stylesheet',
+          b'pdp-theme2.css' in response.content)
+    check('Theme 2 carries the body class',
+          b'class="lx-pdp2"' in response.content)
+    check('the classic template is not also rendered',
+          'store/product_detail.html' not in names)
+
+    row = ProductThemeOverride.objects.create(product=simple, layout='theme1')
+    theme2.invalidate_cache()
+    response = client.get('/store/products/%s/' % simple.slug)
+    names = [t.name for t in response.templates if t.name]
+    check('a per-product override reverts that product alone',
+          'store/product_detail.html' in names, names[:4])
+    row.delete()
+    theme2.invalidate_cache()
+
+    # A variable product on Theme 2 must still draw its bundle ladder — the
+    # classic mistake is skipping it for anything variable.
+    response = client.get('/store/products/%s/' % fx['variable'].slug)
+    check('a variable product renders the Theme 2 page',
+          b'lx-pdp2' in response.content)
+    check('a variable product still ships its bundle block',
+          b'data-p2-bundle' in response.content)
+
+
+def test_place_order(fx):
+    section('Placing an order through the modal')
+    simple = fx['simple']
+    set_global(layout='theme2', ship_fee='Rs. 100')
+
+    client = Client()
+    # A cart the shopper already had: the modal must not touch it.
+    client.get('/store/products/%s/' % simple.slug)
+    client.post('/store/cart/add/%s/' % simple.pk, {'quantity': 2},
+                HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+    before = CartItem.objects.filter(product=simple).count()
+    stock_before = Product.objects.get(pk=simple.pk).available_stock
+
+    quoted = theme2_checkout.quote(simple.pk, qty=3)
+
+    response = client.post(
+        '/store/api/theme2/%s/order/' % simple.pk,
+        {
+            'quantity': 3,
+            'variation': '',
+            'full_name': 'Probe Shopper',
+            'phone': '9812345678',
+            'district': 'KATHMANDU',
+            'address': 'Probe tole, probe street',
+            # A forged total, which must change nothing.
+            'total': '1',
+            'subtotal': '1',
+            'shipping': '0',
+        },
+        HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+
+    payload = response.json() if response.status_code < 500 else {}
+    check('the order endpoint accepts the post',
+          response.status_code == 200 and payload.get('success'),
+          '%s %s' % (response.status_code, payload))
+
+    if not payload.get('success'):
+        return
+
+    order = Order.objects.get(order_number=payload['order_number'])
+    check('the order total matches the quote',
+          order.total_price == quoted['total'],
+          'order %s vs quote %s' % (order.total_price, quoted['total']))
+    check('the forged total was ignored', order.total_price != Decimal('1'))
+    check('the delivery line is the fee that was shown',
+          order.delivery_charge == Decimal('100.00'), order.delivery_charge)
+    check('the line is written at the tier price',
+          order.items.first().price == Decimal('900.00'), order.items.first().price)
+    check('the quantity is the one quoted', order.items.first().quantity == 3)
+
+    check('the pre-existing cart is untouched',
+          CartItem.objects.filter(product=simple).count() == before)
+
+    simple.refresh_from_db()
+    check('stock was allocated once',
+          simple.available_stock == stock_before - 3,
+          'before %s after %s' % (stock_before, simple.available_stock))
+
+
+def test_order_rejections(fx):
+    section('Order refusals')
+    simple = fx['simple']
+    set_global(layout='theme2')
+    client = Client()
+
+    response = client.post(
+        '/store/api/theme2/%s/order/' % simple.pk,
+        {'quantity': 1, 'full_name': 'X', 'phone': '123', 'district': '', 'address': ''},
+        HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+    check('a bad form is refused with field errors',
+          response.status_code == 400 and response.json().get('errors'),
+          response.status_code)
+
+    row = ProductThemeOverride.objects.create(product=simple, layout='theme1')
+    theme2.invalidate_cache()
+    response = client.post(
+        '/store/api/theme2/%s/order/' % simple.pk,
+        {'quantity': 1, 'full_name': 'Probe Shopper', 'phone': '9812345678',
+         'district': 'KATHMANDU', 'address': 'Probe tole'},
+        HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+    check('a Theme 1 product cannot be ordered through this endpoint',
+          response.status_code == 400, response.status_code)
+    row.delete()
+    theme2.invalidate_cache()
+
+
+def main():
+    fx = build_fixtures()
+    original = ProductPageTheme.get_solo()
+    original_layout, original_fee = original.layout, original.ship_fee
+    try:
+        test_fee_parsing()
+        test_parsers()
+        test_layout_resolution(fx)
+        test_field_precedence(fx)
+        test_quote(fx)
+        test_flat_fee(fx)
+        test_router(fx)
+        test_place_order(fx)
+        test_order_rejections(fx)
+    finally:
+        set_global(layout=original_layout, ship_fee=original_fee)
+        teardown(fx)
+
+    print('\n%d passed, %d failed' % (len(PASSED), len(FAILED)))
+    if FAILED:
+        print('\nFailures:')
+        for label in FAILED:
+            print('  - %s' % label)
+    return 1 if FAILED else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

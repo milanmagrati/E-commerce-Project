@@ -62,3 +62,80 @@ When asked to "add a test" for a bug fix, follow this repo's existing convention
 - **Custom session middleware**: `myproject/middleware.py`'s `GracefulSessionInterruptionMiddleware` handles concurrent session deletion gracefully (JSON 401 for `/api/`-ish paths, redirect-to-login otherwise) — needed because `SESSION_SAVE_EVERY_REQUEST = True`.
 - **Frontend**: server-rendered Django templates (no SPA build step) with Alertify.js + AJAX polling for near-real-time updates (order status polling every 60s, batch sync on list views). `REDIS_URL` in `.env.example` is for future/optional real-time features — there is no Django Channels/ASGI routing configured (`asgi.py` is the stock passthrough).
 - **Root-level clutter**: many one-off `debug_*.py`, `test_*.py`, `fix_*.py`, `patch_*.py` scripts sit at repo root from prior debugging sessions. They're historical artifacts, not part of the app — don't assume they're wired into any pipeline, but do follow their pattern (manual `django.setup()`) if asked to write a new one-off verification script.
+
+### Storefront product page: Theme 1 and Theme 2
+
+The storefront ships **two selectable product-page designs**, chosen at
+**Setup → Product Page Theme** (`dashboard/product_theme_views.py`, admin-only):
+
+| | Theme 1 | Theme 2 |
+|---|---|---|
+| Template | `store/product_detail.html` (unchanged) | `store/product_detail_conversion.html` |
+| Shell | `store/base.html` (navbar, search, cart drawer) | `store/base_pdp.html` — centred logo, dark 3-column footer, nothing else |
+| Assets | `store.css` / `product.css` / `product.js` | `store/css/pdp-theme2.css`, `store/js/pdp-theme2.js` only |
+| Shape | media + sticky buy column, accordions below | three sticky columns: media & content, buy box, info rail |
+
+**Theme 1 is byte-identical when selected.** `product_detail.html`, `product.js`
+and `product.css` are untouched; the switch is four lines at the end of
+`store/views.py::product_detail`, and everything above it builds the context both
+designs share. If a change makes the two pages disagree about price, stock or
+what is in the cart, the change is in the wrong place — it belongs above the
+router.
+
+**Resolution lives in `store/theme2.py`, and only there.**
+`ProductPageTheme` is the singleton global; `ProductThemeOverride` is one row per
+product where **blank means inherit** — that is the whole precedence rule
+(`override → global → theme2.DEFAULTS`). `layout_for()` / `is_theme2()` read one
+cached snapshot; the setup page calls `theme2.invalidate_cache()` after every
+write, and the cache is LocMemCache, so another worker keeps its snapshot until
+the 60-second TTL expires.
+
+**Money has one authority: `store/theme2_checkout.py::quote()`.** It is called
+once to render the modal and again inside the place-order handler, and *nothing*
+about price is ever read from the request — a forged total changes nothing. It
+refuses a variation that belongs to another product, refuses a Theme 1 product
+outright, and returns the quantity **clamped**, so callers must use the returned
+figure rather than the one they asked for.
+
+Traps that are already paid for, and must stay paid for:
+
+- **The bundle-ladder skip condition is not `has_variations`.** Theme 2 draws its
+  own option cards and its own ladder from `bulk_tiers_json`; skipping the ladder
+  for variable products would silently delete every variable product's quantity
+  break. The ladder renders whenever the product is sellable.
+- **`.lx-p2-tier` restates `flex-direction: row`** along with `align-items`,
+  `justify-content` and `text-align`. A tier card that inherits `column` from a
+  compact chip looks like a specificity problem and is a missing-property one.
+- **The hover magnifier sets `background-size` in pixels**, computed from the
+  image's own rendered box. A percentage is a share of the *panel*, so it only
+  magnifies honestly when the panel's aspect ratio matches the photo's.
+- **`.lx-p2-buybtn` is the button; `.lx-p2-buy` is the sticky grid column.**
+  Sharing the class makes the button sticky.
+- **The sticky bar and the checkout modal live outside `.lx-p2-grid`** — one is
+  fixed and the other covers the viewport, and nesting either inside a
+  `position: sticky` column traps it in that column's stacking context.
+- **`ship_fee` is parsed by matching the first number, never by stripping
+  non-digits.** `preg_replace`-style stripping turns `Rs. 100` into `.100`, which
+  is ten paisa. Commas are dropped first so `Rs. 1,000` is not cut to `1`.
+- **A blank `ship_fee` is the recommended setting**: delivery then comes from
+  `store/services.quote_delivery()` (Setup → Delivery Charge Setup), which knows
+  the district and the courier branch. A flat fee reaches the written order
+  through `price_order(..., delivery_override=)` → `_place_order(...,
+  delivery_override=)`; without that the modal would show one figure and the
+  order would be written at another.
+- **The modal never touches the cart.** It builds the order straight from the
+  product, like `quick_order`, so abandoning it costs the shopper nothing and a
+  pre-existing cart survives.
+- **`ReviewVote` deduplicates on `voter_key`**, not on a pair of partial unique
+  constraints: production is MySQL, which silently declines to create conditional
+  constraints, leaving "one vote per visitor" a promise nothing keeps.
+
+Load-bearing markup contracts (renaming these breaks the script silently): every
+`data-p2-*` attribute in `product_detail_conversion.html`, and the
+`data-p2-bulk-map` JSON, whose keys are `'0'` for a plain product and the
+variation id otherwise — the same shape `product.js` consumes for Theme 1.
+
+Verification: `python test_product_page_theme.py` (65 checks — fee parsing, the
+precedence rules, `quote()` refusals and clamping, the router, and an end-to-end
+order whose total, delivery line, tier price, stock movement and untouched cart
+are all asserted).

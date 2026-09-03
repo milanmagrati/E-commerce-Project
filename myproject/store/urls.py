@@ -33,7 +33,13 @@ urlpatterns = [
     path('account/password/', views.account_password, name='account_password'),
 
     path('review/add/<int:product_id>/', views.add_review, name='add_review'),
+    path('review/<int:review_id>/vote/', views.review_vote, name='review_vote'),
     path('quick-order/<int:product_id>/', views.quick_order, name='quick_order'),
+
+    # Theme 2 (the conversion product page) one-step COD checkout. Open to
+    # guests: buying without an account is the entire point of the funnel.
+    path('api/theme2/<int:product_id>/quote/', views.theme2_quote, name='theme2_quote'),
+    path('api/theme2/<int:product_id>/order/', views.theme2_place_order, name='theme2_place_order'),
 
     # Order-form data endpoints
     path('api/locations/', views.locations_json, name='locations'),

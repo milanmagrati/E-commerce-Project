@@ -1,0 +1,1184 @@
+/* ============================================================================
+   Theme 2 — the conversion product landing page.
+
+   Everything here is scoped under `.lx-pdp2` (the body class) or `.lx-p2` (the
+   page wrapper), so nothing can leak onto the rest of the storefront. The
+   custom properties are declared on the body class and never on `:root`: this
+   page is a deliberately different identity from store.css, and putting the
+   tokens on `:root` would hand that identity to every other page that happened
+   to load this file.
+
+   Load order matters more than specificity here — this is the only stylesheet
+   the Theme 2 shell loads, so there is nothing to out-specify and no reason to
+   reach for `!important`.
+   ========================================================================= */
+
+.lx-pdp2 {
+    --lx-p2-accent:      #e8590c;
+    --lx-p2-accent-dark: #cc4a05;
+    --lx-p2-accent-soft: #fdefe6;
+    --lx-p2-teal:        #0f766e;
+    --lx-p2-teal-dark:   #0b5c55;
+    --lx-p2-teal-soft:   #eaf6f3;
+    --lx-p2-ink:         #16283a;
+    --lx-p2-muted:       #6b7a88;
+    --lx-p2-line:        #e6e9ee;
+    --lx-p2-star:        #f5a623;
+    --lx-p2-page:        #fdf9f3;
+    --lx-p2-card:        #fff;
+    --lx-p2-foot:        #3b1512;
+    --lx-p2-radius:      16px;
+    --lx-p2-radius-sm:   10px;
+    --lx-p2-shadow:      0 1px 2px rgba(22, 40, 58, .04), 0 8px 28px rgba(22, 40, 58, .06);
+    --lx-p2-font:        'Jost', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* The host page may set a serif face, or underline bare links. Restate both
+   here rather than hoping: an inherited identity is exactly what this page is
+   not meant to have. */
+.lx-pdp2,
+.lx-pdp2 body {
+    margin: 0;
+    background: var(--lx-p2-page);
+    color: var(--lx-p2-ink);
+    font-family: var(--lx-p2-font);
+    -webkit-font-smoothing: antialiased;
+}
+
+.lx-pdp2 *,
+.lx-pdp2 *::before,
+.lx-pdp2 *::after { box-sizing: border-box; }
+
+.lx-pdp2 .lx-p2 h1,
+.lx-pdp2 .lx-p2 h2,
+.lx-pdp2 .lx-p2 h3,
+.lx-pdp2 .lx-p2 h4 {
+    font-family: var(--lx-p2-font);
+    color: var(--lx-p2-ink);
+    margin: 0;
+    letter-spacing: -.01em;
+}
+
+.lx-pdp2 a { color: inherit; text-decoration: none; }
+.lx-pdp2 a:hover { text-decoration: none; }
+.lx-pdp2 img { max-width: 100%; display: block; }
+.lx-pdp2 button { font-family: inherit; }
+
+/* ── The micro-label, used everywhere ── */
+.lx-p2-micro {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--lx-p2-muted);
+}
+
+/* ── Shell: header ───────────────────────────────────────────────────── */
+
+.lx-p2-hdr {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px 20px;
+    background: #fff;
+    border-bottom: 1px solid var(--lx-p2-line);
+}
+
+.lx-p2-brand { display: inline-flex; align-items: center; gap: 10px; }
+
+/* The cap belongs on the mark itself. Capping the wrapper instead is what
+   leaves a tall empty band above the fold when a logo brings its own link. */
+.lx-p2-hdr img,
+.lx-p2-hdr svg { max-height: 38px; width: auto; }
+
+.lx-p2-brand-name {
+    font-size: 19px;
+    font-weight: 800;
+    letter-spacing: -.02em;
+}
+
+.lx-p2-main { display: block; }
+
+.lx-p2-msgs { max-width: 1320px; margin: 16px auto 0; padding: 0 20px; }
+.lx-p2-msg {
+    padding: 11px 14px;
+    border-radius: var(--lx-p2-radius-sm);
+    background: var(--lx-p2-accent-soft);
+    color: var(--lx-p2-accent-dark);
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+.lx-p2-msg.is-error { background: #fdecec; color: #b42318; }
+
+/* ── Shell: footer ───────────────────────────────────────────────────── */
+
+.lx-p2-foot {
+    margin-top: 48px;
+    background: var(--lx-p2-foot);
+    color: rgba(255, 255, 255, .82);
+    padding: 40px 20px 20px;
+}
+.lx-p2-foot-grid {
+    max-width: 1320px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+}
+.lx-p2-foot-col h4 {
+    color: #fff;
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+.lx-p2-foot-col .lx-p2-brand-name { color: #fff; }
+.lx-p2-foot-col p { margin: 6px 0; font-size: 14px; line-height: 1.6; }
+.lx-p2-foot-col ul { list-style: none; margin: 0; padding: 0; }
+.lx-p2-foot-col li { margin: 6px 0; font-size: 14px; }
+.lx-p2-foot-col a:hover { color: #fff; }
+.lx-p2-foot-bottom {
+    max-width: 1320px;
+    margin: 26px auto 0;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, .12);
+    font-size: 12px;
+    color: rgba(255, 255, 255, .55);
+}
+
+/* ── Toast ───────────────────────────────────────────────────────────── */
+
+.lx-p2-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%);
+    z-index: 200;
+    background: var(--lx-p2-ink);
+    color: #fff;
+    padding: 11px 18px;
+    border-radius: 999px;
+    font-size: 14px;
+    box-shadow: var(--lx-p2-shadow);
+}
+
+/* ── The three-column grid ───────────────────────────────────────────── */
+
+.lx-p2 {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 22px 20px 0;
+}
+
+.lx-p2-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 42fr) minmax(0, 33fr) minmax(0, 25fr);
+    gap: 20px;
+    align-items: start;
+}
+
+/* Column A holds two grid items — the gallery above the buy box's row, and the
+   long-form content below it — so the one-column order can put the buy box
+   between them without moving any markup. */
+.lx-p2-gallery { grid-column: 1; grid-row: 1; }
+.lx-p2-content { grid-column: 1; grid-row: 2; }
+.lx-p2-reviews { grid-column: 1; grid-row: 3; }
+
+.lx-p2-buy  { grid-column: 2; grid-row: 1 / span 3; }
+.lx-p2-rail { grid-column: 3; grid-row: 1 / span 3; }
+
+/* `align-self: start` is what lets a grid item be sticky at all: stretched to
+   the row's full height there is nothing left for it to stick within. */
+.lx-p2-buy,
+.lx-p2-rail {
+    position: sticky;
+    top: 76px;
+    align-self: start;
+}
+
+.lx-p2-card {
+    background: var(--lx-p2-card);
+    border-radius: var(--lx-p2-radius);
+    box-shadow: var(--lx-p2-shadow);
+    padding: 24px;
+    margin-bottom: 20px;
+}
+
+.lx-p2-rule {
+    border: 0;
+    border-top: 1px solid var(--lx-p2-line);
+    margin: 18px 0;
+}
+
+/* ── Gallery ─────────────────────────────────────────────────────────── */
+
+.lx-p2-gallery { padding: 16px; }
+
+.lx-p2-stage {
+    position: relative;
+    background: #f7f4ef;
+    border-radius: var(--lx-p2-radius-sm);
+    overflow: visible;
+    aspect-ratio: 1 / 1;
+}
+
+.lx-p2-slides {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--lx-p2-radius-sm);
+    overflow: hidden;
+}
+
+.lx-p2-slide {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+.lx-p2-slide.is-active { display: flex; }
+.lx-p2-slide img { width: 100%; height: 100%; object-fit: contain; }
+.lx-p2-slide-empty { color: #c8c2b8; }
+
+.lx-p2-gnav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid var(--lx-p2-line);
+    background: rgba(255, 255, 255, .92);
+    color: var(--lx-p2-ink);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    z-index: 3;
+}
+.lx-p2-gnav svg { width: 16px; height: 16px; }
+.lx-p2-gnav.is-prev { left: 10px; }
+.lx-p2-gnav.is-next { right: 10px; }
+.lx-p2-gnav:hover { background: #fff; }
+
+.lx-p2-gcount {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    z-index: 3;
+    background: rgba(22, 40, 58, .72);
+    color: #fff;
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 999px;
+}
+
+.lx-p2-thumbs {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+}
+.lx-p2-thumb {
+    flex: 0 0 66px;
+    width: 66px;
+    height: 66px;
+    padding: 0;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background: #f7f4ef;
+    cursor: pointer;
+    overflow: hidden;
+}
+.lx-p2-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.lx-p2-thumb.is-active { border-color: var(--lx-p2-accent); }
+
+/* Hover magnifier. Hidden by default and only ever revealed on a device that
+   really has a pointer — width alone is the wrong question, because a large
+   tablet is wide and has no hover at all. */
+.lx-p2-zoom { display: none; }
+
+@media (hover: hover) and (min-width: 1100px) {
+    .lx-p2-zoom {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: calc(100% + 14px);
+        width: min(52vw, 780px);
+        z-index: 120;
+        border-radius: var(--lx-p2-radius-sm);
+        border: 1px solid var(--lx-p2-line);
+        background: #fff;
+        box-shadow: var(--lx-p2-shadow);
+        overflow: hidden;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .12s ease;
+    }
+    .lx-p2-zoom.is-on { opacity: 1; }
+    .lx-p2-zoom > div {
+        width: 100%;
+        height: 100%;
+        background-repeat: no-repeat;
+        background-color: #fff;
+    }
+}
+
+/* ── Buy box ─────────────────────────────────────────────────────────── */
+
+.lx-p2-title { font-size: 32px; font-weight: 700; line-height: 1.2; }
+
+.lx-p2-rating {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--lx-p2-muted);
+}
+.lx-p2-rating a { color: var(--lx-p2-muted); border-bottom: 1px solid var(--lx-p2-line); }
+
+.lx-p2-stars { color: var(--lx-p2-line); letter-spacing: 1px; }
+.lx-p2-stars .on { color: var(--lx-p2-star); }
+
+.lx-p2-pricerow {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+.lx-p2-pricecol { min-width: 0; }
+.lx-p2-price {
+    display: inline-block;
+    font-size: 48px;
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -.02em;
+}
+.lx-p2-badge {
+    display: inline-block;
+    margin-left: 8px;
+    vertical-align: 12px;
+    background: var(--lx-p2-accent);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 999px;
+}
+.lx-p2-was {
+    display: block;
+    margin-top: 2px;
+    font-size: 14px;
+    color: var(--lx-p2-muted);
+    text-decoration: line-through;
+}
+
+.lx-p2-qtycol { text-align: right; flex: 0 0 auto; }
+.lx-p2-qtycol .lx-p2-micro { margin-bottom: 6px; }
+
+.lx-p2-stepper {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--lx-p2-line);
+    border-radius: 999px;
+    overflow: hidden;
+    background: #fff;
+}
+.lx-p2-stepper button {
+    width: 36px;
+    height: 38px;
+    border: 0;
+    background: none;
+    font-size: 17px;
+    color: var(--lx-p2-ink);
+    cursor: pointer;
+}
+.lx-p2-stepper button:hover { background: var(--lx-p2-accent-soft); }
+.lx-p2-stepper input {
+    width: 44px;
+    height: 38px;
+    border: 0;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--lx-p2-ink);
+    background: none;
+    -moz-appearance: textfield;
+}
+.lx-p2-stepper input::-webkit-outer-spin-button,
+.lx-p2-stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.lx-p2-stepper.is-small button { width: 30px; height: 32px; }
+.lx-p2-stepper.is-small input { width: 38px; height: 32px; font-size: 14px; }
+
+.lx-p2-stock { margin: 12px 0 0; font-size: 13px; color: var(--lx-p2-muted); }
+
+/* ── Bundle & Save ───────────────────────────────────────────────────── */
+
+.lx-p2-bundle { margin-top: 20px; }
+
+.lx-p2-bundle-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    color: var(--lx-p2-teal);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+.lx-p2-bundle-head::before,
+.lx-p2-bundle-head::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--lx-p2-line);
+}
+
+.lx-p2-tiers { display: flex; flex-direction: column; gap: 10px; }
+
+/* All four restated on purpose. A tier class reused from a compact catalogue
+   chip carries `flex-direction: column`, and inheriting it here produces very
+   tall stacked cards that read like a specificity problem when they are a
+   missing-property one. */
+.lx-p2-tier {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1.5px solid var(--lx-p2-line);
+    border-radius: var(--lx-p2-radius-sm);
+    background: #fff;
+    cursor: pointer;
+    transition: border-color .12s ease, background .12s ease;
+}
+.lx-p2-tier:hover { border-color: var(--lx-p2-teal); }
+.lx-p2-tier.is-selected {
+    border-color: var(--lx-p2-teal);
+    background: var(--lx-p2-teal-soft);
+}
+.lx-p2-tier.is-popular::after {
+    content: 'Most popular';
+    position: absolute;
+    top: -9px;
+    right: 10px;
+    background: var(--lx-p2-teal-dark);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+}
+
+.lx-p2-tier-thumb {
+    position: relative;
+    flex: 0 0 46px;
+    width: 46px;
+    height: 46px;
+    border-radius: 8px;
+    background: #f7f4ef;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+}
+.lx-p2-tier-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.lx-p2-tier-qty {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    background: rgba(22, 40, 58, .78);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 999px;
+}
+
+.lx-p2-tier-text { flex: 1 1 auto; min-width: 0; }
+.lx-p2-tier-name { display: block; font-size: 14px; font-weight: 700; }
+.lx-p2-tier-save { display: block; font-size: 12px; color: var(--lx-p2-teal); font-weight: 600; }
+
+.lx-p2-tier-price { flex: 0 0 auto; text-align: right; }
+.lx-p2-tier-price .now { display: block; font-size: 15px; font-weight: 800; color: var(--lx-p2-teal); }
+.lx-p2-tier-price .was { display: block; font-size: 11px; color: var(--lx-p2-muted); text-decoration: line-through; }
+
+.lx-p2-bundle-await { margin: 10px 0 0; font-size: 12px; color: var(--lx-p2-muted); }
+
+/* ── Variant cards ───────────────────────────────────────────────────── */
+
+.lx-p2-variants { margin-top: 20px; }
+.lx-p2-variants .lx-p2-micro { margin-bottom: 10px; text-transform: uppercase; }
+.lx-p2-variants .lx-p2-micro b { color: var(--lx-p2-ink); }
+
+.lx-p2-variant-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+.lx-p2-variant {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 10px;
+    border: 1.5px solid var(--lx-p2-line);
+    border-radius: var(--lx-p2-radius-sm);
+    background: #fff;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color .12s ease, background .12s ease;
+}
+.lx-p2-variant:hover { border-color: var(--lx-p2-accent); }
+.lx-p2-variant.is-selected {
+    border-color: var(--lx-p2-accent);
+    background: var(--lx-p2-accent-soft);
+}
+.lx-p2-variant.is-out { opacity: .48; cursor: not-allowed; }
+.lx-p2-variant-media {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 8px;
+    background: #f7f4ef;
+    overflow: hidden;
+}
+.lx-p2-variant-media img { width: 100%; height: 100%; object-fit: cover; }
+.lx-p2-variant-name { font-size: 13px; font-weight: 700; }
+.lx-p2-variant-price { font-size: 12px; color: var(--lx-p2-muted); }
+.lx-p2-variant-out { font-size: 11px; color: #b42318; font-weight: 600; }
+
+/* ── BUY NOW ─────────────────────────────────────────────────────────── */
+
+/* Named `.lx-p2-buybtn`, never `.lx-p2-buy` — that is the sticky grid column
+   this button sits inside, and sharing the class would make the button
+   sticky too. */
+.lx-p2-buybtn {
+    display: block;
+    width: 100%;
+    margin-top: 20px;
+    padding: 15px 18px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--lx-p2-accent);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background .12s ease;
+}
+.lx-p2-buybtn:hover { background: var(--lx-p2-accent-dark); }
+.lx-p2-buybtn.is-disabled,
+.lx-p2-buybtn:disabled { background: #c9cdd3; cursor: not-allowed; }
+
+.lx-p2-buyhint {
+    margin: 8px 0 0;
+    font-size: 12.5px;
+    color: #b42318;
+    text-align: center;
+}
+
+.lx-p2-restock { margin-top: 16px; }
+.lx-p2-restock-row { display: flex; gap: 8px; margin-top: 6px; }
+.lx-p2-restock-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--lx-p2-line);
+    border-radius: var(--lx-p2-radius-sm);
+    font-size: 14px;
+    font-family: inherit;
+}
+.lx-p2-restock-row button {
+    padding: 10px 14px;
+    border: 1px solid var(--lx-p2-accent);
+    border-radius: var(--lx-p2-radius-sm);
+    background: #fff;
+    color: var(--lx-p2-accent);
+    font-weight: 700;
+    cursor: pointer;
+}
+.lx-p2-restock-msg { margin: 8px 0 0; font-size: 12.5px; color: var(--lx-p2-teal); }
+
+/* ── Trust row ───────────────────────────────────────────────────────── */
+
+.lx-p2-trust {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 1px solid var(--lx-p2-line);
+}
+.lx-p2-trust-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--lx-p2-muted);
+    line-height: 1.35;
+}
+.lx-p2-trust-item svg { width: 20px; height: 20px; color: var(--lx-p2-accent); }
+
+/* ── Info rail ───────────────────────────────────────────────────────── */
+
+.lx-p2-railcard { padding: 22px; }
+
+.lx-p2-railhead {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--lx-p2-teal);
+    margin-bottom: 10px;
+}
+.lx-p2-railhead + * { margin-top: 0; }
+.lx-p2-railcard .lx-p2-railhead:not(:first-child) { margin-top: 20px; }
+
+.lx-p2-dots { list-style: none; margin: 0 0 4px; padding: 0; }
+.lx-p2-dots li {
+    position: relative;
+    padding-left: 16px;
+    margin: 7px 0;
+    font-size: 13.5px;
+    line-height: 1.45;
+}
+.lx-p2-dots li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--lx-p2-teal);
+}
+
+.lx-p2-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.lx-p2-chip {
+    background: var(--lx-p2-accent-soft);
+    color: var(--lx-p2-accent-dark);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+}
+
+.lx-p2-railrow { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0; }
+.lx-p2-railicon { flex: 0 0 22px; color: var(--lx-p2-muted); }
+.lx-p2-railicon svg { width: 20px; height: 20px; }
+.lx-p2-railtext { min-width: 0; }
+.lx-p2-railvalue { display: block; font-size: 13.5px; font-weight: 600; margin-top: 2px; }
+.lx-p2-railvalue.is-accent { color: var(--lx-p2-accent); }
+
+/* ── Column A content blocks ─────────────────────────────────────────── */
+
+.lx-p2-blockhead {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--lx-p2-muted);
+    margin-bottom: 16px;
+}
+
+.lx-p2-videos {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+}
+.lx-p2-video {
+    position: relative;
+    aspect-ratio: 9 / 16;
+    border-radius: var(--lx-p2-radius-sm);
+    overflow: hidden;
+    background: #11161c;
+}
+.lx-p2-video video { width: 100%; height: 100%; object-fit: cover; }
+.lx-p2-vbadge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(255, 255, 255, .92);
+    color: var(--lx-p2-ink);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+}
+.lx-p2-vplay {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 46px;
+    height: 46px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .9);
+    color: var(--lx-p2-ink);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+}
+.lx-p2-vplay svg { width: 18px; height: 18px; margin-left: 2px; }
+.lx-p2-video.is-playing .lx-p2-vplay { opacity: 0; }
+.lx-p2-video:hover .lx-p2-vplay { opacity: 1; }
+.lx-p2-vmute,
+.lx-p2-vexpand {
+    position: absolute;
+    bottom: 8px;
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(17, 22, 28, .6);
+    color: #fff;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+}
+.lx-p2-vmute { left: 8px; }
+.lx-p2-vexpand { right: 8px; }
+.lx-p2-vmute svg,
+.lx-p2-vexpand svg { width: 15px; height: 15px; }
+
+.lx-p2-stat { display: flex; align-items: center; gap: 22px; }
+.lx-p2-stat-text { flex: 1 1 auto; min-width: 0; }
+.lx-p2-stat-figure {
+    margin: 0;
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1.1;
+    color: var(--lx-p2-accent);
+    letter-spacing: -.02em;
+}
+.lx-p2-stat-sub { margin: 6px 0 0; font-size: 14.5px; color: var(--lx-p2-muted); line-height: 1.5; }
+.lx-p2-stat-img { flex: 0 0 38%; }
+.lx-p2-stat-img img { border-radius: var(--lx-p2-radius-sm); }
+
+.lx-p2-benefit { text-align: center; }
+.lx-p2-benefit-text {
+    margin: 0 0 14px;
+    font-size: 21px;
+    font-weight: 700;
+    line-height: 1.35;
+}
+.lx-p2-benefit img { border-radius: var(--lx-p2-radius-sm); width: 100%; }
+
+.lx-p2-steps { list-style: none; margin: 0; padding: 0; }
+.lx-p2-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 14px 0;
+    border-top: 1px solid var(--lx-p2-line);
+}
+.lx-p2-step:first-child { border-top: 0; padding-top: 0; }
+.lx-p2-step-n {
+    flex: 0 0 30px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--lx-p2-accent-soft);
+    color: var(--lx-p2-accent-dark);
+    font-size: 13px;
+    font-weight: 800;
+    display: grid;
+    place-items: center;
+}
+.lx-p2-step-body { flex: 1 1 auto; min-width: 0; }
+.lx-p2-step-body h3 { font-size: 15px; font-weight: 700; }
+.lx-p2-step-body p { margin: 4px 0 0; font-size: 14px; color: var(--lx-p2-muted); line-height: 1.55; }
+.lx-p2-step > img { flex: 0 0 84px; width: 84px; border-radius: 8px; }
+
+.lx-p2-ing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 14px;
+}
+.lx-p2-ing { margin: 0; text-align: center; }
+.lx-p2-ing img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: var(--lx-p2-radius-sm);
+    background: #f7f4ef;
+}
+.lx-p2-ing-name { display: block; margin-top: 8px; font-size: 13.5px; font-weight: 700; }
+.lx-p2-ing-note { display: block; margin-top: 2px; font-size: 12px; color: var(--lx-p2-muted); line-height: 1.4; }
+
+.lx-p2-prose { font-size: 15px; line-height: 1.7; color: #33414f; }
+.lx-p2-prose p { margin: 0 0 12px; }
+.lx-p2-prose img { border-radius: var(--lx-p2-radius-sm); margin: 12px 0; width: 100%; }
+.lx-p2-prose table { width: 100%; border-collapse: collapse; }
+.lx-p2-prose > table { display: block; overflow-x: auto; }
+
+/* Opt-in helpers an admin can use inside the description. */
+.lx-p2-prose .lx-p2-ba { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.lx-p2-prose .lx-p2-ba figure { margin: 0; position: relative; }
+.lx-p2-prose .lx-p2-ba figcaption {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(255, 255, 255, .92);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+}
+.lx-p2-prose .lx-p2-step { border: 0; padding: 8px 0; }
+
+/* ── Reviews ─────────────────────────────────────────────────────────── */
+
+.lx-p2-rev-head {
+    display: grid;
+    grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+    gap: 24px;
+    align-items: center;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--lx-p2-line);
+}
+/* Without this the bars overflow their grid column the moment a count runs to
+   three digits — a grid item's default min-width is its content, not zero. */
+.lx-p2-rev-bars { min-width: 0; }
+.lx-p2-rev-num { display: block; font-size: 44px; font-weight: 800; line-height: 1.05; }
+.lx-p2-rev-score .lx-p2-stars { font-size: 17px; }
+.lx-p2-rev-row {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--lx-p2-muted);
+    margin: 5px 0;
+}
+.lx-p2-rev-track { height: 7px; border-radius: 999px; background: #f0eeea; overflow: hidden; }
+.lx-p2-rev-fill { display: block; height: 100%; background: var(--lx-p2-star); }
+.lx-p2-rev-count { text-align: right; }
+
+.lx-p2-rev-list { margin-top: 6px; }
+.lx-p2-rev { padding: 16px 0; border-bottom: 1px solid var(--lx-p2-line); }
+.lx-p2-rev-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.lx-p2-rev-meta strong { font-size: 14px; }
+.lx-p2-rev-body { margin: 8px 0 0; font-size: 14.5px; line-height: 1.6; color: #33414f; }
+.lx-p2-rev-foot { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.lx-p2-rev-date { font-size: 12px; color: var(--lx-p2-muted); margin-right: auto; }
+.lx-p2-vote {
+    border: 1px solid var(--lx-p2-line);
+    background: #fff;
+    border-radius: 999px;
+    padding: 4px 11px;
+    font-size: 12.5px;
+    cursor: pointer;
+    color: var(--lx-p2-muted);
+}
+.lx-p2-vote:hover:not(:disabled) { border-color: var(--lx-p2-accent); color: var(--lx-p2-accent); }
+.lx-p2-vote:disabled { opacity: .5; cursor: default; }
+.lx-p2-rev-empty { font-size: 14px; color: var(--lx-p2-muted); }
+
+.lx-p2-rev-form { margin-top: 22px; }
+.lx-p2-rev-form h3 { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+.lx-p2-rev-form input[type="text"],
+.lx-p2-rev-form textarea {
+    display: block;
+    width: 100%;
+    max-width: 460px;
+    margin-top: 10px;
+    padding: 11px 13px;
+    border: 1px solid var(--lx-p2-line);
+    border-radius: var(--lx-p2-radius-sm);
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--lx-p2-ink);
+    background: #fff;
+}
+.lx-p2-rev-form button {
+    margin-top: 12px;
+    padding: 11px 22px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--lx-p2-ink);
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+}
+.lx-p2-starpick { display: inline-flex; gap: 3px; cursor: pointer; font-size: 24px; color: var(--lx-p2-line); }
+.lx-p2-starpick span.on { color: var(--lx-p2-star); }
+.lx-p2-rev-msg { margin: 10px 0 0; font-size: 13px; color: var(--lx-p2-teal); }
+.lx-p2-rev-msg.is-error { color: #b42318; }
+
+/* ── Sticky bar ──────────────────────────────────────────────────────── */
+
+.lx-p2-sticky {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 130;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid var(--lx-p2-line);
+    box-shadow: 0 -6px 24px rgba(22, 40, 58, .08);
+}
+.lx-p2-sticky[hidden] { display: none; }
+.lx-p2-sticky-info { flex: 1 1 auto; min-width: 0; }
+.lx-p2-sticky-name {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lx-p2-sticky-price { display: block; font-size: 17px; font-weight: 800; }
+.lx-p2-sticky .lx-p2-buybtn { width: auto; margin: 0; padding: 12px 24px; flex: 0 0 auto; }
+
+/* ── Checkout modal ──────────────────────────────────────────────────── */
+
+.lx-p2-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 160;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.lx-p2-modal[hidden] { display: none; }
+.lx-p2-veil { position: absolute; inset: 0; background: rgba(22, 40, 58, .5); }
+
+.lx-p2-sheet {
+    position: relative;
+    width: 100%;
+    max-width: 460px;
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-radius: var(--lx-p2-radius);
+    box-shadow: 0 24px 70px rgba(22, 40, 58, .28);
+    overflow: hidden;
+}
+.lx-p2-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--lx-p2-line);
+}
+.lx-p2-sheet-head h2 { font-size: 17px; font-weight: 700; }
+.lx-p2-sheet-x {
+    border: 0;
+    background: none;
+    font-size: 26px;
+    line-height: 1;
+    color: var(--lx-p2-muted);
+    cursor: pointer;
+}
+.lx-p2-sheet-body { padding: 18px 20px 20px; overflow-y: auto; }
+
+.lx-p2-co-item { display: flex; align-items: center; gap: 12px; }
+.lx-p2-co-item img { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: #f7f4ef; }
+.lx-p2-co-item-text { flex: 1 1 auto; min-width: 0; }
+.lx-p2-co-name { display: block; font-size: 14px; font-weight: 700; }
+.lx-p2-co-variant { display: block; font-size: 12px; color: var(--lx-p2-muted); }
+
+.lx-p2-co-nudge {
+    margin-top: 14px;
+    padding: 11px 13px;
+    border-radius: var(--lx-p2-radius-sm);
+    background: var(--lx-p2-teal-soft);
+}
+.lx-p2-co-nudge p { margin: 0 0 7px; font-size: 13px; font-weight: 600; color: var(--lx-p2-teal-dark); }
+.lx-p2-co-bar { display: block; height: 6px; border-radius: 999px; background: #d5e9e5; overflow: hidden; }
+.lx-p2-co-bar > span { display: block; height: 100%; background: var(--lx-p2-teal); }
+.lx-p2-co-nudge .lx-p2-micro { margin-top: 5px; text-align: right; }
+
+.lx-p2-co-rows { margin: 16px 0 4px; padding: 0; }
+.lx-p2-co-rows > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 14px;
+}
+.lx-p2-co-rows dt { color: var(--lx-p2-muted); margin: 0; }
+.lx-p2-co-rows dd { margin: 0; font-weight: 600; }
+.lx-p2-co-rows .is-total {
+    margin-top: 6px;
+    padding-top: 10px;
+    border-top: 1px solid var(--lx-p2-line);
+    font-size: 17px;
+}
+.lx-p2-co-rows .is-total dt { color: var(--lx-p2-ink); font-weight: 700; }
+.lx-p2-co-rows .is-total dd { font-weight: 800; color: var(--lx-p2-accent); }
+
+.lx-p2-co-field { margin-top: 13px; }
+.lx-p2-co-field label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--lx-p2-muted);
+    margin-bottom: 5px;
+}
+.lx-p2-co-input {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border: 1px solid var(--lx-p2-line);
+    border-radius: var(--lx-p2-radius-sm);
+    background: #fff;
+}
+.lx-p2-co-input:focus-within { border-color: var(--lx-p2-accent); }
+.lx-p2-co-input svg { width: 17px; height: 17px; flex: 0 0 17px; color: var(--lx-p2-muted); }
+.lx-p2-co-input input,
+.lx-p2-co-input select {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    padding: 11px 0;
+    font-family: inherit;
+    font-size: 14.5px;
+    color: var(--lx-p2-ink);
+    background: none;
+}
+.lx-p2-co-prefix { font-size: 14px; font-weight: 700; color: var(--lx-p2-muted); }
+.lx-p2-co-hint { display: block; margin-top: 4px; font-size: 12px; color: var(--lx-p2-muted); }
+.lx-p2-co-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.lx-p2-co-pay { margin-top: 16px; padding: 0; border: 0; }
+.lx-p2-co-pay legend { padding: 0; margin-bottom: 6px; }
+.lx-p2-co-radio {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 13px;
+    border: 1.5px solid var(--lx-p2-accent);
+    border-radius: var(--lx-p2-radius-sm);
+    background: var(--lx-p2-accent-soft);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.lx-p2-co-radio input { accent-color: var(--lx-p2-accent); }
+
+.lx-p2-co-error {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border-radius: var(--lx-p2-radius-sm);
+    background: #fdecec;
+    color: #b42318;
+    font-size: 13px;
+}
+.lx-p2-co-error[hidden] { display: none; }
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 1100px) {
+    .lx-p2-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .lx-p2-gallery { grid-column: 1 / -1; grid-row: 1; }
+    .lx-p2-buy     { grid-column: 1; grid-row: 2; }
+    .lx-p2-rail    { grid-column: 2; grid-row: 2; }
+    .lx-p2-content { grid-column: 1 / -1; grid-row: 3; }
+    .lx-p2-reviews { grid-column: 1 / -1; grid-row: 4; }
+    .lx-p2-stage { aspect-ratio: 4 / 3; }
+}
+
+@media (max-width: 1024px) {
+    .lx-p2-title { font-size: 28px; }
+    .lx-p2-price { font-size: 42px; }
+}
+
+@media (max-width: 900px) {
+    .lx-p2-rev-head { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+}
+
+@media (max-width: 820px) {
+    /* One column. Flex + `order` rather than more grid placement, so the
+       funnel order — gallery, buy box, rail, content, reviews — is stated
+       once and cannot drift from the markup. */
+    .lx-p2-grid { display: flex; flex-direction: column; }
+    .lx-p2-gallery { order: 1; }
+    .lx-p2-buy     { order: 2; }
+    .lx-p2-rail    { order: 3; }
+    .lx-p2-content { order: 4; }
+    .lx-p2-reviews { order: 5; }
+    /* A PDP gallery with an implicit width is the classic cause of horizontal
+       page scroll on a phone. */
+    .lx-p2-gallery,
+    .lx-p2-buy,
+    .lx-p2-rail,
+    .lx-p2-content,
+    .lx-p2-reviews { width: 100%; min-width: 0; }
+    .lx-p2-buy,
+    .lx-p2-rail { position: static; }
+    /* Room for the sticky bar. */
+    .lx-p2-reviews { padding-bottom: 72px; }
+}
+
+@media (max-width: 768px) {
+    .lx-p2 { padding: 16px 14px 0; }
+    .lx-p2-card { padding: 18px; }
+    .lx-p2-stat { flex-direction: column; align-items: flex-start; gap: 14px; }
+    .lx-p2-stat-img { flex: 1 1 auto; width: 100%; }
+    .lx-p2-foot-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+    /* The modal becomes a bottom sheet: full width, rounded at the top only,
+       body scrolling internally so the submit button stays put. */
+    .lx-p2-modal { align-items: flex-end; padding: 0; }
+    .lx-p2-sheet {
+        max-width: none;
+        max-height: 92vh;
+        border-radius: var(--lx-p2-radius) var(--lx-p2-radius) 0 0;
+    }
+    .lx-p2-co-two { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+    .lx-p2-title { font-size: 24px; }
+    .lx-p2-price { font-size: 36px; }
+    .lx-p2-pricerow { flex-direction: column; align-items: stretch; gap: 12px; }
+    .lx-p2-qtycol { text-align: left; }
+    .lx-p2-variant-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .lx-p2-step > img { flex-basis: 60px; width: 60px; }
+}
+
+/* Touch devices get the tap-to-open lightbox rather than a magnifier that
+   cannot be hovered. Width is the wrong question for this — a large tablet is
+   wide and still has no pointer. */
+@media (hover: none) {
+    .lx-p2-zoom { display: none; }
+    .lx-p2-video .lx-p2-vplay { opacity: 1; }
+}

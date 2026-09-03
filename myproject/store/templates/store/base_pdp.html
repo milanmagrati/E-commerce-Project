@@ -1,0 +1,102 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+{% comment %}
+The Theme 2 shell. Deliberately not `store/base.html`: an ad landing page has
+one job, and an announcement bar, a category nav, a search box and a cart
+drawer are four ways off it. Header is a centred logo lockup and nothing else;
+footer is three plain columns of contact detail.
+
+It also loads none of the storefront's stylesheets — Theme 2 is a separate
+visual identity on purpose, and inheriting store.css would drag the site
+palette, the serif headings and the link underlines onto a page that is not
+meant to look like the rest of the shop.
+{% endcomment %}
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ product.name }}{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'store/css/pdp-theme2.css' %}">
+    {% block extra_css %}{% endblock %}
+    {% include 'partials/sentinel_device_probe.html' %}
+</head>
+<body class="lx-pdp2">
+
+    <header class="lx-p2-hdr">
+        {% comment %}
+        One anchor around the mark, never two. The height cap belongs on the
+        image inside it, not on the wrapper: cap the wrapper and a logo that
+        brings its own link escapes the cap, leaving a tall empty band above
+        the fold that reads as a CSS bug and is a markup one.
+        {% endcomment %}
+        <a class="lx-p2-brand" href="{% url 'store:landing' %}">
+            <svg width="34" height="34" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <circle cx="20" cy="20" r="18" fill="#e8590c"/>
+                <text x="20" y="27" text-anchor="middle" fill="#fff" font-size="21"
+                      font-weight="bold" font-family="Jost, sans-serif">S</text>
+            </svg>
+            <span class="lx-p2-brand-name">Store</span>
+        </a>
+    </header>
+
+    <main class="lx-p2-main">
+        {% if messages %}
+        <div class="lx-p2-msgs">
+            {% for message in messages %}
+            <div class="lx-p2-msg is-{{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="lx-p2-foot">
+        <div class="lx-p2-foot-grid">
+            <div class="lx-p2-foot-col">
+                <span class="lx-p2-brand-name">Store</span>
+                {% if t2.shell.credit %}<p>{{ t2.shell.credit }}</p>{% endif %}
+            </div>
+            <div class="lx-p2-foot-col">
+                <h4>Contact</h4>
+                {% if t2.shell.phone %}<p>{{ t2.shell.phone }}</p>{% endif %}
+                {% if t2.shell.address %}<p>{{ t2.shell.address }}</p>{% endif %}
+                {% if not t2.shell.phone and not t2.shell.address %}
+                <p>Set the footer address and phone in Setup &rsaquo; Product Page Theme.</p>
+                {% endif %}
+            </div>
+            <div class="lx-p2-foot-col">
+                <h4>Help</h4>
+                <ul>
+                    <li><a href="{% url 'store:order_track' %}">Track your order</a></li>
+                    {% for page in footer_pages %}{% if forloop.counter <= 3 %}
+                    <li><a href="{% url 'store:dynamic_page' page.slug %}">{{ page.title }}</a></li>
+                    {% endif %}{% endfor %}
+                </ul>
+            </div>
+        </div>
+        <div class="lx-p2-foot-bottom">&copy; {% now "Y" %} Store</div>
+    </footer>
+
+    <div id="lx-p2-toast" class="lx-p2-toast" role="status" aria-live="polite" hidden></div>
+
+    <script>
+        const LX_P2 = {
+            csrf: "{{ csrf_token }}",
+            productId: {{ product.id }},
+            quoteUrl: "{% url 'store:theme2_quote' product_id=product.id %}",
+            orderUrl: "{% url 'store:theme2_place_order' product_id=product.id %}",
+            addToCartUrl: "{% url 'store:add_to_cart' product_id=product.id %}",
+            checkoutUrl: "{% url 'store:checkout' %}",
+            reviewUrl: "{% url 'store:add_review' product_id=product.id %}",
+            locationsUrl: "{% url 'store:locations' %}",
+            voteUrlBase: "/store/review/"
+        };
+    </script>
+    <script src="{% static 'store/js/pdp-theme2.js' %}" defer></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
