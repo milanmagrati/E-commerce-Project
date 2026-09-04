@@ -198,6 +198,11 @@ CDN link is equally valid input and nothing is locked to that table. Uploads are
 refused by **extension**, not by the browser's content type, which is trivially
 forged.
 
+**Raw text and the rows are two views of one value, never both at once.**
+"Edit as text" hides the rows and the Add button (`.ptr.is-raw`), because a
+keystroke in any cell - or Add - rewrites the textarea from the rows, and
+whatever was being typed into the raw box is gone without a word.
+
 **The list fields stay `a | b | c` text.** Videos, before/after pairs, how-to
 steps and ingredients are each one line per row, and the repeater in
 `product_theme_editor_js.html` is drawn *on top of* the hidden textarea rather
@@ -240,11 +245,13 @@ Two traps that cost real time here, both about page config:
   unrelated store suites break at once, check
   `ProductPageTheme.get_solo().layout` before reading any further.
 
-Verification: `python test_product_page_theme.py` (132 checks — fee parsing, the
+Verification: `python test_product_page_theme.py` (137 checks — fee parsing, the
 precedence rules, `quote()` refusals and clamping, the ladder's shape and which
 rung it selects, the before/after pairing rule, the upload endpoint's extension
 and size refusals and who it lets through, the router, and an end-to-end order
 whose total, delivery line, tier price, stock movement and untouched cart are
 all asserted; the product form's panel drawing, saving, clearing and — the one
 that matters — surviving a post that never carried it; and that a three-cell
-clip row still parses after the format grew two cells).
+clip row still parses after the format grew two cells; and that the model's
+override columns, `FIELD_SPECS` and `theme2.OVERRIDABLE` are the same set, so
+none of the three can grow alone into a field that quietly does nothing).

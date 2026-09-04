@@ -678,6 +678,39 @@ def _product_post(fx, **extra):
     return payload
 
 
+def test_field_specs_agree(fx):
+    section('One list of fields, three places that must agree')
+    from dashboard.product_theme_views import FIELD_GROUPS, FIELD_SPECS
+
+    # The whole point of FIELD_SPECS is that a field cannot be drawn on one
+    # surface, missing from the other, and silently unsaved. Three lists have
+    # to hold hands for that: the model's columns, this list, and the set the
+    # resolver is willing to read from an override. Any one of them growing
+    # alone is a field that quietly does nothing.
+    keys = set(spec['key'] for spec in FIELD_SPECS)
+    columns = set(f.name for f in ProductThemeOverride._meta.get_fields())
+    columns -= {'id', 'product', 'layout', 'updated_at', 'created_at'}
+
+    check('every override column is on the editing surfaces',
+          columns == keys, sorted(columns ^ keys))
+    check('every field is one the resolver will read',
+          keys == set(theme2.OVERRIDABLE), sorted(keys ^ set(theme2.OVERRIDABLE)))
+    check('every field lands in a group the panel draws',
+          all(spec['group'] in dict(FIELD_GROUPS) for spec in FIELD_SPECS),
+          sorted(set(s['group'] for s in FIELD_SPECS) - set(dict(FIELD_GROUPS))))
+    check('every repeater names a spec the editor knows',
+          all(spec.get('spec') for spec in FIELD_SPECS if spec['widget'] == 'repeater'))
+
+    # And that name has to exist in the browser's SPECS map, or the field draws
+    # as a bare textarea of pipes with nothing to say why.
+    import io
+    js = io.open('dashboard/templates/dashboard/partials/'
+                 'product_theme_editor_js.html', encoding='utf-8').read()
+    missing = [spec['spec'] for spec in FIELD_SPECS
+               if spec['widget'] == 'repeater' and (spec['spec'] + ': {') not in js]
+    check('every repeater spec exists in the editor script', not missing, missing)
+
+
 def test_product_form_panel(fx):
     section('The landing-page panel on the product form')
     from django.contrib.auth import get_user_model
@@ -800,6 +833,7 @@ def main():
         test_ladder(fx)
         test_before_after(fx)
         test_content_lists(fx)
+        test_field_specs_agree(fx)
         test_product_form_panel(fx)
         test_media_uploads()
         test_router(fx)

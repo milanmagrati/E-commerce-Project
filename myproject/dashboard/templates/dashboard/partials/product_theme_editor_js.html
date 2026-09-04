@@ -399,7 +399,7 @@ column of bare textareas with no clue why. A template is read with the page.
         host.appendChild(list);
 
         var foot = el('div', 'ptr-foot');
-        var add = el('button', 'pt-btn', '+ ' + spec.addLabel);
+        var add = el('button', 'pt-btn ptr-add', '+ ' + spec.addLabel);
         add.type = 'button';
         foot.appendChild(add);
 
@@ -520,12 +520,18 @@ column of bare textareas with no clue why. A template is read with the page.
             commit();
         });
 
+        // Raw text and the rows are two views of one value, never both at
+        // once. Leaving the rows on screen while the text is being edited
+        // means the next keystroke in any cell - or the Add button - rewrites
+        // the textarea from the rows and throws the typing away without a
+        // word, so `is-raw` hides them and CSS is what enforces it.
         raw.addEventListener('click', function () {
             var showing = textarea.hidden;
             textarea.hidden = !showing;
             host.classList.toggle('is-raw', showing);
             raw.textContent = showing ? 'Back to the editor' : 'Edit as text';
-            if (!showing) load();   // coming back from raw text: re-read it
+            if (showing) textarea.focus();
+            else load();            // coming back from raw text: re-read it
         });
 
         // Keep the repeater honest if something else writes the textarea (the

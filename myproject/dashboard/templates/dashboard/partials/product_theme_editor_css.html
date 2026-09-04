@@ -241,7 +241,12 @@ surfaces #fff / #F9FAFB / #FCFCFD, brand #E8590C / #C2410C on #FFF7F2.
 }
 .ptr-foot { display: flex; gap: .5rem; padding: 0 .55rem .55rem; }
 .ptr-foot .pt-btn { padding: .42rem .8rem; font-size: .79rem; }
-.ptr.is-raw + textarea { display: block; }
+/* Raw text and the rows are two views of one value. Both on screen at once is
+   a trap: a keystroke in any cell, or the Add button, rewrites the textarea
+   from the rows and the typing is gone. */
+.ptr.is-raw + textarea { display: block; margin-top: .5rem; }
+.ptr.is-raw .ptr-rows,
+.ptr.is-raw .ptr-add { display: none; }
 
 /* ── Media picker ── */
 .ptm { position: fixed; inset: 0; z-index: 1090; display: none; }

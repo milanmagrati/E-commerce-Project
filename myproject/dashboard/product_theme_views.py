@@ -243,10 +243,10 @@ def product_theme_form_context(product=None, post=None):
                 'key': group_key,
                 'label': group_label,
                 'fields': fields,
-                # Drives whether the section opens folded. A group that already
-                # says something opens; the rest stay one line each, so an
-                # untouched panel is six headings rather than two screens of
-                # empty boxes.
+                # Puts the dot on the heading: at a glance, which sections this
+                # product has already said something in. Every section arrives
+                # open regardless - folding is the reader's choice, not a
+                # state they have to undo.
                 'filled': any(f['value'] for f in fields),
             })
 
@@ -325,10 +325,11 @@ def product_theme_product_json(request, product_id):
             'layout': row.layout if row else '',
             'resolved': theme2.layout_for(product, row),
             'fields': {}, 'inherited': {}}
+    snapshot = theme2.settings_snapshot()
     for key in _meta_fields():
         data['fields'][key] = getattr(row, key, '') if row else ''
         # What the product page will show if this box is left empty.
-        data['inherited'][key] = theme2.settings_snapshot().get(key, '') or theme2.DEFAULTS.get(key, '')
+        data['inherited'][key] = snapshot.get(key, '') or theme2.DEFAULTS.get(key, '')
     return JsonResponse(data)
 
 

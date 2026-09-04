@@ -541,7 +541,12 @@ that always submits a value cannot half-save.
         node.addEventListener('click', close);
     });
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') close();
+        if (e.key !== 'Escape') return;
+        // The media picker sits on top of the drawer and closes itself on
+        // Escape. Closing the drawer underneath it in the same keystroke
+        // throws away the place the reader was working in.
+        if (document.querySelector('.ptm.is-open')) return;
+        close();
     });
 
     document.querySelectorAll('[data-pt-edit]').forEach(function (button) {
