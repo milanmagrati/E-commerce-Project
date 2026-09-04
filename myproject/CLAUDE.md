@@ -130,6 +130,43 @@ Traps that are already paid for, and must stay paid for:
   constraints: production is MySQL, which silently declines to create conditional
   constraints, leaving "one vote per visitor" a promise nothing keeps.
 
+**A product's page is edited on the product form, not only at Setup.**
+`dashboard/templates/dashboard/partials/product_theme_panel.html` is included
+inside `product_form.html`, so the landing page is written where the product
+is written and saved by the same submit button. Three rules hold it together:
+
+- **`pt_present` is the switch.** `save_product_theme()` does nothing unless
+  the post carried it. Every other dashboard path that posts a product form
+  omits the panel's boxes, and without this any of them would blank a live
+  landing page by omission — a loss the shop would discover from a customer.
+- **The inputs are `pt_`-prefixed** because they ride in the same request as
+  `ProductForm`, where a box called `videos` or `features` would be anyone's
+  guess.
+- **A rejected product form re-reads its own post.** Pass `request.POST` to
+  `product_theme_form_context()` on every error branch: a page written across
+  a dozen boxes and thrown away because the *price* field was empty is not
+  forgiven.
+
+`FIELD_SPECS` in `dashboard/product_theme_views.py` is the single ordered list
+of everything one product may set for itself, with the `widget` that draws it.
+The drawer on the setup screen and the panel on the product form both render
+from it, and `save_product_theme()` walks the same list — so a field cannot be
+drawn on one surface, missing from the other, and silently unsaved. Add a field
+there and to `theme2.OVERRIDABLE`, never to one of them alone.
+
+The editing chrome (`.pt-field`, `.ptf`, `.ptr`, `.ptm`) lives in
+`dashboard/static/dashboard/css/product-theme-editor.css` because two screens
+draw it; `product-theme-setup.js` is its behaviour and the two are a pair.
+
+**The media endpoints refuse in JSON, not with a redirect.** They are called by
+fetch from both screens, and `admin_or_permission_required` answers a refusal
+with a redirect plus a queued Django message — HTML the caller cannot parse,
+and a stray error toast on whatever page loads next. They check
+`has_any_permission(user, *MEDIA_PERMISSIONS)` and return a 403 JSON body
+instead, and they answer to `can_edit_products` / `can_create_products` rather
+than to `admin_only`, because the panel on the product form is one of the two
+places they run from.
+
 **Photos and clips are uploaded, not pasted.** `store.ThemeMedia` holds both
 (`dashboard.MediaAsset` is an `ImageField` and would reject an MP4). What the
 theme's text fields store is the file's **URL**, never the row id, so a pasted
@@ -144,6 +181,16 @@ of* the hidden textarea rather than replacing it. The textarea is still what the
 plain form post carries — no extra endpoint, no second save path, and "Edit as
 text" is one click away. A cell's pipes and newlines are stripped on write,
 because either would split the row somewhere the author did not intend.
+
+**Trailing cells are how a row format grows.** A clip row is
+`video | poster | creator | title | description`: the caption cells were added
+after the format shipped, and because `cells()` pads, every three-cell row
+written before them still parses to exactly the card it always drew. Add to the
+end of a row, never to the middle. The two newer lists follow the same shape —
+`info_media` is `image | heading | description` (the description gallery inside
+the Product information block) and `features` is `title | description` (the
+ticked features/manual list); both are optional and both render nothing at all
+when empty.
 
 **The bundle rungs quote line totals, not unit prices** (`theme2.ladder()`), and
 a **Buy 1** rung is prepended so the block is a chooser rather than a column of
@@ -169,9 +216,11 @@ Two traps that cost real time here, both about page config:
   unrelated store suites break at once, check
   `ProductPageTheme.get_solo().layout` before reading any further.
 
-Verification: `python test_product_page_theme.py` (89 checks — fee parsing, the
+Verification: `python test_product_page_theme.py` (125 checks — fee parsing, the
 precedence rules, `quote()` refusals and clamping, the ladder's shape and which
 rung it selects, the before/after pairing rule, the upload endpoint's extension
-and size refusals and its admin-only gate, the router, and an end-to-end order
+and size refusals and who it lets through, the router, and an end-to-end order
 whose total, delivery line, tier price, stock movement and untouched cart are
-all asserted).
+all asserted; the product form's panel drawing, saving, clearing and — the one
+that matters — surviving a post that never carried it; and that a three-cell
+clip row still parses after the format grew two cells).

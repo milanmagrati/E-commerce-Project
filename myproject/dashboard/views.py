@@ -1411,9 +1411,14 @@ def _add_main_image_to_media_library(product, request):
         logger.exception('Failed to mirror main image of product %s into the Media Library', product.pk)
 
 
+# Setup > Product Page Theme owns the landing-page fields; the product form
+# just posts into them, so the save and the context both come from there.
+from dashboard.product_theme_views import (product_theme_form_context,
+                                           save_product_theme)
+
+
 @login_required
 @permission_required('can_create_products')
-
 def product_add(request):
     if request.method == 'POST':
         form = ProductForm(request.POST, request.FILES)
@@ -1494,8 +1499,10 @@ def product_add(request):
                     if temp_url:
                         ctx['temp_image_url'] = temp_url
                         ctx['temp_image_path'] = temp_path
+                    ctx.update(_get_bundle_context())
+                    ctx.update(product_theme_form_context(None, request.POST))
 
-                    return render(request, 'dashboard/product_form.html', ctx)
+                    return render(request, 'product_form.html', ctx)
 
             # Handle bundle components
             if product.product_type == 'bundle':
@@ -1526,6 +1533,8 @@ def product_add(request):
             # Mirror a freshly uploaded main product image into the Media Library too
             if main_image_freshly_uploaded:
                 _add_main_image_to_media_library(product, request)
+
+            save_product_theme(request, product)
 
             messages.success(request, f'Product "{product.name}" created successfully!')
             # Clean up any temporary uploaded image saved in session
@@ -1571,6 +1580,7 @@ def product_add(request):
                 }
             }
             ctx.update(_get_bundle_context())
+            ctx.update(product_theme_form_context(None, request.POST))
             return render(request, 'product_form.html', ctx)
     else:
         form = ProductForm()
@@ -1610,7 +1620,10 @@ def product_add(request):
         }
     }
     ctx.update(_get_bundle_context())
+    ctx.update(product_theme_form_context())
     return render(request, 'product_form.html', ctx)
+
+
 @login_required
 @permission_required('can_edit_products')
 def product_edit(request, product_id):
@@ -1698,13 +1711,17 @@ def product_edit(request, product_id):
                 else:
                     # If formset has errors, show them and re-render the form
                     messages.error(request, 'Please correct the variation errors below.')
-                    return render(request, 'product_form.html', {
+                    variation_ctx = {
                         'form': form,
                         'formset': formset,
                         'product': product,
                         'action': 'Edit',
                         'current_step': 1,
-                    })
+                    }
+                    variation_ctx.update(_get_bundle_context())
+                    variation_ctx.update(
+                        product_theme_form_context(product, request.POST))
+                    return render(request, 'product_form.html', variation_ctx)
 
             # Handle bundle components
             if product.product_type == 'bundle':
@@ -1762,6 +1779,8 @@ def product_edit(request, product_id):
                     default_storage.delete(temp_to_remove)
                 except Exception:
                     pass
+
+            save_product_theme(request, product)
 
             # A single consolidated success message instead of one per sub-action
             if default_image_changed:
@@ -1833,6 +1852,8 @@ def product_edit(request, product_id):
         'bundle_components': list(product.bundle_components.select_related('component_product').all()) if product.product_type == 'bundle' else [],
     }
     ctx.update(_get_bundle_context())
+    ctx.update(product_theme_form_context(
+        product, request.POST if request.method == 'POST' else None))
     return render(request, 'product_form.html', ctx)
 
 

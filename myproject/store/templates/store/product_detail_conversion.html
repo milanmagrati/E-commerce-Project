@@ -301,6 +301,7 @@ fixed to the viewport and the other covers it, and nesting either inside a
                 <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.video_title }}</h2>
                 <div class="lx-p2-videos">
                     {% for clip in t2.videos %}
+                    <figure class="lx-p2-vcard">
                     <div class="lx-p2-video" data-p2-video>
                         <video playsinline muted loop preload="metadata"
                                {% if clip.poster %}poster="{{ clip.poster }}"{% endif %}>
@@ -317,6 +318,13 @@ fixed to the viewport and the other covers it, and nesting either inside a
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
                         </button>
                     </div>
+                        {% if clip.title or clip.note %}
+                        <figcaption class="lx-p2-vcap">
+                            {% if clip.title %}<span class="lx-p2-vcap-t">{{ clip.title }}</span>{% endif %}
+                            {% if clip.note %}<span class="lx-p2-vcap-n">{{ clip.note }}</span>{% endif %}
+                        </figcaption>
+                        {% endif %}
+                    </figure>
                     {% endfor %}
                 </div>
             </section>
@@ -391,10 +399,48 @@ fixed to the viewport and the other covers it, and nesting either inside a
             </section>
             {% endif %}
 
-            {% if product.description %}
+            {% if t2.features %}
+            <section class="lx-p2-card lx-p2-block">
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.features_title }}</h2>
+                <ul class="lx-p2-feats">
+                    {% for feat in t2.features %}
+                    <li class="lx-p2-feat">
+                        <span class="lx-p2-feat-tick" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        </span>
+                        <div>
+                            {% if feat.title %}<strong>{{ feat.title }}</strong>{% endif %}
+                            {% if feat.text %}<p>{{ feat.text }}</p>{% endif %}
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </section>
+            {% endif %}
+
+            {% comment %}
+            The description block carries the uploaded gallery as well as the
+            product's own copy, so a store that writes no description but
+            uploads three annotated photos still gets the section — and one
+            that does neither still gets nothing.
+            {% endcomment %}
+            {% if t2.info_media or product.description %}
             <section class="lx-p2-card lx-p2-block">
                 <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.info_title }}</h2>
+                {% for block in t2.info_media %}
+                <figure class="lx-p2-shot">
+                    {% if block.image %}<img src="{{ block.image }}" alt="{{ block.heading }}" loading="lazy">{% endif %}
+                    {% if block.heading or block.text %}
+                    <figcaption>
+                        {% if block.heading %}<strong>{{ block.heading }}</strong>{% endif %}
+                        {% if block.text %}<span>{{ block.text }}</span>{% endif %}
+                    </figcaption>
+                    {% endif %}
+                </figure>
+                {% endfor %}
+                {% if product.description %}
                 <div class="lx-p2-prose">{{ product.description|linebreaks }}</div>
+                {% endif %}
             </section>
             {% endif %}
         </div>

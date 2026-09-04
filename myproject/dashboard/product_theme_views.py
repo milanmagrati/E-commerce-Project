@@ -18,10 +18,10 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from accounts.decorators import admin_only
+from accounts.decorators import admin_only, has_any_permission
 from dashboard.models import Product
 from store import theme2
-from store.models import (LAYOUT_CHOICES, PRODUCT_LAYOUT_CHOICES,
+from store.models import (LAYOUT_CHOICES, LAYOUT_THEME2, PRODUCT_LAYOUT_CHOICES,
                           ProductPageTheme, ProductThemeOverride, ThemeMedia)
 
 # The global settings screen writes exactly these, and nothing else. Every one
@@ -37,38 +37,219 @@ GLOBAL_TEXT_FIELDS = (
     'stat_text', 'stat_image', 'benefit_text', 'benefit_image',
     'before_after_title', 'before_after',
     'steps_title', 'steps', 'ingredients_title', 'ingredients',
+    'info_media', 'features_title', 'features',
     'footer_address', 'footer_phone', 'footer_credit',
 )
 
 BUY_ACTIONS = {'modal', 'checkout'}
 
 
+# Every field a single product may set for itself, in the order both editing
+# surfaces draw them: the drawer on this screen, and the panel on the product
+# add/edit form. One list, so the two cannot drift and the save loop cannot
+# miss a box the form happily posted.
+#
+# `widget` is what draws it: 'text', 'textarea', 'image' (upload + URL box) or
+# 'repeater' (the row editor over the hidden textarea, keyed by `spec`).
+FIELD_SPECS = (
+    # -- what the shopper sees first --
+    {'key': 'videos', 'label': 'Videos', 'widget': 'repeater', 'spec': 'videos',
+     'rows': 4, 'group': 'media',
+     'help': 'Upload the clips themselves - self-hosted files only, because the '
+             'play, mute and expand controls are bound to a real video element '
+             'and a YouTube or Vimeo embed cannot take them. Vertical 9:16 is '
+             'the shape the strip is built for. The title and description show '
+             'under each clip.'},
+    {'key': 'info_media', 'label': 'Description gallery', 'widget': 'repeater',
+     'spec': 'info_media', 'rows': 4, 'group': 'media',
+     'help': 'A photo with its own words underneath, repeated. This is what '
+             'fills the Product information block above the written description.'},
+
+    # -- proof --
+    {'key': 'before_after', 'label': 'Before & after', 'widget': 'repeater',
+     'spec': 'before_after', 'rows': 4, 'group': 'proof',
+     'help': 'Both halves are required - a before with no after is a photo of '
+             'a problem.'},
+    {'key': 'stat_text', 'label': 'Trust stat', 'widget': 'textarea', 'rows': 3,
+     'group': 'proof',
+     'help': 'First line is the big figure, the rest is the supporting copy.'},
+    {'key': 'stat_image', 'label': 'Trust stat image', 'widget': 'image',
+     'rows': 1, 'group': 'proof', 'help': 'Upload a photo, or paste a URL.'},
+    {'key': 'benefit_text', 'label': 'Benefit tagline', 'widget': 'text',
+     'rows': 1, 'group': 'proof', 'help': ''},
+    {'key': 'benefit_image', 'label': 'Benefit image', 'widget': 'image',
+     'rows': 1, 'group': 'proof', 'help': 'Upload a photo, or paste a URL.'},
+
+    # -- teach it --
+    {'key': 'steps', 'label': 'How to use', 'widget': 'repeater', 'spec': 'steps',
+     'rows': 5, 'group': 'teach',
+     'help': 'Numbers come from the order of the rows - move them with the '
+             'arrows rather than renumbering by hand.'},
+    {'key': 'ingredients', 'label': 'Key ingredients', 'widget': 'repeater',
+     'spec': 'ingredients', 'rows': 4, 'group': 'teach',
+     'help': 'Drawn as a picture-and-label grid.'},
+    {'key': 'features', 'label': 'Features / manual', 'widget': 'repeater',
+     'spec': 'features', 'rows': 4, 'group': 'teach',
+     'help': 'A ticked list. The description is optional - a row with only a '
+             'title is a plain feature bullet.'},
+
+    # -- headings --
+    {'key': 'video_title', 'label': 'Video section title', 'widget': 'text',
+     'rows': 1, 'group': 'titles', 'help': ''},
+    {'key': 'before_after_title', 'label': 'Before & after title',
+     'widget': 'text', 'rows': 1, 'group': 'titles', 'help': ''},
+    {'key': 'steps_title', 'label': 'How-to title', 'widget': 'text',
+     'rows': 1, 'group': 'titles', 'help': ''},
+    {'key': 'ingredients_title', 'label': 'Ingredients title', 'widget': 'text',
+     'rows': 1, 'group': 'titles', 'help': ''},
+    {'key': 'features_title', 'label': 'Features title', 'widget': 'text',
+     'rows': 1, 'group': 'titles', 'help': ''},
+    {'key': 'info_title', 'label': 'Description title', 'widget': 'text',
+     'rows': 1, 'group': 'titles', 'help': ''},
+    {'key': 'buy_label', 'label': 'Buy button label', 'widget': 'text',
+     'rows': 1, 'group': 'titles', 'help': ''},
+
+    # -- the info rail --
+    {'key': 'highlights', 'label': 'Product highlights', 'widget': 'textarea',
+     'rows': 4, 'group': 'rail', 'help': 'One bullet per line.'},
+    {'key': 'pay_chips', 'label': 'Payment chips', 'widget': 'text', 'rows': 1,
+     'group': 'rail', 'help': 'Comma separated, e.g. Prepaid, COD.'},
+    {'key': 'pay_bullets', 'label': 'Payment bullets', 'widget': 'textarea',
+     'rows': 3, 'group': 'rail', 'help': 'One bullet per line.'},
+    {'key': 'return_value', 'label': 'Return policy', 'widget': 'text',
+     'rows': 1, 'group': 'rail', 'help': ''},
+    {'key': 'warranty_value', 'label': 'Warranty', 'widget': 'text', 'rows': 1,
+     'group': 'rail', 'help': ''},
+    {'key': 'shipping_value', 'label': 'Shipping line', 'widget': 'text',
+     'rows': 1, 'group': 'rail', 'help': ''},
+
+    # -- checkout --
+    {'key': 'ship_fee', 'label': 'Delivery fee', 'widget': 'text', 'rows': 1,
+     'group': 'checkout',
+     'help': 'A flat fee for this product\'s one-step checkout. Blank uses the '
+             'store-wide fee, and a blank store-wide fee uses Delivery Charge '
+             'Setup, which prices by district.'},
+)
+
+# The groups the product form draws, in order, with the heading each gets.
+FIELD_GROUPS = (
+    ('media', 'Videos and photos'),
+    ('proof', 'Proof'),
+    ('teach', 'How to use, ingredients and features'),
+    ('titles', 'Section headings'),
+    ('rail', 'Info rail'),
+    ('checkout', 'Checkout'),
+)
+
+# The product form prefixes its inputs, because it posts into the same request
+# as ProductForm, where a box called `videos` or `features` would be anyone's.
+PRODUCT_FORM_PREFIX = 'pt_'
+
+
 def _meta_fields():
-    """key -> (label, textarea rows, help). Rendered and saved off one list, so
-    the form and the save loop cannot drift apart."""
+    """key -> spec, for the drawer and the per-product save loop."""
+    return dict((spec['key'], spec) for spec in FIELD_SPECS)
+
+
+def save_product_theme(request, product):
+    """Write this product's Theme 2 settings from a product add/edit post.
+
+    Called from `product_add` and `product_edit`, which is where a shop owner
+    is already standing when they think about the page a product gets. It is a
+    no-op unless the panel was actually rendered - a post from anywhere else
+    must never blank a product's landing page by omission.
+
+    Returns True when something was written or cleared.
+    """
+    if request.POST.get(PRODUCT_FORM_PREFIX + 'present') != '1':
+        return False
+
+    layout = (request.POST.get(PRODUCT_FORM_PREFIX + 'layout') or '').strip()
+    if layout and layout not in theme2.layouts():
+        layout = ''
+
+    values = {}
+    for spec in FIELD_SPECS:
+        key = spec['key']
+        value = (request.POST.get(PRODUCT_FORM_PREFIX + key) or '').strip()
+        model_field = ProductThemeOverride._meta.get_field(key)
+        if model_field.max_length:
+            value = value[:model_field.max_length]
+        values[key] = value
+
+    row = ProductThemeOverride.objects.filter(product=product).first()
+
+    # Nothing filled in at all says nothing at all: keeping an empty row would
+    # only make the "products with their own settings" count lie.
+    if not layout and not any(values.values()):
+        if row is not None:
+            row.delete()
+            theme2.invalidate_cache()
+            return True
+        return False
+
+    if row is None:
+        row = ProductThemeOverride(product=product)
+    row.layout = layout
+    for key, value in values.items():
+        setattr(row, key, value)
+    row.save()
+    theme2.invalidate_cache()
+    return True
+
+
+def product_theme_form_context(product=None, post=None):
+    """What the panel on the product add/edit form needs to draw itself.
+
+    A product that does not exist yet (the add form) simply has no row, so
+    every box opens blank and every placeholder shows the global value - which
+    is exactly what the unsaved product will inherit.
+
+    `post` is the rejected request when the product form failed validation.
+    Re-reading it is not a nicety: a page written across a dozen boxes and then
+    thrown away because the *price* field was empty is the kind of loss nobody
+    forgives.
+    """
+    row = None
+    if product is not None and product.pk:
+        row = ProductThemeOverride.objects.filter(product=product).first()
+    snapshot = theme2.settings_snapshot()
+
+    resubmitted = post if post is not None and post.get(
+        PRODUCT_FORM_PREFIX + 'present') == '1' else None
+
+    def current(key):
+        if resubmitted is not None:
+            return resubmitted.get(PRODUCT_FORM_PREFIX + key, '')
+        return getattr(row, key, '') if row else ''
+
+    groups = []
+    for group_key, group_label in FIELD_GROUPS:
+        fields = []
+        for spec in FIELD_SPECS:
+            if spec['group'] != group_key:
+                continue
+            inherited = snapshot.get(spec['key'], '') or theme2.DEFAULTS.get(spec['key'], '')
+            fields.append(dict(
+                spec,
+                name=PRODUCT_FORM_PREFIX + spec['key'],
+                value=current(spec['key']),
+                # Only the first line: a placeholder is a hint, and the whole
+                # of a five-line highlights list is not a hint.
+                inherited=str(inherited).split(chr(10))[0],
+            ))
+        if fields:
+            groups.append({'key': group_key, 'label': group_label, 'fields': fields})
+
     return {
-        'highlights': ('Product highlights', 4, 'One bullet per line.'),
-        'pay_chips': ('Payment chips', 1, 'Comma separated, e.g. Prepaid, COD.'),
-        'pay_bullets': ('Payment bullets', 3, 'One bullet per line.'),
-        'return_value': ('Return policy', 1, ''),
-        'warranty_value': ('Warranty', 1, ''),
-        'shipping_value': ('Shipping line', 1, ''),
-        'videos': ('Videos', 4,
-                   'Self-hosted clips only — a YouTube or Vimeo embed cannot take '
-                   'the play, mute and expand controls. Vertical 9:16 fits the strip.'),
-        'stat_text': ('Trust stat', 3, 'First line is the big figure, the rest is the supporting copy.'),
-        'stat_image': ('Trust stat image', 1, 'Upload a photo, or paste a URL.'),
-        'benefit_text': ('Benefit tagline', 1, ''),
-        'benefit_image': ('Benefit image', 1, 'Upload a photo, or paste a URL.'),
-        'before_after': ('Before &amp; after', 4,
-                         'One pair per line. A pair needs both halves to render.'),
-        'steps': ('How to use', 5,
-                  'Numbers come from the order of the rows.'),
-        'ingredients': ('Key ingredients', 4, 'Drawn as a picture-and-label grid.'),
-        'ship_fee': ('Delivery fee', 1,
-                     'A flat fee for this product’s one-step checkout. Blank uses '
-                     'the store-wide fee, and a blank store-wide fee uses Delivery '
-                     'Charge Setup, which prices by district.'),
+        'pt_groups': groups,
+        'pt_layout': (resubmitted.get(PRODUCT_FORM_PREFIX + 'layout', '')
+                      if resubmitted is not None else (row.layout if row else '')),
+        'pt_layout_choices': PRODUCT_LAYOUT_CHOICES,
+        'pt_global_layout': dict(LAYOUT_CHOICES).get(
+            snapshot.get('layout'), snapshot.get('layout')),
+        'pt_global_is_theme2': snapshot.get('layout') == LAYOUT_THEME2,
+        'pt_has_row': row is not None,
     }
 
 
@@ -115,10 +296,7 @@ def product_theme_setup(request):
         'setting': setting,
         'layout_choices': LAYOUT_CHOICES,
         'product_layout_choices': PRODUCT_LAYOUT_CHOICES,
-        'meta_fields': [
-            {'key': key, 'label': label, 'rows': rows, 'help': help_text}
-            for key, (label, rows, help_text) in _meta_fields().items()
-        ],
+        'meta_fields': list(FIELD_SPECS),
         'products': page,
         'search': search,
         'only': only,
@@ -221,6 +399,28 @@ def product_theme_product_reset(request, product_id):
 # link keeps working and nothing is locked to this table.
 
 
+# Who may upload: an administrator, or anyone the dashboard already trusts to
+# create or edit a product - because the panel on the product form is one of
+# the two places these run from, and a shop assistant who may write a product
+# page must be able to put a photo in it.
+#
+# The check is a function rather than a decorator on purpose: the decorators
+# answer a refusal with a redirect and a queued Django message, which is right
+# for a page and wrong for an endpoint the page calls over fetch. The caller
+# would get HTML it cannot parse, and the message would resurface as a stray
+# error toast on whatever page loaded next.
+MEDIA_PERMISSIONS = ('can_edit_products', 'can_create_products')
+
+
+def _media_denied(request):
+    if has_any_permission(request.user, *MEDIA_PERMISSIONS):
+        return None
+    return JsonResponse(
+        {'success': False,
+         'message': 'You do not have permission to manage product media.'},
+        status=403)
+
+
 def _media_payload(row):
     return {
         'id': row.pk,
@@ -232,9 +432,12 @@ def _media_payload(row):
 
 
 @login_required
-@admin_only
 def product_theme_media_list(request):
     """The uploaded photos and clips, newest first, for the picker grid."""
+    denied = _media_denied(request)
+    if denied is not None:
+        return denied
+
     kind = (request.GET.get('kind') or '').strip()
     rows = ThemeMedia.objects.all()
     if kind in (ThemeMedia.KIND_IMAGE, ThemeMedia.KIND_VIDEO):
@@ -243,7 +446,6 @@ def product_theme_media_list(request):
 
 
 @login_required
-@admin_only
 @require_POST
 def product_theme_media_upload(request):
     """Take one uploaded photo or clip and hand back the URL to insert.
@@ -251,6 +453,10 @@ def product_theme_media_upload(request):
     Refuses by extension and by size rather than trusting the browser's
     content type, which is trivially wrong and trivially forged.
     """
+    denied = _media_denied(request)
+    if denied is not None:
+        return denied
+
     upload = request.FILES.get('file')
     if upload is None:
         return JsonResponse({'success': False, 'message': 'No file was sent.'}, status=400)
@@ -280,11 +486,14 @@ def product_theme_media_upload(request):
 
 
 @login_required
-@admin_only
 @require_POST
 def product_theme_media_delete(request, media_id):
     """Remove one upload. The file goes too — an orphaned blob nobody can see
     in the picker is just disk that never comes back."""
+    denied = _media_denied(request)
+    if denied is not None:
+        return denied
+
     row = get_object_or_404(ThemeMedia, pk=media_id)
     if row.file:
         row.file.delete(save=False)

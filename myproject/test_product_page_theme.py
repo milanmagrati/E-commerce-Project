@@ -16,6 +16,13 @@ What it is actually guarding:
   changes when it is not.
 * An order placed through the modal matching, to the rupee, what the modal
   showed — including the delivery line.
+* The landing-page panel on the product add/edit form: that it draws itself,
+  that saving the product saves the page with it, that emptying every box
+  removes the override rather than leaving a hollow one, and — the one that
+  matters — that a post which never carried the panel leaves the product's
+  page completely alone.
+* The list formats. A clip row grew a title and a description on the end, so
+  every three-cell row written before that must still parse to the same card.
 
 Run:  python test_product_page_theme.py
 """
@@ -46,7 +53,8 @@ from django.test.utils import setup_test_environment  # noqa: E402
 # pass by never looking at anything.
 setup_test_environment()
 
-from dashboard.models import Product, ProductVariation  # noqa: E402
+from dashboard.models import (Category, Product,  # noqa: E402
+                              ProductVariation)
 from store import theme2, theme2_checkout  # noqa: E402
 from store.models import (BulkDiscount, BulkDiscountTier, CartItem, Order,
                           ProductPageTheme, ProductThemeOverride)  # noqa: E402
@@ -79,8 +87,13 @@ def build_fixtures():
     if owner is None:
         raise SystemExit('No users in the database — create one before running this.')
 
+    # The product form requires a category, and these fixtures are posted
+    # through it further down.
+    category = Category.objects.first()
+
     simple = Product.objects.create(
         user=owner, name='ZZ Theme2 Probe Simple', slug=slugify('zz-theme2-probe-simple'),
+        category=category,
         description='A probe product.', product_type='simple',
         price=Decimal('1000.00'), cost_price=Decimal('500.00'),
         stock=25, is_active=True)
@@ -105,7 +118,8 @@ def build_fixtures():
                                     value=Decimal('10'))
 
     return {'owner': owner, 'simple': simple, 'variable': variable,
-            'var_a': var_a, 'var_b': var_b, 'rule': rule}
+            'var_a': var_a, 'var_b': var_b, 'rule': rule,
+            'category': category}
 
 
 def teardown(fx):
@@ -419,12 +433,46 @@ def test_media_uploads():
     check('nothing was left behind', ThemeMedia.objects.count() == before,
           ThemeMedia.objects.count())
 
-    # And it stays admin-only.
     stranger = Client()
     res = stranger.post('/setup/product-theme/media/upload/',
                         {'file': SimpleUploadedFile('probe.png', png, content_type='image/png')})
     check('an anonymous visitor cannot upload', res.status_code in (302, 403),
           res.status_code)
+
+    # The panel on the product form uploads through this same endpoint, so a
+    # shop assistant trusted to write a product page can put a photo in it -
+    # and someone with no product permissions at all still cannot. The refusal
+    # has to be JSON: the caller is a fetch, and a redirect to the dashboard
+    # would reach it as HTML it cannot parse plus a stray toast on the next
+    # page the user happens to load.
+    editor = User.objects.filter(is_superuser=False, can_edit_products=True).exclude(
+        role='administrator').first()
+    if editor is not None:
+        allowed = Client()
+        allowed.force_login(editor)
+        res = allowed.post(
+            '/setup/product-theme/media/upload/',
+            {'file': SimpleUploadedFile('probe2.png', png, content_type='image/png')})
+        check('a product editor may upload', res.status_code == 200, res.status_code)
+        row_id = res.json().get('media', {}).get('id') if res.status_code == 200 else None
+        if row_id:
+            allowed.post('/setup/product-theme/media/%s/delete/' % row_id)
+
+    outsider = User.objects.filter(
+        is_superuser=False, can_edit_products=False, can_create_products=False
+    ).exclude(role='administrator').first()
+    if outsider is not None:
+        denied = Client()
+        denied.force_login(outsider)
+        res = denied.post(
+            '/setup/product-theme/media/upload/',
+            {'file': SimpleUploadedFile('probe3.png', png, content_type='image/png')})
+        check('someone with no product permissions is refused in JSON',
+              res.status_code == 403 and res['Content-Type'].startswith('application/json'),
+              '%s %s' % (res.status_code, res['Content-Type']))
+
+    check('nothing was left behind after the permission checks',
+          ThemeMedia.objects.count() == before, ThemeMedia.objects.count())
 
 
 def test_router(fx):
@@ -556,11 +604,169 @@ def test_order_rejections(fx):
     theme2.invalidate_cache()
 
 
+def test_content_lists(fx):
+    section('Clips, gallery and features')
+    simple = fx['simple']
+
+    set_global(layout='theme2',
+               videos=('/media/one.mp4 | /media/one.jpg | creator | On camera | '
+                       'Shot in a single take' + chr(10) +
+                       '/media/two.mp4 | /media/two.jpg | creator'),
+               info_media=('/media/pack.jpg | Tried and trusted by | 15 lakh+ women'
+                           + chr(10) +
+                           ' |  | A line with no picture' + chr(10) +
+                           ' | | '),
+               features='Made in Nepal | Since 2019' + chr(10) + 'Dermat tested')
+
+    clips = theme2.videos(simple)
+    check('both clips parse', len(clips) == 2, clips)
+    check('a five-cell clip keeps its caption',
+          clips[0]['title'] == 'On camera'
+          and clips[0]['note'] == 'Shot in a single take', clips[0])
+    # The two trailing cells were added after the format shipped. `cells()`
+    # pads, so a row written before they existed must draw exactly the card it
+    # always drew — not a card with the word "creator" as its title.
+    check('a three-cell clip still parses to the same card',
+          clips[1]['is_creator'] and clips[1]['title'] == ''
+          and clips[1]['note'] == '', clips[1])
+
+    blocks = theme2.info_media(simple)
+    check('the gallery drops the wholly empty row', len(blocks) == 2, blocks)
+    check('a gallery block keeps its words',
+          blocks[0]['heading'] == 'Tried and trusted by'
+          and blocks[0]['text'] == '15 lakh+ women', blocks[0])
+    check('a gallery block with only words is kept',
+          blocks[1]['image'] == '' and blocks[1]['text'] == 'A line with no picture',
+          blocks[1])
+
+    rows = theme2.features(simple)
+    check('both features parse', len(rows) == 2, rows)
+    check('a feature keeps its description',
+          rows[0]['title'] == 'Made in Nepal' and rows[0]['text'] == 'Since 2019',
+          rows[0])
+    check('a feature with no description is still a feature',
+          rows[1]['title'] == 'Dermat tested' and rows[1]['text'] == '', rows[1])
+
+    body = Client().get('/store/products/%s/' % simple.slug).content.decode(
+        'utf-8', 'replace')
+    check('the clip caption reaches the page', 'Shot in a single take' in body)
+    check('the gallery reaches the page', 'lx-p2-shot' in body and '15 lakh+ women' in body)
+    check('the features block reaches the page',
+          'lx-p2-feats' in body and 'Dermat tested' in body)
+
+    set_global(layout='theme1', videos='', info_media='', features='')
+    body = Client().get('/store/products/%s/' % simple.slug).content.decode(
+        'utf-8', 'replace')
+    check('none of it leaks into Theme 1',
+          'lx-p2-feats' not in body and 'lx-p2-shot' not in body)
+
+
+def _product_post(fx, **extra):
+    """The minimum a valid product-form post needs, plus whatever is asked."""
+    simple = fx['simple']
+    payload = {
+        'name': simple.name, 'slug': simple.slug, 'description': simple.description,
+        'category': str(fx['category'].pk),
+        'product_type': 'simple', 'price': '1000', 'cost_price': '500',
+        'cost_price_type': 'fixed', 'stock': '25', 'stock_status': 'in_stock',
+        'is_active': 'on',
+        'variations-TOTAL_FORMS': '0', 'variations-INITIAL_FORMS': '0',
+        'variations-MIN_NUM_FORMS': '0', 'variations-MAX_NUM_FORMS': '1000',
+    }
+    payload.update(extra)
+    return payload
+
+
+def test_product_form_panel(fx):
+    section('The landing-page panel on the product form')
+    from django.contrib.auth import get_user_model
+
+    simple = fx['simple']
+    User = get_user_model()
+    # `product_edit` turns away anyone without `can_edit_prices` unless their
+    # role is administrator, so a superuser with a sales role is not enough.
+    admin = (User.objects.filter(role='administrator').first()
+             or User.objects.filter(is_superuser=True, can_edit_prices=True).first())
+    if admin is None or fx['category'] is None:
+        check('an administrator and a category exist to post the form with',
+              False, 'skipped the panel checks')
+        return
+
+    client = Client()
+    client.force_login(admin)
+
+    body = client.get('/products/%s/edit/' % simple.pk).content.decode('utf-8', 'replace')
+    for needle in ('name="pt_present"', 'name="pt_layout"', 'name="pt_videos"',
+                   'data-pt-repeater="info_media"', 'data-pt-repeater="features"',
+                   'data-pt-media="image"', 'window.PT_SETUP',
+                   'product-theme-setup.js', 'product-theme-editor.css'):
+        check('the edit form carries %s' % needle, needle in body)
+
+    body = client.get('/products/add/').content.decode('utf-8', 'replace')
+    check('the add form carries the panel too', 'name="pt_present"' in body)
+
+    ProductThemeOverride.objects.filter(product=simple).delete()
+    theme2.invalidate_cache()
+
+    filled = _product_post(
+        fx, pt_present='1', pt_layout='theme2',
+        pt_videos='/media/a.mp4 | /media/a.jpg | creator | Title | Note',
+        pt_info_media='/media/b.jpg | Heading | Words',
+        pt_features='Feature | Detail',
+        pt_video_title='Watch it work')
+    response = client.post('/products/%s/edit/' % simple.pk, filled)
+    check('saving the product saves the page with it', response.status_code == 302,
+          response.status_code)
+    row = ProductThemeOverride.objects.filter(product=simple).first()
+    check('the override row is written', row is not None)
+    if row is not None:
+        check('the design choice is stored', row.layout == 'theme2', row.layout)
+        check('the clip row is stored whole', row.videos.endswith('| Title | Note'),
+              row.videos)
+        check('the gallery row is stored', row.info_media == '/media/b.jpg | Heading | Words',
+              row.info_media)
+        check('the feature row is stored', row.features == 'Feature | Detail', row.features)
+        check('the section heading is stored', row.video_title == 'Watch it work',
+              row.video_title)
+
+    # A post that never carried the panel must not touch the page. This is the
+    # check that matters: every other product-form path in the dashboard posts
+    # without these boxes, and any of them silently blanking a landing page
+    # would be discovered by a customer, not by us.
+    response = client.post('/products/%s/edit/' % simple.pk, _product_post(fx))
+    row = ProductThemeOverride.objects.filter(product=simple).first()
+    check('a post without the panel leaves the page alone',
+          row is not None and row.video_title == 'Watch it work',
+          row and row.video_title)
+
+    # Every box empty says nothing at all, and an empty row would only make the
+    # "products with their own settings" count lie.
+    emptied = _product_post(fx, pt_present='1')
+    response = client.post('/products/%s/edit/' % simple.pk, emptied)
+    check('emptying every box removes the override',
+          not ProductThemeOverride.objects.filter(product=simple).exists())
+
+    # A product form rejected for an unrelated reason must hand the landing
+    # page back, not throw away everything that was typed into it.
+    rejected = _product_post(fx, price='', pt_present='1', pt_layout='theme2',
+                             pt_features='Typed but not saved | yet')
+    body = client.post('/products/%s/edit/' % simple.pk, rejected).content.decode(
+        'utf-8', 'replace')
+    check('a rejected product form keeps what was typed into the panel',
+          'Typed but not saved | yet' in body)
+
+    ProductThemeOverride.objects.filter(product=simple).delete()
+    theme2.invalidate_cache()
+
+
 def main():
     fx = build_fixtures()
     original = ProductPageTheme.get_solo()
     original_layout, original_fee = original.layout, original.ship_fee
     original_ba = original.before_after
+    original_videos = original.videos
+    original_gallery = original.info_media
+    original_features = original.features
     try:
         test_fee_parsing()
         test_parsers()
@@ -570,13 +776,16 @@ def main():
         test_flat_fee(fx)
         test_ladder(fx)
         test_before_after(fx)
+        test_content_lists(fx)
+        test_product_form_panel(fx)
         test_media_uploads()
         test_router(fx)
         test_place_order(fx)
         test_order_rejections(fx)
     finally:
         set_global(layout=original_layout, ship_fee=original_fee,
-                   before_after=original_ba)
+                   before_after=original_ba, videos=original_videos,
+                   info_media=original_gallery, features=original_features)
         teardown(fx)
 
     print('\n%d passed, %d failed' % (len(PASSED), len(FAILED)))

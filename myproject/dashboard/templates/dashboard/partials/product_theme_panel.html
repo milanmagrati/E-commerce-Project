@@ -1,0 +1,91 @@
+{% comment %}
+The storefront landing page, edited from the product form.
+
+This posts as part of the product's own add/edit form — same request, same
+submit button — so a shop owner writes the page while they are writing the
+product, not on a second screen afterwards. Everything here is optional: a
+blank box inherits the store-wide setting, and a panel where nothing at all is
+filled in deletes the product's override row rather than leaving an empty one
+behind.
+
+`pt_present` is what tells `save_product_theme()` this panel was on screen. A
+post without it leaves the product's landing page untouched, so no other form
+can blank it by omission.
+{% endcomment %}
+
+<div class="card shadow-sm mb-4" id="landingPageCard">
+    <div class="card-header text-white d-flex justify-content-between align-items-center"
+         style="background: linear-gradient(135deg, #E8590C, #C2410C);">
+        <h5 class="mb-0"><i class="fas fa-palette"></i> Storefront Landing Page</h5>
+        {% if user_permissions.is_administrator %}
+        <a href="{% url 'product_theme_setup' %}" target="_blank" rel="noopener"
+           class="btn btn-sm btn-light">Store-wide settings</a>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <input type="hidden" name="pt_present" value="1">
+
+        <div class="alert alert-secondary" style="font-size:.85rem;">
+            <i class="fas fa-info-circle"></i>
+            Every box below is optional. Leave one blank and this product uses the
+            store-wide setting; fill it in and only this product changes.
+            {% if pt_has_row %}
+            <strong>This product currently has settings of its own.</strong>
+            {% endif %}
+        </div>
+
+        <div class="pt-sect">
+            <h3>Page design</h3>
+            <div class="pt-grid">
+                <div class="pt-field">
+                    <label for="pt-form-layout">Product page design</label>
+                    <select id="pt-form-layout" name="pt_layout" data-pt-layout>
+                        {% for value, label in pt_layout_choices %}
+                        <option value="{{ value }}" {% if pt_layout == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <span class="pt-help">
+                        The store-wide design is <strong>{{ pt_global_layout }}</strong>.
+                        The blocks below are drawn by the conversion design only —
+                        the classic product page ignores them.
+                    </span>
+                </div>
+            </div>
+            <p class="pt-help" data-pt-theme1-note hidden style="margin-top:.6rem;color:#B54708;">
+                <i class="fas fa-exclamation-triangle"></i>
+                This product is set to the classic product page, so nothing below
+                will show on the storefront until you switch it to the conversion
+                design. Your entries are still saved.
+            </p>
+        </div>
+
+        {% for group in pt_groups %}
+        <div class="pt-sect">
+            <h3>{{ group.label }}</h3>
+            <div class="pt-grid{% if group.key == 'media' or group.key == 'proof' or group.key == 'teach' %} is-wide{% endif %}">
+                {% for field in group.fields %}
+                <div class="pt-field">
+                    <label for="pt-form-{{ field.key }}">{{ field.label }}</label>
+                    {% if field.widget == 'repeater' %}
+                    <textarea id="pt-form-{{ field.key }}" name="{{ field.name }}" rows="{{ field.rows }}"
+                              data-pt-repeater="{{ field.spec }}">{{ field.value }}</textarea>
+                    {% elif field.widget == 'image' %}
+                    <input type="text" id="pt-form-{{ field.key }}" name="{{ field.name }}"
+                           value="{{ field.value }}" data-pt-media="image"
+                           placeholder="{% if field.inherited %}Store-wide: {{ field.inherited }}{% else %}Upload, or paste a URL{% endif %}">
+                    {% elif field.widget == 'textarea' %}
+                    <textarea id="pt-form-{{ field.key }}" name="{{ field.name }}" rows="{{ field.rows }}"
+                              placeholder="{% if field.inherited %}Store-wide: {{ field.inherited }}{% endif %}">{{ field.value }}</textarea>
+                    {% else %}
+                    <input type="text" id="pt-form-{{ field.key }}" name="{{ field.name }}"
+                           value="{{ field.value }}"
+                           placeholder="{% if field.inherited %}Store-wide: {{ field.inherited }}{% endif %}">
+                    {% endif %}
+                    {% if field.help %}<span class="pt-help">{{ field.help }}</span>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>

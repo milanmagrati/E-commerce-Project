@@ -15,6 +15,7 @@ that always submits a value cannot half-save.
 {% block title %}{{ page_title }}{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'dashboard/css/product-theme-editor.css' %}">
 <style>
     .pt-wrap { max-width: 1400px; margin: 0 auto; padding: 1.75rem 1.25rem 4rem; color: #101828; }
 
@@ -50,41 +51,6 @@ that always submits a value cannot half-save.
         padding: 1rem 1.25rem; border-bottom: 1px solid #E4E7EC;
     }
     .pt-card-body { padding: 1.25rem; }
-
-    .pt-sect { margin-bottom: 1.6rem; }
-    .pt-sect > h3 {
-        font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-        color: #667085; margin: 0 0 .85rem;
-    }
-    .pt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
-    .pt-grid.is-wide { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
-
-    .pt-field label {
-        display: block; font-size: .74rem; font-weight: 700; letter-spacing: .04em;
-        text-transform: uppercase; color: #475467; margin-bottom: .3rem;
-    }
-    .pt-field input[type="text"],
-    .pt-field select,
-    .pt-field textarea {
-        width: 100%; padding: .55rem .7rem; border: 1px solid #D0D5DD; border-radius: 9px;
-        font-size: .88rem; font-family: inherit; color: #101828; background: #fff;
-    }
-    .pt-field textarea { resize: vertical; line-height: 1.5; }
-    .pt-field input:focus, .pt-field select:focus, .pt-field textarea:focus {
-        outline: none; border-color: #E8590C; box-shadow: 0 0 0 3px rgba(232, 89, 12, .12);
-    }
-    .pt-help { display: block; margin-top: .3rem; font-size: .75rem; color: #667085; line-height: 1.45; }
-
-    .pt-actions { display: flex; gap: .6rem; flex-wrap: wrap; padding: 1rem 1.25rem; border-top: 1px solid #E4E7EC; }
-    .pt-btn {
-        display: inline-flex; align-items: center; gap: .4rem; padding: .55rem 1.1rem;
-        border-radius: 9px; border: 1px solid #D0D5DD; background: #fff; color: #344054;
-        font-size: .85rem; font-weight: 600; cursor: pointer; text-decoration: none;
-    }
-    .pt-btn:hover { background: #F9FAFB; color: #344054; }
-    .pt-btn.is-primary { background: #E8590C; border-color: #E8590C; color: #fff; }
-    .pt-btn.is-primary:hover { background: #C2410C; color: #fff; }
-    .pt-btn.is-danger { color: #B42318; border-color: #FDA29B; }
 
     .pt-toolbar { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; padding: 1rem 1.25rem; border-bottom: 1px solid #E4E7EC; }
     .pt-toolbar input, .pt-toolbar select {
@@ -124,100 +90,8 @@ that always submits a value cannot half-save.
     .pt-drawer-body { padding: 1.25rem; overflow-y: auto; flex: 1 1 auto; }
     .pt-drawer-body .pt-field { margin-bottom: 1rem; }
     .pt-drawer-foot { padding: 1rem 1.25rem; border-top: 1px solid #E4E7EC; display: flex; gap: .6rem; }
-    .pt-x { border: 0; background: none; font-size: 1.6rem; line-height: 1; color: #667085; cursor: pointer; }
-
-    /* ── Media field: preview, URL box, upload, clear ── */
-    .ptf { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto auto; gap: .4rem; align-items: center; }
-    .ptf-thumb {
-        width: 46px; height: 46px; border-radius: 8px; overflow: hidden;
-        background: #F2F4F7; border: 1px solid #E4E7EC; display: grid; place-items: center;
-    }
-    .ptf-thumb img, .ptf-thumb video { width: 100%; height: 100%; object-fit: cover; }
-    .ptf-thumb.is-empty::after { content: '—'; color: #98A2B3; font-size: .8rem; }
-    .ptf .ptf-url {
-        width: 100%; padding: .5rem .65rem; border: 1px solid #D0D5DD; border-radius: 8px;
-        font-size: .82rem; font-family: inherit; color: #101828; background: #fff;
-    }
-    .ptf-btn { padding: .45rem .7rem; font-size: .78rem; }
-
-    /* ── Repeater ── */
-    .ptr { border: 1px solid #E4E7EC; border-radius: 11px; background: #FCFCFD; }
-    .ptr-rows { padding: .6rem; display: flex; flex-direction: column; gap: .6rem; }
-    .ptr-row {
-        display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: .6rem;
-        align-items: start; background: #fff; border: 1px solid #E4E7EC;
-        border-radius: 10px; padding: .6rem;
-    }
-    .ptr-n {
-        width: 26px; height: 26px; border-radius: 50%; background: #FDEFE6; color: #C2410C;
-        font-size: .75rem; font-weight: 800; display: grid; place-items: center;
-    }
-    .ptr-body { display: flex; flex-direction: column; gap: .45rem; min-width: 0; }
-    .ptr-cell input[type="text"] {
-        width: 100%; padding: .5rem .65rem; border: 1px solid #D0D5DD; border-radius: 8px;
-        font-size: .84rem; font-family: inherit; color: #101828; background: #fff;
-    }
-    .ptr-flag { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem; color: #475467; }
-    .ptr-tools { display: flex; flex-direction: column; gap: .25rem; }
-    .ptr-move {
-        width: 26px; height: 24px; border: 1px solid #D0D5DD; background: #fff;
-        border-radius: 6px; cursor: pointer; font-size: .8rem; line-height: 1; color: #475467;
-    }
-    .ptr-move:hover { background: #F9FAFB; }
-    .ptr-move.is-del { color: #B42318; border-color: #FDA29B; }
-    .ptr-empty { margin: .4rem; font-size: .82rem; color: #667085; }
-    .ptr-foot { display: flex; gap: .5rem; padding: 0 .6rem .6rem; }
-    .ptr-foot .pt-btn { padding: .42rem .8rem; font-size: .8rem; }
-    .ptr.is-raw + textarea { display: block; }
-
-    /* ── Media picker ── */
-    .ptm { position: fixed; inset: 0; z-index: 1090; display: none; }
-    .ptm.is-open { display: block; }
-    .ptm-veil { position: absolute; inset: 0; background: rgba(16, 24, 40, .5); }
-    .ptm-panel {
-        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        width: min(720px, 94vw); max-height: 88vh; overflow-y: auto;
-        background: #fff; border-radius: 14px; box-shadow: 0 24px 70px rgba(16, 24, 40, .3);
-    }
-    .ptm-head {
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 1rem 1.25rem; border-bottom: 1px solid #E4E7EC; position: sticky; top: 0; background: #fff;
-    }
-    .ptm-head h3 { margin: 0; font-size: 1rem; font-weight: 700; }
-    .ptm-drop {
-        margin: 1.25rem; padding: 1.5rem; border: 2px dashed #D0D5DD; border-radius: 12px;
-        text-align: center; display: flex; flex-direction: column; align-items: center; gap: .6rem;
-    }
-    .ptm-drop.is-over { border-color: #E8590C; background: #FFF7F2; }
-    .ptm-drop strong { font-size: .9rem; color: #344054; }
-    .ptm-limits { font-size: .76rem; color: #667085; }
-    .ptm-status { margin: 0 1.25rem; font-size: .82rem; color: #059669; }
-    .ptm-status.is-error { color: #B42318; }
-    .ptm-grid {
-        display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        gap: .7rem; padding: 1.25rem;
-    }
-    .ptm-card {
-        position: relative; border: 1px solid #E4E7EC; border-radius: 10px; overflow: hidden;
-        cursor: pointer; background: #F9FAFB;
-    }
-    .ptm-card:hover { border-color: #E8590C; }
-    .ptm-card img, .ptm-card video { width: 100%; height: 100px; object-fit: cover; display: block; }
-    .ptm-name {
-        display: block; padding: .35rem .5rem; font-size: .72rem; color: #475467;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .ptm-del {
-        position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border: 0;
-        border-radius: 50%; background: rgba(16, 24, 40, .65); color: #fff; cursor: pointer;
-        font-size: .9rem; line-height: 1;
-    }
-    .ptm-empty { grid-column: 1 / -1; margin: 0; font-size: .85rem; color: #667085; }
 
     @media (max-width: 720px) {
-        .ptf { grid-template-columns: 40px minmax(0, 1fr); }
-        .ptr-row { grid-template-columns: 24px minmax(0, 1fr); }
-        .ptr-tools { grid-column: 1 / -1; flex-direction: row; }
         .pt-table thead { display: none; }
         .pt-table td { display: block; border: 0; padding: .35rem 1rem; }
         .pt-table tr { display: block; border-bottom: 1px solid #E4E7EC; padding: .6rem 0; }
@@ -371,6 +245,10 @@ that always submits a value cannot half-save.
                             <label for="pt-infotitle">Description section title</label>
                             <input type="text" id="pt-infotitle" name="info_title" value="{{ setting.info_title }}" placeholder="Product information">
                         </div>
+                        <div class="pt-field">
+                            <label for="pt-feattitle">Features section title</label>
+                            <input type="text" id="pt-feattitle" name="features_title" value="{{ setting.features_title }}" placeholder="Features">
+                        </div>
                     </div>
                     <div class="pt-grid is-wide" style="margin-top:1rem;">
                         <div class="pt-field">
@@ -397,6 +275,16 @@ that always submits a value cannot half-save.
                             <label for="pt-ing">Key ingredients</label>
                             <textarea id="pt-ing" name="ingredients" rows="4" data-pt-repeater="ingredients">{{ setting.ingredients }}</textarea>
                             <span class="pt-help">Shown as a picture-and-label grid, not as tabs.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-infomedia">Description gallery</label>
+                            <textarea id="pt-infomedia" name="info_media" rows="4" data-pt-repeater="info_media">{{ setting.info_media }}</textarea>
+                            <span class="pt-help">A photo with its own words underneath, repeated &mdash; the shape a product manual actually has. It renders above the written description.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-features">Features / manual</label>
+                            <textarea id="pt-features" name="features" rows="4" data-pt-repeater="features">{{ setting.features }}</textarea>
+                            <span class="pt-help">A ticked list. A row with only a title is a plain feature bullet.</span>
                         </div>
                         <div class="pt-field">
                             <label for="pt-stat">Trust stat</label>
@@ -598,13 +486,13 @@ that always submits a value cannot half-save.
                 {% for field in meta_fields %}
                 <div class="pt-field">
                     <label for="pt-d-{{ field.key }}">{{ field.label }}</label>
-                    {% if field.key == 'videos' or field.key == 'steps' or field.key == 'ingredients' or field.key == 'before_after' %}
+                    {% if field.widget == 'repeater' %}
                     <textarea id="pt-d-{{ field.key }}" name="{{ field.key }}" rows="{{ field.rows }}"
-                              data-pt-field="{{ field.key }}" data-pt-repeater="{{ field.key }}"></textarea>
-                    {% elif field.key == 'stat_image' or field.key == 'benefit_image' %}
+                              data-pt-field="{{ field.key }}" data-pt-repeater="{{ field.spec }}"></textarea>
+                    {% elif field.widget == 'image' %}
                     <input type="text" id="pt-d-{{ field.key }}" name="{{ field.key }}"
                            data-pt-field="{{ field.key }}" data-pt-media="image">
-                    {% elif field.rows > 1 %}
+                    {% elif field.widget == 'textarea' %}
                     <textarea id="pt-d-{{ field.key }}" name="{{ field.key }}" rows="{{ field.rows }}"
                               data-pt-field="{{ field.key }}"></textarea>
                     {% else %}

@@ -907,6 +907,57 @@
 .lx-p2-ing-name { display: block; margin-top: 8px; font-size: 13.5px; font-weight: 700; }
 .lx-p2-ing-note { display: block; margin-top: 2px; font-size: 12px; color: var(--lx-p2-muted); line-height: 1.4; }
 
+/* ── A clip's own caption ────────────────────────────────────────────
+   The caption sits outside `.lx-p2-video`, never inside it: that box is the
+   9:16 frame every control is positioned against, and text added to it would
+   be cropped by its own overflow rule. */
+.lx-p2-vcard { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.lx-p2-vcap { display: flex; flex-direction: column; gap: 2px; }
+.lx-p2-vcap-t {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--lx-p2-ink);
+    line-height: 1.35;
+}
+.lx-p2-vcap-n { font-size: 12px; line-height: 1.5; color: var(--lx-p2-muted); }
+
+/* ── Features / manual ─────────────────────────────────────────────── */
+.lx-p2-feats { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.lx-p2-feat { display: flex; gap: 10px; align-items: flex-start; }
+.lx-p2-feat-tick {
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    border-radius: 50%;
+    background: var(--lx-p2-accent-soft, #fdefe6);
+    color: var(--lx-p2-accent);
+    display: grid;
+    place-items: center;
+}
+.lx-p2-feat-tick svg { width: 12px; height: 12px; }
+.lx-p2-feat strong { display: block; font-size: 14px; font-weight: 700; color: var(--lx-p2-ink); }
+.lx-p2-feat p { margin: 2px 0 0; font-size: 13.5px; line-height: 1.6; color: #33414f; }
+
+/* ── Description gallery: one photo, its own words underneath ──────── */
+.lx-p2-shot { margin: 0 0 18px; }
+.lx-p2-shot:last-of-type { margin-bottom: 0; }
+.lx-p2-shot img {
+    width: 100%;
+    display: block;
+    border-radius: var(--lx-p2-radius-sm);
+    background: #f2f4f7;
+}
+.lx-p2-shot figcaption { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; }
+.lx-p2-shot figcaption strong {
+    font-size: 14px;
+    font-weight: 700;
+    font-style: italic;
+    color: var(--lx-p2-ink);
+}
+.lx-p2-shot figcaption span { font-size: 13.5px; line-height: 1.6; color: #33414f; }
+.lx-p2-shot + .lx-p2-prose { margin-top: 18px; }
+
 .lx-p2-prose { font-size: 15px; line-height: 1.7; color: #33414f; }
 .lx-p2-prose p { margin: 0 0 12px; }
 .lx-p2-prose img { border-radius: var(--lx-p2-radius-sm); margin: 12px 0; width: 100%; }

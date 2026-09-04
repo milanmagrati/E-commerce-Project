@@ -82,6 +82,9 @@ DEFAULTS = {
     'steps': '',
     'ingredients_title': 'Key ingredients',
     'ingredients': '',
+    'info_media': '',
+    'features_title': 'Features',
+    'features': '',
 
     'footer_address': '',
     'footer_phone': '',
@@ -95,7 +98,11 @@ OVERRIDABLE = (
     'highlights', 'pay_chips', 'pay_bullets',
     'return_value', 'warranty_value', 'shipping_value',
     'videos', 'stat_text', 'stat_image', 'benefit_text', 'benefit_image',
-    'before_after', 'steps', 'ingredients', 'ship_fee',
+    'before_after', 'steps', 'ingredients', 'info_media', 'features',
+    'ship_fee',
+    # Headings, so a product can title its own blocks.
+    'buy_label', 'info_title', 'video_title', 'before_after_title',
+    'steps_title', 'ingredients_title', 'features_title',
 )
 
 # Icon keys the trust row and the rail are allowed to name. An unknown key
@@ -286,14 +293,18 @@ def ship_fee_for(product, override=None):
 # the template can skip the whole card with a single `{% if %}`.
 
 def videos(product, override=None):
-    """`video | poster | creator` lines → the 9:16 video cards.
+    """`video | poster | creator | title | description` lines → the 9:16 cards.
 
     Self-hosted files only: the play/pause, mute and expand controls are bound
     to a real <video> element, which a YouTube or Vimeo iframe is not.
+
+    The last two cells are the clip's own caption. They are trailing on purpose
+    — `cells()` pads, so every three-cell row written before they existed keeps
+    parsing to exactly the card it always drew.
     """
     out = []
     for line in lines(field(product, 'videos', override)):
-        src, poster, creator = cells(line, 3)
+        src, poster, creator, title, note = cells(line, 5)
         src = media_url(src)
         if not src:
             continue
@@ -301,7 +312,41 @@ def videos(product, override=None):
             'src': src,
             'poster': media_url(poster),
             'is_creator': creator.lower() == 'creator',
+            'title': title,
+            'note': note,
         })
+    return out
+
+
+def info_media(product, override=None):
+    """`image | heading | description` lines → the description gallery.
+
+    One photo with its own words underneath, repeated: the shape a product
+    manual actually has. A row with neither a picture nor any text is dropped
+    rather than drawn as an empty frame.
+    """
+    out = []
+    for line in lines(field(product, 'info_media', override)):
+        image, heading, text = cells(line, 3)
+        image = media_url(image)
+        if not image and not heading and not text:
+            continue
+        out.append({'image': image, 'heading': heading, 'text': text})
+    return out
+
+
+def features(product, override=None):
+    """`title | description` lines → the features / manual list.
+
+    A row with only a title is legitimate — that is a feature bullet — so the
+    description is what is optional here, not the title.
+    """
+    out = []
+    for line in lines(field(product, 'features', override)):
+        title, text = cells(line, 2)
+        if not title and not text:
+            continue
+        out.append({'title': title, 'text': text})
     return out
 
 
@@ -503,6 +548,9 @@ def content_blocks(product, override=None):
         'steps_title': field(product, 'steps_title', override),
         'ingredients': ingredients(product, override),
         'ingredients_title': field(product, 'ingredients_title', override),
+        'info_media': info_media(product, override),
+        'features': features(product, override),
+        'features_title': field(product, 'features_title', override),
         'info_title': field(product, 'info_title', override),
         'trust_row': trust_row(product, override),
         'buy_label': field(product, 'buy_label', override),

@@ -310,7 +310,35 @@
             columns: [
                 {key: 'video', type: 'media', kind: 'video', label: 'Clip'},
                 {key: 'poster', type: 'media', kind: 'image', label: 'Poster (optional)'},
-                {key: 'creator', type: 'flag', label: 'Show the CREATOR badge', value: 'creator'}
+                {key: 'creator', type: 'flag', label: 'Show the CREATOR badge', value: 'creator'},
+                // Trailing on purpose: every row written before these existed
+                // still parses to exactly the card it always drew.
+                {key: 'title', type: 'text', label: 'Title (optional)',
+                 placeholder: 'How it looks on camera'},
+                {key: 'note', type: 'text', label: 'Description (optional)',
+                 placeholder: 'A line about what this clip shows'}
+            ]
+        },
+        info_media: {
+            title: 'Description gallery',
+            addLabel: 'Add a photo',
+            empty: 'No photos yet. These show inside the Product information block.',
+            columns: [
+                {key: 'image', type: 'media', kind: 'image', label: 'Photo'},
+                {key: 'heading', type: 'text', label: 'Heading (optional)',
+                 placeholder: 'Tried and trusted by'},
+                {key: 'text', type: 'text', label: 'Description (optional)',
+                 placeholder: 'Designed for thick hair growth'}
+            ]
+        },
+        features: {
+            title: 'Features',
+            addLabel: 'Add a feature',
+            empty: 'No features yet.',
+            columns: [
+                {key: 'title', type: 'text', label: 'Feature', placeholder: '84% natural ingredients'},
+                {key: 'text', type: 'text', label: 'Description (optional)',
+                 placeholder: 'Liquorice extract, fuller’s earth, rice powder'}
             ]
         },
         before_after: {

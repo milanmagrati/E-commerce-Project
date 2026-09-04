@@ -843,6 +843,14 @@ class ProductPageTheme(models.Model):
     ingredients = models.TextField(
         blank=True, default='',
         help_text="One per line: name | image | short note.")
+    info_media = models.TextField(
+        blank=True, default='',
+        help_text="Description gallery. One block per line: "
+                  "image | heading | description. Any cell may be left out.")
+    features_title = models.CharField(max_length=80, blank=True, default='')
+    features = models.TextField(
+        blank=True, default='',
+        help_text="Features or manual. One per line: title | description.")
 
     # -- The one-step COD checkout --
     buy_action = models.CharField(
@@ -911,7 +919,20 @@ class ProductThemeOverride(models.Model):
     before_after = models.TextField(blank=True, default='')
     steps = models.TextField(blank=True, default='')
     ingredients = models.TextField(blank=True, default='')
+    info_media = models.TextField(blank=True, default='')
+    features = models.TextField(blank=True, default='')
     ship_fee = models.CharField(max_length=40, blank=True, default='')
+
+    # Block headings, so a product whose photos differ from the store's can
+    # title them differently too - the whole point of editing this from the
+    # product form rather than from one site-wide screen.
+    buy_label = models.CharField(max_length=60, blank=True, default='')
+    info_title = models.CharField(max_length=80, blank=True, default='')
+    video_title = models.CharField(max_length=80, blank=True, default='')
+    before_after_title = models.CharField(max_length=80, blank=True, default='')
+    steps_title = models.CharField(max_length=80, blank=True, default='')
+    ingredients_title = models.CharField(max_length=80, blank=True, default='')
+    features_title = models.CharField(max_length=80, blank=True, default='')
 
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load dashboard_extras %}
+{% load static %}
 {% block title %}{{ action }} Product - {{ COMPANY_NAME }}{% endblock %}
 
 {% block messages %}{% endblock %}
@@ -495,6 +496,8 @@
                 <input type="hidden" name="bundle_component_count" id="bundleComponentCount" value="{{ bundle_components|length|default:'0' }}">
             </div>
         </div>
+
+        {% include 'dashboard/partials/product_theme_panel.html' %}
 
         <!-- Form Actions -->
         <div class="card shadow-sm">
@@ -2102,4 +2105,44 @@ window._simpleProductOptions = `{% for p in simple_products %}<option value="{{ 
 })();
 </script>
 
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'dashboard/css/product-theme-editor.css' %}">
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // On `window`, and before the editor loads: a top-level `const` is a
+    // lexical binding the script cannot see, and it would fetch the string
+    // "undefined" as a URL.
+    window.PT_SETUP = {
+        csrf: "{{ csrf_token }}",
+        listUrl: "{% url 'product_theme_media_list' %}",
+        uploadUrl: "{% url 'product_theme_media_upload' %}",
+        // The trailing id is substituted client-side; 0 is a placeholder no
+        // row can ever have.
+        deleteUrlBase: "{% url 'product_theme_media_delete' media_id=0 %}"
+    };
+</script>
+<script src="{% static 'dashboard/js/product-theme-setup.js' %}"></script>
+<script>
+(function () {
+    // Say plainly when the blocks being filled in will not be drawn, rather
+    // than letting someone write a landing page for a product still set to the
+    // classic template.
+    var select = document.querySelector('[data-pt-layout]');
+    var note = document.querySelector('[data-pt-theme1-note]');
+    if (!select || !note) return;
+
+    var globalIsTheme2 = {% if pt_global_is_theme2 %}true{% else %}false{% endif %};
+
+    function sync() {
+        var chosen = select.value || (globalIsTheme2 ? 'theme2' : 'theme1');
+        note.hidden = chosen === 'theme2';
+    }
+    select.addEventListener('change', sync);
+    sync();
+})();
+</script>
 {% endblock %}
