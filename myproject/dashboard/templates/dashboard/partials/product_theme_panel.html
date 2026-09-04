@@ -12,12 +12,16 @@ behind.
 post without it leaves the product's landing page untouched, so no other form
 can blank it by omission.
 
-Every section folds, by clicking its heading. The panel is a dozen blocks most
-products never use, and someone adding a product should not have to scroll
-past all of them to reach Save. The folding is this file's own few lines of
-JavaScript rather than Bootstrap's collapse: a fold that stops working because
-a CDN script did not load is worse than no fold at all. Folding only hides, so
-a folded section still posts every one of its fields.
+Every section folds, by clicking its heading, and the whole panel folds by
+clicking the orange header. Everything arrives *open*: a section that starts
+folded cannot be told apart from one that failed to render, and `is-folded` is
+only ever added by the script here - so a page where that script does not run
+shows everything rather than nothing.
+
+The folding is this file's own few lines of JavaScript rather than Bootstrap's
+collapse: a fold that stops working because a CDN script did not load is worse
+than no fold at all. Folding only hides, so a folded section still posts every
+one of its fields.
 {% endcomment %}
 
 <div class="card shadow-sm mb-4 pt-panel" id="landingPageCard">
@@ -43,8 +47,7 @@ a folded section still posts every one of its fields.
         </div>
     </div>
 
-    <div class="card-body pt-panel-body{% if not pt_has_row and not pt_global_is_theme2 %} is-folded{% endif %}"
-         id="landingPageBody">
+    <div class="card-body pt-panel-body" id="landingPageBody">
         <input type="hidden" name="pt_present" value="1">
 
         <div class="alert alert-secondary" style="font-size:.85rem;">
@@ -88,17 +91,20 @@ a folded section still posts every one of its fields.
 
         {% for group in pt_groups %}
         {% comment %}
-        A group opens if it already says something. An empty panel is then six
-        one-line headings rather than two screens of blank boxes, and a product
-        that has been set up shows what it has without a single click.
+        Open. Folding is something the reader chooses, never the state they
+        arrive in: a section that starts folded is indistinguishable from a
+        section that failed to render, and `is-folded` is applied only by the
+        script below - so if that script never runs, everything is visible
+        rather than everything being hidden.
         {% endcomment %}
         <div class="pt-sect">
             <h3 class="pt-secthead" data-pt-sect-toggle role="button" tabindex="0"
-                aria-expanded="{% if group.filled %}true{% else %}false{% endif %}">
+                aria-expanded="true">
                 <i class="fas fa-chevron-down pt-caret" aria-hidden="true"></i> {{ group.label }}
                 {% if group.filled %}<span class="pt-sectdot" title="This section has settings"></span>{% endif %}
+                <span class="pt-secthint" data-pt-sect-hint>Hide</span>
             </h3>
-            <div class="pt-sect-body{% if not group.filled %} is-folded{% endif %}">
+            <div class="pt-sect-body">
                 <div class="pt-grid{% if group.key == 'media' or group.key == 'proof' or group.key == 'teach' %} is-wide{% endif %}">
                     {% for field in group.fields %}
                     <div class="pt-field">
@@ -172,15 +178,20 @@ a folded section still posts every one of its fields.
             var section = heading.nextElementSibling;
             if (!section) return;
 
-            function toggle() {
-                var folded = !section.classList.contains('is-folded');
+            var hint = heading.querySelector('[data-pt-sect-hint]');
+
+            function paint(folded) {
                 section.classList.toggle('is-folded', folded);
                 heading.classList.toggle('is-folded', folded);
                 heading.setAttribute('aria-expanded', folded ? 'false' : 'true');
+                if (hint) hint.textContent = folded ? 'Show' : 'Hide';
             }
 
-            heading.classList.toggle('is-folded',
-                                     section.classList.contains('is-folded'));
+            function toggle() {
+                paint(!section.classList.contains('is-folded'));
+            }
+
+            paint(section.classList.contains('is-folded'));
             heading.addEventListener('click', toggle);
             heading.addEventListener('keydown', function (event) {
                 if (event.key === 'Enter' || event.key === ' ') {

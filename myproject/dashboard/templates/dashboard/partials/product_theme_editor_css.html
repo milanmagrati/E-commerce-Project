@@ -27,17 +27,23 @@ two are a pair and neither is much use alone.
 
 .pt-secthead {
     display: flex; align-items: center; gap: .1rem; cursor: pointer;
-    user-select: none; padding: .45rem .6rem; margin: 0 0 .85rem -.6rem;
-    border-radius: 8px;
+    user-select: none; padding: .5rem .7rem; margin: 0 0 .9rem;
+    border: 1px solid #E4E7EC; border-radius: 9px; background: #F9FAFB;
     font-size: .72rem; font-weight: 700; letter-spacing: .1em;
-    text-transform: uppercase; color: #667085;
+    text-transform: uppercase; color: #475467;
 }
-.pt-secthead:hover { background: #F9FAFB; color: #344054; }
+.pt-secthead:hover { background: #F2F4F7; color: #101828; border-color: #D0D5DD; }
 .pt-secthead .pt-caret { font-size: .7rem; color: #98A2B3; }
 .pt-secthead.is-folded { margin-bottom: 0; }
 .pt-sectdot {
     width: 6px; height: 6px; border-radius: 50%; background: #E8590C;
     margin-left: .45rem;
+}
+/* The affordance, spelled out. It costs one line and saves the reader
+   guessing whether a heading is a heading or a control. */
+.pt-secthint {
+    margin-left: auto; font-size: .66rem; font-weight: 600; letter-spacing: .04em;
+    text-transform: none; color: #98A2B3;
 }
 .pt-sect:has(> .pt-secthead.is-folded) { margin-bottom: .5rem; }
 

@@ -9666,3 +9666,4 @@ RuntimeError: NCM exploded
 [INFO] 2026-09-04 13:30:37 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
 [INFO] 2026-09-04 14:03:57 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
 [INFO] 2026-09-04 14:10:44 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
+[INFO] 2026-09-04 14:26:58 scheduler._claim:149 NCM bulk sync claimed (interval=60s, effective=60s, force=False, advance_schedule=True)
