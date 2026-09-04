@@ -169,8 +169,12 @@ partial is included, and the JS runs `enhance()` immediately when
 `document.readyState` is no longer `loading`, because a `DOMContentLoaded`
 listener registered after the event has fired never runs at all.
 
-**The panel folds with its own JavaScript, not Bootstrap's collapse.** Clicking
-the card header folds the panel; clicking a section heading folds that section.
+**The panel folds with its own JavaScript, not Bootstrap's collapse.** It
+arrives folded — the product form is long enough already — and the fold is
+added by the script rather than rendered into the markup, so a page whose
+script never runs shows an open panel instead of a bar nothing can unfold.
+Clicking the card header opens it, with every section inside open; clicking a
+section heading folds that section.
 Only a *body* is ever hidden: `.pt-panel-body.is-folded` and
 `.pt-sect-body.is-folded` name their targets, because the header and the
 headings carry `is-folded` too — that is what turns their caret — and an
@@ -236,7 +240,7 @@ Two traps that cost real time here, both about page config:
   unrelated store suites break at once, check
   `ProductPageTheme.get_solo().layout` before reading any further.
 
-Verification: `python test_product_page_theme.py` (130 checks — fee parsing, the
+Verification: `python test_product_page_theme.py` (132 checks — fee parsing, the
 precedence rules, `quote()` refusals and clamping, the ladder's shape and which
 rung it selects, the before/after pairing rule, the upload endpoint's extension
 and size refusals and who it lets through, the router, and an end-to-end order

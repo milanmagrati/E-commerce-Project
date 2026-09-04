@@ -12,11 +12,13 @@ behind.
 post without it leaves the product's landing page untouched, so no other form
 can blank it by omission.
 
-Every section folds, by clicking its heading, and the whole panel folds by
-clicking the orange header. Everything arrives *open*: a section that starts
-folded cannot be told apart from one that failed to render, and `is-folded` is
-only ever added by the script here - so a page where that script does not run
-shows everything rather than nothing.
+The panel arrives folded - the product form is long enough already, and most
+edits never touch the landing page. Clicking the orange header opens it, with
+every section inside open, and each section heading folds its own section.
+
+`is-folded` is only ever added by the script below, never rendered into the
+markup: if that script does not run, the panel is open and usable rather than a
+bar that nothing on the page can unfold.
 
 The folding is this file's own few lines of JavaScript rather than Bootstrap's
 collapse: a fold that stops working because a CDN script did not load is worse
@@ -91,11 +93,9 @@ one of its fields.
 
         {% for group in pt_groups %}
         {% comment %}
-        Open. Folding is something the reader chooses, never the state they
-        arrive in: a section that starts folded is indistinguishable from a
-        section that failed to render, and `is-folded` is applied only by the
-        script below - so if that script never runs, everything is visible
-        rather than everything being hidden.
+        Sections are open. The panel above them is what folds by default; once
+        it is open, opening it again section by section would be two clicks to
+        reach anything.
         {% endcomment %}
         <div class="pt-sect">
             <h3 class="pt-secthead" data-pt-sect-toggle role="button" tabindex="0"
@@ -169,6 +169,9 @@ one of its fields.
             togglePanel(event);
         }
     });
+    // Folded on arrival. Done here rather than in the markup so that the
+    // fold is something this script owns entirely - see the note at the top.
+    body.classList.add('is-folded');
     paintPanel();
 
     /* -- one section ---------------------------------------------------- */

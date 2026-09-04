@@ -716,6 +716,15 @@ def test_product_form_panel(fx):
     check('the fold rule names the section bodies',
           '.pt-sect-body.is-folded' in body)
 
+    # The panel arrives folded, and the fold is applied by the script rather
+    # than rendered into the markup - so a page whose script never runs shows
+    # an open panel instead of a bar nothing can unfold.
+    check('the panel folds itself on arrival',
+          "body.classList.add('is-folded')" in body)
+    check('no fold is rendered into the markup',
+          'class="card-body pt-panel-body is-folded"' not in body
+          and 'class="pt-sect-body is-folded"' not in body)
+
     body = client.get('/products/add/').content.decode('utf-8', 'replace')
     check('the add form carries the panel too', 'name="pt_present"' in body)
 
