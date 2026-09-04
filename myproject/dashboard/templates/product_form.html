@@ -2125,24 +2125,5 @@ window._simpleProductOptions = `{% for p in simple_products %}<option value="{{ 
         deleteUrlBase: "{% url 'product_theme_media_delete' media_id=0 %}"
     };
 </script>
-<script src="{% static 'dashboard/js/product-theme-setup.js' %}?v=2"></script>
-<script>
-(function () {
-    // Say plainly when the blocks being filled in will not be drawn, rather
-    // than letting someone write a landing page for a product still set to the
-    // classic template.
-    var select = document.querySelector('[data-pt-layout]');
-    var note = document.querySelector('[data-pt-theme1-note]');
-    if (!select || !note) return;
-
-    var globalIsTheme2 = {% if pt_global_is_theme2 %}true{% else %}false{% endif %};
-
-    function sync() {
-        var chosen = select.value || (globalIsTheme2 ? 'theme2' : 'theme1');
-        note.hidden = chosen === 'theme2';
-    }
-    select.addEventListener('change', sync);
-    sync();
-})();
-</script>
+{% include 'dashboard/partials/product_theme_editor_js.html' %}
 {% endblock %}

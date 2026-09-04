@@ -8,12 +8,41 @@ It is a template rather than a stylesheet on purpose. This project runs with
 DEBUG=False, where WhiteNoise reads the static tree once at start-up: a *new*
 static path 404s until the server is restarted, which is a trap to walk into
 every time a screen like this gains a file. A partial has no such path.
-`dashboard/js/product-theme-setup.js` is the behaviour that goes with it; the
+`product_theme_editor_js.html` is the behaviour that goes with it; the
 two are a pair and neither is much use alone.
 {% endcomment %}
 <style data-pt-editor-css>
+/* ── Folding ─────────────────────────────────────────────────────────
+   `is-folded` only hides. A folded section keeps its inputs in the form, so
+   everything still posts - which is the whole reason folding is safe to make
+   the default state of a section nobody has filled in. */
+.is-folded { display: none !important; }
+
+.pt-panel-head { cursor: pointer; user-select: none; }
+.pt-panel-head:hover { filter: brightness(1.06); }
+.pt-panel-hint { pointer-events: none; }
+.pt-caret { transition: transform .15s ease; margin-right: .35rem; }
+.pt-panel-head.is-folded .pt-caret,
+.pt-secthead.is-folded .pt-caret { transform: rotate(-90deg); }
+
+.pt-secthead {
+    display: flex; align-items: center; gap: .1rem; cursor: pointer;
+    user-select: none; padding: .45rem .6rem; margin: 0 0 .85rem -.6rem;
+    border-radius: 8px;
+    font-size: .72rem; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: #667085;
+}
+.pt-secthead:hover { background: #F9FAFB; color: #344054; }
+.pt-secthead .pt-caret { font-size: .7rem; color: #98A2B3; }
+.pt-secthead.is-folded { margin-bottom: 0; }
+.pt-sectdot {
+    width: 6px; height: 6px; border-radius: 50%; background: #E8590C;
+    margin-left: .45rem;
+}
+.pt-sect:has(> .pt-secthead.is-folded) { margin-bottom: .5rem; }
+
 .pt-sect { margin-bottom: 1.6rem; }
-.pt-sect > h3 {
+.pt-sect > h3:not(.pt-secthead) {
     font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
     color: #667085; margin: 0 0 .85rem;
 }

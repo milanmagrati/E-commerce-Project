@@ -528,7 +528,7 @@ that always submits a value cannot half-save.
         deleteUrlBase: "{% url 'product_theme_media_delete' media_id=0 %}"
     };
 </script>
-<script src="{% static 'dashboard/js/product-theme-setup.js' %}?v=2"></script>
+{% include 'dashboard/partials/product_theme_editor_js.html' %}
 <script>
 (function () {
     var drawer = document.getElementById('pt-drawer');

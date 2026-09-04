@@ -239,7 +239,16 @@ def product_theme_form_context(product=None, post=None):
                 inherited=str(inherited).split(chr(10))[0],
             ))
         if fields:
-            groups.append({'key': group_key, 'label': group_label, 'fields': fields})
+            groups.append({
+                'key': group_key,
+                'label': group_label,
+                'fields': fields,
+                # Drives whether the section opens folded. A group that already
+                # says something opens; the rest stay one line each, so an
+                # untouched panel is six headings rather than two screens of
+                # empty boxes.
+                'filled': any(f['value'] for f in fields),
+            })
 
     return {
         'pt_groups': groups,

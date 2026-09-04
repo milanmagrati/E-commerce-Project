@@ -1,3 +1,18 @@
+{% comment %}
+The Theme 2 editing behaviour: the media picker and the row repeater drawn on
+top of each hidden textarea.
+
+A partial rather than a static file, for the same reason as
+`product_theme_editor_css.html`: this project runs with DEBUG=False, where
+WhiteNoise indexes the static tree once at start-up and then serves an edited
+file's *previous* bytes until the process is restarted. A screen whose whole
+editing surface is JavaScript cannot afford that failure - it renders as a
+column of bare textareas with no clue why. A template is read with the page.
+
+`window.PT_SETUP` must be defined before this is included.
+{% endcomment %}
+<script data-pt-editor-js>
+{% verbatim %}
 /* ============================================================================
    Setup → Product Page Theme: the editing surface.
 
@@ -584,5 +599,15 @@
         });
     };
 
-    document.addEventListener('DOMContentLoaded', function () { enhance(document); });
+    // Not simply a DOMContentLoaded listener: this partial can be included
+    // anywhere on a page, and a listener registered after the event has
+    // already fired never runs at all - which looks exactly like a broken
+    // build, because every field stays a raw textarea.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { enhance(document); });
+    } else {
+        enhance(document);
+    }
 })();
+{% endverbatim %}
+</script>

@@ -154,14 +154,25 @@ from it, and `save_product_theme()` walks the same list — so a field cannot be
 drawn on one surface, missing from the other, and silently unsaved. Add a field
 there and to `theme2.OVERRIDABLE`, never to one of them alone.
 
-The editing chrome (`.pt-field`, `.ptf`, `.ptr`, `.ptm`) lives in
-`dashboard/templates/dashboard/partials/product_theme_editor_css.html` — a
-**template partial, not a stylesheet**, because both screens include it and
-because this project runs with `DEBUG=False`, where WhiteNoise reads the static
-tree once at start-up: a *new* static path 404s until the server restarts, and
-a screen that gains a CSS file walks into that trap every time.
-`product-theme-setup.js` is its behaviour and the two are a pair; its `<script>`
-carries a `?v=` query so a browser holding the previous copy takes the new one.
+**The editing chrome ships as template partials, not as static files** —
+`product_theme_editor_css.html` (`.pt-field`, `.ptf`, `.ptr`, `.ptm`, the fold)
+and `product_theme_editor_js.html` (the media picker and the repeater), both
+under `dashboard/templates/dashboard/partials/` and both included by the setup
+screen and the product-form panel. This is not a style preference. The project
+runs with `DEBUG=False`, where WhiteNoise indexes the static tree once at
+start-up: a *new* static path 404s until the process restarts, and an *edited*
+one keeps serving its previous bytes. A screen whose entire editing surface is
+JavaScript cannot survive that — it renders as a column of bare textareas with
+nothing to say why, and the same page looks fine to whoever restarted last. A
+partial is read with the page. `window.PT_SETUP` must be defined before the JS
+partial is included, and the JS runs `enhance()` immediately when
+`document.readyState` is no longer `loading`, because a `DOMContentLoaded`
+listener registered after the event has fired never runs at all.
+
+**The panel folds with its own JavaScript, not Bootstrap's collapse.** Clicking
+the card header folds the panel; clicking a section heading folds that section.
+`is-folded` only hides, so a folded section still posts every field — which is
+what makes it safe to open the sections nobody has filled in already folded.
 
 **The media endpoints refuse in JSON, not with a redirect.** They are called by
 fetch from both screens, and `admin_or_permission_required` answers a refusal
@@ -180,9 +191,9 @@ refused by **extension**, not by the browser's content type, which is trivially
 forged.
 
 **The list fields stay `a | b | c` text.** Videos, before/after pairs, how-to
-steps and ingredients are each one line per row, and
-`dashboard/static/dashboard/js/product-theme-setup.js` draws a repeater *on top
-of* the hidden textarea rather than replacing it. The textarea is still what the
+steps and ingredients are each one line per row, and the repeater in
+`product_theme_editor_js.html` is drawn *on top of* the hidden textarea rather
+than replacing it. The textarea is still what the
 plain form post carries — no extra endpoint, no second save path, and "Edit as
 text" is one click away. A cell's pipes and newlines are stripped on write,
 because either would split the row somewhere the author did not intend.
