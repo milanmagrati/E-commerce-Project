@@ -1,12 +1,17 @@
-/* ============================================================================
-   The Theme 2 editing chrome: field, button, media picker and repeater.
+{% comment %}
+The Theme 2 editing chrome: field, button, media picker and repeater.
 
-   Two screens draw it — Setup → Product Page Theme, and the landing-page panel
-   on the product add/edit form — so it lives here rather than inline on either
-   of them. `dashboard/js/product-theme-setup.js` is the behaviour that goes
-   with it; the two are a pair and neither is much use alone.
-   ========================================================================= */
+Two screens draw it - Setup > Product Page Theme, and the landing-page panel on
+the product add/edit form - so it lives in one partial they both include.
 
+It is a template rather than a stylesheet on purpose. This project runs with
+DEBUG=False, where WhiteNoise reads the static tree once at start-up: a *new*
+static path 404s until the server is restarted, which is a trap to walk into
+every time a screen like this gains a file. A partial has no such path.
+`dashboard/js/product-theme-setup.js` is the behaviour that goes with it; the
+two are a pair and neither is much use alone.
+{% endcomment %}
+<style data-pt-editor-css>
 .pt-sect { margin-bottom: 1.6rem; }
 .pt-sect > h3 {
     font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
@@ -136,3 +141,4 @@
     .ptr-row { grid-template-columns: 24px minmax(0, 1fr); }
     .ptr-tools { grid-column: 1 / -1; flex-direction: row; }
 }
+</style>

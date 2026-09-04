@@ -155,8 +155,13 @@ drawn on one surface, missing from the other, and silently unsaved. Add a field
 there and to `theme2.OVERRIDABLE`, never to one of them alone.
 
 The editing chrome (`.pt-field`, `.ptf`, `.ptr`, `.ptm`) lives in
-`dashboard/static/dashboard/css/product-theme-editor.css` because two screens
-draw it; `product-theme-setup.js` is its behaviour and the two are a pair.
+`dashboard/templates/dashboard/partials/product_theme_editor_css.html` — a
+**template partial, not a stylesheet**, because both screens include it and
+because this project runs with `DEBUG=False`, where WhiteNoise reads the static
+tree once at start-up: a *new* static path 404s until the server restarts, and
+a screen that gains a CSS file walks into that trap every time.
+`product-theme-setup.js` is its behaviour and the two are a pair; its `<script>`
+carries a `?v=` query so a browser holding the previous copy takes the new one.
 
 **The media endpoints refuse in JSON, not with a redirect.** They are called by
 fetch from both screens, and `admin_or_permission_required` answers a refusal

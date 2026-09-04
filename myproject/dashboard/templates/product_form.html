@@ -2108,7 +2108,7 @@ window._simpleProductOptions = `{% for p in simple_products %}<option value="{{ 
 {% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'dashboard/css/product-theme-editor.css' %}">
+{% include 'dashboard/partials/product_theme_editor_css.html' %}
 {% endblock %}
 
 {% block extra_js %}
@@ -2125,7 +2125,7 @@ window._simpleProductOptions = `{% for p in simple_products %}<option value="{{ 
         deleteUrlBase: "{% url 'product_theme_media_delete' media_id=0 %}"
     };
 </script>
-<script src="{% static 'dashboard/js/product-theme-setup.js' %}"></script>
+<script src="{% static 'dashboard/js/product-theme-setup.js' %}?v=2"></script>
 <script>
 (function () {
     // Say plainly when the blocks being filled in will not be drawn, rather

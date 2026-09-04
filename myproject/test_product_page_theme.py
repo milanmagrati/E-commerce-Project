@@ -699,7 +699,7 @@ def test_product_form_panel(fx):
     for needle in ('name="pt_present"', 'name="pt_layout"', 'name="pt_videos"',
                    'data-pt-repeater="info_media"', 'data-pt-repeater="features"',
                    'data-pt-media="image"', 'window.PT_SETUP',
-                   'product-theme-setup.js', 'product-theme-editor.css'):
+                   'product-theme-setup.js', 'data-pt-editor-css'):
         check('the edit form carries %s' % needle, needle in body)
 
     body = client.get('/products/add/').content.decode('utf-8', 'replace')
