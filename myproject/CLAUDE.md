@@ -171,8 +171,12 @@ listener registered after the event has fired never runs at all.
 
 **The panel folds with its own JavaScript, not Bootstrap's collapse.** Clicking
 the card header folds the panel; clicking a section heading folds that section.
-`is-folded` only hides, so a folded section still posts every field — which is
-what makes it safe to open the sections nobody has filled in already folded.
+Only a *body* is ever hidden: `.pt-panel-body.is-folded` and
+`.pt-sect-body.is-folded` name their targets, because the header and the
+headings carry `is-folded` too — that is what turns their caret — and an
+unscoped rule hides the very bar that was clicked, so the panel does not
+collapse, it disappears with nothing left to reopen it. Folding only hides, so
+a folded section still posts every field.
 
 **The media endpoints refuse in JSON, not with a redirect.** They are called by
 fetch from both screens, and `admin_or_permission_required` answers a refusal
@@ -232,7 +236,7 @@ Two traps that cost real time here, both about page config:
   unrelated store suites break at once, check
   `ProductPageTheme.get_solo().layout` before reading any further.
 
-Verification: `python test_product_page_theme.py` (125 checks — fee parsing, the
+Verification: `python test_product_page_theme.py` (130 checks — fee parsing, the
 precedence rules, `quote()` refusals and clamping, the ladder's shape and which
 rung it selects, the before/after pairing rule, the upload endpoint's extension
 and size refusals and who it lets through, the router, and an end-to-end order

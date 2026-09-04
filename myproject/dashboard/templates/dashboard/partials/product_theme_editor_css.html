@@ -13,10 +13,16 @@ two are a pair and neither is much use alone.
 {% endcomment %}
 <style data-pt-editor-css>
 /* ── Folding ─────────────────────────────────────────────────────────
-   `is-folded` only hides. A folded section keeps its inputs in the form, so
-   everything still posts - which is the whole reason folding is safe to make
-   the default state of a section nobody has filled in. */
-.is-folded { display: none !important; }
+   Only a *body* is ever hidden, and the selector says so by name. The header
+   and the section headings carry `is-folded` as well, because that is what
+   turns their caret - so an unscoped fold rule hides the very bar you clicked,
+   and the panel does not collapse, it disappears with nothing left on screen
+   to bring it back.
+
+   Folding only hides: a folded section still holds its inputs in the form and
+   still posts every one of them. */
+.pt-panel-body.is-folded,
+.pt-sect-body.is-folded { display: none !important; }
 
 .pt-panel-head { cursor: pointer; user-select: none; }
 .pt-panel-head:hover { filter: brightness(1.06); }

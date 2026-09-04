@@ -28,6 +28,7 @@ Run:  python test_product_page_theme.py
 """
 
 import os
+import re
 import sys
 from decimal import Decimal
 
@@ -702,6 +703,18 @@ def test_product_form_panel(fx):
                    'data-pt-editor-js', 'data-pt-editor-css',
                    'data-pt-sect-toggle', 'data-pt-panel-toggle'):
         check('the edit form carries %s' % needle, needle in body)
+
+    # The fold rule has to name the bodies. The header and every section
+    # heading also carry `is-folded` - that is what turns their caret - so an
+    # unscoped `.is-folded { display: none }` hides the bar that was clicked
+    # and the panel does not collapse, it vanishes with nothing left to
+    # reopen it.
+    check('nothing hides on a bare .is-folded',
+          re.search(r'(?<![\w.-])\.is-folded\s*[,{]', body) is None)
+    check('the fold rule names the panel body',
+          '.pt-panel-body.is-folded' in body)
+    check('the fold rule names the section bodies',
+          '.pt-sect-body.is-folded' in body)
 
     body = client.get('/products/add/').content.decode('utf-8', 'replace')
     check('the add form carries the panel too', 'name="pt_present"' in body)
