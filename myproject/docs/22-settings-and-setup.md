@@ -504,6 +504,10 @@ its footer. See [24 — Storefront](./24-storefront.md).
 - **`base_urls` order matters** — `[0]` is v1, `[1]` is v2. Getting them backwards breaks
   branches and vendor/RTV endpoints while leaving order creation working.
 - **Cities auto-create too**, from the order form.
+- **Product Page Theme (`/setup/product-theme/`) is `@admin_only` for its pages, but its
+  media endpoints are not** — they answer to `can_edit_products` / `can_create_products`,
+  because the landing-page panel on the product form uploads through them. See
+  [31](./31-product-page-themes.md).
 - **Delivery Charge Setup, Bulk Discount Setup and Invoice Customizer are `@admin_only`**,
   unlike the rest of `/setup/`, which runs on `can_view_orders` / `can_create_orders`. No
   permission flag opens them — the role has to be `administrator`.
@@ -520,6 +524,7 @@ its footer. See [24 — Storefront](./24-storefront.md).
 - `dashboard/delivery_charge_views.py` — Delivery Charge Setup (all `@admin_only`)
 - `dashboard/bulk_discount_views.py` — Bulk Discount Setup (all `@admin_only`)
 - `dashboard/invoice_customizer_views.py` — Invoice Customizer (all `@admin_only`)
+- `dashboard/product_theme_views.py` — Product Page Theme ([31](./31-product-page-themes.md))
 - `dashboard/invoice_config.py` — invoice token whitelist, default layout, context builder
 - `dashboard/models.py` — `InvoiceTemplate`, `InvoiceElement` (end of file)
 - `store/models.py:597-712` — `DeliverySetting`, `DeliveryCharge`

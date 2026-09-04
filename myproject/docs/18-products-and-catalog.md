@@ -97,6 +97,11 @@ that warning on every page.
 | Edit product | `/products/<id>/edit/` | `product_edit` | `product_form.html` | `can_edit_products` |
 | Trash | `/products/trash/` | `products_trash` | `products_trash.html` | `can_delete_products` |
 
+> **The product form also writes the product's storefront landing page.** The
+> Storefront Landing Page panel inside `product_form.html` posts in the same request as
+> `ProductForm`, under `pt_`-prefixed names, and is saved by the same submit button —
+> [31](./31-product-page-themes.md).
+
 Trash actions (all `can_delete_products`): `product_move_to_trash`, `product_restore`,
 `product_permanent_delete`, `products_trash_bulk_action`, `empty_trash`.
 Bulk: `/products/bulk-action/`. Export: `/products/export-excel/`.
@@ -195,6 +200,11 @@ Pricing is gated more finely than most things, because staff should not always s
   `dashboard/views.py` (`:2135`/`:9087` and `:2907`/`:9178`); the later definition wins. See
   [A4](./A4-appendix-known-quirks.md).
 - Product deletion is soft by default; permanent delete is a separate action.
+- **`product_edit` has a second, inline gate**: without `can_edit_prices` it redirects
+  unless the role is `administrator` (`dashboard/views.py:1633`) — after the
+  `can_edit_products` decorator has already allowed the request through.
+- **A product form post that omits `pt_present` leaves the landing page untouched.** That
+  is deliberate; see [31](./31-product-page-themes.md).
 
 ---
 

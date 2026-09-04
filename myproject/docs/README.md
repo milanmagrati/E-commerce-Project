@@ -24,6 +24,7 @@ You do **not** need to read it in order. Pick your entry point:
 | Find a URL or view | [A1 — URL map](./A1-appendix-url-map.md) |
 | Give someone the right access | [03 — Auth, roles & permissions](./03-auth-roles-permissions.md) |
 | Debug a live problem | [30 — Ops & troubleshooting](./30-ops-and-troubleshooting.md) |
+| Change how a product's page looks in the shop | [31 — Product page themes](./31-product-page-themes.md) |
 
 ---
 
@@ -67,6 +68,7 @@ You do **not** need to read it in order. Pick your entry point:
 - [27 — Google Sheets & WooCommerce](./27-sheets-and-woocommerce.md)
 - [28 — Chat, Todo & Resources](./28-chat-todo-resources.md)
 - [29 — Sentinel Vault (audit trail)](./29-sentinel-audit.md)
+- [31 — Product page themes & the landing-page editor](./31-product-page-themes.md)
 
 ### Reference
 - [30 — Ops & troubleshooting](./30-ops-and-troubleshooting.md)

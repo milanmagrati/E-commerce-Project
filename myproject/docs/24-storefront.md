@@ -66,7 +66,7 @@ Passwords go through Django's own hashers (`StoreCustomer.set_password` / `check
 |---|---|---|---|
 | Landing | `/store/` | `landing_page` | `store/landing.html` |
 | Product list | `/store/products/` | `product_list` | `store/product_list.html` |
-| Product detail | `/store/products/<slug>/` | `product_detail` | `store/product_detail.html` |
+| Product detail | `/store/products/<slug>/` | `product_detail` | `store/product_detail.html` **or** `store/product_detail_conversion.html` — see [31](./31-product-page-themes.md) |
 | Category | `/store/category/<slug>/` | `category_products` | `store/category_products.html` |
 | Search results | `/store/search/` | `search_results` | `store/search_results.html` |
 | Dynamic CMS page | `/store/p/<slug>/` | `dynamic_page` | `store/page_detail.html` |
