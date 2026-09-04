@@ -31,11 +31,15 @@ one of its fields.
          style="background: linear-gradient(135deg, #E8590C, #C2410C);"
          data-pt-panel-toggle role="button" tabindex="0"
          aria-controls="landingPageBody" title="Show or hide the landing page settings">
-        <h5 class="mb-0">
+        <div class="pt-panel-id">
             <i class="fas fa-chevron-down pt-caret" aria-hidden="true"></i>
-            <i class="fas fa-palette"></i> Storefront Landing Page
-        </h5>
-        <div class="d-flex gap-2 align-items-center">
+            <span class="pt-panel-badge"><i class="fas fa-palette" aria-hidden="true"></i></span>
+            <div class="pt-panel-txt">
+                <h5 class="pt-panel-title">Storefront Landing Page</h5>
+                <span class="pt-panel-sub">Optional — how this product looks on the shop's product page</span>
+            </div>
+        </div>
+        <div class="pt-panel-tools">
             {% if user_permissions.is_administrator %}
             {% comment %}
             A link inside a clickable header: the handler ignores clicks that
@@ -43,28 +47,32 @@ one of its fields.
             the panel shut underneath it.
             {% endcomment %}
             <a href="{% url 'product_theme_setup' %}" target="_blank" rel="noopener"
-               class="btn btn-sm btn-light">Store-wide settings</a>
+               class="pt-panel-link"><i class="fas fa-sliders-h" aria-hidden="true"></i> Store-wide settings</a>
             {% endif %}
-            <span class="btn btn-sm btn-light pt-panel-hint"><span data-pt-panel-label>Hide</span></span>
+            <span class="pt-panel-hint"><span data-pt-panel-label>Hide</span></span>
         </div>
     </div>
 
     <div class="card-body pt-panel-body" id="landingPageBody">
         <input type="hidden" name="pt_present" value="1">
 
-        <div class="alert alert-secondary" style="font-size:.85rem;">
-            <i class="fas fa-info-circle"></i>
-            Every box below is optional. Leave one blank and this product uses the
-            store-wide setting; fill it in and only this product changes.
-            {% if pt_has_row %}
-            <strong>This product currently has settings of its own.</strong>
-            {% endif %}
-        </div>
+        <p class="pt-note">
+            <i class="fas fa-info-circle" aria-hidden="true"></i>
+            <span>
+                Every box below is optional. Leave one blank and this product uses the
+                store-wide setting; fill it in and only this product changes.
+                {% if pt_has_row %}
+                <strong>This product currently has settings of its own.</strong>
+                {% endif %}
+            </span>
+        </p>
 
-        <div class="pt-sect">
+        <div class="pt-sect pt-sect--fold">
             <h3 class="pt-secthead" data-pt-sect-toggle role="button" tabindex="0"
                 aria-expanded="true">
-                <i class="fas fa-chevron-down pt-caret" aria-hidden="true"></i> Page design
+                <i class="fas fa-chevron-down pt-caret" aria-hidden="true"></i>
+                <span>Page design</span>
+                <span class="pt-secthint" data-pt-sect-hint>Hide</span>
             </h3>
             <div class="pt-sect-body">
                 <div class="pt-grid">
@@ -97,10 +105,11 @@ one of its fields.
         it is open, opening it again section by section would be two clicks to
         reach anything.
         {% endcomment %}
-        <div class="pt-sect">
+        <div class="pt-sect pt-sect--fold">
             <h3 class="pt-secthead" data-pt-sect-toggle role="button" tabindex="0"
                 aria-expanded="true">
-                <i class="fas fa-chevron-down pt-caret" aria-hidden="true"></i> {{ group.label }}
+                <i class="fas fa-chevron-down pt-caret" aria-hidden="true"></i>
+                <span>{{ group.label }}</span>
                 {% if group.filled %}<span class="pt-sectdot" title="This section has settings"></span>{% endif %}
                 <span class="pt-secthint" data-pt-sect-hint>Hide</span>
             </h3>
