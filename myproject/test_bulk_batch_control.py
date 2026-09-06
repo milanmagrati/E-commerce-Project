@@ -183,7 +183,9 @@ def main():
     print('\n10. Resume sends only the outstanding orders')
     calls = []
 
-    def fake_send(shim, order, batch):
+    def fake_send(shim, order, batch, **kwargs):
+        # **kwargs because the adapter hands every send whatever prepare()
+        # built for the run - for NCM, the batch's shared branch catalogue.
         calls.append(order.id)
         return {'status': 'success', 'message': 'stubbed'}
 
@@ -193,6 +195,8 @@ def main():
         a = real_get_adapter(provider)
         if provider == 'ncm':
             a.send = fake_send
+            # Never reach for the courier's branch list from a test.
+            a.prepare = lambda batch: {'branch_catalogue': None}
         return a
 
     bulk_batch.get_adapter = stubbed_get_adapter
@@ -253,8 +257,12 @@ def main():
         return {'status': 'success', 'message': 'stubbed'}
 
     import dashboard.views as dv
+    from ncm import branch_resolver
     real_ncm_send = dv.send_single_order_to_ncm
+    real_catalogue = branch_resolver.catalogue
     dv.send_single_order_to_ncm = lambda shim, order, **kw: recording_send(shim, order, None, **kw)
+    # The real adapter's prepare() runs here; keep it off the courier's API.
+    branch_resolver.catalogue = lambda *a, **kw: None
     try:
         opts = {'api_config_id': '7', 'default_weight': 2.5, 'auto_set_logistics': True}
         with_opts = make_batch(orders[:1], options=opts)
@@ -275,6 +283,7 @@ def main():
               f'got {seen.get("api_config_id")}')
     finally:
         dv.send_single_order_to_ncm = real_ncm_send
+        branch_resolver.catalogue = real_catalogue
 
     print('\n15. annotate_controls decides the buttons for a page of rows')
     page = [

@@ -109,7 +109,17 @@ def _options(batch):
 def _ncm_adapter():
     from ncm.models import NCMBulkLog, NCMBulkLogOrder, NCMBulkLogDetail
 
-    def send(shim, order, batch):
+    def prepare(batch):
+        """Per-run state shared by every order in this batch.
+
+        NCM's branch catalogue: fetched once here rather than once per order,
+        for the same reason the bulk view does it - the courier rate-limits at
+        3 requests a second and a resume can be 500 orders long.
+        """
+        from ncm import branch_resolver
+        return {'branch_catalogue': branch_resolver.catalogue(_options(batch)['api_config_id'])}
+
+    def send(shim, order, batch, **extra):
         from dashboard.views import send_single_order_to_ncm
         opts = _options(batch)
         return send_single_order_to_ncm(
@@ -119,12 +129,14 @@ def _ncm_adapter():
             delivery_type=batch.delivery_type,
             default_weight=opts['default_weight'],
             api_config_id=opts['api_config_id'],
+            **extra,
         )
 
     def order_row_defaults(order):
         return {
             'ncm_order_id': order.ncm_order_id,
-            'destination_branch': order.branch_city or '',
+            # Matches the bulk view: the resolved NCM branch when there is one.
+            'destination_branch': order.ncm_destination_branch or order.branch_city or '',
         }
 
     return SimpleNamespace(
@@ -137,6 +149,7 @@ def _ncm_adapter():
         provider_id_field='ncm_order_id',
         logistics_value='ncm',
         send=send,
+        prepare=prepare,
         order_row_defaults=order_row_defaults,
     )
 
@@ -144,7 +157,10 @@ def _ncm_adapter():
 def _pnd_adapter():
     from pick_and_drop.models import PNDBulkLog, PNDBulkLogOrder, PNDBulkLogDetail
 
-    def send(shim, order, batch):
+    def prepare(batch):
+        return {}
+
+    def send(shim, order, batch, **extra):
         from dashboard.views import send_single_order_to_pnd
         opts = _options(batch)
         return send_single_order_to_pnd(
@@ -170,6 +186,7 @@ def _pnd_adapter():
         provider_id_field='pnd_order_id',
         logistics_value='pick_and_drop',
         send=send,
+        prepare=prepare,
         order_row_defaults=order_row_defaults,
     )
 
@@ -749,6 +766,11 @@ def _run_resume(provider, log_id, order_ids, user_id):
     heartbeat.touch()
 
     auto_set_logistics = _options(batch)['auto_set_logistics']
+    try:
+        send_extra = adapter.prepare(batch)
+    except Exception:
+        logger.warning('Could not prepare %s resume state', provider, exc_info=True)
+        send_extra = {}
 
     stop_reason = None
     processed = 0
@@ -770,7 +792,7 @@ def _run_resume(provider, log_id, order_ids, user_id):
                 continue
 
             try:
-                result = adapter.send(shim, order, batch)
+                result = adapter.send(shim, order, batch, **send_extra)
             except Exception as e:
                 logger.exception('Resume: %s order %s failed', provider, order_id)
                 result = {'status': 'error', 'message': str(e)}

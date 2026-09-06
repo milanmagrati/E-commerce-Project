@@ -9721,410 +9721,6 @@ def orders_bulk_action(request):
     return redirect(request.POST.get('redirect_to', 'orders_list') if request.method == 'POST' else 'orders_list')
 
 
-@login_required
-@permission_required('can_delete_orders')
-def orders_bulk_ncm_send(request):
-    """
-    Handle Bulk Sending to NCM Logistics
-    """
-    from ncm.models import NCMBulkLog, NCMBulkLogOrder, NCMBulkLogDetail
-
-    if request.method != 'POST':
-        messages.error(request, '❌ Invalid request method')
-        return redirect('orders_list')
-
-    # 1. Get Form Data
-    order_ids = request.POST.getlist('order_ids')
-    from_branch = request.POST.get('from_branch', 'TINKUNE')
-    delivery_type = request.POST.get('delivery_type', 'Door2Door')
-    api_config_id = request.POST.get('api_config_id', '') or None
-
-    # Handle auto_set_logistics checkbox
-    auto_set_logistics = request.POST.get('auto_set_logistics') == 'on'
-
-    # Handle weight (default to 1.0 if invalid)
-    try:
-        default_weight = float(request.POST.get('default_weight', '1.0'))
-    except (ValueError, TypeError):
-        default_weight = 1.0
-
-    if not order_ids:
-        messages.error(request, '❌ No orders selected for NCM dispatch!')
-        return redirect('orders_list')
-
-    # 2. Get Orders
-    orders = Order.objects.filter(id__in=order_ids, is_deleted=False)
-    count = orders.count()
-
-    if count == 0:
-        messages.error(request, '❌ No valid active orders found matching selection.')
-        return redirect('orders_list')
-
-    # 3. Auto-set Logistics Field (if checked)
-    if auto_set_logistics:
-        orders.update(logistics='ncm')
-
-    # Create NCM Bulk Log
-    bulk_log = NCMBulkLog.objects.create(
-        batch_number=NCMBulkLog.generate_batch_number(),
-        total_orders=count,
-        status='processing',
-        from_branch=from_branch,
-        delivery_type=delivery_type,
-        created_by=request.user,
-        # Recorded up front so a batch this request never finishes can still be
-        # resumed from the Bulk Logs page - see dashboard/bulk_batch.py.
-        selected_order_ids=list(orders.values_list('id', flat=True)),
-        send_options={
-            'api_config_id': api_config_id,
-            'default_weight': default_weight,
-            'auto_set_logistics': auto_set_logistics,
-        },
-    )
-    NCMBulkLogDetail.objects.create(
-        batch=bulk_log,
-        action='batch_started',
-        message=f'Bulk send started with {count} order(s) from {from_branch}',
-        user=request.user,
-    )
-
-    # 4. Processing Variables
-    success_count = 0
-    skip_count = 0
-    error_count = 0
-    error_details = []
-
-    from .bulk_batch import start_heartbeat
-    heartbeat = start_heartbeat(bulk_log)
-    stopped = False
-
-    # 5. Iterate and Send
-    for order in orders:
-        # Lets Terminate on the Bulk Logs page take effect, and keeps the batch
-        # from looking stalled while this request is still working.
-        if heartbeat.should_stop():
-            stopped = True
-            break
-
-        result = send_single_order_to_ncm(
-            request=request,
-            order=order,
-            from_branch=from_branch,
-            delivery_type=delivery_type,
-            default_weight=default_weight,
-            api_config_id=api_config_id
-        )
-
-        if result['status'] == 'success':
-            success_count += 1
-            log_status = 'success'
-            log_action = 'order_sent'
-        elif result['status'] == 'skipped':
-            skip_count += 1
-            log_status = 'skipped'
-            log_action = 'order_skipped'
-        else:
-            error_count += 1
-            log_status = 'failed'
-            log_action = 'order_failed'
-            if len(error_details) < 3:
-                error_details.append(f"{order.order_number}: {result['message']}")
-
-        # Create log entry for this order
-        order.refresh_from_db()
-        NCMBulkLogOrder.objects.create(
-            batch=bulk_log,
-            order=order,
-            order_number=order.order_number or '',
-            customer_name=order.customer_name or '',
-            customer_phone=order.customer_phone or '',
-            shipping_address=order.shipping_address or '',
-            cod_amount=order.amount_due or 0,
-            destination_branch=order.branch_city or '',
-            ncm_order_id=order.ncm_order_id,
-            status=log_status,
-            message=result.get('message', ''),
-        )
-        NCMBulkLogDetail.objects.create(
-            batch=bulk_log,
-            action=log_action,
-            order_number=order.order_number or '',
-            message=result.get('message', ''),
-            user=request.user,
-        )
-
-    # Update bulk log with final counts and status
-    if stopped:
-        final_status = 'cancelled'
-    elif error_count == count:
-        final_status = 'failed'
-    elif success_count == count:
-        final_status = 'completed'
-    elif success_count > 0:
-        final_status = 'partial'
-    else:
-        final_status = 'failed'
-
-    bulk_log.success_count = success_count
-    bulk_log.failed_count = error_count
-    bulk_log.skipped_count = skip_count
-    bulk_log.status = final_status
-    bulk_log.completed_at = timezone.now()
-    bulk_log.save()
-    heartbeat.release()
-
-    NCMBulkLogDetail.objects.create(
-        batch=bulk_log,
-        action='batch_completed',
-        message=(
-            f'Batch stopped on request: {success_count} success, {error_count} failed, '
-            f'{skip_count} skipped, {count - success_count - error_count - skip_count} not attempted'
-            if stopped else
-            f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped'
-        ),
-        user=request.user,
-    )
-
-    # 6. Final Feedback
-    if stopped:
-        messages.warning(
-            request,
-            f'⏹️ Batch {bulk_log.batch_number} was stopped before finishing '
-            f'({count - success_count - error_count - skip_count} order(s) not attempted).'
-        )
-
-    if success_count > 0:
-        messages.success(request, f'✅ Successfully sent {success_count} order(s) to NCM.')
-
-    if skip_count > 0:
-        messages.warning(request, f'⚠️ Skipped {skip_count} order(s) (Already sent or missing info).')
-
-    if error_count > 0:
-        messages.error(request, f'❌ Failed to send {error_count} order(s).')
-        # Show specific API errors
-        for err in error_details:
-            messages.error(request, f"Error: {err}")
-
-    return redirect('orders_list')
-
-def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door', default_weight=1.0, api_config_id=None):
-    """
-    Helper function to send a single order to NCM API.
-    Supports dynamic API configuration via api_config_id.
-    """
-    try:
-        # Validate order has required fields
-        if not order.order_number:
-            return {'status': 'error', 'message': f'Order {order.id} has no order_number'}
-
-        if not order.customer_name or not order.customer_phone or not order.shipping_address:
-            return {'status': 'error', 'message': f'Order {order.order_number} missing required customer info'}
-
-        # Check if already has NCM ID
-        if order.ncm_order_id:
-            return {'status': 'skipped', 'message': 'Already has NCM ID'}
-
-        # 1. Get API Credentials - from dynamic config or settings fallback
-        base_url = ''
-        api_key = ''
-        matched_api_config = None
-
-        if api_config_id:
-            try:
-                matched_api_config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='ncm')
-                base_url = matched_api_config.get_primary_base_url()
-                api_key = matched_api_config.api_key
-            except LogisticsAPIConfig.DoesNotExist:
-                return {'status': 'error', 'message': 'Selected API configuration not found or inactive'}
-
-        if not base_url or not api_key:
-            base_url = (getattr(settings, 'NCM_API_BASE_URL', '') or '').rstrip('/')
-            api_key = getattr(settings, 'NCM_API_KEY', '') or ''
-            # Auto-match default .env credentials to a DB config by API key
-            if not matched_api_config and api_key:
-                matched_api_config = LogisticsAPIConfig.objects.filter(
-                    logistics_provider='ncm', is_active=True, api_key=api_key
-                ).order_by('-id').first()
-
-        if not base_url or not api_key:
-            return {'status': 'error', 'message': 'NCM configuration missing. Add an API config in Settings > API Integration.'}
-
-        # Construct Endpoint (use /order/create not /ordercreate)
-        api_url = f"{base_url}/order/create"
-
-        # 2. Prepare Data
-        # Build package description with variant names
-        product_name = "General Item"
-        try:
-            items = order.items.select_related('product_variation').all()[:3]
-            if items:
-                parts = []
-                for item in items:
-                    qty = getattr(item, 'quantity', 1) or 1
-                    name = item.product_name or 'Item'
-                    var_name = item.variation_name or (item.product_variation.variation_name if item.product_variation else None)
-                    if var_name:
-                        name = f"{name} ({var_name})"
-                    parts.append(f"{qty}x {name}")
-                product_name = ', '.join(parts)
-                total_items = order.items.count()
-                if total_items > 3:
-                    product_name += f' and {total_items - 3} more'
-        except Exception:
-            pass
-
-        # Calculate Weight
-        weight = default_weight
-        # If your order model has a weight field, use it
-        if hasattr(order, 'package_weight') and order.package_weight:
-             weight = float(order.package_weight)
-
-        # Clean phone number (remove non-digits)
-        phone = ''.join(filter(str.isdigit, str(order.customer_phone or "")))
-
-        # FIXED: Generate Vendor Reference ID - Use order ID directly
-        # NCM requires vrefid field to be populated with order reference
-        vendor_ref_id = str(order.id)  # Start with order ID (guaranteed to exist)
-
-        # Try to use order_number if available (better for tracking)
-        if order.order_number:
-            order_num = str(order.order_number).strip()
-            if order_num:
-                vendor_ref_id = order_num
-
-        # If vendor_id exists from creator, use it as main reference
-        try:
-            if order.created_by and hasattr(order.created_by, 'vendor_id') and order.created_by.vendor_id:
-                vendor_id_str = str(order.created_by.vendor_id).strip()
-                if vendor_id_str:
-                    vendor_ref_id = vendor_id_str
-        except:
-            pass
-
-        # Ensure vendor_ref_id is always set and valid
-        if not vendor_ref_id or vendor_ref_id.strip() == "":
-            vendor_ref_id = str(order.id)
-
-        vendor_ref_id = vendor_ref_id.strip()
-
-        # For partial payments, send remaining amount as COD (not full total)
-        cod_amount = order.amount_due
-        payload = {
-            "name": str(order.customer_name or "").strip(),
-            "phone": phone,
-            "phone2": "", # Optional
-            "cod_charge": float(cod_amount or 0),
-            "address": str(order.shipping_address or "").strip(),
-            "fbranch": from_branch,
-            "branch": str(order.branch_city or "KATHMANDU").upper(),
-            "package": str(product_name)[:100], # Limit length
-            "vref_id": vendor_ref_id,
-            "instruction": str(order.notes or "")[:100],
-            "deliverytype": delivery_type,
-            "weight": weight
-        }
-
-        # 3. Send Request
-        headers = {
-            'Authorization': f'Token {api_key}',
-            'Content-Type': 'application/json'
-        }
-
-        response = requests.post(api_url, json=payload, headers=headers, timeout=15)
-
-        # 4. Handle Response
-        if response.status_code == 200:
-            resp_data = response.json()
-
-            # Check NCM specific success message
-            if resp_data.get('Message') == 'Order Successfully Created':
-                # Save NCM ID to Order
-                ncm_id = resp_data.get('orderid')
-                if ncm_id:
-                    order.ncm_order_id = int(ncm_id)
-                order.logistics = 'ncm' # Ensure logistics is set
-                if matched_api_config:
-                    order.api_config = matched_api_config
-
-                # Update order status to "Pickup Created" from Setup Management
-                try:
-                    from dashboard.models import Setup
-                    pickup_setup = Setup.objects.filter(setup_type='status', name__iexact='Pickup Created').first()
-                    if not pickup_setup:
-                        pickup_setup = Setup.objects.filter(setup_type='status', name__icontains='Pickup Created').first()
-                    
-                    if pickup_setup:
-                        order.status_setup = pickup_setup
-                        order.order_status = pickup_setup.name
-                        order.status = pickup_setup.name
-                    else:
-                        order.order_status = 'Pickup Created'
-                        order.status = 'Pickup Created'
-                except Exception:
-                    pass
-
-                order.save()
-
-                # ✅ FETCH DELIVERY CHARGE FROM NCM API
-                try:
-                    # Import ncm_service here to avoid circular imports
-                    from services.ncm_service import NCMService
-                    ncm_service = NCMService(api_config_id=order.api_config_id if order.api_config_id else None)
-                    details_result = ncm_service.get_order_details(order.ncm_order_id)
-
-                    logger.info(f"NCM API response details: {details_result}")
-
-                    if details_result.get('success'):
-                        details_data = details_result.get('data', {})
-                        logger.info(f"Extracted data from NCM response: {details_data}")
-
-                        # Extract delivery_charge from NCM response - try multiple field names
-                        delivery_charge = (details_data.get('chargeDetail') or
-                                         details_data.get('deliveryCharge') or
-                                         details_data.get('deliverycharge') or
-                                         details_data.get('delivery_charge') or
-                                         details_data.get('chargedetail') or
-                                         details_data.get('shippingCharge') or
-                                         details_data.get('shipping_charge') or
-                                         details_data.get('charge') or
-                                         details_data.get('amount') or
-                                         0)
-
-                        logger.info(f"Extracted delivery_charge: {delivery_charge} from data keys: {list(details_data.keys())}")
-
-                        if delivery_charge and float(delivery_charge) > 0:
-                            order.delivery_charge = Decimal(str(delivery_charge))
-                            order.save(update_fields=['delivery_charge'])
-                            logger.info(f"✅ Fetched and saved delivery charge: {delivery_charge} for NCM order {order.ncm_order_id}")
-                        else:
-                            logger.warning(f"⚠️ No delivery charge found in NCM response for order {order.ncm_order_id}. Response data: {details_data}")
-                    else:
-                        logger.warning(f"⚠️ Failed to fetch order details from NCM: {details_result.get('error', 'Unknown error')}")
-                except Exception as e:
-                    logger.error(f"Error fetching delivery charge from NCM: {str(e)}", exc_info=True)
-
-                # Log Activity
-                OrderActivityLog.objects.create(
-                    order=order,
-                    user=request.user,
-                    action_type='updated',
-                    description=f"Sent to NCM. NCM ID: {order.ncm_order_id}, Vendor Ref: {vendor_ref_id}"
-                )
-                return {'status': 'success', 'message': 'Sent successfully'}
-            else:
-                # API returned 200 but with an internal error message
-                return {'status': 'error', 'message': str(resp_data)}
-
-        elif response.status_code == 404:
-            # 404 means the URL is wrong OR the Resource ID is wrong.
-            # Since we are creating, it's likely the URL.
-            return {'status': 'error', 'message': f'API Endpoint 404. Checked URL: {api_url}'}
-
-        else:
-            return {'status': 'error', 'message': f'HTTP Error {response.status_code}: {response.text}'}
-
-    except Exception as e:
-        return {'status': 'error', 'message': str(e)}
 # ==================== DISPATCH MANAGEMENT VIEWS ====================
 
 def _invalidate_dispatch_items(order, reason, user=None):
@@ -15094,11 +14690,13 @@ def ncm_branches_json(request):
 
 
 @login_required
+@permission_required('can_create_ncm_orders')
 def orders_bulk_ncm_send(request):
     """
     Bulk send multiple orders to NCM logistics
     """
     from ncm.models import NCMBulkLog, NCMBulkLogOrder, NCMBulkLogDetail
+    from ncm import branch_resolver
 
     if request.method != 'POST':
         messages.error(request, '❌ Invalid request method')
@@ -15169,6 +14767,13 @@ def orders_bulk_ncm_send(request):
         heartbeat = start_heartbeat(bulk_log)
         stopped = False
 
+        # One branch fetch for the whole batch, not one per order.
+        catalogue = branch_resolver.catalogue(api_config_id)
+
+        # The first few failures, verbatim, for the redirect's messages. "Failed
+        # 31 order(s)." on its own tells nobody what to fix.
+        error_details = []
+
         # Process each order
         for order in orders:
             if heartbeat.should_stop():
@@ -15181,7 +14786,8 @@ def orders_bulk_ncm_send(request):
                 from_branch=from_branch,
                 delivery_type=delivery_type,
                 default_weight=default_weight,
-                api_config_id=api_config_id
+                api_config_id=api_config_id,
+                branch_catalogue=catalogue,
             )
 
             if result['status'] == 'success':
@@ -15200,6 +14806,10 @@ def orders_bulk_ncm_send(request):
                 error_count += 1
                 log_status = 'failed'
                 log_action = 'order_failed'
+                if len(error_details) < 3:
+                    error_details.append(
+                        f"{order.order_number}: {result.get('message', 'Unknown error')}"
+                    )
 
             # Create log entry for this order
             order.refresh_from_db()
@@ -15211,7 +14821,9 @@ def orders_bulk_ncm_send(request):
                 customer_phone=order.customer_phone or '',
                 shipping_address=order.shipping_address or '',
                 cod_amount=order.amount_due or 0,
-                destination_branch=order.branch_city or '',
+                # The branch the parcel actually went to once resolved, not the
+                # city it was selected by.
+                destination_branch=order.ncm_destination_branch or order.branch_city or '',
                 ncm_order_id=order.ncm_order_id,
                 status=log_status,
                 message=result.get('message', ''),
@@ -15280,8 +14892,11 @@ def orders_bulk_ncm_send(request):
         if error_count > 0:
             messages.error(
                 request,
-                f"❌ Failed {error_count} order(s)."
+                f"❌ Failed {error_count} order(s). "
+                f"Open the batch in Logistics → Bulk Logs to see every reason."
             )
+            for err in error_details:
+                messages.error(request, f"Error: {err}")
 
     except Exception as e:
         messages.error(request, f'❌ Bulk send error: {str(e)}')
@@ -15319,14 +14934,20 @@ def ncm_single_order_send(request, order_id):
     return redirect('order_detail', order_id=order_id)
 
 
-def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door', default_weight=1.0, api_config_id=None):
-    """
-    Helper function to send single order to NCM - COMPLETE VERSION
-    Returns: dict with 'status' and 'message'
+def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door',
+                             default_weight=1.0, api_config_id=None, branch_catalogue=None):
+    """Send one order to NCM. Returns {'status': ..., 'message': ...}.
+
+    `branch_catalogue` is an `ncm.branch_resolver.Catalogue`. A bulk loop builds
+    one and passes it to every order, so a 31-order batch costs one branch fetch
+    rather than 31 against an API that rate-limits at 3 requests a second. Left
+    out, one is fetched here (cached for 12 hours, so this is cheap too).
     """
     import requests
     from django.conf import settings
     from django.utils import timezone
+
+    from ncm import branch_resolver
 
     try:
         # CHECK 1: Already sent?
@@ -15380,11 +15001,6 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
             except:
                 weight = default_weight
 
-        # Get destination branch
-        destination_branch = 'KATHMANDU'
-        if hasattr(order, 'branch_city') and order.branch_city:
-            destination_branch = str(order.branch_city).upper()
-
         # Get API credentials - try dynamic config first, then fall back to settings
         base_url = ''
         api_key = ''
@@ -15417,6 +15033,32 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 'message': 'NCM API not configured in settings'
             }
 
+        # Destination branch. NCM wants the name of one of ITS branches; an
+        # order carries a city or district, or a branch code the storefront
+        # wrote. Resolving it here is what stopped whole batches being rejected
+        # one order at a time - see ncm/branch_resolver.py.
+        if branch_catalogue is None:
+            branch_catalogue = branch_resolver.catalogue(
+                matched_api_config.id if matched_api_config else api_config_id
+            )
+        destination_branch, branch_error = branch_resolver.resolve(order, branch_catalogue)
+        if branch_error:
+            return {'status': 'error', 'message': branch_error}
+
+        # Phone: NCM rejects anything but digits, and orders carry '+977-98...',
+        # '98.. / 98..' and similar. The single-send path has always cleaned it
+        # (NCMService._clean_phone); this one used to post it raw.
+        phone = ''.join(filter(str.isdigit, str(order.customer_phone or '')))
+        if len(phone) > 10 and phone.startswith('977'):
+            phone = phone[3:]
+        if not phone:
+            return {'status': 'error',
+                    'message': f'Phone number is not usable: {order.customer_phone!r}'}
+
+        # Our reference back to this order. order_number is normally set, but a
+        # blank one would post the string 'None' and lose the tie-back.
+        vendor_ref_id = str(order.order_number or '').strip() or str(order.id)
+
         # Build API URL
         base_url = base_url.rstrip('/')
         api_url = f"{base_url}/order/create"
@@ -15425,14 +15067,14 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         cod_amount = order.amount_due
         payload = {
             "name": str(order.customer_name)[:50],
-            "phone": str(order.customer_phone),
+            "phone": phone,
             "phone2": "",
             "cod_charge": float(cod_amount or 0),
             "address": str(order.shipping_address)[:200],
             "fbranch": from_branch,
             "branch": destination_branch,
             "package": str(product_name)[:50],
-            "vref_id": str(order.order_number),
+            "vref_id": vendor_ref_id,
             "instruction": str(order.notes or "")[:100],
             "delivery_type": delivery_type,
             "weight": weight
@@ -15479,6 +15121,10 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 order.ncm_from_branch = from_branch
                 order.ncm_delivery_type = delivery_type
                 order.ncm_destination_branch = destination_branch
+                # Without this a bulk-sent order never appears under Logistics
+                # Orders: that list filters on `logistics`, and only the bulk
+                # view's optional "auto set logistics" checkbox used to set it.
+                order.logistics = 'ncm'
                 if matched_api_config:
                     order.api_config = matched_api_config
 
@@ -15501,6 +15147,30 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
 
                 order.save()
 
+                # Delivery charge, straight from NCM. Never fatal: the parcel is
+                # already created at the courier by this point, so a failure here
+                # must not turn a successful send into a failed one.
+                try:
+                    from services.ncm_service import NCMService
+                    details = NCMService(
+                        api_config_id=order.api_config_id or None
+                    ).get_order_details(order.ncm_order_id)
+                    data_ = details.get('data') if details.get('success') else None
+                    if isinstance(data_, dict):
+                        charge = next(
+                            (data_.get(k) for k in (
+                                'chargeDetail', 'deliveryCharge', 'deliverycharge',
+                                'delivery_charge', 'chargedetail', 'shippingCharge',
+                                'shipping_charge', 'charge', 'amount',
+                            ) if data_.get(k)),
+                            0,
+                        )
+                        if charge and float(charge) > 0:
+                            order.delivery_charge = Decimal(str(charge))
+                            order.save(update_fields=['delivery_charge'])
+                except Exception:
+                    logger.warning('Could not fetch NCM delivery charge for order %s',
+                                   order.order_number, exc_info=True)
 
                 # Log activity
                 try:
@@ -22054,6 +21724,10 @@ def logistics_bulk_logs_list(request):
                         'status': o.status,
                         'status_display': o.get_status_display(),
                         'api_config_name': api_name,
+                        # Why this order failed. Recorded since the feature
+                        # shipped, but never shown - so a failed batch used to
+                        # be a red badge with no reason anywhere in the UI.
+                        'message': o.message or '',
                     })
             else:
                 batch_orders = NCMBulkLogOrder.objects.filter(batch_id=ajax_batch_id).select_related('order__api_config')
@@ -22073,6 +21747,7 @@ def logistics_bulk_logs_list(request):
                         'status': o.status,
                         'status_display': o.get_status_display(),
                         'api_config_name': api_name,
+                        'message': o.message or '',
                     })
             return JsonResponse({'orders': orders_data})
         except Exception:

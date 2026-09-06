@@ -11,11 +11,11 @@ flowchart TD
     A[Order detail page<br/>Send to NCM button] --> B["ncm/views.py:160<br/>create_ncm_shipment"]
     B --> C["NCMService.create_order()"]
 
-    D[Orders list<br/>bulk select + Send to NCM] --> E["dashboard/views.py:14633<br/>orders_bulk_ncm_send"]
-    E --> F["dashboard/views.py:14858<br/>send_single_order_to_ncm"]
+    D[Orders list<br/>bulk select + Send to NCM] --> E["dashboard/views.py:14694<br/>orders_bulk_ncm_send"]
+    E --> F["dashboard/views.py:14935<br/>send_single_order_to_ncm"]
     F --> G["raw requests.post -- BYPASSES NCMService"]
 
-    H[Order detail<br/>Create Exchange] --> I["dashboard/views.py:24010<br/>create_exchange_order_view"]
+    H[Order detail<br/>Create Exchange] --> I["dashboard/views.py:24785<br/>create_exchange_order_view"]
     I --> J["NCMService.create_exchange_order()"]
 
     C --> K[(NCM)]
@@ -59,7 +59,7 @@ fails, the send proceeds with a warning rather than blocking (`:211-213`).
 | NCM field | Source | Notes |
 |---|---|---|
 | `name` | `order.customer_name` | **The customer's name**, not the staff member's. The comment at `:226` exists because this was once wrong |
-| `phone` | `order.customer_phone` | Digits-only via `_clean_phone` (`ncm_service.py:581`) |
+| `phone` | `order.customer_phone` | Digits-only via `_clean_phone` (`ncm_service.py:581`). The bulk path cleans it the same way |
 | `phone2` | `order.customer.alternate_phone` | Only if present (`:244-245`) |
 | `cod_charge` | `str(order.amount_due)` | **`amount_due`, not `total_amount`** — see below |
 | `address` | `order.shipping_address` | |
@@ -121,7 +121,7 @@ simply be retried.
 
 **Purpose** — Send many selected orders in one batch, with progress, cancel and resume.
 **URL** `/orders/bulk-ncm-send/` · **name** `orders_bulk_ncm_send`
-**View** `dashboard/views.py:14633` · **Triggered from** `orders_list.html:548`
+**View** `dashboard/views.py:14694` · **Triggered from** `orders_list.html:548`
 
 ### The batch record
 
@@ -145,7 +145,7 @@ survive its worker dying:
 Endpoints: `/logistics/bulk-logs/progress/` (JSON poller),
 `/logistics/bulk-logs/<provider>/<log_id>/terminate/`, and `/resume/`.
 
-### The worker — `send_single_order_to_ncm` `dashboard/views.py:14858-15117`
+### The worker — `send_single_order_to_ncm` `dashboard/views.py:14935-15249`
 
 > ⚠️ **This path does not use `NCMService`.** It issues a raw `requests.post`
 > (`:14979-14987`) to `{base_url}/order/create` with `Authorization: Token {api_key}` and a
@@ -159,7 +159,7 @@ Differences from Path 1:
 | Timeout | `APISettings.ncm_api_timeout` | hardcoded 30s |
 | `cod_charge` | `str(...)` | `float(...)` |
 | Field truncation | none | `name[:50]`, `address[:200]`, `package[:50]`, `instruction[:100]` |
-| Destination branch | posted and validated against `get_branches()` | `order.branch_city.upper()`, defaulting to `'KATHMANDU'` (`:14920-14922`) |
+| Destination branch | posted and validated against `get_branches()` | resolved by `ncm/branch_resolver.py` — see below |
 | Retry | inherits the client's policy (POST = never) | none |
 | Initial `ncm_status` | `'Order Created'`, then re-read | `'Pickup Order Created'` written directly (`:15013`) |
 
@@ -173,16 +173,45 @@ Payload is built at `:14962-14975`.
 `ncm_from_branch`, `ncm_delivery_type`, `ncm_destination_branch`, `api_config`, and the
 order status set to the `Setup` row named "Pickup Created".
 
-**Error branches**, each producing a distinct `NCMBulkLogOrder` message: 400 validation
-(`:15064`), 401 auth (`:15081`), 404 (`:15087`), timeout (`:15099`), connection error
-(`:15105`).
+**Error branches**, each producing a distinct `NCMBulkLogOrder` message: 400 validation,
+401 auth, 404, timeout, connection error. That message is shown in the **Reason** column of
+the expanded batch row on the Bulk Logs page — for a long time it was recorded and rendered
+nowhere, so a failed batch was a red badge with no explanation anywhere in the UI.
+
+### The destination branch — `ncm/branch_resolver.py`
+
+> ⚠️ **NCM's `branch` is the name of one of its own branches, not a city and not a
+> district.** The bulk path used to post `order.branch_city.upper()`, defaulting to the
+> literal string `'KATHMANDU'`. That is a district; the valley's branches are TINKUNE,
+> CHABAHIL, KALANKI… so a batch of valley orders was rejected by NCM once per order, and
+> **Resume failed identically**, because nothing about the orders had changed.
+
+An order does not necessarily carry a branch name:
+
+| Order came from | `ncm_destination_branch` | `branch_city` |
+|---|---|---|
+| Storefront (`store/views.py::_place_order`) | the branch **code** the shopper picked | the **district** |
+| Dashboard order form | blank | a `NEPAL_CITIES` choice — "Kathmandu", "Other" |
+| A previous single send | the validated branch **name** | unchanged |
+
+`branch_resolver.resolve(order, catalogue)` tries `ncm_destination_branch` then
+`branch_city`, against branch names, then branch codes, then a district that has exactly one
+branch. It returns `(name, None)` or `(None, reason)`; the sender turns a reason into a
+failed order without spending an HTTP call, and the reason names the value and lists the
+branches that district actually has.
+
+`catalogue()` caches NCM's ~630 branches for 12 hours, keyed by API account. It is built
+**once per batch** and handed to every order — both by `orders_bulk_ncm_send` and by
+`bulk_batch`'s resume adapter (`prepare()`) — because NCM rate-limits at 3 requests a
+second. A catalogue that could not be fetched is falsy, and resolution then passes the
+order's own value straight through: a courier outage must not block sending.
 
 ---
 
 ## Path 3 — Exchange orders
 
 **Purpose** — Ask NCM to create a paired exchange shipment for a delivered order.
-**URL** `/orders/<int:order_id>/exchange/` · **View** `dashboard/views.py:24010-24097`
+**URL** `/orders/<int:order_id>/exchange/` · **View** `dashboard/views.py:24785-24872`
 **Triggered from** `order_detail.html:3833`
 
 Eligibility (all required):
@@ -265,10 +294,12 @@ Append-only event log for the batch: `batch_started`, `order_sent`, `order_faile
 ## Files that own this
 
 - `ncm/views.py:160-314` — single send
-- `dashboard/views.py:14633-…` — bulk send orchestration
-- `dashboard/views.py:14858-15117` — the bulk send worker
-- `dashboard/views.py:24010-24097` — exchange orders
+- `dashboard/views.py:14694-14904` — bulk send orchestration
+- `dashboard/views.py:14935-15249` — the bulk send worker
+- `dashboard/views.py:24785-24872` — exchange orders
 - `dashboard/bulk_batch.py` — terminate / resume / heartbeat
 - `services/ncm_service.py:191-227` — `create_order`
 - `ncm/models.py` — the bulk log models
 - `ncm/views.py:662-684` — `_get_package_description`
+- `ncm/branch_resolver.py` — mapping an order onto an NCM branch
+- `test_ncm_bulk_branch.py` — verification for that mapping and the bulk worker

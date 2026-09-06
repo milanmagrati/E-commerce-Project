@@ -692,6 +692,10 @@ filters the page did, so the file can only ever be what the table was showing.
 
     .order-status-success { color: #059669; font-weight: 600; }
     .order-status-failed { color: #dc2626; font-weight: 600; }
+    /* A courier validation error is a sentence, not a word - give it room but
+       stop one long message from stretching the table past the panel. */
+    .order-reason { max-width: 320px; }
+    .order-reason small { display: block; color: #6b7280; word-break: break-word; }
     .order-status-skipped { color: #d97706; font-weight: 600; }
 
     .expand-body::-webkit-scrollbar { width: 6px; }
@@ -792,6 +796,14 @@ filters the page did, so the file can only ever be what the table was showing.
 <script>
 const currentProvider = '{{ provider }}';
 
+function escapeHtml(value) {
+    const div = document.createElement('div');
+    div.textContent = value == null ? '' : String(value);
+    // innerHTML leaves quotes alone, and this string is also dropped into a
+    // title="..." attribute - so escape them here rather than in two places.
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function toggleExpandRow(batchId, logProvider) {
     const key = logProvider + '-' + batchId;
     const expandRow = document.getElementById('expand-row-' + key);
@@ -815,7 +827,7 @@ function toggleExpandRow(batchId, logProvider) {
                 if (data.orders && data.orders.length > 0) {
                     let html = '<table class="table inner-orders-table"><thead><tr>';
                     html += '<th>Order ID</th><th>Receiver</th><th>Phone</th><th>Address</th>';
-                    html += '<th>COD</th><th>Branch</th><th>API Account</th><th>Logistics ID</th><th>Status</th></tr></thead><tbody>';
+                    html += '<th>COD</th><th>Branch</th><th>API Account</th><th>Logistics ID</th><th>Status</th><th>Reason</th></tr></thead><tbody>';
                     data.orders.forEach(order => {
                         let statusClass = 'order-status-' + order.status;
                         let apiAccountHtml = order.api_config_name
@@ -831,6 +843,9 @@ function toggleExpandRow(batchId, logProvider) {
                         html += `<td>${apiAccountHtml}</td>`;
                         html += `<td>${order.logistics_order_id || '-'}</td>`;
                         html += `<td><span class="${statusClass}">${order.status_display}</span></td>`;
+                        // The courier's own words. Escaped: it is an API
+                        // response, not markup we wrote.
+                        html += `<td class="order-reason" title="${escapeHtml(order.message || '')}"><small>${escapeHtml(order.message || '') || '-'}</small></td>`;
                         html += `</tr>`;
                     });
                     html += '</tbody></table>';
