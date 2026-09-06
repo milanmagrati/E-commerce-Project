@@ -17293,6 +17293,7 @@ def daily_sales_report(request):
                 'product_name': item.product_name or 'Unknown',
                 'product_sku': item.product_sku or '',
                 'variation_name': item.variation_name or '',
+                'product_type': (item.product.product_type if item.product else '') or 'simple',
                 'quantity': item.quantity,
                 'price': float(item.price),
                 'total': float(item.total),
