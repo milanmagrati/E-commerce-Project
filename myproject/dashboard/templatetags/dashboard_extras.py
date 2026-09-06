@@ -317,3 +317,16 @@ def logistics_status_text_filter(status, logistics=None):
     """The displayed status string, with the provider's default for a blank value."""
     from dashboard.logistics_status import logistics_status_text
     return logistics_status_text(status, logistics)
+
+@register.inclusion_tag('invoice/_document.html')
+def invoice_document(context_dict):
+    """Render one invoice from a `build_invoice_context()` dictionary.
+
+    The bulk print sheet holds a *list* of those dictionaries, and Django has
+    no way to spread one back into a template's namespace — `{% include ...
+    with a=x.a b=x.b %}` would mean re-listing every key at the call site, so
+    a key added to `build_invoice_context` would render on the single-order
+    invoice and silently vanish from the bulk sheet. An inclusion tag returns
+    its context wholesale, which is exactly the spread that is missing.
+    """
+    return context_dict

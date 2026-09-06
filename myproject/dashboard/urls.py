@@ -5,6 +5,7 @@ from . import followup_setup_views
 from . import bulk_discount_views
 from . import delivery_charge_views
 from . import invoice_customizer_views
+from . import bulk_invoice_views
 from . import product_theme_views
 from . import page_views
 
@@ -79,6 +80,7 @@ urlpatterns = [
     path('orders/<int:order_id>/edit/', views.order_edit, name='order_edit'),
     path('orders/<int:order_id>/delete/', views.order_delete, name='order_delete'),
     path('orders/<int:order_id>/invoice/', views.order_invoice, name='order_invoice'),
+    path('orders/bulk-invoice/', bulk_invoice_views.orders_bulk_invoice, name='orders_bulk_invoice'),
     path('orders/bulk-action/', views.orders_bulk_action, name='orders_bulk_action'),
     path('orders/bulk-ncm-send/', views.orders_bulk_ncm_send, name='orders_bulk_ncm_send'),
     path('orders/bulk-pnd-send/', views.orders_bulk_pnd_send, name='orders_bulk_pnd_send'),

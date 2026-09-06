@@ -9504,6 +9504,14 @@ def orders_bulk_action(request):
             if action == 'send_to_ncm':
                 return orders_bulk_ncm_send(request, orders)
 
+            elif action == 'print_invoices':
+                # The orders list intercepts this and opens the sheet in a new
+                # tab; this branch is what a browser with the script disabled
+                # (or a form posted from elsewhere) falls back to.
+                from django.urls import reverse
+                ids = ','.join(str(order.id) for order in orders)
+                return redirect(f"{reverse('orders_bulk_invoice')}?ids={ids}")
+
             elif action == 'delete':
                 # Only users with delete permission can move orders to trash
                 if request.user.role != 'administrator' and not request.user.can_delete_orders:

@@ -103,6 +103,12 @@
                 </button>
                 {% endif %}
 
+                <button class="btn btn-dark btn-lg" id="printInvoicesButton"
+                        onclick="printSelectedInvoices()" style="display: none;">
+                    <i class="fas fa-print"></i> Print Invoices
+                    <span class="badge bg-white text-dark ms-2" id="printCountBadge">0</span>
+                </button>
+
                 <button class="btn btn-warning btn-lg" data-bs-toggle="modal" data-bs-target="#importExcelModal">
                     <i class="fas fa-file-import"></i> Import Excel
                 </button>
@@ -229,6 +235,7 @@
                         {% if request.user.role == 'administrator' or request.user.can_export_orders %}
                         <option value="export_excel">📊 Export to Excel</option>
                         {% endif %}
+                        <option value="print_invoices">🖨️ Print Invoices</option>
                         <option value="delete">🗑️ Move to Trash</option>
                         {% if order_status_bulk_options %}
                             <optgroup label="Order Status">
@@ -1810,6 +1817,8 @@ function updateBulkActions() {
     const syncCountBadge = document.getElementById('syncCountBadge');
     const exportExcelButton = document.getElementById('exportExcelButton');
     const exportCountBadge = document.getElementById('exportCountBadge');
+    const printInvoicesButton = document.getElementById('printInvoicesButton');
+    const printCountBadge = document.getElementById('printCountBadge');
     
     // Update main bulk bar visibility
     if (count > 0) {
@@ -1830,6 +1839,12 @@ function updateBulkActions() {
             if (exportCountBadge) exportCountBadge.textContent = count;
         }
         
+        // Show Print Invoices button
+        if (printInvoicesButton) {
+            printInvoicesButton.style.display = 'inline-block';
+            if (printCountBadge) printCountBadge.textContent = count;
+        }
+
         // Populate the standard bulk action form with hidden inputs
         const bulkInputsContainer = document.getElementById('bulkInputsContainer');
         if (bulkInputsContainer) {
@@ -1854,6 +1869,7 @@ function updateBulkActions() {
         bulkLogisticsDropdown.style.display = 'none';
         bulkSyncButton.style.display = 'none';
         if (exportExcelButton) exportExcelButton.style.display = 'none';
+        if (printInvoicesButton) printInvoicesButton.style.display = 'none';
         const selectAllCb = document.getElementById('selectAll');
         if (selectAllCb) {
             selectAllCb.indeterminate = false;
@@ -1890,6 +1906,13 @@ function confirmBulkAction() {
         exportSelectedOrders();
         return false; // Prevent form submission
     }
+
+    // Printing opens its own tab rather than navigating this page away, so it
+    // never travels through the bulk-action POST handler.
+    if (action === 'print_invoices') {
+        printSelectedInvoices();
+        return false;
+    }
     
     // Extract action text without emojis
     let actionText = selectedOption.text.replace(/[^\x20-\x7E]/g, '').trim();
@@ -1898,6 +1921,42 @@ function confirmBulkAction() {
     }
     
     return confirm(`Are you sure you want to apply "${actionText}" to ${count} order(s)?`);
+}
+
+// Open every selected order's invoice on one printable sheet, in a new tab.
+// POSTed rather than linked because a long tick list outgrows a URL, and
+// opened with target="_blank" so the order list keeps its filters, its page
+// and the selection itself.
+function printSelectedInvoices() {
+    const orderIds = Array.from(document.querySelectorAll('.order-checkbox:checked')).map(cb => cb.value);
+
+    if (orderIds.length === 0) {
+        alert('Please select at least one order to print');
+        return;
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = "{% url 'orders_bulk_invoice' %}";
+    form.target = '_blank';
+
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrfmiddlewaretoken';
+    csrfInput.value = document.querySelector('[name="csrfmiddlewaretoken"]').value;
+    form.appendChild(csrfInput);
+
+    orderIds.forEach(id => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'order_ids';
+        input.value = id;
+        form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
 }
 
 function exportSelectedOrders() {
