@@ -159,6 +159,20 @@
 .creator-link { color: var(--sr-purple); font-weight: 500; cursor: pointer; text-decoration: none; font-size: .82rem; }
 .creator-link:hover { text-decoration: underline; }
 .progress-track { background: #f3f4f6; border-radius: 6px; height: 6px; width: 100%; overflow: hidden; margin-top: 4px; }
+
+/* Items column - one line per product */
+.sr-table td.items-cell { min-width: 210px; max-width: 320px; vertical-align: top; line-height: 1.35; white-space: normal; }
+.item-line { display: flex; align-items: baseline; gap: 5px; font-size: .8rem; }
+.item-line + .item-line { margin-top: 3px; }
+.item-qty { flex: 0 0 auto; min-width: 26px; font-weight: 700; color: var(--sr-purple); font-size: .78rem; }
+.item-name { flex: 1 1 auto; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-var { color: #9ca3af; font-size: .74rem; }
+.item-type {
+    flex: 0 0 auto; padding: 1px 6px; border-radius: 8px; background: #ede9fe; color: #5b21b6;
+    font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+}
+.item-foot { margin-top: 4px; font-size: .7rem; color: #9ca3af; font-weight: 600; }
+.items-empty { color: #9ca3af; }
 .progress-fill { height: 100%; border-radius: 6px; }
 
 /* Smart Pagination */
@@ -294,6 +308,7 @@
     <div class="filter-bar no-print">
         <div class="d-flex flex-wrap gap-2 align-items-center">
             <div class="btn-group" role="group">
+                <button type="button" class="btn btn-sm btn-outline-primary source-filter-btn" data-days="1">Today</button>
                 <button type="button" class="btn btn-sm btn-outline-primary source-filter-btn active" data-days="7">Last 7 Days</button>
                 <button type="button" class="btn btn-sm btn-outline-primary source-filter-btn" data-days="14">Last 14 Days</button>
                 <button type="button" class="btn btn-sm btn-outline-primary source-filter-btn" data-days="30">Last 30 Days</button>
@@ -478,7 +493,7 @@
                         <th>Source</th>
                         <th>Created By</th>
                         <th>Status</th>
-                        <th>Payment</th>
+                        <th>Items</th>
                         <th>Amount</th>
                         <th>Date</th>
                         <th class="no-print"></th>
@@ -1127,6 +1142,32 @@
         return `<span class="badge-status" style="${style}">${escapeHtml(status || '-')}</span>`;
     }
 
+    // One line per product: quantity, name, variation, and a type badge for
+    // anything that isn't a plain simple product. Orders carrying more than one
+    // product get a "N products - N pcs" footer, so the row says what sold
+    // without anything having to be expanded.
+    function itemsCell(o) {
+        const items = o.items || [];
+        if (!items.length) return '<span class="items-empty">&mdash;</span>';
+        let html = items.map(it => {
+            const type = it.product_type || 'simple';
+            const label = escapeHtml(it.product_name) +
+                (it.variation_name ? ` <span class="item-var">${escapeHtml(it.variation_name)}</span>` : '');
+            const badge = type !== 'simple' ? `<span class="item-type">${escapeHtml(type)}</span>` : '';
+            const title = escapeHtml(it.product_name + (it.variation_name ? ' - ' + it.variation_name : '') +
+                ' x ' + it.quantity + ' (' + type + ')');
+            return `<div class="item-line" title="${title}">
+                        <span class="item-qty">${it.quantity}x</span>
+                        <span class="item-name">${label}</span>
+                        ${badge}
+                    </div>`;
+        }).join('');
+        if (items.length > 1) {
+            html += `<div class="item-foot">${o.items_count} products &middot; ${o.total_qty} pcs</div>`;
+        }
+        return html;
+    }
+
     window.OBS = window.OBS || {};
 
     function renderDetailTable(data) {
@@ -1146,7 +1187,7 @@
                     <td><span class="source-dot" style="background:${colorFor(o.source)}"></span>${escapeHtml(o.source)}</td>
                     <td>${escapeHtml(o.created_by)}</td>
                     <td>${statusPill(o.status)}</td>
-                    <td>${statusPill(o.payment_status)}</td>
+                    <td class="items-cell">${itemsCell(o)}</td>
                     <td>${fmtMoney(o.total_amount)}</td>
                     <td style="white-space:nowrap;">${escapeHtml(o.created_at)}</td>
                     <td class="no-print"><a href="${o.detail_url}" class="creator-link" target="_blank"><i class="fas fa-eye"></i></a></td>
@@ -1220,9 +1261,13 @@
 
     window.exportDetailCsv = function() {
         const rows = window._obsLastRows || [];
-        let csv = 'Order Number,Customer,Phone,Source,Created By,Status,Payment Status,Amount,Date\n';
+        let csv = 'Order Number,Customer,Phone,Source,Created By,Status,Items,Products,Qty,Payment Status,Amount,Date\n';
         rows.forEach(o => {
-            csv += `"${o.order_number}","${o.customer_name}","${o.customer_phone}","${o.source}","${o.created_by}","${o.status}","${o.payment_status}",${o.total_amount},"${o.created_at}"\n`;
+            const items = (o.items || []).map(it =>
+                it.product_name + (it.variation_name ? ' - ' + it.variation_name : '') +
+                ' (' + (it.product_type || 'simple') + ') x' + it.quantity
+            ).join('; ').replace(/"/g, '""');
+            csv += `"${o.order_number}","${o.customer_name}","${o.customer_phone}","${o.source}","${o.created_by}","${o.status}","${items}",${o.items_count || 0},${o.total_qty || 0},"${o.payment_status}",${o.total_amount},"${o.created_at}"\n`;
         });
         downloadCsv(csv, 'orders_by_source_detail_page_' + new Date().toISOString().slice(0,10) + '.csv');
     };

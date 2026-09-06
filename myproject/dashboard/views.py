@@ -16880,6 +16880,14 @@ def _orders_by_source_date_range(request, default_days=30):
     """
     from datetime import datetime, time
 
+    from .timezone_utils import get_nepali_now
+
+    # "Today" has to mean today in Kathmandu, not in UTC: the window bounds
+    # below are built with make_aware (local tz), so anchoring them to a UTC
+    # date would hand back yesterday's window every night between midnight and
+    # 05:45 local.
+    local_today = get_nepali_now().date()
+
     custom_from = request.GET.get('custom_from')
     custom_to = request.GET.get('custom_to')
 
@@ -16890,17 +16898,20 @@ def _orders_by_source_date_range(request, default_days=30):
             if end_date < start_date:
                 start_date, end_date = end_date, start_date
         except (ValueError, TypeError):
-            end_date = timezone.now().date()
+            end_date = local_today
             start_date = end_date - timedelta(days=default_days - 1)
     else:
         days = request.GET.get('days', default_days)
         try:
             days = int(days)
-            if days not in [7, 14, 30, 60, 90]:
+            # 1 == "Today": the same code path as every other preset, so the
+            # single-day window still gets its own equal-length (yesterday)
+            # comparison period for growth figures.
+            if days not in [1, 7, 14, 30, 60, 90]:
                 days = default_days
         except (ValueError, TypeError):
             days = default_days
-        end_date = timezone.now().date()
+        end_date = local_today
         start_date = end_date - timedelta(days=days - 1)
 
     dates_list = []
@@ -17074,7 +17085,7 @@ def orders_by_source_table_data(request):
     qs = Order.objects.filter(
         is_deleted=False,
         created_at__range=(start_dt, end_dt),
-    ).select_related('created_by')
+    ).select_related('created_by').prefetch_related('items__product')
 
     # Two source filters combine here: the page-wide Sources selection at the
     # top of the report, and the table's own single-source dropdown which
@@ -17133,8 +17144,21 @@ def orders_by_source_table_data(request):
     for o in page_obj.object_list:
         creator = o.created_by
         creator_name = (creator.get_full_name() or creator.username) if creator else 'Unknown'
+        # The line items are what the row is actually about — name, quantity
+        # and product type per line, so the table says what was sold and not
+        # just how much it cost. product_type falls back to 'simple' for a
+        # line whose Product row has since been deleted.
+        items = [{
+            'product_name': item.product_name or 'Unknown',
+            'variation_name': item.variation_name or '',
+            'product_type': (item.product.product_type if item.product else '') or 'simple',
+            'quantity': item.quantity or 0,
+        } for item in o.items.all()]
         rows.append({
             'id': o.id,
+            'items': items,
+            'items_count': len(items),
+            'total_qty': sum(i['quantity'] for i in items),
             'order_number': o.order_number,
             'customer_name': o.customer_name,
             'customer_phone': o.customer_phone,
