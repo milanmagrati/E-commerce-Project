@@ -71,7 +71,7 @@ caller.
                 <div class="section-label">{{ cfg.bill_to_title }}</div>
                 {% for line in bill_to_lines %}
                 <div class="party-line {% if line.bold %}bold{% endif %} {% if not line.full_width %}inline{% endif %}">
-                    {% if line.label %}<span class="lbl">{{ line.label }}</span> {% endif %}<span class="val">{{ line.value|linebreaksbr }}</span>
+                    {% if line.label %}<span class="lbl">{{ line.label }}</span> {% endif %}<span class="val{% if line.mono %} mono{% endif %}">{{ line.value|linebreaksbr }}</span>
                 </div>
                 {% endfor %}
             </div>
@@ -81,7 +81,7 @@ caller.
                 <div class="section-label">{{ cfg.ship_to_title }}</div>
                 {% for line in ship_to_lines %}
                 <div class="party-line {% if line.bold %}bold{% endif %} {% if not line.full_width %}inline{% endif %}">
-                    {% if line.label %}<span class="lbl">{{ line.label }}</span> {% endif %}<span class="val">{{ line.value|linebreaksbr }}</span>
+                    {% if line.label %}<span class="lbl">{{ line.label }}</span> {% endif %}<span class="val{% if line.mono %} mono{% endif %}">{{ line.value|linebreaksbr }}</span>
                 </div>
                 {% endfor %}
             </div>

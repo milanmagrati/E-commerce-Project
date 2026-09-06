@@ -116,6 +116,17 @@ def _g(obj, name, default=''):
     return default if value in (None, '') else value
 
 
+def _vat(value):
+    """A tax number as an accountant reads it: no stray spacing, upper case.
+
+    Staff type these off a photographed bill, so `601 234 567` and
+    `pan-601234567` both arrive. Internal runs of whitespace collapse to one
+    space and the ends are trimmed; nothing else is stripped, because a real
+    registration number may legitimately carry a prefix or a dash.
+    """
+    return ' '.join(str(value).split()).upper()
+
+
 def _fmt_dt(value, fmt):
     if not value:
         return ''
@@ -182,6 +193,8 @@ TOKENS = {
     'customer.address': ('Customer', 'Shipping address', lambda d: _g(d['order'], 'shipping_address')),
     'customer.city': ('Customer', 'City / branch city', lambda d: _g(d['order'], 'branch_city')),
     'customer.landmark': ('Customer', 'Landmark', lambda d: _g(d['order'], 'landmark')),
+    'customer.vat_pan': ('Customer', 'Customer VAT / PAN number',
+                         lambda d: _vat(_g(d['order'], 'vat_pan'))),
 
     # ── Business ─────────────────────────────────────────────────────────
     'company.name': ('Business', 'Business name', lambda d: d['brand']['name']),
@@ -239,7 +252,7 @@ DEFAULT_ELEMENTS = [
     dict(section='bill_to', label='Phone number :-', source='field', token='customer.phone', sort_order=20),
     dict(section='bill_to', label='Email :-', source='field', token='customer.email', sort_order=30),
     dict(section='bill_to', label='Location :-', source='field', token='customer.city', sort_order=40),
-    dict(section='bill_to', label='Landmark :-', source='field', token='customer.landmark', sort_order=50),
+    dict(section='bill_to', label='VAT / PAN :-', source='field', token='customer.vat_pan', sort_order=50),
 
     # Ship To box (section is off by default; the lines are ready when it is on).
     dict(section='ship_to', label='Address :-', source='field', token='customer.address', sort_order=10),
@@ -273,6 +286,17 @@ def _resolve(element, data):
         return ''
 
 
+#  Tokens whose value is a reference number rather than prose. They print in a
+#  tabular face with a little tracking, so a VAT number can be read off the page
+#  digit by digit and copied without a transcription error.
+MONO_TOKENS = {
+    'customer.vat_pan',
+    'company.vat',
+    'company.registration',
+    'order.tracking_number',
+}
+
+
 def _sections(cfg, elements, data):
     """Resolve every active element into {section: [rendered lines]}."""
     from dashboard.models import InvoiceElement
@@ -288,6 +312,7 @@ def _sections(cfg, elements, data):
             'value': value,
             'bold': element.is_bold,
             'full_width': element.full_width,
+            'mono': element.source == 'field' and element.token in MONO_TOKENS,
         })
     return out
 
@@ -551,6 +576,7 @@ def sample_order():
         shipping_address='Sabaila-04, Dhanusha',
         branch_city='Sabaila',
         landmark='Near Shiva Mandir',
+        vat_pan='601234567',
         tracking_number='NCM-88213',
         logistics='ncm',
         order_from='Facebook',

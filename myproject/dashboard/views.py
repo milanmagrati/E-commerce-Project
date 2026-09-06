@@ -3385,7 +3385,12 @@ def order_create(request):
                 # UPDATED: Get city from City model
                 branch_city_name = (request.POST.get("branch_city") or "").strip()
                 shipping_address = (request.POST.get("shipping_address") or "").strip()
+                # The order form dropped its Landmark box in favour of VAT/PAN.
+                # Other callers (imports, the redirect flow) still post one, so
+                # the field is read rather than removed — but a post that never
+                # carried it must not blank the customer's stored landmark.
                 landmark = (request.POST.get("landmark") or "").strip()
+                vat_pan = (request.POST.get("vat_pan") or "").strip()
                 # Get in_out field from form (auto-detected)
                 in_out = (request.POST.get("in_out") or "in").strip()
 
@@ -3523,7 +3528,8 @@ def order_create(request):
                 customer.email = customer_email or None
                 customer.city = branch_city_name
                 customer.address = shipping_address
-                customer.landmark = landmark
+                if landmark:
+                    customer.landmark = landmark
                 customer.save()
 
                 # ✅ FIXED: Generate unique order number with race condition handling
@@ -3576,6 +3582,7 @@ def order_create(request):
                                 in_out=in_out,
                                 shipping_address=shipping_address,
                                 landmark=landmark,
+                                vat_pan=vat_pan,
                                 order_from=order_from,
                                 order_status=order_status,
                                 payment_method=payment_method,
@@ -4443,7 +4450,12 @@ def order_edit(request, order_id):
                 in_out = request.POST.get("in_out", "in").strip()
 
                 order.shipping_address = request.POST.get("shipping_address", "").strip()
-                order.landmark = request.POST.get("landmark", "").strip()
+                # The edit form no longer draws a Landmark box, so an ordinary
+                # save omits the key entirely — read it with the stored value as
+                # the default, or every edit would wipe the landmark NCM and the
+                # dispatch sheets still print.
+                order.landmark = request.POST.get("landmark", order.landmark or "").strip()
+                order.vat_pan = request.POST.get("vat_pan", order.vat_pan or "").strip()
 
                 created_by_id = request.POST.get("created_by")
                 try:
@@ -4622,7 +4634,8 @@ def order_edit(request, order_id):
                     order.customer.phone = order.customer_phone
                     order.customer.city = order.branch_city
                     order.customer.address = order.shipping_address
-                    order.customer.landmark = order.landmark
+                    if order.landmark:
+                        order.customer.landmark = order.landmark
                     order.customer.save()
 
                 # Update order items
@@ -13953,6 +13966,20 @@ def search_customer_by_phone(request):
         order = Order.objects.filter(customer_phone=phone).order_by('-created_at').first()
 
         if order:
+            # A VAT/PAN number belongs to the buyer, not to one order, but most
+            # of their orders will not carry it — a shop only asks for it when
+            # the customer wants a billable invoice. Falling back to the most
+            # recent order that *has* one means a returning business customer
+            # does not retype it every time.
+            vat_pan = (order.vat_pan or '').strip()
+            if not vat_pan:
+                vat_pan = (
+                    Order.objects.filter(customer_phone=phone)
+                    .exclude(vat_pan='')
+                    .order_by('-created_at')
+                    .values_list('vat_pan', flat=True)
+                    .first()
+                ) or ''
             return JsonResponse({
                 'success': True,
                 'customer': {
@@ -13961,6 +13988,7 @@ def search_customer_by_phone(request):
                     'phone': order.customer_phone,
                     'address': order.shipping_address or '',
                     'landmark': order.landmark or '',
+                    'vat_pan': vat_pan,
                     'branch_city': order.branch_city or '',
                 }
             })

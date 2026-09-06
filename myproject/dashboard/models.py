@@ -442,6 +442,11 @@ class Order(models.Model):
 
     shipping_address = models.TextField()
     landmark = models.CharField(max_length=255, blank=True)
+    # The buyer's own tax number, typed on the order form when they ask for a
+    # billable invoice. Printed by the `customer.vat_pan` invoice token; blank
+    # on the overwhelming majority of retail orders, and the invoice line hides
+    # itself when it is.
+    vat_pan = models.CharField('VAT / PAN number', max_length=60, blank=True, default='')
     order_from = models.CharField(max_length=50)
     order_status = models.CharField(max_length=50, default='processing')
 

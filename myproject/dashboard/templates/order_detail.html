@@ -1058,6 +1058,16 @@
                         </div>
                     </div>
 
+                    {% if order.vat_pan %}
+                    <div class="detail-row">
+                        <i class="fas fa-file-invoice text-warning"></i>
+                        <div class="flex-grow-1">
+                            <small class="text-muted">VAT / PAN</small>
+                            <p class="mb-0" style="font-family:Consolas,Menlo,monospace;font-weight:700;letter-spacing:.05em;">{{ order.vat_pan }}</p>
+                        </div>
+                    </div>
+                    {% endif %}
+
                     {% if order.landmark %}
                     <div class="detail-row">
                         <i class="fas fa-landmark text-warning"></i>

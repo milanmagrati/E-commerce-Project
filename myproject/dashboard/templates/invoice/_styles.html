@@ -135,6 +135,13 @@ Goes inside a <style> element; it is not one itself.
         .party-line { font-size: calc(var(--inv-size) * .96); margin: 1px 0; word-break: break-word; }
         .party-line .lbl { font-weight: 700; }
         .party-line .val { }
+        /* Reference numbers (VAT/PAN, tracking) — tabular face plus a little
+           tracking, so the digits can be read and copied one by one. */
+        .party-line .val.mono {
+            font-family: "Consolas", "SFMono-Regular", "Menlo", monospace;
+            font-weight: 700; letter-spacing: .06em;
+            font-size: calc(var(--inv-size) * .94);
+        }
         .party-line.bold, .party-line.bold .val { font-weight: 800; font-size: calc(var(--inv-size) * 1.1); }
         .party-line.inline { display: inline-block; margin-right: 16px; }
 

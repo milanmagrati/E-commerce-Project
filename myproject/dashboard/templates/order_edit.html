@@ -1325,9 +1325,10 @@
                             placeholder="email@example.com" value="{{ order.customer_email }}">
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Landmark</label>
-                        <input type="text" name="landmark" id="customerLandmark" class="form-control"
-                            placeholder="Landmark" value="{{ order.landmark }}">
+                        <label class="form-label">VAT / PAN</label>
+                        <input type="text" name="vat_pan" id="customerVatPan" class="form-control"
+                            placeholder="VAT / PAN No." maxlength="60" value="{{ order.vat_pan }}"
+                            title="Buyer's VAT or PAN number — printed on the invoice when filled in">
                     </div>
                 </div>
 
@@ -2407,7 +2408,7 @@
                 customerEmail: document.getElementById('customerEmailInput').value,
                 branchCity: document.getElementById('branchCity').value,
                 customerAddress: document.getElementById('customerAddress').value,
-                customerLandmark: document.getElementById('customerLandmark').value,
+                customerVatPan: document.getElementById('customerVatPan').value,
                 createdBy: document.getElementById('createdBy').value,
                 discount: document.getElementById('discount').value,
                 shipping: document.getElementById('shipping').value,
@@ -2502,7 +2503,7 @@
                 const cityInput = document.getElementById('citySearchInput');
                 if (cityInput) cityInput.value = formData.branchCity || '';
                 document.getElementById('customerAddress').value = formData.customerAddress || '';
-                document.getElementById('customerLandmark').value = formData.customerLandmark || '';
+                document.getElementById('customerVatPan').value = formData.customerVatPan || '';
                 document.getElementById('createdBy').value = formData.createdBy || '';
                 document.getElementById('discount').value = formData.discount || '0';
                 document.getElementById('shipping').value = formData.shipping || '0';
@@ -2618,7 +2619,7 @@
     function setupAutoSave() {
         const formInputs = [
             'customerName', 'customerEmailInput', 'branchCity', 'customerAddress', 
-            'customerLandmark', 'createdBy', 'discount', 'shipping', 
+            'customerVatPan', 'createdBy', 'discount', 'shipping', 
             'orderNotes', 'customerPhone', 'paymentSetup', 'taxPercent', 'inOutSelect'
         ];
 
@@ -2659,7 +2660,7 @@
                     document.getElementById('customerEmailInput').value = data.customer.email || '';
                     document.getElementById('customerPhone').value = data.customer.phone || '';
                     document.getElementById('customerAddress').value = data.customer.address || '';
-                    document.getElementById('customerLandmark').value = data.customer.landmark || '';
+                    document.getElementById('customerVatPan').value = data.customer.vat_pan || '';
                     
                     if (data.customer.branch_city) {
                         document.getElementById('branchCity').value = data.customer.branch_city;
