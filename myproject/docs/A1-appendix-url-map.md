@@ -43,8 +43,9 @@ app).
 | `/orders/<id>/edit/` | `order_edit` | `can_edit_orders` | [08](./08-order-create-edit-bulk.md) |
 | `/orders/<id>/delete/` | `order_delete` | `can_delete_orders` | |
 | `/orders/<id>/invoice/` | `order_invoice` | `can_view_orders` | |
+| `/orders/bulk-invoice/` | `orders_bulk_invoice` | `can_view_orders` | [05](./05-orders-list.md#bulk-invoice-printing) |
 | `/orders/bulk-action/` | `orders_bulk_action` | login | [08](./08-order-create-edit-bulk.md) |
-| `/orders/bulk-ncm-send/` | `orders_bulk_ncm_send` | login | [10](./10-ncm-sending.md) |
+| `/orders/bulk-ncm-send/` | `orders_bulk_ncm_send` | `can_create_ncm_orders` | [10](./10-ncm-sending.md) |
 | `/orders/bulk-pnd-send/` | `orders_bulk_pnd_send` | ⚠️ **none** | [13](./13-pick-and-drop.md) |
 | `/orders/trash/` | `orders_trash` | `can_view_orders` | |
 | `/orders/<id>/restore\|move-to-trash\|permanent-delete/` | `order_restore`, `order_move_to_trash`, `order_permanent_delete` | `can_delete_orders` | |

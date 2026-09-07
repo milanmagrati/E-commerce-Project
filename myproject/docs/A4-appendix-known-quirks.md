@@ -58,8 +58,8 @@ authoritative when you grep.
 | View | Definitions | Winner | Consequence |
 |---|---|---|---|
 | `customer_detail` | `dashboard/views.py:2620`, `:3020` | `:3020` | The winner is **`@login_required` only** — so `can_view_customers` does not actually gate it |
-| `orders_bulk_ncm_send` | `:9438`, `:14633` | `:14633` | `:9438` carries `can_delete_orders`; the winner is login-only |
-| `send_single_order_to_ncm` | `:9622`, `:14858` | `:14858` | Both are near-identical; a fix applied to `:9622` does nothing |
+| ~~`orders_bulk_ncm_send`~~ | `:9438`, `:14633` | — | **Resolved Sep 2026.** Merged into one view at `:14730`, which now carries `@permission_required('can_create_ncm_orders')` — a decorator only the dead copy had |
+| ~~`send_single_order_to_ncm`~~ | `:9622`, `:14858` | — | **Resolved Sep 2026.** Merged into one worker at `:14973`. The dead copy had been collecting fixes since February: digits-only phone, the `vref_id` fallback for a blank order number, the post-send delivery-charge fetch, and `logistics='ncm'` — without which a bulk-sent order never appeared under Logistics Orders. All of them reached the live path only when the copies were merged |
 | `delete_product_image` | `:2135`, `:9087` | `:9087` | |
 | `variation_delete` | `:2907`, `:9178` | `:9178` | |
 

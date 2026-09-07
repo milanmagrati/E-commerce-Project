@@ -35,6 +35,7 @@ URL. It is re-fetched with the same `select_related` after the status-setup repa
 |---|---|---|
 | Header badge | `order.status_setup` (the **FK**, not the string) | template |
 | Items table | `order.items.select_related('product', 'product_variation').all()` | `:4265` |
+| VAT / PAN line | `order.vat_pan`, in a tabular face; the row is **absent** when the order carries no number | template `:1061` |
 | Money summary | Recomputed live: `subtotal`, `after_discount`, `tax_amount`, `calculated_total` | `:4291-4303` |
 | Partial payment panel | `is_partial_payment`, `partial_amount_paid`, `remaining_amount`, `partial_payment_percentage` | `:4291-4303` |
 | Status dropdowns | `Setup` rows for `status`, `payment`, `payment_status` | `:4286-4288` |

@@ -54,8 +54,9 @@ The central model. ~60 fields. Grouped by what they are for.
 |---|---|---|
 | `customer` | `:391` | FK → `Customer`, nullable, `related_name='orders'` |
 | `customer_name`, `customer_phone`, `customer_email` | `:393-395` | **Denormalised copies**, always populated |
-| `shipping_address` | `:397` | |
-| `landmark` | `:398` | |
+| `shipping_address` | `:443` | |
+| `landmark` | `:444` | Still sent to NCM, printed on the dispatch sheet and exported to CSV — but **the order form no longer draws a box for it** (VAT/PAN took the slot), so create/edit read the key with the stored value as its default. See [08](./08-order-create-edit-bulk.md) |
+| `vat_pan` | `:449` | The **buyer's** own VAT/PAN, typed on the order form when they want a billable invoice. Blank on nearly every retail order. Printed by the `customer.vat_pan` invoice token, whose line hides itself when empty — [22](./22-settings-and-setup.md#invoice-customizer) |
 | `branch_city` | `:370` | Destination city; used as the courier destination fallback |
 | `branch` | `:392` | FK → `Branch` (our own branch), nullable |
 | `in_out` | `:380` | `in` / `out` — inside or outside the Kathmandu valley. Default `in` |

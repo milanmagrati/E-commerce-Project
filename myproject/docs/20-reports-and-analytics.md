@@ -76,6 +76,31 @@ exports XLSX.
 
 ---
 
+## Daily sales report
+
+**URL** `/reports/daily-sales/` · **View** `daily_sales_report` (`dashboard/views.py:17223`)
+**Permission** `can_view_daily_sales_reports`
+
+One day's orders as a table, with breakdown cards beside it.
+
+**The Items column names what sold** (Sep 2026), one product per line — quantity, name,
+variation, and a type badge for anything that is not a plain `simple` product — plus a
+"N products · N pcs" footer on orders carrying more than one. It used to read
+"1 item (1 pcs)", which said nothing about what the day actually sold.
+
+**The Payment column paid for that width and is gone.** Nothing is lost: method and status
+both moved into the expanded row detail, next to the amount breakdown, and the Payment Status
+/ Payment Method breakdown cards on the right are untouched.
+
+> **The CSV export builds from `window.ordersData`, not from the table's cells.** It used to
+> read `cells[6]`, `cells[7]` … by index, which the removed column would have shifted by one
+> in silence. Building from the payload also gained it the per-product item list and a
+> product-count column, and it can no longer drift from the markup.
+
+`product_type` falls back to `'simple'` for a line whose `Product` row has since been deleted.
+
+---
+
 ## Orders by source
 
 **URL** `/reports/orders-by-source/` · **Permission** `can_view_orders_by_source_report`
@@ -83,6 +108,32 @@ exports XLSX.
 Groups orders by `Order.order_from`, whose vocabulary comes from
 `Setup(setup_type='order_source')`. Both an analytics view (charts) and a table view, each
 with its own JSON endpoint so the page can refresh without a reload.
+
+### The date range — `_orders_by_source_date_range` (`views.py:16880`)
+
+A preset is `days` ∈ `{1, 7, 14, 30, 60, 90}`; anything else falls back to `default_days`. A
+custom range posts `custom_from` / `custom_to`, and an unparseable pair falls back to the
+preset window. Every window also gets an equal-length preceding window, which is what the
+growth figures compare against.
+
+- **`days=1` is "Today"** (Sep 2026), on the same code path as every other preset — so the
+  single-day window still gets its own equal-length comparison period, yesterday. Before
+  this, the one range a shop watches all day could only be reached by opening Custom Range
+  and setting both dates by hand.
+- ⚠️ **The presets anchor on the Kathmandu date, not on `timezone.now().date()`.** The window
+  bounds are built with `make_aware()` in local time, so a UTC anchor is a mismatch that is
+  invisible on a 90-day window and fatal on a one-day one: every night between local midnight
+  and 05:45, "Today" showed yesterday. It now reads `get_nepali_now().date()` — see
+  [02](./02-architecture-and-conventions.md#timezone--always-convert-never-use-datetimenow).
+
+### The Order Details table
+
+`orders_by_source_table_data` (`views.py:17113`) prefetches `items__product` and returns
+`items`, `items_count` and `total_qty` per row. **The Payment column was replaced by Items**,
+drawn exactly as the daily sales report draws it. Payment status is not lost — it stays in
+the payload and in the CSV, which also gained the item list and the product/piece counts.
+
+Verified by `test_orders_by_source_items.py`.
 
 ---
 
@@ -191,6 +242,12 @@ APIs: add, update-order, edit, delete, restore, hard-delete.
   but noted in [A4](./A4-appendix-known-quirks.md).
 - **Date filtering in reports uses explicit localized bounds**, never `__date` — see
   [02](./02-architecture-and-conventions.md#timezone--always-convert-never-use-datetimenow).
+- **A preset window must anchor on the local date too.** Bounds made local and an anchor read
+  from `timezone.now().date()` disagree for the first 5h45m of every Kathmandu day — harmless
+  on a long window, wrong all night on a one-day one.
+- **A report's CSV export should build from the payload, not from the rendered table.** Two
+  exports read cells by index; removing or reordering a column shifted every later field with
+  no error anywhere. Both now build from the same data the table renders.
 - **Revenue counts `payment_status='paid'`**, not delivered orders. An order delivered but
   unpaid contributes nothing to revenue KPIs.
 - `StaffPerformance` is a stored snapshot, not a live query — call `calculate_metrics()` to
@@ -200,6 +257,9 @@ APIs: add, update-order, edit, delete, restore, hard-delete.
 
 ## Files that own this
 
+- `dashboard/views.py:16880` — `_orders_by_source_date_range` (the preset windows)
+- `dashboard/views.py:16971-17222` — orders-by-source report, analytics and table endpoints
+- `dashboard/views.py:17223-…` — daily sales report
 - `dashboard/views.py:17043-…` — financial report
 - `dashboard/views.py:17703` — staff performance
 - `dashboard/views.py:19865` — targets

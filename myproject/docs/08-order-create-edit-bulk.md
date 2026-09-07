@@ -60,6 +60,30 @@ Additionally:
 | `FollowUp` → `Converted` + a `FollowUpLog` | If the order came from a CRM lead | `:3657-3672` |
 | `OrderActivityLog` `created` | Written by the `post_save` signal, not by the view | `dashboard/signals.py` |
 
+### VAT / PAN — and the Landmark box that is no longer there
+
+The customer block's Landmark input was replaced by **VAT / PAN** (Sep 2026): the buyer's own
+tax number, `Order.vat_pan`, asked for only when they want a billable invoice. It prints
+through the whitelisted `customer.vat_pan` invoice token, so Setup → Invoice Customizer can
+rename, move or switch the line off like any other
+([22](./22-settings-and-setup.md#invoice-customizer)).
+
+`Order.landmark` **stays** — NCM payloads, the dispatch sheet and the CSV export all still
+print it. Two rules stop the dropped box from destroying it:
+
+| Rule | Where | Why |
+|---|---|---|
+| `order.landmark = request.POST.get("landmark", order.landmark or "")` | `order_edit` | An ordinary save now omits the key entirely; with a `""` default every edit would erase a landmark the courier is still using |
+| `if landmark: customer.landmark = landmark` | `order_create`, `order_edit` | The same protection for the denormalised `Customer` copy |
+
+Other callers — the Excel import, the redirection flow — still post a landmark, which is why
+the field is read defensively rather than removed.
+
+The phone lookup (`search_customer_by_phone`, `/api/search-customer-by-phone/`) prefills the
+number, with a fallback: a VAT/PAN belongs to the **buyer**, not to one order, and most of a
+returning business customer's orders will not carry it — so when the most recent order has
+none, the lookup hands back the most recent order that does.
+
 ### Initial statuses — `views.py:3372-3411`, `:3530-3533`
 
 ```mermaid
@@ -173,6 +197,13 @@ All six bypass `apply_manual_status`. They write **only** `order_status`, leave 
 - `mark_cancelled` uses a queryset `.update()`, so `Order.save()` — and therefore decimal
   validation — never runs
 
+### `print_invoices`
+
+Redirects to `/orders/bulk-invoice/?ids=…` — one sheet holding every selected order's invoice
+([05](./05-orders-list.md#bulk-invoice-printing)). The orders list normally intercepts the
+action in JavaScript and opens the sheet in a new tab; this branch is the fallback for a
+browser that did not run it.
+
 ### Delete
 
 `views.py:9219-9250`. For each selected order:
@@ -247,9 +278,12 @@ Related order-search APIs: `/api/search-orders/`, `/api/order-by-barcode/`.
 - **Legacy bulk actions leave the three status fields out of sync** and set no hold.
 - `orders_bulk_action` is guarded by `@login_required` **only** — any logged-in user can
   bulk-change orders. The individual permission checks live inside the branches.
-- `orders_bulk_ncm_send` is defined **twice** (`views.py:9438` and `:14633`); the later one
-  wins and is login-only. `orders_bulk_pnd_send` (`views.py:20492`) has **no login
-  decorator at all**. See [A4](./A4-appendix-known-quirks.md).
+- `orders_bulk_ncm_send` and `send_single_order_to_ncm` **used to be defined twice**, and the
+  dead first copy had been collecting fixes since February. Merged and deleted Sep 2026; the
+  surviving `orders_bulk_ncm_send` (`views.py:14730`) now carries
+  `@permission_required('can_create_ncm_orders')`, which only the dead copy had.
+  `orders_bulk_pnd_send` (`views.py:20931`) still has **no login decorator at all**. See
+  [A4](./A4-appendix-known-quirks.md).
 - Editing an order's non-status fields does **not** stamp a hold — `apply_manual_status`
   no-ops when the normalised status is unchanged, which is deliberate.
 

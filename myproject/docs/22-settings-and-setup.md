@@ -242,6 +242,10 @@ are seeded as ordinary `InvoiceElement` rows by migration `0090`, flagged `is_bu
 flag is **informational only**: a built-in line is renamed, reordered, hidden or deleted
 exactly like one an admin adds. There is no privileged set.
 
+Migration `0093` swapped the seeded `Landmark :-` line for `VAT / PAN :-`
+(`customer.vat_pan`) on existing installs — and **only** where that row was still the
+untouched seeded one, so a shop that had renamed or moved that line keeps its own version.
+
 A line's value comes from one of two places:
 
 | `source` | Value | Notes |
@@ -271,12 +275,12 @@ filled in** and stay invisible until then.
 
 ### Tokens — `invoice_config.TOKENS`
 
-49 whitelisted values in five groups, rendered as `<optgroup>`s in the line editor:
+50 whitelisted values in five groups, rendered as `<optgroup>`s in the line editor:
 
 | Group | Examples |
 |---|---|
 | Order | number (with `invoice_number_prefix`), date, time, status, payment status/method, tracking number, courier, source, dispatch/delivery dates, weight, line count, total qty, NCM delivery type + destination branch, notes |
-| Customer | name, phone, email, shipping address, city, landmark |
+| Customer | name, phone, email, shipping address, city, landmark, **VAT/PAN** — `customer.vat_pan` is the *buyer's* number, not the shop's ([08](./08-order-create-edit-bulk.md)) |
 | Amounts | subtotal, discount, shipping, delivery, tax + tax percent, grand total, paid, due, COD collected, **grand total in words** |
 | Business | name, tagline, VAT/PAN, registration, phone, alternate phone, email, website, address |
 | System | printed by, printed at, today |
@@ -285,12 +289,26 @@ Money runs through `format_money()` (symbol, position, optional grouping);
 `amount_in_words()` uses **Nepali/Indian grouping** — crore ▸ lakh ▸ thousand — and appends
 paisa.
 
-### One context builder, two callers
+Reference numbers print differently from prose. `invoice_config.MONO_TOKENS` —
+`customer.vat_pan`, `company.vat`, `company.registration`, `order.tracking_number` — marks a
+line `mono`, and the stylesheet gives it a tabular face with a little tracking so the digits
+can be read off the page one at a time. `customer.vat_pan` is normalised on the way out too:
+internal runs of whitespace collapse to one space and the value is upper-cased, but nothing
+is stripped, because a real registration number may legitimately carry a prefix or a dash.
+
+### One context builder, three callers
 
 `build_invoice_context(order, items, cfg, user, labels, preview)` returns flat lists — the
-resolved lines per region, `columns`, `rows`, `totals`, style variables — and
-`order_invoice.html` only iterates over them. It has **no ORM access left**. Both the print
-view and the customizer's preview iframe call it, so a preview cannot drift from the paper.
+resolved lines per region, `columns`, `rows`, `totals`, style variables — and the invoice
+markup only iterates over them. It has **no ORM access left**. The print view, the
+customizer's preview iframe and the bulk print sheet all call it, so none of the three can
+drift from the others.
+
+Since Sep 2026 the markup is shared as well: `order_invoice.html` is
+`templates/invoice/_styles.html` + `templates/invoice/_document.html`, and the bulk sheet
+([05](./05-orders-list.md#bulk-invoice-printing)) emits the stylesheet once and repeats the
+document through the `{% invoice_document %}` inclusion tag. `cfg.custom_css` moved out of
+the shared partial into each caller, so it is emitted once and still has the last word.
 
 The builder reads the order defensively (`getattr` throughout, `_dec()` for every amount), so
 it also accepts the lightweight `invoice_config.sample_order()` stand-in the preview falls
@@ -526,6 +544,9 @@ its footer. See [24 — Storefront](./24-storefront.md).
 - `dashboard/invoice_customizer_views.py` — Invoice Customizer (all `@admin_only`)
 - `dashboard/product_theme_views.py` — Product Page Theme ([31](./31-product-page-themes.md))
 - `dashboard/invoice_config.py` — invoice token whitelist, default layout, context builder
+- `dashboard/bulk_invoice_views.py`, `templates/invoice/_styles.html`,
+  `templates/invoice/_document.html` — the bulk print sheet and the partials both invoices
+  share ([05](./05-orders-list.md#bulk-invoice-printing))
 - `dashboard/models.py` — `InvoiceTemplate`, `InvoiceElement` (end of file)
 - `store/models.py:597-712` — `DeliverySetting`, `DeliveryCharge`
 - `store/models.py:267-482` — `BulkDiscount`, `BulkDiscountTier`

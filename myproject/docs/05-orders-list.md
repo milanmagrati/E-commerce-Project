@@ -154,6 +154,7 @@ For every order **on the current page**:
 | Sync NCM statuses | POST | `ncm:bulk_sync` → `/ncm/bulk-sync/` | Forces a sync of the selection — [12](./12-ncm-sync-and-scheduler.md) |
 | Import orders from Excel | POST | `import_orders_excel` → `/orders/import/excel/` | [08](./08-order-create-edit-bulk.md) |
 | Export selected | POST | `export_selected_orders_excel` → `/orders/export/selected/` | XLSX download |
+| **Print invoices for the selection** | POST | `orders_bulk_invoice` → `/orders/bulk-invoice/` | Every selected order's invoice on one sheet — below |
 | New order | link | `order_create` → `/orders/create/` | |
 | Trash | link | `orders_trash` → `/orders/trash/` | |
 | Row → View | link | `order_detail` → `/orders/<id>/` | [06](./06-order-detail.md) |
@@ -162,6 +163,45 @@ For every order **on the current page**:
 
 The bulk "Mark as …" dropdown is generated from `Setup` rows, so it always matches whatever
 statuses the business has configured (`:3281-3288`).
+
+---
+
+## Bulk invoice printing
+
+**URL** `/orders/bulk-invoice/` · **name** `orders_bulk_invoice`
+**View** `dashboard/bulk_invoice_views.py` · **Template** `order_invoice_bulk.html`
+**Permission** `@login_required` + `can_view_orders`
+
+Tick any number of orders and press **Print Invoices** (the toolbar button, or the
+`print_invoices` bulk action) to get every invoice on one sheet, instead of opening a tab per
+order and pressing print in each. Added Sep 2026.
+
+**It is not a second invoice design.** `order_invoice.html` was split into
+`templates/invoice/_styles.html` and `templates/invoice/_document.html`; the single-order
+invoice includes both, and the bulk sheet emits the stylesheet **once** and repeats the
+document partial per order through the `{% invoice_document %}` inclusion tag
+(`dashboard/templatetags/dashboard_extras.py`). Setup → Invoice Customizer therefore drives
+both surfaces without a second thought — see
+[22](./22-settings-and-setup.md#invoice-customizer).
+
+> An inclusion tag is the only way to spread a `build_invoice_context()` dictionary back into
+> a template's namespace. `{% include … with a=x.a %}` would mean re-listing every key at the
+> call site, so a key added to the context builder would render on the single-order invoice
+> and silently vanish from the bulk sheet.
+
+| Detail | Behaviour |
+|---|---|
+| Selection source | POSTed `order_ids` (a tick list can outgrow a URL), or `?ids=1,2,3` so a sheet stays re-openable |
+| **Selection is not authorisation** | The ids arrive from the browser, so the queryset is re-filtered by the same rule `order_invoice` uses — a user who is not admin/manager/staff prints only their **own** orders — and the page says how many ticked orders it dropped |
+| Cap | `MAX_INVOICES = 200`. The extras are dropped and the sheet says so, rather than building a page big enough to hang the print dialog |
+| Layout | `page` (one invoice per sheet) or `flow` (continuous, with a cut line). The **last** invoice must not force a page break, or every run ends on a blank sheet |
+| Per invoice | "Print this" and "Remove" |
+| `custom_css` | Emitted by each caller after its own chrome rather than by the shared partial, so the shop's CSS keeps the last word |
+
+A browser that did not run the page script falls back to the `print_invoices` branch of
+`orders_bulk_action`, which redirects to the same sheet with `?ids=`.
+
+Verified by `test_bulk_invoice_print.py` (41 checks).
 
 ---
 

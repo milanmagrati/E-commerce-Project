@@ -11,11 +11,11 @@ flowchart TD
     A[Order detail page<br/>Send to NCM button] --> B["ncm/views.py:160<br/>create_ncm_shipment"]
     B --> C["NCMService.create_order()"]
 
-    D[Orders list<br/>bulk select + Send to NCM] --> E["dashboard/views.py:14694<br/>orders_bulk_ncm_send"]
-    E --> F["dashboard/views.py:14935<br/>send_single_order_to_ncm"]
+    D[Orders list<br/>bulk select + Send to NCM] --> E["dashboard/views.py:14730<br/>orders_bulk_ncm_send"]
+    E --> F["dashboard/views.py:14973<br/>send_single_order_to_ncm"]
     F --> G["raw requests.post -- BYPASSES NCMService"]
 
-    H[Order detail<br/>Create Exchange] --> I["dashboard/views.py:24785<br/>create_exchange_order_view"]
+    H[Order detail<br/>Create Exchange] --> I["dashboard/views.py:24848<br/>create_exchange_order_view"]
     I --> J["NCMService.create_exchange_order()"]
 
     C --> K[(NCM)]
@@ -121,7 +121,7 @@ simply be retried.
 
 **Purpose** — Send many selected orders in one batch, with progress, cancel and resume.
 **URL** `/orders/bulk-ncm-send/` · **name** `orders_bulk_ncm_send`
-**View** `dashboard/views.py:14694` · **Triggered from** `orders_list.html:548`
+**View** `dashboard/views.py:14730` · **Triggered from** `orders_list.html:548`
 
 ### The batch record
 
@@ -145,7 +145,7 @@ survive its worker dying:
 Endpoints: `/logistics/bulk-logs/progress/` (JSON poller),
 `/logistics/bulk-logs/<provider>/<log_id>/terminate/`, and `/resume/`.
 
-### The worker — `send_single_order_to_ncm` `dashboard/views.py:14935-15249`
+### The worker — `send_single_order_to_ncm` `dashboard/views.py:14973-15296`
 
 > ⚠️ **This path does not use `NCMService`.** It issues a raw `requests.post`
 > (`:14979-14987`) to `{base_url}/order/create` with `Authorization: Token {api_key}` and a
@@ -211,7 +211,7 @@ order's own value straight through: a courier outage must not block sending.
 ## Path 3 — Exchange orders
 
 **Purpose** — Ask NCM to create a paired exchange shipment for a delivered order.
-**URL** `/orders/<int:order_id>/exchange/` · **View** `dashboard/views.py:24785-24872`
+**URL** `/orders/<int:order_id>/exchange/` · **View** `dashboard/views.py:24848-24939`
 **Triggered from** `order_detail.html:3833`
 
 Eligibility (all required):
@@ -294,9 +294,9 @@ Append-only event log for the batch: `batch_started`, `order_sent`, `order_faile
 ## Files that own this
 
 - `ncm/views.py:160-314` — single send
-- `dashboard/views.py:14694-14904` — bulk send orchestration
-- `dashboard/views.py:14935-15249` — the bulk send worker
-- `dashboard/views.py:24785-24872` — exchange orders
+- `dashboard/views.py:14730-14944` — bulk send orchestration
+- `dashboard/views.py:14973-15296` — the bulk send worker
+- `dashboard/views.py:24848-24939` — exchange orders
 - `dashboard/bulk_batch.py` — terminate / resume / heartbeat
 - `services/ncm_service.py:191-227` — `create_order`
 - `ncm/models.py` — the bulk log models

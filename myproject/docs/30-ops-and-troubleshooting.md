@@ -133,10 +133,22 @@ re-send.
 1. `logs/ncm_integration.log` — the full payload and URL are logged on failure.
 2. If it was a **bulk** send: open the `NCMBulkLog` batch, then its
    `NCMBulkLogDetail` rows — they carry the raw `response_data`.
-3. Bulk send derives the destination from `order.branch_city.upper()`, defaulting to
-   `KATHMANDU`. A blank or misspelled city silently goes to the wrong branch.
+3. Bulk send resolves the destination through `ncm/branch_resolver.py` and fails the order
+   **locally** when it cannot — the reason names the value it tried and lists the branches
+   that district actually has. Read it in the **Reason** column of the expanded batch row on
+   the Bulk Logs page. See [10](./10-ncm-sending.md).
 4. Bulk send detects success by the string `'Order Successfully Created'`. If NCM reworded
    it, every send records as failed while actually succeeding.
+
+### "A whole batch failed: 0 sent, N failed — and Resume repeats it exactly"
+
+An identical resume means nothing about the orders changed, so the batch is not the problem:
+it is what every order in it has in common. The usual cause is the destination branch —
+**NCM's `branch` is the name of one of its own branches, not a district** — so a valley batch
+naming `KATHMANDU` was rejected once per order (the valley's branches are TINKUNE, CHABAHIL,
+KALANKI…), while batches for a city that happens to also be a branch name, like Pokhara, went
+out fine. Open the batch row's **Reason** column; the resolver names the value it tried and
+lists that district's real branches. [10 — Sending orders to NCM](./10-ncm-sending.md).
 
 ### "A bulk send batch is stuck at 'processing'"
 
