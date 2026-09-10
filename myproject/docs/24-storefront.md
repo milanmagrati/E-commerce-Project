@@ -377,7 +377,8 @@ python manage.py seed_data
   variable product's page as a bare red "!" bubble with nothing written in it — the gallery
   and variation arrows had the same fault. `product.css` now carries a scoped
   `[hidden] { display: none !important }`; everything `product.js` hides by setting
-  `.hidden` leans on it.
+  `.hidden` leans on it. The trap and the audit of the other sheets are
+  [A4 §17](./A4-appendix-known-quirks.md).
 - **The availability pill's class list is rewritten wholesale by `product.js`**
   (`stockLine.className = 'pdp-stock in'`). It sits at the right of `.pdp-price-row` on
   `margin-left: auto` and carries no second class, because one added in the template would

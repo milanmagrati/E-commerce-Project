@@ -190,6 +190,21 @@ This constraint (cPanel shared hosting) is called out in comments across
 Both are editable at *Settings → API Sync Settings*, and open tabs pick up changes on the
 next heartbeat without a reload.
 
+**Hiding an element with the `hidden` attribute needs a CSS guard.** The pattern all over
+this project is `el.hidden = !something` in JavaScript, but the browser's own
+`[hidden] { display: none }` is a *single attribute selector* — so any class rule that sets
+`display` outranks it and the element stays on screen with the attribute set. A stylesheet
+whose classes set `display` therefore has to say so itself:
+
+```css
+.pdp [hidden] { display: none !important; }
+```
+
+`store/static/store/css/product.css` carries that guard (added Sep 2026, after the product
+page's pick-an-option warning spent weeks on screen as a bare red "!" with nothing written
+in it — see [A4 §17](./A4-appendix-known-quirks.md)). Check for one before writing
+`el.hidden = true` against a class that sets `display: flex` / `grid` / `block`.
+
 **Template locations are inconsistent** — check before assuming:
 
 | App | Templates live in |

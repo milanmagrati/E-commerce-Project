@@ -413,3 +413,60 @@ it, added Sep 2026 for the Invoice Customizer's live preview pane
 
 `test_invoice_customizer.py` asserts both headers, so the exemption cannot be dropped and the
 `DENY` cannot spread to the printable route without a failure.
+
+---
+
+## 17. `hidden` loses to any class that sets `display`
+
+*Found and fixed Sep 2026.*
+
+The browser's own rule is `[hidden] { display: none }` — **one attribute selector**. Any
+class rule that sets `display` has higher specificity and wins, so the element stays on
+screen with the attribute faithfully set. `el.hidden = true` appears to do nothing, and
+nothing warns: the attribute *is* in the DOM, the inspector shows it, and the element is
+still visible.
+
+This is not a storefront problem. It bites anywhere a stylesheet gives a class a `display`
+and a script hides it by attribute, which is this project's usual pattern
+([02](./02-architecture-and-conventions.md#frontend-conventions)).
+
+**What it looked like in production.** On the classic product page,
+`.pdp-variant-alert { display: flex }` outranked it, so the "pick an option first" warning
+sat under the buy buttons on **every variable product's page** — permanently, and empty,
+because `product.js` writes its text only when a buy button is pressed. What a shopper saw
+was a red `!` bubble with no message beside two greyed-out buttons: a page that reads as
+broken and says nothing about why. Two more elements had the same fault —
+`.pdp-media-nav` (gallery arrows on a single-photo product) and `.pdp-variants-nav` (the
+variation rail's arrows when the rail does not overflow).
+
+**The fix, scoped to the page rather than global:**
+
+```css
+.pdp [hidden],
+.pdp-sticky [hidden],
+.pdp-modal [hidden] {
+    display: none !important;
+}
+```
+
+`!important` is load-bearing here, not laziness: without it the guard is one class plus one
+attribute selector and still loses to a later single-class rule.
+
+`test_store_button_labels.py` asserts the guard exists and that `.pdp-variant-alert` is one
+of the classes needing it, so removing either side fails.
+
+### The other stylesheets — audited Sep 2026
+
+Every element rendered with a `hidden` attribute was checked against the sheet that styles
+it. **Nothing else is broken today**, but only `product.css` is safe *by construction*:
+
+| Sheet | How it guards | Verdict |
+|---|---|---|
+| `product.css` | one scoped blanket rule (above) | Safe, and stays safe as elements are added |
+| `order-form.css` | **seven hand-written `.of-x[hidden]` lines** | Correct today; a new hidden element needs an eighth line or it breaks |
+| `pdp-theme2.css` | **three hand-written `.lx-p2-x[hidden]` lines** | Same fragility |
+| `store.css` | none | Fine — nothing in `store.js` hides by attribute (0 uses) |
+
+The per-class lists are exactly the pattern that let `product.css` miss three elements: they
+are correct only for the elements someone remembered. Prefer the blanket rule when touching
+either sheet.
