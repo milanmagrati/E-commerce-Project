@@ -49,6 +49,20 @@
     box-sizing: border-box;
 }
 
+/* `hidden` has to win over a class that sets `display`.
+   The browser's own `[hidden] { display: none }` is a single attribute
+   selector, so any class rule here outranks it and the element stays on
+   screen with the attribute set — which is how the variation alert came to
+   render as a bare red "!" bubble with nothing to say, and how the gallery
+   and variation arrows show on a page that has nothing to scroll to.
+   product.js hides all three by setting `.hidden`, so this is what makes
+   that work. */
+.pdp [hidden],
+.pdp-sticky [hidden],
+.pdp-modal [hidden] {
+    display: none !important;
+}
+
 /* ==========================================================================
    1. Announcement bar
    ========================================================================== */

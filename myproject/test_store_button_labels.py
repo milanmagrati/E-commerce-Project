@@ -19,6 +19,11 @@ What it is actually guarding:
 * The removals, because they are only visible on the rendered page: no vendor
   eyebrow above the title, no star line under it, no reviews section, and no
   email box on the order form.
+* That `hidden` still beats a class that sets `display`. Three elements on
+  this page are shown and hidden by product.js setting `.hidden`, and the
+  browser's own `[hidden]` rule loses to any class rule - which is how the
+  variation warning came to sit on the page as a bare red "!" bubble with
+  nothing written in it.
 * That the availability line still carries `data-stock-line` and a class list
   of nothing but `pdp-stock <state>` - product.js overwrites that attribute
   wholesale, so a class added in the template survives exactly until the first
@@ -27,6 +32,7 @@ What it is actually guarding:
 Run:  python test_store_button_labels.py
 """
 
+import io
 import os
 import re
 import sys
@@ -49,7 +55,7 @@ from django.test.utils import setup_test_environment  # noqa: E402
 
 setup_test_environment()
 
-from dashboard.models import Category, Product  # noqa: E402
+from dashboard.models import Category, Product, ProductVariation  # noqa: E402
 from store import labels, theme2  # noqa: E402
 from store.models import ProductPageTheme, StoreLabel  # noqa: E402
 
@@ -93,10 +99,28 @@ def build_fixtures():
         product_type='simple', price=Decimal('333.00'), cost_price=Decimal('100.00'),
         stock=0, is_active=True)
 
-    return {'owner': owner, 'in_stock': in_stock, 'sold_out': sold_out}
+    # A product with options, so the pick-an-option warning has a page to
+    # render on: it exists only where `has_variations` is true.
+    variable = Product.objects.create(
+        user=owner, name='ZZ Label Probe Options', slug=slugify('zz-label-probe-options'),
+        category=Category.objects.first(), description='A probe product.',
+        product_type='variable', price=Decimal('333.00'), cost_price=Decimal('100.00'),
+        stock=0, is_active=True)
+    var_a = ProductVariation.objects.create(
+        product=variable, variation_name='Small', sku='ZZ-LBL-S',
+        price=Decimal('333.00'), stock=4, status='active', is_active=True)
+    var_b = ProductVariation.objects.create(
+        product=variable, variation_name='Large', sku='ZZ-LBL-L',
+        price=Decimal('444.00'), stock=6, status='active', is_active=True)
+
+    return {'owner': owner, 'in_stock': in_stock, 'sold_out': sold_out,
+            'variable': variable, 'var_a': var_a, 'var_b': var_b}
 
 
 def teardown(fx):
+    fx['var_a'].delete()
+    fx['var_b'].delete()
+    fx['variable'].delete()
     fx['in_stock'].delete()
     fx['sold_out'].delete()
 
@@ -297,6 +321,44 @@ def test_removals(fx):
           'pdp-section' in body)
 
 
+def test_hidden_beats_display():
+    section('`hidden` beats a class that sets display')
+    css = io.open('store/static/store/css/product.css', encoding='utf-8').read()
+
+    guard = re.search(r'\.pdp \[hidden\][^{]*\{[^}]*display:\s*none\s*!important', css)
+    check('the product page guards [hidden] with !important', guard is not None)
+
+    # Any class here that sets a display other than none outranks the browser's
+    # own `[hidden] { display: none }`, so it needs that guard to exist. This
+    # asserts the guard covers them rather than listing them one by one.
+    offenders = [
+        name for name, body in re.findall(r'^\.(pdp[\w-]*)\s*\{([^}]*)\}', css, re.M)
+        for d in [re.search(r'display:\s*([^;]+);', body)]
+        if d and d.group(1).strip() != 'none'
+    ]
+    check('the classes that need it are inside .pdp', bool(offenders),
+          'found none, which means the scan is wrong')
+    check('.pdp-variant-alert is one of them (it was the bug)',
+          'pdp-variant-alert' in offenders)
+
+
+def test_variation_hint(fx):
+    section('The pick-an-option warning')
+    set_labels(choose_option='कृपया विकल्प छान्नुहोस्।')
+    body = page(fx['variable'].slug)
+    check('the warning carries its wording for the script',
+          'data-hint-text="कृपया विकल्प छान्नुहोस्।"' in body)
+    check('it still starts hidden',
+          re.search(r'data-variation-hint hidden', body) is not None)
+    check('and it starts empty - nothing to say until a button is pressed',
+          re.search(r'data-hint-text="[^"]*"></p>', body) is not None)
+
+    js = io.open('store/static/store/js/product.js', encoding='utf-8').read()
+    check('product.js reads that attribute rather than its own literal',
+          'variationHint.dataset.hintText' in js)
+    set_labels(**{key: '' for key in labels.DEFAULTS})
+
+
 def test_stock_pill(fx):
     section('The availability pill')
     body = page(fx['in_stock'].slug)
@@ -338,6 +400,8 @@ def main():
         test_order_form(fx)
         test_removals(fx)
         test_stock_pill(fx)
+        test_hidden_beats_display()
+        test_variation_hint(fx)
     finally:
         set_labels(**original)
         restore = ProductPageTheme.get_solo()

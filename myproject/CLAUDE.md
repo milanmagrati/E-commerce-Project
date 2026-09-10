@@ -273,9 +273,17 @@ which of those a button speaks is a shopkeeper's decision.
 - **`DEFAULTS`, `FIELD_SPECS` and the columns on `StoreLabel` are one set.**
   The screen draws `FIELD_SPECS` and the save view walks it, so a key added to
   only one of the three is a box that is drawn, typed into, and never saved.
-- **product.js cannot read the context**, so the wishlist button carries both
-  wordings as `data-save-label` / `data-saved-label` and the script swaps
-  between them; the English literals left in the script are only the fallback.
+- **product.js cannot read the context**, so anything the script writes
+  carries its wording on the element: `data-save-label` / `data-saved-label`
+  on the wishlist button, `data-hint-text` on the pick-an-option warning. The
+  English literals left in the script are only the fallback.
+- **`hidden` loses to any class that sets `display`.** The browser's own
+  `[hidden] { display: none }` is one attribute selector, so
+  `.pdp-variant-alert { display: flex }` outranked it and the warning sat on
+  every variable product's page as a bare red "!" bubble with nothing written
+  in it — the gallery and variation arrows had the same fault. `product.css`
+  now carries a scoped `[hidden] { display: none !important }` guard, and
+  every element product.js hides by setting `.hidden` depends on it.
 - **The availability line's class list is rewritten wholesale** by product.js
   (`stockLine.className = 'pdp-stock in'`), so the pill in `.pdp-price-row`
   gets its right-hand placement from `.pdp-stock { margin-left: auto }` and
@@ -288,7 +296,7 @@ computes `reviews` / `avg_rating` / `rating_dist` because Theme 2 draws them.
 The guest order form has **no email box** either — `GuestOrderForm.email`
 stays on the form (other paths still carry one) and simply arrives empty.
 
-Verification: `python test_store_button_labels.py` (66 checks — the fallback
+Verification: `python test_store_button_labels.py` (75 checks — the fallback
 rule including whitespace, the three lists agreeing, the save reaching the
 storefront with its cache busted, admin-only on both read and write, the
 labels actually reaching every button, and the four removals, which are only

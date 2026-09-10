@@ -371,6 +371,13 @@ python manage.py seed_data
   this wrong.
 - **A blank Store Button Label is the shipped wording**, not an empty button — the fallback
   is per key in `labels.DEFAULTS`, whitespace included.
+- **`hidden` loses to any class that sets `display`.** The browser's own
+  `[hidden] { display: none }` is a single attribute selector, so
+  `.pdp-variant-alert { display: flex }` beat it and the pick-an-option warning sat on every
+  variable product's page as a bare red "!" bubble with nothing written in it — the gallery
+  and variation arrows had the same fault. `product.css` now carries a scoped
+  `[hidden] { display: none !important }`; everything `product.js` hides by setting
+  `.hidden` leans on it.
 - **The availability pill's class list is rewritten wholesale by `product.js`**
   (`stockLine.className = 'pdp-stock in'`). It sits at the right of `.pdp-price-row` on
   `margin-left: auto` and carries no second class, because one added in the template would

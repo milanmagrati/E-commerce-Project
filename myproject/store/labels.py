@@ -38,6 +38,7 @@ DEFAULTS = {
     'order_now': 'Order Now',
     'add_to_cart': 'Add to cart',
     'sold_out': 'Sold out',
+    'choose_option': 'Choose an option to continue.',
     'save_for_later': 'Save for later',
     'saved': 'Saved',
     'form_title': 'Fill the order form',
@@ -60,6 +61,10 @@ FIELD_SPECS = (
     {'key': 'sold_out', 'group': 'Product page',
      'label': 'Sold out button',
      'help': 'Shown in place of the buy buttons when nothing is in stock.'},
+    {'key': 'choose_option', 'group': 'Product page',
+     'label': 'Pick-an-option warning',
+     'help': 'Raised under the buy buttons when a shopper with several '
+             'options to choose from presses one without choosing.'},
     {'key': 'save_for_later', 'group': 'Product page',
      'label': 'Save for later link', 'help': 'The wishlist heart.'},
     {'key': 'saved', 'group': 'Product page',

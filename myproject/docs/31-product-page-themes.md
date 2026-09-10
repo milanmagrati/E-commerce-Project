@@ -342,6 +342,7 @@ order would be written at another.
 | Symptom | It was |
 |---|---|
 | Clicking the panel header made the whole panel *disappear*, with nothing left to click | `.is-folded { display: none }` was unscoped, and the script puts that class on the header too (it turns the caret). Now scoped to the two body selectors |
+| A bare red "!" bubble with no message, on every variable product's page | `.pdp-variant-alert { display: flex }` outranked the browser's `[hidden] { display: none }`, so the empty warning never hid. `product.css` now carries a scoped `[hidden]` guard with `!important` |
 | The editing surface rendered as bare textareas, unstyled, on one machine and fine on another | `DEBUG=False` + WhiteNoise serving a start-up snapshot. Fixed by shipping the CSS and JS as template partials |
 | Typing in "Edit as text", then touching a row or Add, silently discarded the typing | Both views were live at once. `.ptr.is-raw` now hides the rows and the Add button |
 | On the setup screen, Escape closed the media picker **and** the drawer beneath it | One keydown handler with no guard. The drawer now ignores Escape while `.ptm.is-open` exists |
@@ -352,7 +353,7 @@ order would be written at another.
 
 ```bash
 python test_product_page_theme.py          # 137 checks
-python test_store_button_labels.py         # 66 checks — Theme 1's wording and removals
+python test_store_button_labels.py         # 75 checks — Theme 1's wording and removals
 ```
 
 Covers: fee parsing, the precedence rules, `quote()`'s refusals and clamping, the ladder's

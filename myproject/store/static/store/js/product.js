@@ -869,8 +869,11 @@
             if (!hasVariations || (selectedVariation && selectedVariation.id)) return true;
             // Say what to do, next to the buttons that were blocked, and put
             // the shopper on the first option rather than firing a toast at
-            // the far corner of the screen.
-            setHint('Choose an option to continue.');
+            // the far corner of the screen. The wording comes from
+            // Setup -> Store Button Labels, on the element itself; the literal
+            // is only what the page shipped with.
+            setHint((variationHint && variationHint.dataset.hintText)
+                    || 'Choose an option to continue.');
             if (selectable[0]) selectable[0].focus();
             return false;
         }

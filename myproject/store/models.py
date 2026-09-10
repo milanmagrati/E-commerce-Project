@@ -1075,6 +1075,7 @@ class StoreLabel(models.Model):
     order_now = models.CharField(max_length=80, blank=True, default='')
     add_to_cart = models.CharField(max_length=80, blank=True, default='')
     sold_out = models.CharField(max_length=80, blank=True, default='')
+    choose_option = models.CharField(max_length=120, blank=True, default='')
     save_for_later = models.CharField(max_length=80, blank=True, default='')
     saved = models.CharField(max_length=80, blank=True, default='')
 

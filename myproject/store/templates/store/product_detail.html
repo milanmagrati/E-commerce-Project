@@ -320,8 +320,11 @@ open, and both the add-to-cart form and the order panel post normally.
             </div>
             {% if has_variations %}
             <!-- Silent until a buy action is attempted without a choice, so the
-                 page does not open on an error the shopper has not caused. -->
-            <p class="pdp-variant-alert" data-variation-hint hidden role="status"></p>
+                 page does not open on an error the shopper has not caused. The
+                 wording rides on the element because product.js writes it and
+                 cannot read the context. -->
+            <p class="pdp-variant-alert" data-variation-hint hidden role="status"
+               data-hint-text="{{ store_labels.choose_option|default:"Choose an option to continue." }}"></p>
             {% endif %}
 
             <!-- Both wordings ride on the button, because product.js swaps

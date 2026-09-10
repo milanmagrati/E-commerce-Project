@@ -236,7 +236,7 @@ every store template as **`store_labels`**, and templates print `store_labels.or
 
 | Group | Keys |
 |---|---|
-| Product page | `order_now`, `add_to_cart`, `sold_out`, `save_for_later`, `saved` |
+| Product page | `order_now`, `add_to_cart`, `sold_out`, `choose_option`, `save_for_later`, `saved` |
 | Order form | `form_title`, `form_subtitle`, `confirm_title`, `confirm_sub`, `inquiry_title`, `inquiry_sub` |
 
 `sold_out` is used everywhere the phrase appears on the classic product page — the media
@@ -252,9 +252,10 @@ card and the specifications table — so renaming it renames all of them at once
 - **`DEFAULTS`, `FIELD_SPECS` and the columns on `StoreLabel` are one set.** The screen
   draws `FIELD_SPECS` and `store_label_save()` walks the same list, so a key added to only
   one of the three is a box that is drawn, typed into, and silently never saved.
-- **`product.js` cannot read the context.** The wishlist button therefore carries both
-  wordings as `data-save-label` / `data-saved-label` and the script picks between them; the
-  English literals left in the script are only the fallback.
+- **`product.js` cannot read the context.** Anything the script writes carries its wording
+  on the element instead: `data-save-label` / `data-saved-label` on the wishlist button,
+  `data-hint-text` on the pick-an-option warning. The English literals left in the script
+  are only the fallback.
 
 ### Actions — all `@admin_only`, under `/setup/store-labels/`
 
@@ -263,7 +264,7 @@ card and the specifications table — so renaming it renames all of them at once
 | Save | `save/` | Writes every key, trimmed, then `labels.invalidate_cache()` |
 | Reset | `reset/` | Clears every box — back to the shipped wording |
 
-Verification: `python test_store_button_labels.py` (66 checks). It forces Theme 1 for the
+Verification: `python test_store_button_labels.py` (75 checks). It forces Theme 1 for the
 page checks and puts `ProductPageTheme.layout` back, so it passes on a shop set to Theme 2.
 
 ---
