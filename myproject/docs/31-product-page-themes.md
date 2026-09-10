@@ -18,10 +18,32 @@ Storefront behaviour is [24](./24-storefront.md); products themselves are
 | Shell | `store/base.html` — navbar, search, cart drawer | `store/base_pdp.html` — centred logo, dark footer, nothing else |
 | Assets | `store.css` / `product.css` / `product.js` | `store/css/pdp-theme2.css`, `store/js/pdp-theme2.js` |
 | Shape | media + sticky buy column, accordions below | three sticky columns: media & content, buy box, info rail |
+| Reviews | **none** — see below | stars, histogram, helpful votes |
 
-**Theme 1 is byte-identical when selected.** The switch is four lines at the end of
-`store/views.py::product_detail` (`store/views.py:518-521`); everything above it builds the
-context both designs share.
+**Selecting Theme 1 changes nothing about how Theme 1 renders.** The switch is four lines at
+the end of `store/views.py::product_detail` (`store/views.py:518-521`); everything above it
+builds the context both designs share.
+
+### What Theme 1 dropped (Sep 2026)
+
+The classic page was trimmed at the shop's request, and all four changes are template-level
+— the router and the shared context above it were not touched:
+
+| Gone | Was |
+|---|---|
+| The vendor eyebrow above the title | `.pdp-vendor`, the category name in small caps — it read "CUSTOM" |
+| The star line under the title, and the whole reviews section | `.pdp-rating` + `<section id="reviews">`, incl. the write-a-review form |
+| The email box on the order form | `partials/order_form.html`; the mobile number took its full width |
+| The availability line below the price | It is now a pill at the right of `.pdp-price-row` |
+
+`product_detail` **still** computes `reviews`, `avg_rating` and `rating_dist` — Theme 2 draws
+them, so dropping them from the context would break the other design. The dead review CSS
+(`.pdp-review*`, `.pdp-star-input`, `.pdp-bar-*`, `.pdp-field`) came out of `product.css`
+with it; `.pdp-section` / `.pdp-section-title` stayed, because "You may also like" uses them.
+
+**Theme 1's buttons are also data now.** Every word on them prints `store_labels.*`, from
+**Setup → Store Button Labels** ([22](./22-settings-and-setup.md#store-button-labels)) —
+Theme 2 keeps its own `buy_label` field instead, resolved the usual way.
 
 > If a change makes the two pages disagree about price, stock, or what is in the cart, the
 > change is in the wrong place — it belongs **above** the router.
@@ -306,6 +328,10 @@ order would be written at another.
 - **`ReviewVote` deduplicates on `voter_key`**, not on a pair of partial unique constraints:
   production is MySQL, which silently declines to create conditional constraints, leaving
   "one vote per visitor" a promise nothing keeps.
+- **Theme 1's availability pill carries no second class.** `product.js` rewrites that
+  element wholesale (`stockLine.className = 'pdp-stock in'`) when an option is picked, so its
+  right-hand placement in `.pdp-price-row` comes from `margin-left: auto` on `.pdp-stock`.
+  A class added in the template survives exactly until the first click.
 - **Load-bearing markup contracts** (renaming these breaks the script silently): every
   `data-p2-*` attribute in `product_detail_conversion.html`, and the `data-p2-bulk-map` JSON,
   whose keys are `'0'` for a plain product and the variation id otherwise — the same shape
@@ -326,6 +352,7 @@ order would be written at another.
 
 ```bash
 python test_product_page_theme.py          # 137 checks
+python test_store_button_labels.py         # 66 checks — Theme 1's wording and removals
 ```
 
 Covers: fee parsing, the precedence rules, `quote()`'s refusals and clamping, the ladder's
@@ -362,4 +389,7 @@ hide itself.
 - `dashboard/templates/product_form.html:500` — where the panel is included (inside the `<form>`)
 - `dashboard/views.py:1416-1417, 1537, 1783` — the import and the two `save_product_theme()` calls
 - `dashboard/urls.py:273-280` — the eight routes
-- `test_product_page_theme.py` — the verification suite
+- `store/templates/store/product_detail.html` — the Theme 1 page (no reviews, labelled buttons)
+- `store/labels.py`, `dashboard/store_label_views.py` — Theme 1's button wording
+  ([22](./22-settings-and-setup.md#store-button-labels))
+- `test_product_page_theme.py`, `test_store_button_labels.py` — the verification suites

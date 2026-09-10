@@ -25,6 +25,7 @@ You do **not** need to read it in order. Pick your entry point:
 | Give someone the right access | [03 — Auth, roles & permissions](./03-auth-roles-permissions.md) |
 | Debug a live problem | [30 — Ops & troubleshooting](./30-ops-and-troubleshooting.md) |
 | Change how a product's page looks in the shop | [31 — Product page themes](./31-product-page-themes.md) |
+| Rename a button in the shop (Nepali or English) | [22 — Store Button Labels](./22-settings-and-setup.md#store-button-labels) |
 
 ---
 

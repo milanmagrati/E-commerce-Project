@@ -94,9 +94,17 @@ infinite scroll).
 
 The product page and checkout both submit the shared **`partials/order_form.html`** panel —
 Confirm Order / Inquiry Only, with a district + NCM courier-branch select, a discount-code
-field and a live delivery quote. On the product page the top-of-page button reads
-**"Order Now"** and the header mode chip is gone; the form itself still offers both
-Confirm Order and Inquiry Only at submit.
+field and a live delivery quote. On the product page the top-of-page button opens it, and
+the form itself still offers both Confirm Order and Inquiry Only at submit.
+
+**Its wording is data.** The panel heading, both submit buttons and the button that opens
+them all print `store_labels.*` — one row edited at **Setup → Store Button Labels**
+(`/setup/store-labels/`, `@admin_only` — see [22](./22-settings-and-setup.md)), resolved in
+`store/labels.py`. A blank column there means the wording that ships, not a blank button.
+
+**There is no email box.** Sep 2026: the shop reaches a buyer by phone, so the field was
+dropped from the panel and the mobile number took its full width. `GuestOrderForm.email`
+stays on the form — other paths still carry one — and simply arrives empty.
 
 | Page / action | URL | View | Template |
 |---|---|---|---|
@@ -128,11 +136,17 @@ Order-form data endpoints (all JSON, all public):
 | Profile | `/store/account/profile/` | `account_profile` | `@customer_required` |
 | Change password | `/store/account/password/` | `account_password` | `@customer_required` |
 
-### Reviews
+### Reviews — **Theme 2 only**
 
 | Action | URL | Notes |
 |---|---|---|
 | Add review | `/store/review/add/<product_id>/` | POST; owned by `customer` when signed in, else `session_key` + typed `guest_name` |
+
+The classic product page (Theme 1) shows **no reviews at all** since Sep 2026 — no star line
+under the title, no review section, nothing posting to `add_review`. `product_detail` still
+computes `reviews` / `avg_rating` / `rating_dist` because Theme 2 draws them, so removing
+them from the context would break the other design. See
+[31](./31-product-page-themes.md).
 
 ---
 
@@ -153,6 +167,7 @@ Order-form data endpoints (all JSON, all public):
 | **`DeliverySetting`** | `:597` | Single-row site-wide delivery defaults (`get_solo()`) — see [22](./22-settings-and-setup.md) |
 | **`DeliveryCharge`** | `:652` | One delivery rule per district, optionally per courier branch |
 | **`BackInStockNotice`** | `:714` | A shopper waiting on a sold-out product or one variation of it |
+| **`StoreLabel`** | end of file | **One row** (`get_solo()`) — the wording on every storefront button. Read through `store/labels.py`, never directly |
 
 > Products and categories are **not** duplicated — the storefront reads
 > `dashboard.Product` and `dashboard.Category` directly.
@@ -307,9 +322,14 @@ Administered from **Setup → Delivery Charge Setup** (`/setup/delivery-charges/
 
 ## Context processor
 
-`store.context_processors.store_context` runs on **every** template render in the whole
-project (`myproject/settings.py`), not just storefront pages. It supplies cart and wishlist
-counts, the signed-in `StoreCustomer` (if any) and delivery-banner copy.
+`store.context_processors.store_context` is registered globally (`myproject/settings.py`) but
+**returns `{}` unless the path starts `/store/`** — the cart and wishlist queries are not run
+for an admin page. On a storefront page it supplies cart and wishlist counts, the signed-in
+`StoreCustomer` (if any), the delivery-banner copy, and **`store_labels`** — the resolved
+button wording from `store/labels.py`.
+
+> A template that needs a button's wording outside `/store/` gets nothing from here. Call
+> `labels.snapshot()` in the view instead of reaching for `StoreLabel`.
 
 ---
 
@@ -349,6 +369,12 @@ python manage.py seed_data
 - **A variable product's own `price` is not a price anyone pays.** It is a parent value; quote
   `variation_price_range` or the picked variation instead. The mobile sticky bar used to get
   this wrong.
+- **A blank Store Button Label is the shipped wording**, not an empty button — the fallback
+  is per key in `labels.DEFAULTS`, whitespace included.
+- **The availability pill's class list is rewritten wholesale by `product.js`**
+  (`stockLine.className = 'pdp-stock in'`). It sits at the right of `.pdp-price-row` on
+  `margin-left: auto` and carries no second class, because one added in the template would
+  survive exactly until the first option is clicked.
 - Back-in-stock alerts are **one-shot**: `notified_at` is stamped even when the send fails, so a
   restock never re-spams. A shopper who misses one must re-subscribe.
 
@@ -363,6 +389,8 @@ python manage.py seed_data
 - `store/models.py` — the storefront's own models
 - `store/signals.py` — back-in-stock alerts on `Product`/`ProductVariation` restock
 - `store/services.py` — districts, NCM branches, delivery-quote logic
+- `store/labels.py` — **the only place a button's wording is resolved** (Setup → Store
+  Button Labels)
 - `store/forms.py` — order form, registration, review forms
 - `store/urls.py` — the `/store/` routes
 - `store/context_processors.py` — global cart/wishlist/customer context
@@ -373,8 +401,10 @@ python manage.py seed_data
 - `store/static/store/js/order-form.js` — the order panel, incl. its tier price resolver
 - `dashboard/delivery_charge_views.py` — Delivery Charge Setup admin
 - `dashboard/bulk_discount_views.py` — Bulk Discount Setup admin
+- `dashboard/store_label_views.py` — Store Button Labels admin
 - `dashboard/page_views.py` — where CMS `Page` rows are created
 - `dashboard/models.py:123-190`, `:726-764` — the storefront helper properties on
   `Product` / `ProductVariation`
 - `inventory/services.py` — stock reservation, called only from here
-- `test_store_variations.py`, `test_store_bulk_discounts.py` — standalone verification scripts
+- `test_store_variations.py`, `test_store_bulk_discounts.py`,
+  `test_store_button_labels.py` — standalone verification scripts

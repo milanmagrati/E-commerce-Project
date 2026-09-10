@@ -210,6 +210,64 @@ The editor **warns when a new rule duplicates an existing target**, and names wh
 
 ---
 
+## Store Button Labels
+
+**URL** `/setup/store-labels/` · **name** `store_label_setup`
+**View** `dashboard/store_label_views.py` · **Template** `dashboard/store_label_setup.html`
+**Permission** `@login_required` + `@admin_only` (every route in this file is admin-only)
+
+Every word printed on a storefront button, in whatever language the shop wants it. Added
+Sep 2026, because "Order Now" was a literal in a template and this shop sells in Nepali.
+Sidebar entry sits directly under Product Page Theme.
+
+### One model, one resolver
+
+| Piece | Where | Holds |
+|---|---|---|
+| `StoreLabel` | `store/models.py` (end of file) | **One row** (`get_solo()`), one `CharField` per label, every one blank by default |
+| `labels.DEFAULTS` | `store/labels.py` | The wording that ships — the fallback for every blank column |
+| `labels.FIELD_SPECS` | `store/labels.py` | What the screen draws, in order: key, group, label, help text |
+| `labels.snapshot()` | `store/labels.py` | The resolved dict, cached 60s under `store:labels:v1` |
+
+The storefront never touches the model: `store/context_processors.py` puts the snapshot in
+every store template as **`store_labels`**, and templates print `store_labels.order_now`.
+
+### What can be renamed
+
+| Group | Keys |
+|---|---|
+| Product page | `order_now`, `add_to_cart`, `sold_out`, `save_for_later`, `saved` |
+| Order form | `form_title`, `form_subtitle`, `confirm_title`, `confirm_sub`, `inquiry_title`, `inquiry_sub` |
+
+`sold_out` is used everywhere the phrase appears on the classic product page — the media
+flag, the availability pill, the disabled buy button, the sticky bar, a sold-out variation
+card and the specifications table — so renaming it renames all of them at once.
+
+### The rules
+
+- **A blank box is the wording that ships, not an empty button.** `snapshot()` falls back
+  per key, whitespace included, so a box cleared by accident can never put an unlabelled
+  rectangle on a live product page. The screen prints that same default as each box's
+  **placeholder**, so the box says what leaving it empty will do.
+- **`DEFAULTS`, `FIELD_SPECS` and the columns on `StoreLabel` are one set.** The screen
+  draws `FIELD_SPECS` and `store_label_save()` walks the same list, so a key added to only
+  one of the three is a box that is drawn, typed into, and silently never saved.
+- **`product.js` cannot read the context.** The wishlist button therefore carries both
+  wordings as `data-save-label` / `data-saved-label` and the script picks between them; the
+  English literals left in the script are only the fallback.
+
+### Actions — all `@admin_only`, under `/setup/store-labels/`
+
+| Action | Route suffix | Notes |
+|---|---|---|
+| Save | `save/` | Writes every key, trimmed, then `labels.invalidate_cache()` |
+| Reset | `reset/` | Clears every box — back to the shipped wording |
+
+Verification: `python test_store_button_labels.py` (66 checks). It forces Theme 1 for the
+page checks and puts `ProductPageTheme.layout` back, so it passes on a shop set to Theme 2.
+
+---
+
 ## Invoice Customizer
 
 **URL** `/setup/invoice/` · **name** `invoice_customizer`
@@ -526,9 +584,11 @@ its footer. See [24 — Storefront](./24-storefront.md).
   media endpoints are not** — they answer to `can_edit_products` / `can_create_products`,
   because the landing-page panel on the product form uploads through them. See
   [31](./31-product-page-themes.md).
-- **Delivery Charge Setup, Bulk Discount Setup and Invoice Customizer are `@admin_only`**,
-  unlike the rest of `/setup/`, which runs on `can_view_orders` / `can_create_orders`. No
-  permission flag opens them — the role has to be `administrator`.
+- **Delivery Charge Setup, Bulk Discount Setup, Store Button Labels and Invoice Customizer
+  are `@admin_only`**, unlike the rest of `/setup/`, which runs on `can_view_orders` /
+  `can_create_orders`. No permission flag opens them — the role has to be `administrator`.
+- **A blank box on Store Button Labels means the shipped wording**, not an empty button.
+  Nothing on the storefront reads `StoreLabel` directly — go through `store/labels.py`.
 - Maintenance mode does not stop the NCM heartbeat — admins keeping a tab open will still
   drive background syncs.
 - City management, purchases and several reports check permissions **inline** rather than by
@@ -543,6 +603,8 @@ its footer. See [24 — Storefront](./24-storefront.md).
 - `dashboard/bulk_discount_views.py` — Bulk Discount Setup (all `@admin_only`)
 - `dashboard/invoice_customizer_views.py` — Invoice Customizer (all `@admin_only`)
 - `dashboard/product_theme_views.py` — Product Page Theme ([31](./31-product-page-themes.md))
+- `dashboard/store_label_views.py` — Store Button Labels (all `@admin_only`)
+- `store/labels.py` — **the only place a button's wording is resolved**
 - `dashboard/invoice_config.py` — invoice token whitelist, default layout, context builder
 - `dashboard/bulk_invoice_views.py`, `templates/invoice/_styles.html`,
   `templates/invoice/_document.html` — the bulk print sheet and the partials both invoices
@@ -550,6 +612,7 @@ its footer. See [24 — Storefront](./24-storefront.md).
 - `dashboard/models.py` — `InvoiceTemplate`, `InvoiceElement` (end of file)
 - `store/models.py:597-712` — `DeliverySetting`, `DeliveryCharge`
 - `store/models.py:267-482` — `BulkDiscount`, `BulkDiscountTier`
+- `store/models.py` (end of file) — `StoreLabel`
 - `store/bulk_discounts.py` — the pricing module both the storefront and the preview use
 - `dashboard/models.py:882-906` — `City`
 - `dashboard/models.py:1540-1579` — `LogisticsAPIConfig`

@@ -217,6 +217,8 @@ APIs: `/api/search-products/` · `/api/product/<id>/` · `/api/product/<id>/upda
 `/setup/` `setup_management` + add/edit/delete/toggle-default/reorder
 `/setup/delivery-charges/` `delivery_charge_setup` **(admin)** + save/`<id>`/delete/`<id>`/toggle/bulk-action/settings/sync/export/branches
 `/setup/bulk-discounts/` `bulk_discount_setup` **(admin)** + save/`<id>`/delete/`<id>`/toggle/`<id>`/duplicate/`<id>`/spread/bulk-action/preview/export
+`/setup/product-theme/` `product_theme_setup` **(admin; media endpoints answer to `can_edit_products`/`can_create_products`)** + save/media/media/upload/media/`<id>`/delete/`<product_id>`/`<product_id>`/save/`<product_id>`/reset
+`/setup/store-labels/` `store_label_setup` **(admin)** + save/reset
 `/setup/invoice/` `invoice_customizer` **(admin)** + preview/reset/lines/save/lines/reorder/lines/`<id>`/delete/lines/`<id>`/toggle/lines/`<id>`/move
 `/cities/` + edit/delete + `/api/cities/quick_add|bulk_add|` + get-valley-status
 `/api-integration/` + add/edit/delete/toggle/get
