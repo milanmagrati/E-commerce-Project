@@ -1014,7 +1014,14 @@
                     if (!data.success) return;
                     save.classList.toggle('is-active', data.added);
                     var text = $('[data-save-text]', save);
-                    if (text) text.textContent = data.added ? 'Saved' : 'Save for later';
+                    // Both wordings are set by Setup → Store Button Labels and
+                    // ride on the button itself; the literals are only what the
+                    // page shipped with before that screen existed.
+                    if (text) {
+                        text.textContent = data.added
+                            ? (save.dataset.savedLabel || 'Saved')
+                            : (save.dataset.saveLabel || 'Save for later');
+                    }
                     var icon = save.querySelector('svg');
                     if (icon) icon.setAttribute('fill', data.added ? 'currentColor' : 'none');
                     if (typeof showToast === 'function') showToast(data.message);

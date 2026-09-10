@@ -255,3 +255,42 @@ that matters — surviving a post that never carried it; and that a three-cell
 clip row still parses after the format grew two cells; and that the model's
 override columns, `FIELD_SPECS` and `theme2.OVERRIDABLE` are the same set, so
 none of the three can grow alone into a field that quietly does nothing).
+
+### Storefront button wording (Theme 1)
+
+Every word printed on a storefront button is data, not a literal: one
+`store.StoreLabel` row, edited at **Setup → Store Button Labels**
+(`dashboard/store_label_views.py`, admin-only), resolved in `store/labels.py`
+and handed to every store template as `store_labels` by
+`store/context_processors.py`. The shop sells in Nepali and in English, and
+which of those a button speaks is a shopkeeper's decision.
+
+- **A blank column is the shipped wording, not an empty button.** `snapshot()`
+  falls back to `labels.DEFAULTS` per key (whitespace included), so a box
+  cleared by accident cannot put an unlabelled rectangle on a live product
+  page — and the setup screen prints that same default as each box's
+  placeholder, so the box says what leaving it empty will do.
+- **`DEFAULTS`, `FIELD_SPECS` and the columns on `StoreLabel` are one set.**
+  The screen draws `FIELD_SPECS` and the save view walks it, so a key added to
+  only one of the three is a box that is drawn, typed into, and never saved.
+- **product.js cannot read the context**, so the wishlist button carries both
+  wordings as `data-save-label` / `data-saved-label` and the script swaps
+  between them; the English literals left in the script are only the fallback.
+- **The availability line's class list is rewritten wholesale** by product.js
+  (`stockLine.className = 'pdp-stock in'`), so the pill in `.pdp-price-row`
+  gets its right-hand placement from `.pdp-stock { margin-left: auto }` and
+  never from a second class in the template — one would survive exactly until
+  the first option is clicked.
+
+Theme 1's product page has **no reviews**: no star line under the title, no
+review section, nothing posting to `store:add_review`. `product_detail` still
+computes `reviews` / `avg_rating` / `rating_dist` because Theme 2 draws them.
+The guest order form has **no email box** either — `GuestOrderForm.email`
+stays on the form (other paths still carry one) and simply arrives empty.
+
+Verification: `python test_store_button_labels.py` (66 checks — the fallback
+rule including whitespace, the three lists agreeing, the save reaching the
+storefront with its cache busted, admin-only on both read and write, the
+labels actually reaching every button, and the four removals, which are only
+visible in rendered markup). It forces Theme 1 for the page checks and puts
+`ProductPageTheme.layout` back, so it passes on a shop set to Theme 2.

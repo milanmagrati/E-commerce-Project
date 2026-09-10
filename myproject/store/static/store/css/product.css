@@ -447,55 +447,24 @@
     top: 20px;
 }
 
-.pdp-vendor {
-    font-size: 12px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--pdp-ink-faint);
-    margin: 0 0 8px;
-}
-
 .pdp-title {
-    font-size: clamp(20px, 2.2vw, 27px);
-    line-height: 1.24;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    margin: 0 0 8px;
+    font-size: clamp(21px, 2.3vw, 28px);
+    line-height: 1.22;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    margin: 0 0 12px;
 }
 
-.pdp-rating {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    margin-bottom: 13px;
-    font-size: 12.5px;
-    color: var(--pdp-ink-soft);
-}
-
-.pdp-stars {
-    display: inline-flex;
-    gap: 1px;
-    color: #e0e0e0;
-    font-size: 13px;
-    line-height: 1;
-}
-
-.pdp-stars .on {
-    color: #ffb400;
-}
-
-.pdp-rating a {
-    color: inherit;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-}
-
+/* Price on the left, availability pinned to the right of the same row: one
+   line answers "how much" and "can I have it" together. `align-items:
+   baseline` would drop the pill's box below the big figure, so the row aligns
+   on centres and the price carries its own line-height. */
 .pdp-price-row {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 6px;
+    gap: 6px 10px;
+    margin-bottom: 14px;
 }
 
 .pdp-price-label {
@@ -510,9 +479,11 @@
 }
 
 .pdp-price {
-    font-size: 21px;
+    font-size: 23px;
     font-weight: 700;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
 }
 
 .pdp-price-was {
@@ -530,13 +501,28 @@
     color: var(--pdp-ink-faint);
 }
 
+/* The availability pill. It sits last in `.pdp-price-row`, and
+   `margin-left: auto` is what pushes it to the right-hand edge — with the row
+   wrapping on a narrow phone it simply drops onto its own line rather than
+   squeezing the price.
+
+   Everything here is reachable from `.pdp-stock` plus one state class and
+   nothing else: product.js rewrites this element's whole class list to
+   `pdp-stock in` when an option is picked, so any extra class the template
+   added would survive exactly until the first click. */
 .pdp-stock {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 12.5px;
-    font-weight: 600;
-    margin: 0 0 16px;
+    margin: 0 0 0 auto;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.5;
+    white-space: nowrap;
+    background: #f4f4f5;
+    border: 1px solid transparent;
 }
 
 .pdp-stock::before {
@@ -545,15 +531,26 @@
     height: 7px;
     border-radius: 50%;
     background: currentColor;
+    flex: none;
 }
 
-.pdp-stock.in { color: var(--pdp-ok); }
-.pdp-stock.out { color: var(--pdp-warn); }
+.pdp-stock.in {
+    color: var(--pdp-ok);
+    background: rgba(26, 127, 75, 0.09);
+    border-color: rgba(26, 127, 75, 0.22);
+}
+
+.pdp-stock.out {
+    color: var(--pdp-warn);
+    background: rgba(179, 38, 30, 0.08);
+    border-color: rgba(179, 38, 30, 0.22);
+}
 
 /* Before an option is picked there is no availability to report yet, so the
-   line carries no status dot and no status colour. */
+   pill carries no status dot and no status colour. */
 .pdp-stock.is-pending {
     color: var(--pdp-ink-faint);
+    background: #f4f4f5;
     font-weight: 500;
 }
 .pdp-stock.is-pending::before { display: none; }
@@ -1528,7 +1525,7 @@
 }
 
 /* ==========================================================================
-   6. Reviews
+   6. Page sections below the fold
    ========================================================================== */
 
 .pdp-section {
@@ -1541,203 +1538,6 @@
     letter-spacing: -0.01em;
     margin: 0 0 16px;
     text-align: center;
-}
-
-.pdp-reviews-head {
-    display: grid;
-    grid-template-columns: minmax(0, 170px) minmax(0, 1fr);
-    gap: 20px;
-    align-items: center;
-    padding: 18px;
-    border: 1px solid var(--pdp-line);
-    border-radius: var(--pdp-radius-lg);
-    margin-bottom: 20px;
-}
-
-.pdp-reviews-score {
-    text-align: center;
-}
-
-.pdp-reviews-score .num {
-    display: block;
-    font-size: 34px;
-    font-weight: 700;
-    line-height: 1;
-    letter-spacing: -0.02em;
-}
-
-.pdp-reviews-score .of {
-    font-size: 13px;
-    color: var(--pdp-ink-faint);
-}
-
-.pdp-reviews-score .pdp-stars {
-    font-size: 15px;
-    margin: 6px 0 3px;
-    justify-content: center;
-}
-
-.pdp-reviews-bars {
-    display: grid;
-    gap: 6px;
-    min-width: 0;
-}
-
-.pdp-bar-row {
-    display: grid;
-    grid-template-columns: 42px minmax(0, 1fr) 56px;
-    align-items: center;
-    gap: 10px;
-    font-size: 12.5px;
-    color: var(--pdp-ink-faint);
-}
-
-.pdp-bar-track {
-    height: 8px;
-    border-radius: 999px;
-    background: #eee;
-    overflow: hidden;
-}
-
-.pdp-bar-fill {
-    height: 100%;
-    background: #ffb400;
-    border-radius: 999px;
-}
-
-.pdp-bar-row .pct {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-}
-
-.pdp-review-list {
-    display: grid;
-    gap: 2px;
-}
-
-.pdp-review {
-    display: flex;
-    gap: 12px;
-    padding: 14px 2px;
-    border-bottom: 1px solid var(--pdp-line);
-}
-
-.pdp-review-avatar {
-    flex: 0 0 34px;
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: var(--pdp-paper-2);
-    border: 1px solid var(--pdp-line);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    font-size: 13px;
-    color: var(--pdp-ink-soft);
-}
-
-.pdp-review-body {
-    min-width: 0;
-    flex: 1 1 auto;
-}
-
-.pdp-review-meta {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 5px;
-}
-
-.pdp-review-meta strong {
-    font-size: 13.5px;
-}
-
-.pdp-review-date {
-    font-size: 12.5px;
-    color: var(--pdp-ink-faint);
-    margin-left: auto;
-}
-
-.pdp-review-body p {
-    margin: 0;
-    font-size: 13.5px;
-    line-height: 1.6;
-    color: var(--pdp-ink-soft);
-    overflow-wrap: break-word;
-}
-
-.pdp-review-empty {
-    text-align: center;
-    padding: 26px 0;
-    color: var(--pdp-ink-faint);
-    font-size: 15px;
-}
-
-.pdp-review-form {
-    margin-top: 20px;
-    border: 1px solid var(--pdp-line);
-    border-radius: var(--pdp-radius-lg);
-    padding: 18px;
-}
-
-.pdp-review-form h3 {
-    margin: 0 0 4px;
-    font-size: 15.5px;
-    font-weight: 600;
-}
-
-.pdp-review-form .hint {
-    margin: 0 0 16px;
-    font-size: 13px;
-    color: var(--pdp-ink-faint);
-}
-
-.pdp-star-input {
-    display: inline-flex;
-    gap: 3px;
-    font-size: 22px;
-    line-height: 1;
-    color: #e0e0e0;
-    cursor: pointer;
-    margin-bottom: 12px;
-}
-
-.pdp-star-input span {
-    transition: color 0.12s ease, transform 0.12s ease;
-}
-
-.pdp-star-input span.on {
-    color: #ffb400;
-}
-
-.pdp-star-input span:hover {
-    transform: scale(1.12);
-}
-
-.pdp-field {
-    display: block;
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid var(--pdp-line-strong);
-    border-radius: var(--pdp-radius);
-    font: inherit;
-    font-size: 14px;
-    color: var(--pdp-ink);
-    background: #fff;
-    margin-bottom: 10px;
-}
-
-.pdp-field:focus {
-    outline: none;
-    border-color: var(--pdp-ink);
-    box-shadow: 0 0 0 1px var(--pdp-ink);
-}
-
-textarea.pdp-field {
-    resize: vertical;
-    min-height: 96px;
 }
 
 /* ==========================================================================
@@ -2370,18 +2170,11 @@ textarea.pdp-field {
         height: 64px;
     }
 
-    .pdp-reviews-head {
-        grid-template-columns: minmax(0, 1fr);
-        gap: 18px;
-        padding: 18px;
-    }
-
     .pdp-section {
         margin-top: 40px;
     }
 
     /* 16px stops iOS zooming the page in when a field takes focus. */
-    .pdp-field,
     .pdp-stepper input,
     .acct-field .of-input,
     .acct-field input,
@@ -2435,9 +2228,6 @@ textarea.pdp-field {
         opacity: 0;
     }
 
-    .pdp-star-input span:hover {
-        transform: none;
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2458,7 +2248,6 @@ textarea.pdp-field {
     .pdp-buttons,
     .pdp-sticky,
     .pdp-share,
-    .pdp-review-form,
     .cart-note,
     .announce {
         display: none !important;

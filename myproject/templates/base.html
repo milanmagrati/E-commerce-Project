@@ -1798,6 +1798,9 @@
                         <li class="{% if 'product-theme' in request.path %}active{% endif %}">
                             <a href="{% url 'product_theme_setup' %}"><i class="fas fa-palette me-1"></i> Product Page Theme</a>
                         </li>
+                        <li class="{% if 'store-labels' in request.path %}active{% endif %}">
+                            <a href="{% url 'store_label_setup' %}"><i class="fas fa-font me-1"></i> Store Button Labels</a>
+                        </li>
                         <li class="{% if 'setup/invoice' in request.path %}active{% endif %}">
                             <a href="{% url 'invoice_customizer' %}"><i class="fas fa-file-invoice me-1"></i> Invoice Customizer</a>
                         </li>

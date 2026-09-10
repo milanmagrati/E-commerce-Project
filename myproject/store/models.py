@@ -1050,3 +1050,54 @@ class ThemeMedia(models.Model):
         if size >= 1024:
             return '%d KB' % (size // 1024)
         return '%d B' % size
+
+
+# ============================================================================
+#  STOREFRONT BUTTON LABELS  (Setup → Store Button Labels)
+# ============================================================================
+#  Every word printed on a storefront button, in whatever language the shop
+#  wants it — Nepali, English, or both on one button. One row, every column
+#  blank by default, and a blank column means "use the wording that ships".
+#  That is the whole rule, and `store/labels.py` is the only place it is
+#  applied: templates read `store_labels.<key>`, never this model.
+# ============================================================================
+
+
+class StoreLabel(models.Model):
+    """Singleton holding the storefront's button wording.
+
+    Blank is not an empty button — it is the shipped default, resolved in
+    :mod:`store.labels`. That is deliberate: a button whose text an admin
+    cleared by accident would otherwise be an unlabelled rectangle on the
+    live shop, and nothing on the page would say why.
+    """
+
+    order_now = models.CharField(max_length=80, blank=True, default='')
+    add_to_cart = models.CharField(max_length=80, blank=True, default='')
+    sold_out = models.CharField(max_length=80, blank=True, default='')
+    save_for_later = models.CharField(max_length=80, blank=True, default='')
+    saved = models.CharField(max_length=80, blank=True, default='')
+
+    form_title = models.CharField(max_length=120, blank=True, default='')
+    form_subtitle = models.CharField(max_length=160, blank=True, default='')
+
+    confirm_title = models.CharField(max_length=80, blank=True, default='')
+    confirm_sub = models.CharField(max_length=120, blank=True, default='')
+    inquiry_title = models.CharField(max_length=80, blank=True, default='')
+    inquiry_sub = models.CharField(max_length=120, blank=True, default='')
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'store button label'
+        verbose_name_plural = 'store button labels'
+
+    def __str__(self):
+        return 'Store button labels'
+
+    @classmethod
+    def get_solo(cls):
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls.objects.create()
+        return obj

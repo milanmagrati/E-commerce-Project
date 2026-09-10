@@ -4,7 +4,15 @@
 {% comment %}
 Product page, laid out the way the reference storefront does it: media on the
 left, a sticky buy column on the right, and everything else — description,
-specifications, shipping, reviews — folded into accordions below.
+specifications, shipping — folded into accordions below.
+
+There are deliberately no reviews on this design: neither the star line under
+the title nor a review section, and so nothing posts to `store:add_review`
+from here. The view still counts and averages reviews because Theme 2 draws
+them, so removing them from the context would break the other page.
+
+Every word on a button comes from `store_labels` (Setup → Store Button
+Labels), never from a literal here — the shop prints them in Nepali.
 
 All the behaviour lives in store/js/product.js and is additive: with scripting
 off the gallery is still a swipeable row of every photo, the accordions render
@@ -35,7 +43,7 @@ open, and both the add-to-cart form and the order panel post normally.
 
                 <div class="pdp-media-flags">
                     {% if available_stock <= 0 %}
-                    <span class="pdp-flag is-out">Sold out</span>
+                    <span class="pdp-flag is-out">{{ store_labels.sold_out|default:"Sold out" }}</span>
                     {% elif not has_variations and available_stock <= product.low_stock_threshold %}
                     {# Skipped for variable products: the threshold belongs to the
                        product, while available_stock here is the best variation. #}
@@ -114,23 +122,16 @@ open, and both the add-to-cart form and the order panel post normally.
         <script type="application/json" data-in-cart-map>{{ in_cart_json|safe }}</script>
         {% endif %}
 
-            {% if product.category %}
-            <p class="pdp-vendor">{{ product.category.name }}</p>
-            {% endif %}
-
             <h1 class="pdp-title">{{ product.name }}</h1>
 
-            <div class="pdp-rating">
-                <span class="pdp-stars" aria-hidden="true">
-                    {% for i in "12345" %}<span class="{% if forloop.counter <= avg_rating %}on{% endif %}">&#9733;</span>{% endfor %}
-                </span>
-                {% if review_count %}
-                <a href="#reviews">{{ avg_rating }} · {{ review_count }} review{{ review_count|pluralize }}</a>
-                {% else %}
-                <a href="#write-review">No reviews yet — write the first</a>
-                {% endif %}
-            </div>
-
+            {% comment %}
+            Price and availability read as one line: the figure on the left,
+            the stock status pinned to the right of the same row. The status
+            keeps `data-stock-line` and nothing but `pdp-stock …` in its class
+            list, because product.js rewrites that class wholesale when an
+            option is picked — anything else added here would be wiped on the
+            first click.
+            {% endcomment %}
             <div class="pdp-price-row">
                 <span class="pdp-price-label" data-price-label>Regular price</span>
                 <span class="pdp-price" data-price-display>{% if has_variations %}{% product_price_display product %}{% else %}Rs. {{ product.price|floatformat:"-2" }}{% endif %}</span>
@@ -138,17 +139,17 @@ open, and both the add-to-cart form and the order panel post normally.
                      list price, struck through, beside the rate being paid. -->
                 <span class="pdp-price-was" data-price-was hidden></span>
                 <span class="pdp-price-unit">Inclusive of all taxes</span>
-            </div>
 
-            {% if has_variations %}
-            <p class="pdp-stock is-pending" data-stock-line>Availability depends on the option you pick</p>
-            {% elif available_stock > 0 %}
-            <p class="pdp-stock in" data-stock-line>In stock — {{ available_stock }} available</p>
-            {% elif product.backorders_allowed %}
-            <p class="pdp-stock in" data-stock-line>Available on backorder</p>
-            {% else %}
-            <p class="pdp-stock out" data-stock-line>Sold out</p>
-            {% endif %}
+                {% if has_variations %}
+                <span class="pdp-stock is-pending" data-stock-line>Choose an option</span>
+                {% elif available_stock > 0 %}
+                <span class="pdp-stock in" data-stock-line>In stock — {{ available_stock }} available</span>
+                {% elif product.backorders_allowed %}
+                <span class="pdp-stock in" data-stock-line>Available on backorder</span>
+                {% else %}
+                <span class="pdp-stock out" data-stock-line>{{ store_labels.sold_out|default:"Sold out" }}</span>
+                {% endif %}
+            </div>
 
             {% if has_variations %}
             <hr class="pdp-divider">
@@ -204,7 +205,7 @@ open, and both the add-to-cart form and the order panel post normally.
                             <span class="pdp-variant-card-bulk">{{ v.bulk_badge }}</span>
                             {% endif %}
                             <span class="pdp-variant-card-stock{% if v.in_stock and v.stock <= v.low_stock %} is-low{% endif %}{% if not v.in_stock %} is-out{% endif %}">
-                                {% if not v.in_stock %}Sold out
+                                {% if not v.in_stock %}{{ store_labels.sold_out|default:"Sold out" }}
                                 {% elif v.stock <= v.low_stock %}Only {{ v.stock }} left
                                 {% else %}In stock &mdash; {{ v.stock }}{% endif %}
                             </span>
@@ -305,14 +306,16 @@ open, and both the add-to-cart form and the order panel post normally.
                         <span class="pdp-btn-icon">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
                         </span>
-                        Add to cart
+                        {{ store_labels.add_to_cart|default:"Add to cart" }}
                     </button>
                 </form>
 
+                <!-- Wording from Setup → Store Button Labels, so the shop can
+                     print this in Nepali without touching a template. -->
                 <button type="button" class="pdp-btn pdp-btn-accent{% if has_variations %} is-awaiting{% endif %}"
                         data-open-order="confirmed" aria-expanded="false" aria-controls="order-panel"
                         {% if has_variations %}data-needs-variation aria-disabled="true"{% endif %}>
-                    Order Now
+                    {{ store_labels.order_now|default:"Order Now" }}
                 </button>
             </div>
             {% if has_variations %}
@@ -321,13 +324,17 @@ open, and both the add-to-cart form and the order panel post normally.
             <p class="pdp-variant-alert" data-variation-hint hidden role="status"></p>
             {% endif %}
 
+            <!-- Both wordings ride on the button, because product.js swaps
+                 them as the heart is toggled and cannot read the context. -->
             <button type="button" class="pdp-save{% if in_wishlist %} is-active{% endif %}"
-                    data-save="{{ product.id }}">
+                    data-save="{{ product.id }}"
+                    data-save-label="{{ store_labels.save_for_later|default:"Save for later" }}"
+                    data-saved-label="{{ store_labels.saved|default:"Saved" }}">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="{% if in_wishlist %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                <span data-save-text>{% if in_wishlist %}Saved{% else %}Save for later{% endif %}</span>
+                <span data-save-text>{% if in_wishlist %}{{ store_labels.saved|default:"Saved" }}{% else %}{{ store_labels.save_for_later|default:"Save for later" }}{% endif %}</span>
             </button>
 
-            <!-- The order form itself, collapsed until the Order Now button
+            <!-- The order form itself, collapsed until the accent button
                  above is used. of_compact drops its product strip and stepper:
                  both are already a few pixels above this point. -->
             <div class="pdp-order-slot" id="order-panel" data-order-slot>
@@ -341,7 +348,7 @@ open, and both the add-to-cart form and the order panel post normally.
 
             {% else %}
             <div class="pdp-buttons" data-buttons>
-                <button type="button" class="pdp-btn pdp-btn-solid" disabled>Sold out</button>
+                <button type="button" class="pdp-btn pdp-btn-solid" disabled>{{ store_labels.sold_out|default:"Sold out" }}</button>
             </div>
 
             <form class="pdp-restock" method="POST"
@@ -359,10 +366,14 @@ open, and both the add-to-cart form and the order panel post normally.
                 <p class="pdp-restock-msg" data-restock-msg hidden role="status"></p>
             </form>
 
+            <!-- Both wordings ride on the button, because product.js swaps
+                 them as the heart is toggled and cannot read the context. -->
             <button type="button" class="pdp-save{% if in_wishlist %} is-active{% endif %}"
-                    data-save="{{ product.id }}">
+                    data-save="{{ product.id }}"
+                    data-save-label="{{ store_labels.save_for_later|default:"Save for later" }}"
+                    data-saved-label="{{ store_labels.saved|default:"Saved" }}">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="{% if in_wishlist %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                <span data-save-text>{% if in_wishlist %}Saved{% else %}Save for later{% endif %}</span>
+                <span data-save-text>{% if in_wishlist %}{{ store_labels.saved|default:"Saved" }}{% else %}{{ store_labels.save_for_later|default:"Save for later" }}{% endif %}</span>
             </button>
             {% endif %}
 
@@ -419,7 +430,7 @@ open, and both the add-to-cart form and the order panel post normally.
                                 <tr><td>SKU</td><td>STR-{{ product.id|stringformat:"05d" }}</td></tr>
                                 {% if product.barcode %}<tr><td>Barcode</td><td>{{ product.barcode }}</td></tr>{% endif %}
                                 <tr><td>Product type</td><td>{{ product.get_product_type_display }}</td></tr>
-                                <tr><td>Availability</td><td>{% if available_stock > 0 %}In stock{% elif product.backorders_allowed %}On backorder{% else %}Sold out{% endif %}</td></tr>
+                                <tr><td>Availability</td><td>{% if available_stock > 0 %}In stock{% elif product.backorders_allowed %}On backorder{% else %}{{ store_labels.sold_out|default:"Sold out" }}{% endif %}</td></tr>
                             </table>
                         </div>
                     </div></div>
@@ -446,73 +457,6 @@ open, and both the add-to-cart form and the order panel post normally.
         </div>
     </div>
 
-    <!-- ═══════════════ Reviews ═══════════════ -->
-    <section class="pdp-section" id="reviews">
-        <h2 class="pdp-section-title">Customer reviews</h2>
-
-        <div class="pdp-reviews-head">
-            <div class="pdp-reviews-score">
-                <span class="num">{{ avg_rating }}</span>
-                <span class="of">out of 5</span>
-                <span class="pdp-stars" aria-hidden="true">
-                    {% for i in "12345" %}<span class="{% if forloop.counter <= avg_rating %}on{% endif %}">&#9733;</span>{% endfor %}
-                </span>
-                <span class="of">{{ review_count }} review{{ review_count|pluralize }}</span>
-            </div>
-            <div class="pdp-reviews-bars">
-                {% for rd in rating_dist %}
-                <div class="pdp-bar-row">
-                    <span>{{ rd.star }} &#9733;</span>
-                    <span class="pdp-bar-track"><span class="pdp-bar-fill" style="width: {{ rd.percent }}%"></span></span>
-                    <span class="pct">{{ rd.percent }}% ({{ rd.count }})</span>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-
-        <div class="pdp-review-list">
-            {% for review in reviews %}
-            <article class="pdp-review">
-                <div class="pdp-review-avatar" aria-hidden="true">{{ review.initial }}</div>
-                <div class="pdp-review-body">
-                    <div class="pdp-review-meta">
-                        <strong>{{ review.display_name }}</strong>
-                        <span class="pdp-stars" aria-label="{{ review.rating }} out of 5">
-                            {% for i in "12345" %}<span class="{% if forloop.counter <= review.rating %}on{% endif %}">&#9733;</span>{% endfor %}
-                        </span>
-                        <span class="pdp-review-date">{{ review.created_at|date:"M j, Y" }}</span>
-                    </div>
-                    {% if review.comment %}<p>{{ review.comment }}</p>{% endif %}
-                </div>
-            </article>
-            {% empty %}
-            <p class="pdp-review-empty">No reviews yet. Be the first to write one.</p>
-            {% endfor %}
-        </div>
-
-        <div class="pdp-review-form" id="write-review">
-            <h3>Write a review</h3>
-            {% if store_customer %}
-            <p class="hint">Posting as <strong>{{ store_customer.full_name }}</strong>.</p>
-            {% endif %}
-
-            <form method="POST" action="{% url 'store:add_review' product_id=product.id %}">
-                {% csrf_token %}
-                <div class="pdp-star-input" data-star-input data-value="5" role="radiogroup" aria-label="Rating">
-                    <span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span>
-                </div>
-                <input type="hidden" name="rating" value="5" data-star-value>
-                {% if not store_customer %}
-                <input type="text" name="guest_name" class="pdp-field" placeholder="Your name"
-                       autocomplete="name" required style="max-width:340px;">
-                {% endif %}
-                <textarea name="comment" class="pdp-field" rows="4"
-                          placeholder="Share your thoughts on this product…"></textarea>
-                <button type="submit" class="pdp-btn pdp-btn-solid" style="max-width:220px;">Submit review</button>
-            </form>
-        </div>
-    </section>
-
     <!-- ═══════════════ Related ═══════════════ -->
     {% if related_products %}
     <section class="pdp-section">
@@ -536,9 +480,9 @@ open, and both the add-to-cart form and the order panel post normally.
         <div class="pdp-sticky-price" data-sticky-price>{% if has_variations %}{% product_price_display product %}{% else %}Rs. {{ product.price|floatformat:"-2" }}{% endif %}</div>
     </div>
     {% if product.storefront_available %}
-    <button type="button" class="pdp-btn pdp-btn-solid" data-sticky-add>Add to cart</button>
+    <button type="button" class="pdp-btn pdp-btn-solid" data-sticky-add>{{ store_labels.add_to_cart|default:"Add to cart" }}</button>
     {% else %}
-    <button type="button" class="pdp-btn pdp-btn-solid" disabled>Sold out</button>
+    <button type="button" class="pdp-btn pdp-btn-solid" disabled>{{ store_labels.sold_out|default:"Sold out" }}</button>
     {% endif %}
 </div>
 

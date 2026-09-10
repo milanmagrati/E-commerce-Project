@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from dashboard.models import Category
+from store import labels as store_labels
 from store.customer_auth import get_customer
 from store.models import Cart, Wishlist, Page
 
@@ -69,4 +70,8 @@ def store_context(request):
         'store_cart_items': cart_items,
         'footer_pages': footer_pages,
         'store_delivery_intro': _delivery_intro(),
+        # Every word printed on a storefront button, from Setup → Store Button
+        # Labels. Cached, and blank columns already resolved to the shipped
+        # wording, so a template can print `store_labels.order_now` plainly.
+        'store_labels': store_labels.snapshot(),
     }

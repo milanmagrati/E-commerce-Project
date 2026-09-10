@@ -7,6 +7,7 @@ from . import delivery_charge_views
 from . import invoice_customizer_views
 from . import bulk_invoice_views
 from . import product_theme_views
+from . import store_label_views
 from . import page_views
 
 
@@ -280,6 +281,11 @@ urlpatterns = [
     path('setup/product-theme/<int:product_id>/', product_theme_views.product_theme_product_json, name='product_theme_product_json'),
     path('setup/product-theme/<int:product_id>/save/', product_theme_views.product_theme_product_save, name='product_theme_product_save'),
     path('setup/product-theme/<int:product_id>/reset/', product_theme_views.product_theme_product_reset, name='product_theme_product_reset'),
+
+    # ── Setup → Store Button Labels (wording on every storefront button) ──
+    path('setup/store-labels/', store_label_views.store_label_setup, name='store_label_setup'),
+    path('setup/store-labels/save/', store_label_views.store_label_save, name='store_label_save'),
+    path('setup/store-labels/reset/', store_label_views.store_label_reset, name='store_label_reset'),
 
     path('setup/invoice/', invoice_customizer_views.invoice_customizer, name='invoice_customizer'),
     path('setup/invoice/preview/', invoice_customizer_views.invoice_preview, name='invoice_preview'),

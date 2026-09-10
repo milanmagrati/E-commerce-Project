@@ -29,8 +29,8 @@ Context it expects:
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
         </span>
         <div class="of-head-text">
-            <h2 class="of-title">Fill the order form</h2>
-            <p class="of-subtitle">अर्डर / इन्क्वायरीको लागि फर्म भर्नुहोस्।</p>
+            <h2 class="of-title">{{ store_labels.form_title|default:"Fill the order form" }}</h2>
+            <p class="of-subtitle">{{ store_labels.form_subtitle|default:"अर्डर / इन्क्वायरीको लागि फर्म भर्नुहोस्।" }}</p>
         </div>
     </div>
 
@@ -97,7 +97,10 @@ Context it expects:
             </div>
 
             {% of_error of_form "phone" as err_phone %}
-            <div class="of-field{% if err_phone %} has-error{% endif %}" data-field="phone">
+            <!-- Full width since the email box beside it was dropped: a lone
+                 half-width input under a full-width one reads as a missing
+                 field rather than as a deliberate one. -->
+            <div class="of-field of-span-2{% if err_phone %} has-error{% endif %}" data-field="phone">
                 <label class="of-label" for="{{ of_id }}phone">Mobile number <span class="of-req">*</span></label>
                 <input class="of-input" type="tel" id="{{ of_id }}phone" name="phone" value="{% of_value of_form 'phone' %}"
                        placeholder="98XXXXXXXX" inputmode="numeric" maxlength="14"
@@ -106,13 +109,12 @@ Context it expects:
                 <span class="of-hint">कृपया सही मोबाइल नम्बर अंग्रेजीमा लेख्नुहोस्</span>
             </div>
 
-            {% of_error of_form "email" as err_email %}
-            <div class="of-field{% if err_email %} has-error{% endif %}" data-field="email">
-                <label class="of-label" for="{{ of_id }}email">Email <span class="of-optional">(optional)</span></label>
-                <input class="of-input" type="email" id="{{ of_id }}email" name="email" value="{% of_value of_form 'email' %}"
-                       placeholder="you@example.com" autocomplete="email">
-                <span class="of-error" data-error>{{ err_email }}</span>
-            </div>
+            {% comment %}
+            No email box. The shop reaches a buyer by phone and the field was
+            optional anyway, so `GuestOrderForm.email` simply arrives empty —
+            the field stays on the form so an order placed through any other
+            path (an account checkout, an import) can still carry one.
+            {% endcomment %}
 
             {% of_error of_form "district" as err_district %}
             <div class="of-field{% if err_district %} has-error{% endif %}" data-field="district">
@@ -248,8 +250,8 @@ Context it expects:
             <button type="submit" class="of-submit is-confirm" value="confirmed" data-submit="confirmed">
                 <span class="of-spinner" aria-hidden="true"></span>
                 <span class="of-submit-text">
-                    <span class="of-submit-title">Confirm Order</span>
-                    <span class="of-submit-sub">सामान लिने भएमा मात्र</span>
+                    <span class="of-submit-title">{{ store_labels.confirm_title|default:"Confirm Order" }}</span>
+                    <span class="of-submit-sub">{{ store_labels.confirm_sub|default:"सामान लिने भएमा मात्र" }}</span>
                 </span>
                 <span class="of-submit-arrow" aria-hidden="true">
                     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
@@ -258,8 +260,8 @@ Context it expects:
             <button type="submit" class="of-submit is-inquiry" value="inquiry" data-submit="inquiry">
                 <span class="of-spinner" aria-hidden="true"></span>
                 <span class="of-submit-text">
-                    <span class="of-submit-title">Inquiry Only</span>
-                    <span class="of-submit-sub">बुझ्नको लागि</span>
+                    <span class="of-submit-title">{{ store_labels.inquiry_title|default:"Inquiry Only" }}</span>
+                    <span class="of-submit-sub">{{ store_labels.inquiry_sub|default:"बुझ्नको लागि" }}</span>
                 </span>
                 <span class="of-submit-arrow" aria-hidden="true">
                     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
