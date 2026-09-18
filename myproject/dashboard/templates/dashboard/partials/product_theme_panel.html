@@ -1,0 +1,230 @@
+{% comment %}
+The storefront landing page, edited from the product form.
+
+This posts as part of the product's own add/edit form — same request, same
+submit button — so a shop owner writes the page while they are writing the
+product, not on a second screen afterwards. Everything here is optional: a
+blank box inherits the store-wide setting, and a panel where nothing at all is
+filled in deletes the product's override row rather than leaving an empty one
+behind.
+
+`pt_present` is what tells `save_product_theme()` this panel was on screen. A
+post without it leaves the product's landing page untouched, so no other form
+can blank it by omission.
+
+The panel arrives folded - the product form is long enough already, and most
+edits never touch the landing page. Clicking the orange header opens it, with
+every section inside open, and each section heading folds its own section.
+
+`is-folded` is only ever added by the script below, never rendered into the
+markup: if that script does not run, the panel is open and usable rather than a
+bar that nothing on the page can unfold.
+
+The folding is this file's own few lines of JavaScript rather than Bootstrap's
+collapse: a fold that stops working because a CDN script did not load is worse
+than no fold at all. Folding only hides, so a folded section still posts every
+one of its fields.
+{% endcomment %}
+
+<div class="card shadow-sm mb-4 pt-panel" id="landingPageCard">
+    <div class="card-header text-white d-flex justify-content-between align-items-center pt-panel-head"
+         style="background: linear-gradient(135deg, #E8590C, #C2410C);"
+         data-pt-panel-toggle role="button" tabindex="0"
+         aria-controls="landingPageBody" title="Show or hide the landing page settings">
+        <div class="pt-panel-id">
+            <i class="fas fa-chevron-down pt-caret" aria-hidden="true"></i>
+            <span class="pt-panel-badge"><i class="fas fa-palette" aria-hidden="true"></i></span>
+            <div class="pt-panel-txt">
+                <h5 class="pt-panel-title">Storefront Landing Page</h5>
+                <span class="pt-panel-sub">Optional — how this product looks on the shop's product page</span>
+            </div>
+        </div>
+        <div class="pt-panel-tools">
+            {% if user_permissions.is_administrator %}
+            {% comment %}
+            A link inside a clickable header: the handler ignores clicks that
+            land on a link, so this opens the setup screen rather than folding
+            the panel shut underneath it.
+            {% endcomment %}
+            <a href="{% url 'product_theme_setup' %}" target="_blank" rel="noopener"
+               class="pt-panel-link"><i class="fas fa-sliders-h" aria-hidden="true"></i> Store-wide settings</a>
+            {% endif %}
+            <span class="pt-panel-hint"><span data-pt-panel-label>Hide</span></span>
+        </div>
+    </div>
+
+    <div class="card-body pt-panel-body" id="landingPageBody">
+        <input type="hidden" name="pt_present" value="1">
+
+        <p class="pt-note">
+            <i class="fas fa-info-circle" aria-hidden="true"></i>
+            <span>
+                Every box below is optional. Leave one blank and this product uses the
+                store-wide setting; fill it in and only this product changes.
+                {% if pt_has_row %}
+                <strong>This product currently has settings of its own.</strong>
+                {% endif %}
+            </span>
+        </p>
+
+        <div class="pt-sect pt-sect--fold">
+            <h3 class="pt-secthead" data-pt-sect-toggle role="button" tabindex="0"
+                aria-expanded="true">
+                <i class="fas fa-chevron-down pt-caret" aria-hidden="true"></i>
+                <span>Page design</span>
+                <span class="pt-secthint" data-pt-sect-hint>Hide</span>
+            </h3>
+            <div class="pt-sect-body">
+                <div class="pt-grid">
+                    <div class="pt-field">
+                        <label for="pt-form-layout">Product page design</label>
+                        <select id="pt-form-layout" name="pt_layout" data-pt-layout>
+                            {% for value, label in pt_layout_choices %}
+                            <option value="{{ value }}" {% if pt_layout == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <span class="pt-help">
+                            The store-wide design is <strong>{{ pt_global_layout }}</strong>.
+                            The blocks below are drawn by the conversion design only —
+                            the classic product page ignores them.
+                        </span>
+                    </div>
+                </div>
+                <p class="pt-help" data-pt-theme1-note hidden style="margin-top:.6rem;color:#B54708;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    This product is set to the classic product page, so nothing below
+                    will show on the storefront until you switch it to the conversion
+                    design. Your entries are still saved.
+                </p>
+            </div>
+        </div>
+
+        {% for group in pt_groups %}
+        {% comment %}
+        Sections are open. The panel above them is what folds by default; once
+        it is open, opening it again section by section would be two clicks to
+        reach anything.
+        {% endcomment %}
+        <div class="pt-sect pt-sect--fold">
+            <h3 class="pt-secthead" data-pt-sect-toggle role="button" tabindex="0"
+                aria-expanded="true">
+                <i class="fas fa-chevron-down pt-caret" aria-hidden="true"></i>
+                <span>{{ group.label }}</span>
+                {% if group.filled %}<span class="pt-sectdot" title="This section has settings"></span>{% endif %}
+                <span class="pt-secthint" data-pt-sect-hint>Hide</span>
+            </h3>
+            <div class="pt-sect-body">
+                <div class="pt-grid{% if group.key == 'media' or group.key == 'proof' or group.key == 'teach' %} is-wide{% endif %}">
+                    {% for field in group.fields %}
+                    <div class="pt-field">
+                        <label for="pt-form-{{ field.key }}">{{ field.label }}</label>
+                        {% if field.widget == 'repeater' %}
+                        <textarea id="pt-form-{{ field.key }}" name="{{ field.name }}" rows="{{ field.rows }}"
+                                  data-pt-repeater="{{ field.spec }}">{{ field.value }}</textarea>
+                        {% elif field.widget == 'image' %}
+                        <input type="text" id="pt-form-{{ field.key }}" name="{{ field.name }}"
+                               value="{{ field.value }}" data-pt-media="image"
+                               placeholder="{% if field.inherited %}Store-wide: {{ field.inherited }}{% else %}Upload, or paste a URL{% endif %}">
+                        {% elif field.widget == 'textarea' %}
+                        <textarea id="pt-form-{{ field.key }}" name="{{ field.name }}" rows="{{ field.rows }}"
+                                  placeholder="{% if field.inherited %}Store-wide: {{ field.inherited }}{% endif %}">{{ field.value }}</textarea>
+                        {% else %}
+                        <input type="text" id="pt-form-{{ field.key }}" name="{{ field.name }}"
+                               value="{{ field.value }}"
+                               placeholder="{% if field.inherited %}Store-wide: {{ field.inherited }}{% endif %}">
+                        {% endif %}
+                        {% if field.help %}<span class="pt-help">{{ field.help }}</span>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    var card = document.getElementById('landingPageCard');
+    if (!card) return;
+
+    /* -- the whole panel ------------------------------------------------ */
+    var head = card.querySelector('[data-pt-panel-toggle]');
+    var body = document.getElementById('landingPageBody');
+    var label = card.querySelector('[data-pt-panel-label]');
+
+    function paintPanel() {
+        var folded = body.classList.contains('is-folded');
+        head.classList.toggle('is-folded', folded);
+        head.setAttribute('aria-expanded', folded ? 'false' : 'true');
+        if (label) label.textContent = folded ? 'Show' : 'Hide';
+    }
+
+    function togglePanel(event) {
+        // The header carries a real link. A click on it must follow the link,
+        // not fold the panel shut underneath the pointer.
+        if (event && event.target && event.target.closest
+            && event.target.closest('a')) return;
+        body.classList.toggle('is-folded');
+        paintPanel();
+    }
+
+    head.addEventListener('click', togglePanel);
+    head.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            togglePanel(event);
+        }
+    });
+    // Folded on arrival. Done here rather than in the markup so that the
+    // fold is something this script owns entirely - see the note at the top.
+    body.classList.add('is-folded');
+    paintPanel();
+
+    /* -- one section ---------------------------------------------------- */
+    Array.prototype.forEach.call(
+        card.querySelectorAll('[data-pt-sect-toggle]'),
+        function (heading) {
+            var section = heading.nextElementSibling;
+            if (!section) return;
+
+            var hint = heading.querySelector('[data-pt-sect-hint]');
+
+            function paint(folded) {
+                section.classList.toggle('is-folded', folded);
+                heading.classList.toggle('is-folded', folded);
+                heading.setAttribute('aria-expanded', folded ? 'false' : 'true');
+                if (hint) hint.textContent = folded ? 'Show' : 'Hide';
+            }
+
+            function toggle() {
+                paint(!section.classList.contains('is-folded'));
+            }
+
+            paint(section.classList.contains('is-folded'));
+            heading.addEventListener('click', toggle);
+            heading.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    toggle();
+                }
+            });
+        });
+
+    /* -- say plainly when these blocks will not be drawn ----------------- */
+    var select = card.querySelector('[data-pt-layout]');
+    var note = card.querySelector('[data-pt-theme1-note]');
+    if (!select || !note) return;
+
+    var globalIsTheme2 = {% if pt_global_is_theme2 %}true{% else %}false{% endif %};
+
+    function syncNote() {
+        var chosen = select.value || (globalIsTheme2 ? 'theme2' : 'theme1');
+        note.hidden = chosen === 'theme2';
+    }
+    select.addEventListener('change', syncNote);
+    syncNote();
+})();
+</script>

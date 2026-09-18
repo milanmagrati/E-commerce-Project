@@ -1,0 +1,269 @@
+{% extends 'base.html' %}
+{% block title %}{{ resource.title }} - Resources{% endblock %}
+
+{% block extra_css %}
+<style>
+    .det-header {
+        background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 55%, #8b5cf6 100%);
+        border-radius: 16px; padding: 1.75rem 2rem; color: #fff;
+        margin-bottom: 1.5rem; position: relative; overflow: hidden;
+    }
+    .det-header-back {
+        background: rgba(255,255,255,.2); backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,.3); color: #fff;
+        width: 40px; height: 40px; border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        text-decoration: none; transition: all .3s; flex-shrink: 0;
+    }
+    .det-header-back:hover { background: rgba(255,255,255,.35); color: #fff; transform: translateY(-2px); }
+    .det-topic-label { font-size: .74rem; font-weight: 800; letter-spacing: .6px; opacity: .85; margin-bottom: .15rem; }
+    .det-title { font-weight: 700; margin: 0; }
+    .det-subtitle { font-size: .86rem; opacity: .88; margin-top: .3rem; }
+    .det-meta { font-size: .8rem; opacity: .85; margin-top: .45rem; }
+    .det-actions { display: flex; gap: .5rem; }
+    .det-action-btn {
+        background: rgba(255,255,255,.2); backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,.3); color: #fff;
+        padding: .5rem 1rem; border-radius: 10px; font-weight: 600; font-size: .85rem;
+        text-decoration: none; transition: all .25s; display: inline-flex; align-items: center; gap: .4rem;
+        cursor: pointer;
+    }
+    .det-action-btn:hover { background: rgba(255,255,255,.35); color: #fff; }
+    .det-action-btn.danger:hover { background: rgba(220,38,38,.85); }
+
+    .content-card {
+        background: #fff; border-radius: 16px;
+        border: 1px solid #f1f5f9; box-shadow: 0 2px 8px rgba(0,0,0,.04);
+        padding: 2rem; margin-bottom: 1.5rem;
+    }
+    .content-body { font-size: .96rem; color: #334155; line-height: 1.7; }
+    .content-body img { max-width: 100%; border-radius: 10px; }
+    .content-body p:last-child { margin-bottom: 0; }
+    .content-body ol { counter-reset: step; list-style: none; padding-left: 0; margin: 0 0 1rem; }
+    .content-body ol > li { counter-increment: step; position: relative; padding-left: 2.6rem; margin-bottom: .9rem; }
+    .content-body ol > li::before {
+        content: counter(step); position: absolute; left: 0; top: -2px;
+        width: 1.8rem; height: 1.8rem; border-radius: 50%;
+        background: #3b82f6; color: #fff; font-weight: 700; font-size: .82rem;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .content-body ul { padding-left: 1.4rem; margin-bottom: 1rem; }
+
+    .notes-heading, .attachments-heading {
+        font-size: .8rem; font-weight: 800; color: #475569;
+        text-transform: uppercase; letter-spacing: .5px; margin-bottom: .75rem;
+    }
+    .notes-box {
+        background: #fef9e7; border: 1px solid #fbe9b0; border-radius: 12px;
+        padding: 1rem 1.25rem; font-size: .9rem; color: #78560c; line-height: 1.65;
+    }
+    .notes-box::before { content: '💡 '; }
+    .no-material { font-style: italic; color: #94a3b8; font-size: .88rem; }
+
+    .attachment-block {
+        background: #fff; border-radius: 16px;
+        border: 1px solid #f1f5f9; box-shadow: 0 2px 8px rgba(0,0,0,.04);
+        padding: 1.25rem 1.5rem; margin-bottom: 1.25rem;
+    }
+    .attachment-block-header {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: .9rem; gap: .75rem; flex-wrap: wrap;
+    }
+    .attachment-title { display: flex; align-items: center; gap: .6rem; min-width: 0; }
+    .attachment-icon {
+        width: 38px; height: 38px; border-radius: 10px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1rem; flex-shrink: 0;
+    }
+    .ai-audio { background: #ecfeff; color: #0891b2; }
+    .ai-video { background: #fdf4ff; color: #a21caf; }
+    .ai-pdf   { background: #fef2f2; color: #dc2626; }
+    .ai-other { background: #f1f5f9; color: #64748b; }
+    .attachment-name { font-weight: 700; font-size: .9rem; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .attachment-sub { font-size: .74rem; color: #94a3b8; }
+    .attachment-download {
+        background: #f1f5f9; color: #475569; border: none;
+        padding: .4rem .85rem; border-radius: 8px; font-size: .8rem; font-weight: 600;
+        text-decoration: none; display: inline-flex; align-items: center; gap: .4rem; transition: all .2s;
+    }
+    .attachment-download:hover { background: #e2e8f0; color: #334155; }
+
+    audio.res-player { width: 100%; }
+    video.res-player { width: 100%; max-height: 480px; border-radius: 12px; background: #000; }
+    .pdf-frame { width: 100%; height: 640px; border: 1px solid #e2e8f0; border-radius: 12px; }
+
+    .det-footer {
+        display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem;
+        background: #fff; border-radius: 16px; border: 1px solid #f1f5f9;
+        box-shadow: 0 2px 8px rgba(0,0,0,.04); padding: 1.1rem 1.5rem; margin-bottom: 1.5rem;
+    }
+    .det-footer-meta { font-size: .82rem; color: #94a3b8; }
+    .mark-read-btn {
+        border: none; background: #eef2ff; color: #4338ca; font-weight: 700; font-size: .85rem;
+        padding: .55rem 1.3rem; border-radius: 20px; cursor: pointer; transition: all .2s;
+        display: inline-flex; align-items: center; gap: .45rem;
+    }
+    .mark-read-btn:hover { background: #e0e7ff; }
+    .mark-read-btn.is-read { background: #d1fae5; color: #065f46; }
+    .mark-read-btn.is-read:hover { background: #a7f3d0; }
+
+    .author-panel {
+        background: #fff; border-radius: 16px; border: 1px solid #f1f5f9;
+        box-shadow: 0 2px 8px rgba(0,0,0,.04); padding: 1.25rem 1.5rem;
+        display: flex; align-items: center; gap: .85rem;
+    }
+    .author-avatar-lg {
+        width: 44px; height: 44px; border-radius: 50%;
+        background: linear-gradient(135deg, #0ea5e9, #6366f1);
+        color: #fff; font-weight: 700; font-size: 1rem;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="det-header">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div class="d-flex align-items-start gap-3">
+            <a href="{% url 'resources:list' %}{% if resource.topic %}?topic={{ resource.topic.id }}{% endif %}" class="det-header-back"><i class="fas fa-arrow-left"></i></a>
+            <div>
+                <div class="det-topic-label">{% if resource.topic %}{{ resource.topic.name|upper }}{% else %}GENERAL{% endif %}</div>
+                <h3 class="det-title">{{ resource.title }}</h3>
+                {% if resource.subtitle %}<div class="det-subtitle">{{ resource.subtitle }}</div>{% endif %}
+                <div class="det-meta">
+                    <i class="fas fa-user me-1"></i>{{ resource.created_by.get_full_name|default:resource.created_by.username|default:"Unknown" }}
+                    &nbsp;·&nbsp;<i class="fas fa-calendar me-1"></i>{{ resource.created_at|date:"M d, Y" }}
+                    {% if resource.file_count %}&nbsp;·&nbsp;<i class="fas fa-paperclip me-1"></i>{{ resource.file_count }} attachment{{ resource.file_count|pluralize }}{% endif %}
+                </div>
+            </div>
+        </div>
+        {% if can_manage %}
+        <div class="det-actions">
+            <a href="{% url 'resources:edit' resource.pk %}" class="det-action-btn"><i class="fas fa-pen"></i> Edit</a>
+            <button type="button" class="det-action-btn danger" onclick="confirmDeleteResource()"><i class="fas fa-trash"></i> Delete</button>
+        </div>
+        <form id="deleteResourceForm" method="POST" action="{% url 'resources:delete' resource.pk %}" style="display:none;">
+            {% csrf_token %}
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+{% if messages %}
+<div class="mb-3">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show border-0" style="border-radius:12px;">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if resource.content %}
+<div class="content-card">
+    <div class="content-body">{{ resource.content|safe }}</div>
+</div>
+{% endif %}
+
+{% if resource.notes %}
+<div class="content-card">
+    <div class="notes-heading">Notes</div>
+    <div class="notes-box">{{ resource.notes|safe }}</div>
+</div>
+{% endif %}
+
+<div class="content-card">
+    <div class="attachments-heading">Training Material</div>
+    {% if resource.files.all %}
+        {% for f in resource.files.all %}
+        <div class="attachment-block">
+            <div class="attachment-block-header">
+                <div class="attachment-title">
+                    <div class="attachment-icon ai-{{ f.file_type }}">
+                        {% if f.file_type == 'audio' %}<i class="fas fa-headphones"></i>
+                        {% elif f.file_type == 'video' %}<i class="fas fa-film"></i>
+                        {% elif f.file_type == 'pdf' %}<i class="fas fa-file-pdf"></i>
+                        {% else %}<i class="fas fa-file"></i>{% endif %}
+                    </div>
+                    <div style="min-width:0;">
+                        <div class="attachment-name">{{ f.original_name }}</div>
+                        <div class="attachment-sub">{{ f.display_size }} &middot; uploaded {{ f.uploaded_at|date:"M d, Y" }}</div>
+                    </div>
+                </div>
+                <a href="{{ f.file.url }}" download="{{ f.original_name }}" class="attachment-download">
+                    <i class="fas fa-download"></i> Download
+                </a>
+            </div>
+
+            {% if f.file_type == 'audio' %}
+            <audio class="res-player" controls preload="metadata"><source src="{{ f.file.url }}"></audio>
+            {% elif f.file_type == 'video' %}
+            <video class="res-player" controls preload="metadata"><source src="{{ f.file.url }}"></video>
+            {% elif f.file_type == 'pdf' %}
+            <iframe class="pdf-frame" src="{{ f.file.url }}" title="{{ f.original_name }}"></iframe>
+            {% endif %}
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="no-material">No material attached yet.</div>
+    {% endif %}
+</div>
+
+<div class="det-footer">
+    <div class="det-footer-meta">
+        <strong>{{ resource.version|default:"v1.0" }}</strong> &middot; Updated {{ resource.updated_at|date:"M d, Y" }}
+    </div>
+    <button type="button" class="mark-read-btn {% if is_read %}is-read{% endif %}" id="markReadBtn" onclick="toggleRead({{ resource.pk }}, this)">
+        {% if is_read %}<i class="fas fa-check"></i> Read{% else %}Mark as read{% endif %}
+    </button>
+</div>
+
+<div class="author-panel">
+    <div class="author-avatar-lg">{{ resource.created_by.username|default:"?"|slice:":1"|upper }}</div>
+    <div>
+        <div style="font-weight:700;color:#1e293b;font-size:.9rem;">{{ resource.created_by.get_full_name|default:resource.created_by.username|default:"Unknown" }}</div>
+        <div style="font-size:.78rem;color:#94a3b8;">Published this article on {{ resource.created_at|date:"F d, Y" }}{% if resource.updated_at != resource.created_at %} &middot; last updated {{ resource.updated_at|date:"M d, Y" }}{% endif %}</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function getCookie(name) {
+        let v = null;
+        document.cookie.split(';').forEach(c => {
+            c = c.trim();
+            if (c.startsWith(name + '=')) v = decodeURIComponent(c.slice(name.length + 1));
+        });
+        return v;
+    }
+
+    function toggleRead(resourceId, btn) {
+        btn.disabled = true;
+        fetch(`/resources/${resourceId}/mark-read/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            if (!data.success) return;
+            if (data.read) {
+                btn.classList.add('is-read');
+                btn.innerHTML = '<i class="fas fa-check"></i> Read';
+            } else {
+                btn.classList.remove('is-read');
+                btn.textContent = 'Mark as read';
+            }
+        })
+        .catch(() => { btn.disabled = false; });
+    }
+
+    function confirmDeleteResource() {
+        if (confirm('Delete this article and all its attachments? This cannot be undone.')) {
+            document.getElementById('deleteResourceForm').submit();
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% comment %}
+One labelled field on the account forms, with its error underneath.
+
+Usage: {% include "store/partials/acct_field.html" with field=form.email %}
+{% endcomment %}
+<div class="acct-field{% if field.errors %} has-error{% endif %}">
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% for error in field.errors %}
+    <span class="acct-error">{{ error }}</span>
+    {% endfor %}
+</div>

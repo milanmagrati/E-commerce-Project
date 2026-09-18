@@ -1,21 +1,27 @@
 {% load static %}
 
-<!-- Row 1: Top bar -->
-<div class="topbar">
-    <div class="container topbar-inner">
-        <div class="topbar-left">
-            <span class="topbar-promo">Free Shipping on orders over Rs.500!</span>
-        </div>
-        <div class="topbar-right">
-            <a href="#">Sell on Store</a>
-            <a href="#">Help</a>
-            {% if user.is_authenticated %}
-            <a href="{% url 'store:profile' %}">{{ user.first_name|default:user.username }}</a>
-            <form method="POST" action="{% url 'store:logout' %}" style="display:inline">{% csrf_token %}<button type="submit" class="topbar-logout-btn">Logout</button></form>
-            {% else %}
-            <a href="{% url 'store:login' %}">Login</a>
-            <a href="{% url 'store:register' %}">Register</a>
-            {% endif %}
+{% comment %}
+Announcement bar, as on the reference storefront: one line of copy centred
+across the width with the social links pinned to the right. The social icons
+drop away on a phone, where the message alone is worth the height.
+{% endcomment %}
+<div class="announce">
+    <div class="announce-inner">
+        <span class="announce-spacer"></span>
+        <p class="announce-msg">Welcome to our store — free delivery inside the valley on orders over Rs. 500</p>
+        <div class="announce-social">
+            <a href="https://www.facebook.com/" target="_blank" rel="noopener" aria-label="Facebook">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12h2.54V9.8c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56V12h2.78l-.45 2.89h-2.33v6.99A10 10 0 0 0 22 12z"/></svg>
+            </a>
+            <a href="https://www.instagram.com/" target="_blank" rel="noopener" aria-label="Instagram">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+            </a>
+            <a href="https://www.tiktok.com/" target="_blank" rel="noopener" aria-label="TikTok">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M16.6 5.82A4.28 4.28 0 0 1 15.54 3h-3.09v12.4a2.59 2.59 0 1 1-1.86-2.48V9.77a5.68 5.68 0 1 0 4.95 5.63V9.01a7.35 7.35 0 0 0 4.28 1.37V7.3a4.28 4.28 0 0 1-3.22-1.48z"/></svg>
+            </a>
+            <a href="https://www.youtube.com/" target="_blank" rel="noopener" aria-label="YouTube">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M23 12s0-3.2-.4-4.74a2.5 2.5 0 0 0-1.76-1.77C19.3 5.09 12 5.09 12 5.09s-7.3 0-8.84.4A2.5 2.5 0 0 0 1.4 7.26C1 8.8 1 12 1 12s0 3.2.4 4.74a2.5 2.5 0 0 0 1.76 1.77c1.54.4 8.84.4 8.84.4s7.3 0 8.84-.4a2.5 2.5 0 0 0 1.76-1.77C23 15.2 23 12 23 12zM9.75 15.02V8.98L15.5 12l-5.75 3.02z"/></svg>
+            </a>
         </div>
     </div>
 </div>
@@ -61,18 +67,43 @@
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
                 <span class="badge cart-badge" id="cartBadge">{{ store_cart_count }}</span>
             </a>
-            {% if user.is_authenticated %}
-            <div class="nav-account-dropdown">
-                <button class="nav-icon-link account-btn">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <a href="{% url 'store:order_track' %}" class="nav-icon-link" title="Track your order">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16h2a1 1 0 0 0 1-1v-4l-2.5-3H16"/><path d="M1 5h13v11H1z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="16.5" cy="18.5" r="2"/></svg>
+            </a>
+
+            {% comment %}
+            Log in / account, in the same slot the reference storefront uses.
+            Signing in is optional: it saves retyping delivery details and keeps
+            order history together, but nothing on the shop demands an account.
+            {% endcomment %}
+            {% if store_customer %}
+            <div class="nav-account" data-account-menu>
+                <button type="button" class="nav-account-btn" data-account-toggle
+                        aria-expanded="false" aria-haspopup="true">
+                    <span class="nav-account-avatar" aria-hidden="true">{{ store_customer.initial }}</span>
+                    <span class="nav-account-name">{{ store_customer.first_name }}</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
-                <div class="account-dropdown-menu">
-                    <a href="{% url 'store:profile' %}">My Profile</a>
-                    <a href="{% url 'store:order_list' %}">My Orders</a>
-                    <a href="{% url 'store:wishlist' %}">My Wishlist</a>
-                    <form method="POST" action="{% url 'store:logout' %}">{% csrf_token %}<button type="submit" class="dropdown-logout-btn">Logout</button></form>
+                <div class="nav-account-menu">
+                    <div class="nav-account-menu-head">
+                        <strong>{{ store_customer.full_name }}</strong>
+                        <span>{{ store_customer.email }}</span>
+                    </div>
+                    <a href="{% url 'store:account' %}">My account</a>
+                    <a href="{% url 'store:account' %}#orders">My orders</a>
+                    <a href="{% url 'store:wishlist' %}">Saved products</a>
+                    <form method="POST" action="{% url 'store:account_logout' %}">
+                        {% csrf_token %}
+                        <button type="submit">Log out</button>
+                    </form>
                 </div>
             </div>
+            {% else %}
+            <a href="{% url 'store:account_login' %}?next={{ request.get_full_path|urlencode }}"
+               class="nav-account-btn" title="Log in">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <span class="nav-account-name">Log in</span>
+            </a>
             {% endif %}
         </div>
 
@@ -92,13 +123,16 @@
         <a href="{% url 'store:product_list' %}">All Products</a>
         <a href="{% url 'store:cart' %}">Cart ({{ store_cart_count }})</a>
         <a href="{% url 'store:wishlist' %}">Wishlist</a>
-        {% if user.is_authenticated %}
-        <a href="{% url 'store:profile' %}">Profile</a>
-        <a href="{% url 'store:order_list' %}">Orders</a>
-        <form method="POST" action="{% url 'store:logout' %}">{% csrf_token %}<button type="submit" class="mobile-logout-btn">Logout</button></form>
+        <a href="{% url 'store:order_track' %}">Track Order</a>
+        {% if store_customer %}
+        <a href="{% url 'store:account' %}">My Account</a>
+        <form method="POST" action="{% url 'store:account_logout' %}">
+            {% csrf_token %}
+            <button type="submit" style="background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;">Log out</button>
+        </form>
         {% else %}
-        <a href="{% url 'store:login' %}">Login</a>
-        <a href="{% url 'store:register' %}">Register</a>
+        <a href="{% url 'store:account_login' %}">Log in</a>
+        <a href="{% url 'store:account_register' %}">Create account</a>
         {% endif %}
         <div class="mobile-categories">
             {% for cat in store_all_categories %}

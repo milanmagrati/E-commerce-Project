@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load dashboard_extras %}
-{% block title %}Redirect Orders - Admin Panel{% endblock %}
+{% block title %}Redirect Orders - {{ COMPANY_NAME }}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -102,6 +102,20 @@
         font-size: 0.9rem;
         letter-spacing: 0.5px;
         text-transform: uppercase;
+    }
+
+    .table th.sortable {
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+    }
+
+    .table th.sortable:hover {
+        background-color: #eef1f5;
+    }
+
+    .table th.sortable i {
+        margin-left: 4px;
     }
 
     .table td {
@@ -229,6 +243,53 @@
     .od-field-value {
         font-size: 1rem;
         color: #2c3e50;
+        /* Break only when a word genuinely cannot fit — never mid-word per character */
+        overflow-wrap: break-word;
+        word-break: normal;
+    }
+
+    /* Old-customer snapshot inside each redirection history entry */
+    .min-w-0 {
+        min-width: 0;
+    }
+
+    .od-history-old {
+        background: #fffbeb;
+        border-left: 3px solid #f59e0b;
+        border-radius: 6px;
+        padding: 0.6rem 0.75rem;
+    }
+
+    .od-history-old-title {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #b45309;
+        margin-bottom: 0.4rem;
+    }
+
+    .od-history-old-grid {
+        display: grid;
+        /* Label column hugs its text; the value column absorbs the rest, so a
+           narrow container shortens lines instead of breaking words per letter */
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 0.3rem 0.75rem;
+        font-size: 0.85rem;
+    }
+
+    .od-history-old-grid dt {
+        font-weight: 600;
+        color: #7c2d12;
+        margin: 0;
+        white-space: nowrap;
+    }
+
+    .od-history-old-grid dd {
+        margin: 0;
+        color: #4b5563;
+        overflow-wrap: break-word;
+        word-break: normal;
     }
 
     .od-section {
@@ -437,10 +498,27 @@
                 </select>
             </div>
             <div class="col-lg-2 col-md-3">
+                <label class="form-label small text-muted mb-1">Redirect Date</label>
+                <select name="date_range" class="form-select form-select-sm" id="dateRangeSelect"
+                    onchange="toggleCustomDate()">
+                    <option value="" {% if not date_filter %}selected{% endif %}>All Time</option>
+                    <option value="today" {% if date_filter == 'today' %}selected{% endif %}>Today</option>
+                    <option value="yesterday" {% if date_filter == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                    <option value="last_7_days" {% if date_filter == 'last_7_days' %}selected{% endif %}>Last 7 Days</option>
+                    <option value="last_30_days" {% if date_filter == 'last_30_days' %}selected{% endif %}>Last 30 Days</option>
+                    <option value="this_month" {% if date_filter == 'this_month' %}selected{% endif %}>This Month</option>
+                    <option value="last_month" {% if date_filter == 'last_month' %}selected{% endif %}>Last Month</option>
+                    <option value="this_year" {% if date_filter == 'this_year' %}selected{% endif %}>This Year</option>
+                    <option value="custom" {% if date_filter == 'custom' %}selected{% endif %}>Custom Range…</option>
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-3" id="customDateStart"
+                style="display: {% if date_filter == 'custom' %}block{% else %}none{% endif %};">
                 <label class="form-label small text-muted mb-1">Start Date</label>
                 <input type="date" class="form-control form-control-sm" name="start_date" value="{{ start_date }}">
             </div>
-            <div class="col-lg-2 col-md-3">
+            <div class="col-lg-2 col-md-3" id="customDateEnd"
+                style="display: {% if date_filter == 'custom' %}block{% else %}none{% endif %};">
                 <label class="form-label small text-muted mb-1">End Date</label>
                 <input type="date" class="form-control form-control-sm" name="end_date" value="{{ end_date }}">
             </div>
@@ -454,15 +532,35 @@
             </div>
             <div class="col-lg-2 col-md-2 d-flex justify-content-end">
                 <input type="hidden" name="per_page" value="{{ per_page }}" id="perPageHidden">
+                <input type="hidden" name="sort_by" value="{{ sort_by }}" id="sortByHidden">
                 <label class="form-label small text-muted mb-1 me-2">Per page:</label>
                 <select class="form-select form-select-sm" style="width: auto; min-width: 70px;"
                     onchange="changePerPage(this.value)">
                     <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
                     <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
                     <option value="200" {% if per_page == '200' %}selected{% endif %}>200</option>
+                    <option value="500" {% if per_page == '500' %}selected{% endif %}>500</option>
                 </select>
             </div>
         </form>
+        {% if date_filter or start_date or end_date %}
+        <div class="mt-2">
+            <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                <i class="fas fa-calendar-check me-1"></i>
+                {% if date_filter == 'today' %}Today
+                {% elif date_filter == 'yesterday' %}Yesterday
+                {% elif date_filter == 'last_7_days' %}Last 7 Days
+                {% elif date_filter == 'last_30_days' %}Last 30 Days
+                {% elif date_filter == 'this_month' %}This Month
+                {% elif date_filter == 'last_month' %}Last Month
+                {% elif date_filter == 'this_year' %}This Year
+                {% elif start_date and end_date %}{{ start_date }} to {{ end_date }}
+                {% elif start_date %}From {{ start_date }}
+                {% elif end_date %}Through {{ end_date }}
+                {% endif %}
+            </span>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -476,15 +574,27 @@
             <table class="table table-hover mb-0 redirect-table align-middle">
                 <thead class="table-light">
                     <tr>
-                    <th>Order #</th>
+                    <th class="sortable" onclick="applySort('order_number')" title="Sort by order number">Order #
+                        {% if sort_by == 'order_number_asc' %}<i class="fas fa-sort-up"></i>
+                        {% elif sort_by == 'order_number_desc' %}<i class="fas fa-sort-down"></i>
+                        {% else %}<i class="fas fa-sort text-muted opacity-50"></i>{% endif %}
+                    </th>
                     <th>Old Customer</th>
                     <th class="hide-md">Old Branch</th>
                     <th>New Customer</th>
                     <th class="hide-md">New Branch</th>
-                    <th class="hide-sm">Redirect Date</th>
+                    <th class="hide-sm sortable" onclick="applySort('redirect_date')" title="Sort by redirect date">Redirect Date
+                        {% if sort_by == 'redirect_date_asc' %}<i class="fas fa-sort-up"></i>
+                        {% elif sort_by == 'redirect_date_desc' %}<i class="fas fa-sort-down"></i>
+                        {% else %}<i class="fas fa-sort text-muted opacity-50"></i>{% endif %}
+                    </th>
                     <th class="hide-sm">Status</th>
                     <th class="hide-sm">By</th>
-                    <th class="text-center">Amount</th>
+                    <th class="text-center sortable" onclick="applySort('amount')" title="Sort by amount">Amount
+                        {% if sort_by == 'amount_asc' %}<i class="fas fa-sort-up"></i>
+                        {% elif sort_by == 'amount_desc' %}<i class="fas fa-sort-down"></i>
+                        {% else %}<i class="fas fa-sort text-muted opacity-50"></i>{% endif %}
+                    </th>
                     <th class="text-center">Actions</th>
                 </tr>
             </thead>
@@ -505,17 +615,28 @@
                         {% endif %}
                     </td>
                     <td>
+                        {% if entry.is_destination %}
+                        <span class="text-muted small fst-italic"
+                            title="This order was not redirected — it received the package redirected from {% if entry.redirect_source.order_number %}order #{{ entry.redirect_source.order_number }}{% elif entry.redirect_source.ncm_order_id %}NCM package #{{ entry.redirect_source.ncm_order_id }}{% else %}another order{% endif %}.">
+                            <i class="fas fa-arrow-right me-1"></i>Destination — customer unchanged
+                        </span>
+                        {% else %}
                         <div class="customer-badge old">
                             <div>
                                 <div class="customer-name">{{ entry.old_customer_info.name }}</div>
                                 <div class="customer-phone">{{ entry.old_customer_info.phone }}</div>
                             </div>
                         </div>
+                        {% endif %}
                     </td>
                     <td class="hide-md">
+                        {% if not entry.is_destination %}
                         <span class="badge bg-secondary text-white" title="{{ entry.old_customer_info.branch }}">
                             {{ entry.old_customer_info.branch|truncatechars:15 }}
                         </span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
                     </td>
                     <td>
                         <div class="customer-badge new">
@@ -542,7 +663,9 @@
                         </div>
                     </td>
                     <td class="hide-sm">
-                        {% if entry.is_pending %}
+                        {% if entry.is_destination %}
+                            <span class="badge bg-info text-dark"><i class="fas fa-arrow-right me-1"></i>Destination</span>
+                        {% elif entry.is_pending %}
                             <span class="badge bg-warning text-dark"><i class="fas fa-hourglass-half me-1"></i>Pending</span>
                         {% else %}
                             <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Redirected</span>
@@ -594,10 +717,10 @@
     <ul class="pagination justify-content-center">
         {% if orders_page.has_previous %}
         <li class="page-item"><a class="page-link"
-                href="?page=1&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i
+                href="?page=1&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&date_range={{ date_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&sort_by={{ sort_by }}&per_page={{ per_page }}"><i
                     class="fas fa-step-backward"></i></a></li>
         <li class="page-item"><a class="page-link"
-                href="?page={{ orders_page.previous_page_number }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i
+                href="?page={{ orders_page.previous_page_number }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&date_range={{ date_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&sort_by={{ sort_by }}&per_page={{ per_page }}"><i
                     class="fas fa-chevron-left"></i></a></li>
         {% endif %}
         {% for num in orders_page.paginator.page_range %}
@@ -605,16 +728,15 @@
         <li class="page-item active"><span class="page-link">{{ num }}</span></li>
         {% elif num > orders_page.number|add:'-3' and num < orders_page.number|add:'3' %} <li class="page-item"><a
                 class="page-link"
-                href="?page={{ num }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{
-                num }}</a></li>
+                href="?page={{ num }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&date_range={{ date_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&sort_by={{ sort_by }}&per_page={{ per_page }}">{{ num }}</a></li>
             {% endif %}
             {% endfor %}
             {% if orders_page.has_next %}
             <li class="page-item"><a class="page-link"
-                    href="?page={{ orders_page.next_page_number }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i
+                    href="?page={{ orders_page.next_page_number }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&date_range={{ date_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&sort_by={{ sort_by }}&per_page={{ per_page }}"><i
                         class="fas fa-chevron-right"></i></a></li>
             <li class="page-item"><a class="page-link"
-                    href="?page={{ orders_page.paginator.num_pages }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i
+                    href="?page={{ orders_page.paginator.num_pages }}&search={{ search_query|urlencode }}&branch={{ branch_filter }}&status={{ redirection_status }}&date_range={{ date_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&sort_by={{ sort_by }}&per_page={{ per_page }}"><i
                         class="fas fa-step-forward"></i></a></li>
             {% endif %}
     </ul>
@@ -685,16 +807,39 @@
                                     <div class="od-field-label">Items Count</div>
                                     <div class="od-field-value" id="od_items_count">—</div>
                                 </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Payment Status</div>
+                                    <div class="od-field-value text-capitalize" id="od_payment_status">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Delivery Type</div>
+                                    <div class="od-field-value" id="od_delivery_type">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">In / Out</div>
+                                    <div class="od-field-value" id="od_in_out">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Tracking Number</div>
+                                    <div class="od-field-value" id="od_tracking_number">—</div>
+                                </div>
                             </div>
                         </div>
                     </div>
 
+                    <!-- Destination-order notice -->
+                    <div class="od-section d-none" id="od_destination_section">
+                        <div class="od-section-body">
+                            <div class="alert alert-info mb-0" id="od_destination_note"></div>
+                        </div>
+                    </div>
+
                     <!-- Old Customer (Original) -->
-                    <div class="od-section">
+                    <div class="od-section" id="od_old_customer_section">
                         <div class="od-section-header"><i class="fas fa-user text-secondary me-2"></i>Original Customer
                             Details</div>
                         <div class="od-section-body">
-                            <div class="info-box">
+                            <div class="info-box" id="od_old_customer_box">
                                 <div class="row g-3">
                                     <div class="col-6 col-md-4">
                                         <div class="od-field-label">Name</div>
@@ -718,15 +863,19 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="alert alert-secondary mb-0 d-none" id="od_old_customer_empty">
+                                <i class="fas fa-info-circle me-2"></i>The original customer details were not
+                                recorded for this redirection.
+                            </div>
                         </div>
                     </div>
 
                     <!-- New Customer (Redirected) -->
                     <div class="od-section">
-                        <div class="od-section-header"><i class="fas fa-user text-success me-2"></i>Redirected To (New
-                            Customer)</div>
+                        <div class="od-section-header"><i class="fas fa-user text-success me-2"></i><span
+                                id="od_new_customer_heading">Redirected To (New Customer)</span></div>
                         <div class="od-section-body">
-                            <div class="info-box success">
+                            <div class="info-box success" id="od_new_customer_box">
                                 <div class="row g-3">
                                     <div class="col-6 col-md-4">
                                         <div class="od-field-label">Name</div>
@@ -745,11 +894,23 @@
                                         <div class="od-field-label">Branch / City</div>
                                         <div class="od-field-value" id="od_new_branch_city">—</div>
                                     </div>
+                                    <div class="col-6 col-md-4">
+                                        <div class="od-field-label">Landmark</div>
+                                        <div class="od-field-value" id="od_new_landmark">—</div>
+                                    </div>
                                     <div class="col-md-8">
                                         <div class="od-field-label">Shipping Address</div>
                                         <div class="od-field-value" id="od_new_shipping_address">—</div>
                                     </div>
                                 </div>
+                            </div>
+                            <div class="small text-muted mt-2 d-none" id="od_new_customer_recovered">
+                                <i class="fas fa-info-circle me-1"></i>Recovered from the redirection log — the order
+                                record itself no longer holds these details.
+                            </div>
+                            <div class="alert alert-secondary mb-0 d-none" id="od_new_customer_empty">
+                                <i class="fas fa-info-circle me-2"></i>No destination customer details are recorded for
+                                this order.
                             </div>
                         </div>
                     </div>
@@ -810,6 +971,14 @@
                                     <div class="od-field-value" id="od_tax_percent">—</div>
                                 </div>
                                 <div class="col-6 col-md-3">
+                                    <div class="od-field-label">Delivery Charge</div>
+                                    <div class="od-field-value" id="od_delivery_charge">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="od-field-label">COD Collected</div>
+                                    <div class="od-field-value" id="od_cod_collected">—</div>
+                                </div>
+                                <div class="col-6 col-md-3">
                                     <div class="od-field-label">Total Amount</div>
                                     <div class="od-field-value fw-bold text-success" id="od_total_amount_2">—</div>
                                 </div>
@@ -830,6 +999,9 @@
     </div>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
 <!-- ===================== JAVASCRIPT ===================== -->
 <script>
     function changePerPage(value) {
@@ -837,101 +1009,319 @@
         document.getElementById('filterForm').submit();
     }
 
-    function openOrderDetailModal(orderId) {
-        const modal = new bootstrap.Modal(document.getElementById('orderDetailModal'));
-        const odLoading = document.getElementById('odLoading');
-        const odContent = document.getElementById('odContent');
+    function toggleCustomDate() {
+        const dateRange = document.getElementById('dateRangeSelect').value;
+        const showCustom = dateRange === 'custom';
+        document.getElementById('customDateStart').style.display = showCustom ? 'block' : 'none';
+        document.getElementById('customDateEnd').style.display = showCustom ? 'block' : 'none';
+    }
 
-        // Show loading state
+    // Clicking a sortable header toggles asc/desc for that column (starting
+    // ascending) rather than requiring a separate direction control.
+    const SORT_TOGGLE_PAIRS = {
+        order_number: ['order_number_asc', 'order_number_desc'],
+        redirect_date: ['redirect_date_asc', 'redirect_date_desc'],
+        amount: ['amount_asc', 'amount_desc'],
+    };
+
+    function applySort(field) {
+        const [asc, desc] = SORT_TOGGLE_PAIRS[field];
+        const sortByHidden = document.getElementById('sortByHidden');
+        sortByHidden.value = sortByHidden.value === desc ? asc : desc;
+        document.getElementById('filterForm').submit();
+    }
+
+    // Identifies the newest in-flight request, so a slow response for a
+    // previously clicked order can't overwrite the one the user is looking at.
+    let odRequestToken = 0;
+
+    const OD_LOADING_HTML =
+        '<div class="spinner-border text-primary" style="width:3rem;height:3rem;">' +
+        '<span class="visually-hidden">Loading...</span></div>' +
+        '<p class="mt-3 text-muted">Fetching order details…</p>';
+
+    function odShowLoading(odLoading, odContent) {
+        // Rebuilt every time — the error branch replaces this markup, and without
+        // restoring it a single failure would leave the spinner gone for good.
+        odLoading.innerHTML = OD_LOADING_HTML;
         odLoading.style.display = 'block';
         odContent.style.display = 'none';
-        modal.show();
+    }
 
-        // Fetch order details
-        fetch(`/api/orders/${orderId}/get-redirect-details/`)
-            .then(response => response.json())
+    function odShowError(odLoading, message) {
+        odLoading.innerHTML =
+            '<div class="text-center py-5">' +
+            '<i class="fas fa-exclamation-triangle fa-2x text-danger mb-3"></i>' +
+            '<p class="text-danger mb-0">' + odEscape(message) + '</p></div>';
+        odLoading.style.display = 'block';
+    }
+
+    function openOrderDetailModal(orderId) {
+        const modalEl = document.getElementById('orderDetailModal');
+        const odLoading = document.getElementById('odLoading');
+        const odContent = document.getElementById('odContent');
+        const token = ++odRequestToken;
+
+        odShowLoading(odLoading, odContent);
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+        // Read the body even on 4xx/5xx — the API puts a useful message in it.
+        fetch(`/api/orders/${orderId}/get-redirect-details/`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        })
+            .then(response => response.json().catch(() => ({
+                success: false,
+                // Non-JSON body: either an error page, or a redirect to the login
+                // page after the session expired.
+                error: response.ok
+                    ? 'Your session may have expired — please reload the page and sign in again.'
+                    : `Server returned ${response.status} ${response.statusText}`.trim(),
+            })))
             .then(data => {
-                if (data.success) {
-                    populateOrderDetails(data.order);
+                if (token !== odRequestToken) return;  // superseded by a newer click
+                if (data && data.success) {
+                    // populateOrderDetails renders defensively section-by-section, but
+                    // guard the call anyway: a field we didn't anticipate must not
+                    // trade a mostly-populated modal for the generic error message —
+                    // show whatever rendered before the failure, not a blank error.
+                    try {
+                        populateOrderDetails(data.order);
+                    } catch (renderError) {
+                        console.error('Error rendering order details:', renderError);
+                    }
                     odLoading.style.display = 'none';
                     odContent.style.display = 'block';
                 } else {
-                    alert('Error loading order details');
-                    modal.hide();
+                    const reason = (data && (data.error || data.detail || data.message)) || 'Unknown error';
+                    odShowError(odLoading, 'Error loading order details: ' + reason);
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('Error loading order details');
-                modal.hide();
+                if (token !== odRequestToken) return;
+                odShowError(odLoading, 'Failed to load order details. Please try again.');
             });
     }
 
+    // Write a plain-text value into a field, falling back to an em dash when empty.
+    function odSetText(elementId, value) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        const text = (value === null || value === undefined) ? '' : String(value).trim();
+        el.textContent = text || '—';
+    }
+
+    // Escape user/API supplied text before it goes into an innerHTML template.
+    function odEscape(value) {
+        if (value === null || value === undefined) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function odMoney(value) {
+        return 'Rs.' + (value || '0');
+    }
+
+    // Renders `rows` into `container.innerHTML` via `renderFn`, one row per
+    // entry. A bad value anywhere in `rows` must not blank out modal sections
+    // that already rendered before this one, so failures degrade to
+    // `errorHtml` for this section only instead of bubbling up.
+    function odRenderList(container, rows, renderFn, emptyHtml, errorHtml, label) {
+        try {
+            container.innerHTML = rows.length > 0 ? rows.map(renderFn).join('') : emptyHtml;
+        } catch (error) {
+            console.error(`Error rendering ${label}:`, error);
+            container.innerHTML = errorHtml;
+        }
+    }
+
     function populateOrderDetails(order) {
+        order = order || {};
+        const items = order.items || [];
+        const history = order.redirect_history || [];
+
         // Overview
-        document.getElementById('od_order_number').textContent = order.order_number || '—';
-        document.getElementById('od_ncm_order_id').textContent = order.ncm_order_id ? '#' + order.ncm_order_id : '—';
-        document.getElementById('od_order_status').textContent = order.order_status || '—';
-        document.getElementById('od_total_amount').textContent = 'Rs.' + (order.total_amount || '0');
-        document.getElementById('od_total_amount_2').textContent = 'Rs.' + (order.total_amount || '0');
-        document.getElementById('od_created_at').textContent = formatDateTime(order.created_at);
-        document.getElementById('od_updated_at').textContent = formatDateTime(order.updated_at);
-        document.getElementById('od_items_count').textContent = (order.items || []).length + ' items';
-        document.getElementById('od_items_count_badge').textContent = (order.items || []).length;
+        odSetText('od_order_number', order.order_number);
+        odSetText('od_ncm_order_id', order.ncm_order_id ? '#' + order.ncm_order_id : '');
+        odSetText('od_order_status', order.order_status);
+        odSetText('od_total_amount', odMoney(order.total_amount));
+        odSetText('od_total_amount_2', odMoney(order.total_amount));
+        odSetText('od_created_at', order.created_at);
+        odSetText('od_updated_at', order.updated_at);
+        odSetText('od_items_count', items.length + ' items');
+        odSetText('od_payment_status', order.payment_status);
+        odSetText('od_delivery_type', order.delivery_type);
+        odSetText('od_in_out', order.in_out);
+        odSetText('od_tracking_number', order.tracking_number);
+        document.getElementById('od_items_count_badge').textContent = items.length;
 
-        // Badges
-        document.getElementById('od_order_badge').textContent = 'Order #' + order.order_number;
-        document.getElementById('od_status_badge').textContent = order.ncm_status || 'Processing';
-        document.getElementById('od_redirected_badge').textContent = 'Redirected';
+        // Badges — this page also lists orders that haven't been redirected yet,
+        // so don't claim "Redirected" unconditionally.
+        const isRedirected = history.length > 0
+            || (order.order_status || '').toLowerCase() === 'redirected'
+            || (order.ncm_status || '').toLowerCase() === 'redirected';
+        document.getElementById('od_order_badge').textContent = 'Order #' + (order.order_number || '');
+        document.getElementById('od_status_badge').textContent = order.ncm_status || order.order_status || 'Processing';
+        // A destination order received a redirected package; its own customer
+        // never changed, so it has no "before/after" to show.
+        const isDestination = !!order.is_redirect_destination;
+        const redirectedBadge = document.getElementById('od_redirected_badge');
+        redirectedBadge.textContent = isDestination
+            ? 'Redirect Destination'
+            : (isRedirected ? 'Redirected' : 'Not Redirected Yet');
+        redirectedBadge.className = 'badge ' + (isDestination
+            ? 'bg-info text-dark'
+            : (isRedirected ? 'bg-warning text-dark' : 'bg-secondary'));
 
-        // Old Customer (from metadata)
+        const source = order.redirect_source || {};
+        const sourceLabel = source.order_number
+            ? 'order #' + odEscape(source.order_number)
+            : (source.ncm_order_id ? 'NCM package #' + odEscape(source.ncm_order_id) : 'another order');
+        document.getElementById('od_destination_section').classList.toggle('d-none', !isDestination);
+        document.getElementById('od_destination_note').innerHTML =
+            '<i class="fas fa-arrow-right me-2"></i>This order did not move — it is the <strong>destination</strong> '
+            + 'of a redirection. ' + sourceLabel.charAt(0).toUpperCase() + sourceLabel.slice(1)
+            + ' was redirected to this customer, so the details below are unchanged.';
+        // Nothing changed about this order, so an "original customer" block
+        // would just repeat the customer shown below it.
+        document.getElementById('od_old_customer_section').classList.toggle('d-none', isDestination);
+        document.getElementById('od_new_customer_heading').textContent = isDestination
+            ? 'Customer (Unchanged)'
+            : 'Redirected To (New Customer)';
+
+        // Old Customer — the API normalizes every historical metadata key style
+        // down to name/phone/email/branch/address, so read those directly.
         const oldCustomer = order.old_customer_info || {};
-        document.getElementById('od_old_customer_name').textContent = oldCustomer.name || '—';
-        document.getElementById('od_old_customer_phone').textContent = oldCustomer.phone || '—';
-        document.getElementById('od_old_customer_email').textContent = oldCustomer.email || '—';
-        document.getElementById('od_old_branch_city').textContent = oldCustomer.branch || '—';
-        document.getElementById('od_old_shipping_address').textContent = oldCustomer.address || '—';
+        const hasOldCustomer = ['name', 'phone', 'email', 'branch', 'address']
+            .some(key => (oldCustomer[key] || '').toString().trim());
 
-        // New Customer (current)
-        document.getElementById('od_new_customer_name').textContent = order.customer_name || '—';
-        document.getElementById('od_new_customer_phone').textContent = order.customer_phone || '—';
-        document.getElementById('od_new_customer_email').textContent = order.customer_email || '—';
-        document.getElementById('od_new_branch_city').textContent = order.branch_city || '—';
-        document.getElementById('od_new_shipping_address').textContent = order.shipping_address || '—';
+        odSetText('od_old_customer_name', oldCustomer.name);
+        odSetText('od_old_customer_phone', oldCustomer.phone);
+        odSetText('od_old_customer_email', oldCustomer.email);
+        odSetText('od_old_branch_city', oldCustomer.branch);
+        odSetText('od_old_shipping_address', oldCustomer.address);
+        document.getElementById('od_old_customer_box').classList.toggle('d-none', !hasOldCustomer);
+        const oldEmpty = document.getElementById('od_old_customer_empty');
+        oldEmpty.classList.toggle('d-none', hasOldCustomer);
+        oldEmpty.innerHTML = '<i class="fas fa-info-circle me-2"></i>' + (isRedirected
+            ? 'The original customer details were not recorded for this redirection.'
+            : 'This order has not been redirected yet, so there are no original customer details to compare.');
+
+        // New Customer — the API resolves this block (order fields, then the
+        // linked customer/branch, then the redirect log) and returns it under
+        // new_customer_info. Fall back to the flat customer_* keys so a cached
+        // copy of an older API response still renders.
+        const newCustomer = order.new_customer_info || {
+            name: order.customer_name,
+            phone: order.customer_phone,
+            email: order.customer_email,
+            branch: order.branch_city,
+            landmark: order.landmark,
+            address: order.shipping_address,
+        };
+        const hasNewCustomer = ['name', 'phone', 'email', 'branch', 'landmark', 'address']
+            .some(key => (newCustomer[key] || '').toString().trim());
+
+        odSetText('od_new_customer_name', newCustomer.name);
+        odSetText('od_new_customer_phone', newCustomer.phone);
+        odSetText('od_new_customer_email', newCustomer.email);
+        odSetText('od_new_branch_city', newCustomer.branch || order.branch_name);
+        odSetText('od_new_landmark', newCustomer.landmark);
+        odSetText('od_new_shipping_address', newCustomer.address);
+        document.getElementById('od_new_customer_box').classList.toggle('d-none', !hasNewCustomer);
+        document.getElementById('od_new_customer_recovered')
+            .classList.toggle('d-none', !newCustomer.recovered_from_log);
+        const newEmpty = document.getElementById('od_new_customer_empty');
+        newEmpty.classList.toggle('d-none', hasNewCustomer);
+        newEmpty.innerHTML = '<i class="fas fa-info-circle me-2"></i>' + (isRedirected
+            ? 'No destination customer details are recorded for this order.'
+            : 'This order has not been redirected yet, so there is no destination customer.');
 
         // Redirection History
-        if (order.redirect_history) {
-            const historyHTML = order.redirect_history.map(log => `
+        odRenderList(
+            document.getElementById('od_redirect_history'),
+            history,
+            log => {
+                const oldInfo = log.old_customer || {};
+                const oldRows = [
+                    ['Name', oldInfo.name],
+                    ['Phone', oldInfo.phone],
+                    ['Email', oldInfo.email],
+                    ['Branch', oldInfo.branch],
+                    ['Address', oldInfo.address],
+                ].filter(([, value]) => (value || '').toString().trim());
+
+                const oldBlock = oldRows.length ? `
+                    <div class="od-history-old mt-2">
+                        <div class="od-history-old-title">
+                            <i class="fas fa-history me-1"></i>Details before this redirection
+                        </div>
+                        <dl class="od-history-old-grid mb-0">
+                            ${oldRows.map(([label, value]) => `
+                                <dt>${odEscape(label)}</dt>
+                                <dd>${odEscape(value)}</dd>
+                            `).join('')}
+                        </dl>
+                    </div>` : '';
+
+                // A 'destination' entry records that this order RECEIVED a
+                // redirected package — it was not itself redirected anywhere.
+                const isDestinationLog = log.role === 'destination';
+                const logSource = log.source || {};
+                const logSourceLabel = logSource.order_number
+                    ? ' from order #' + odEscape(logSource.order_number)
+                    : (logSource.ncm_order_id ? ' from NCM package #' + odEscape(logSource.ncm_order_id) : '');
+                const headline = isDestinationLog
+                    ? `Received a redirected package${logSourceLabel} — recorded by <strong>${odEscape(log.redirect_user || 'Unknown')}</strong>`
+                    : `Redirected by <strong>${odEscape(log.redirect_user || 'Unknown')}</strong>`;
+
+                return `
             <div class="alert alert-light border mb-2">
                 <div class="d-flex align-items-start gap-3">
-                    <i class="fas fa-arrow-right text-success mt-1"></i>
-                    <div class="flex-grow-1">
-                        <div class="fw-bold">Redirected by <strong>${log.redirect_user}</strong></div>
-                        <div class="small text-muted">${formatDateTime(log.redirect_timestamp)}</div>
-                        ${log.redirect_reason ? `<div class="mt-2 text-dark"><strong>Reason:</strong> ${log.redirect_reason}</div>` : ''}
+                    <i class="fas ${isDestinationLog ? 'fa-inbox text-info' : 'fa-arrow-right text-success'} mt-1"></i>
+                    <div class="flex-grow-1 min-w-0">
+                        <div class="fw-bold">${headline}</div>
+                        <div class="small text-muted">${odEscape(log.redirect_timestamp_display || formatDateTime(log.redirect_timestamp))}</div>
+                        ${log.redirect_reason ? `<div class="mt-2 text-dark">${odEscape(log.redirect_reason)}</div>` : ''}
+                        ${oldBlock}
                     </div>
                 </div>
-            </div>
-        `).join('');
-            document.getElementById('od_redirect_history').innerHTML = historyHTML;
-        }
+            </div>`;
+            },
+            '<div class="alert alert-secondary mb-0"><i class="fas fa-info-circle me-2"></i>No redirection history found for this order.</div>',
+            '<div class="alert alert-warning mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Could not display redirection history for this order.</div>',
+            'redirection history'
+        );
 
         // Items
-        const itemsHTML = (order.items || []).map((item, idx) => `
-        <tr>
-            <td class="ps-3">${idx + 1}</td>
-            <td>${item.product_name || '—'}</td>
-            <td class="text-center">${item.quantity}</td>
-            <td class="text-end">Rs.${parseFloat(item.price).toFixed(2)}</td>
-            <td class="text-end pe-3">Rs.${parseFloat(item.total).toFixed(2)}</td>
-        </tr>
-    `).join('');
-        document.getElementById('odItemsBody').innerHTML = itemsHTML;
+        odRenderList(
+            document.getElementById('odItemsBody'),
+            items,
+            (item, idx) => `
+            <tr>
+                <td class="ps-3">${idx + 1}</td>
+                <td>${odEscape(item.product_name) || '—'}</td>
+                <td class="text-center">${item.quantity || 0}</td>
+                <td class="text-end">Rs.${parseFloat(item.price || 0).toFixed(2)}</td>
+                <td class="text-end pe-3">Rs.${parseFloat(item.total || 0).toFixed(2)}</td>
+            </tr>
+        `,
+            '<tr><td colspan="5" class="text-center text-muted py-3">No items found</td></tr>',
+            '<tr><td colspan="5" class="text-center text-muted py-3">Could not display items for this order.</td></tr>',
+            'order items'
+        );
 
         // Financial Details
-        document.getElementById('od_discount_amount').textContent = 'Rs.' + (order.discount_amount || '0');
-        document.getElementById('od_shipping_charge').textContent = 'Rs.' + (order.shipping_charge || '0');
-        document.getElementById('od_tax_percent').textContent = (order.tax_percent || '0') + '%';
+        odSetText('od_discount_amount', odMoney(order.discount_amount));
+        odSetText('od_shipping_charge', odMoney(order.shipping_charge));
+        odSetText('od_tax_percent', (order.tax_percent || '0') + '%');
+        odSetText('od_delivery_charge', odMoney(order.delivery_charge));
+        odSetText('od_cod_collected', odMoney(order.cod_collected));
 
         // Links
         document.getElementById('od_full_order_link').href = `/orders/${order.id}/`;
@@ -939,8 +1329,13 @@
 
     function formatDateTime(dateStr) {
         if (!dateStr) return '—';
-        const date = new Date(dateStr);
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return dateStr;
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        } catch (e) {
+            return dateStr;
+        }
     }
 
     // Initialize

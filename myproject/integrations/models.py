@@ -25,13 +25,24 @@ class WooCommerceOrder(models.Model):
     line_items_json = models.JSONField(default=list, blank=True)
     raw_payload = models.JSONField(default=dict, blank=True)
     sync_source = models.CharField(max_length=50, default='woocommerce_plugin')
+    #: When the shopper actually placed the order in WooCommerce. Distinct from
+    #: `created_at`, which is only when *we* first pulled the row in - for a
+    #: backfilled store those are years apart, so every list/filter/sort the
+    #: operator sees has to key off this one.
+    woo_date_created = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-woo_date_created', '-created_at']
         verbose_name = 'WooCommerce Order'
         verbose_name_plural = 'WooCommerce Orders'
 
     def __str__(self):
         return f'WOO-{self.woo_order_id} ({self.status})'
+
+    @property
+    def is_synced(self):
+        """True once this WooCommerce order is linked to an internal store.Order.
+        Only false if that internal order was later deleted (order FK is SET_NULL)."""
+        return self.order_id is not None

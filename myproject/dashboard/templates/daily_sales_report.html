@@ -224,6 +224,53 @@
     color: #4f46e5;
 }
 
+/* Items column - product-wise lines */
+.dsr-table td.items-cell {
+    min-width: 200px;
+    max-width: 300px;
+    vertical-align: top;
+    line-height: 1.35;
+}
+.item-line {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    font-size: .8rem;
+}
+.item-line + .item-line { margin-top: 3px; }
+.item-qty {
+    flex: 0 0 auto;
+    min-width: 26px;
+    font-weight: 700;
+    color: #4f46e5;
+    font-size: .78rem;
+}
+.item-name {
+    flex: 1 1 auto;
+    color: #374151;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.item-var { color: #9ca3af; font-size: .74rem; }
+.item-type {
+    flex: 0 0 auto;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: #ede9fe;
+    color: #5b21b6;
+    font-size: .62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+}
+.item-foot {
+    margin-top: 4px;
+    font-size: .7rem;
+    color: #9ca3af;
+    font-weight: 600;
+}
+
 /* Status badges */
 .s-badge {
     padding: 3px 10px;
@@ -602,7 +649,6 @@
                                 <th>Customer</th>
                                 <th>Items</th>
                                 <th>Amount</th>
-                                <th>Payment</th>
                                 <th>Status</th>
                                 <th>Source</th>
                                 <th>Staff</th>
@@ -618,27 +664,34 @@
                                     <div style="font-weight:500;">{{ o.customer_name|truncatewords:3 }}</div>
                                     <div style="font-size:.75rem;color:#9ca3af;">{{ o.customer_phone }}</div>
                                 </td>
-                                <td>
-                                    <span title="{{ o.items_summary }}">{{ o.items_count }} item{{ o.items_count|pluralize }} ({{ o.total_qty }} pcs)</span>
+                                <td class="items-cell">
+                                    {% for it in o.items %}
+                                    <div class="item-line" title="{{ it.product_name }}{% if it.variation_name %} - {{ it.variation_name }}{% endif %} x {{ it.quantity }}">
+                                        <span class="item-qty">{{ it.quantity }}x</span>
+                                        <span class="item-name">{{ it.product_name }}{% if it.variation_name %} <span class="item-var">{{ it.variation_name }}</span>{% endif %}</span>
+                                        {% if it.product_type and it.product_type != 'simple' %}<span class="item-type">{{ it.product_type }}</span>{% endif %}
+                                    </div>
+                                    {% empty %}
+                                    <span style="color:#9ca3af;">&mdash;</span>
+                                    {% endfor %}
+                                    {% if o.items_count > 1 %}
+                                    <div class="item-foot">{{ o.items_count }} products &middot; {{ o.total_qty }} pcs</div>
+                                    {% endif %}
                                 </td>
                                 <td style="font-weight:600;white-space:nowrap;">Rs. {{ o.total_amount|floatformat:0 }}</td>
-                                <td>
-                                    <span class="s-badge {{ o.payment_status }}">{{ o.payment_status }}</span>
-                                    <div style="font-size:.72rem;color:#9ca3af;margin-top:2px;">{{ o.payment_method }}</div>
-                                </td>
                                 <td><span class="s-badge {{ o.order_status }}">{{ o.order_status }}</span></td>
                                 <td style="font-size:.8rem;color:#6b7280;">{{ o.order_from }}</td>
                                 <td style="font-size:.8rem;color:#6b7280;">{{ o.created_by }}</td>
                             </tr>
                             <tr class="detail-row" data-detail-idx="{{ forloop.counter0 }}">
-                                <td colspan="10">
+                                <td colspan="9">
                                     <div class="detail-content">
                                         <div class="detail-inner" id="orderDetail{{ forloop.counter0 }}"></div>
                                     </div>
                                 </td>
                             </tr>
                             {% empty %}
-                            <tr><td colspan="10" style="text-align:center;padding:40px;color:#9ca3af;">No orders for this date</td></tr>
+                            <tr><td colspan="9" style="text-align:center;padding:40px;color:#9ca3af;">No orders for this date</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -784,6 +837,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     // ── Data ──
     const ordersData = {{ orders_list_json|safe }};
+    window.ordersData = ordersData;   // exportDailyCSV() lives outside this scope
     const topProductsData = {{ top_products_json|safe }};
 
     // ── Hourly Chart ──
@@ -888,9 +942,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (container.dataset.rendered) return;
         container.dataset.rendered = '1';
 
-        let itemsHtml = '<table class="detail-items-table"><thead><tr><th>Product</th><th>Variant</th><th>SKU</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead><tbody>';
+        let itemsHtml = '<table class="detail-items-table"><thead><tr><th>Product</th><th>Variant</th><th>Type</th><th>SKU</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead><tbody>';
         (o.items || []).forEach(function(item) {
-            itemsHtml += '<tr><td>' + esc(item.product_name) + '</td><td>' + esc(item.variation_name || '-') + '</td><td style="color:#9ca3af;">' + esc(item.product_sku || '-') + '</td><td style="text-align:center">' + item.quantity + '</td><td style="text-align:right">Rs. ' + fmtNum(item.price) + '</td><td style="text-align:right;font-weight:600;">Rs. ' + fmtNum(item.total) + '</td></tr>';
+            itemsHtml += '<tr><td>' + esc(item.product_name) + '</td><td>' + esc(item.variation_name || '-') + '</td><td style="text-transform:uppercase;font-size:.7rem;color:#5b21b6;font-weight:600;">' + esc(item.product_type || 'simple') + '</td><td style="color:#9ca3af;">' + esc(item.product_sku || '-') + '</td><td style="text-align:center">' + item.quantity + '</td><td style="text-align:right">Rs. ' + fmtNum(item.price) + '</td><td style="text-align:right;font-weight:600;">Rs. ' + fmtNum(item.total) + '</td></tr>';
         });
         itemsHtml += '</tbody></table>';
 
@@ -910,6 +964,8 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '<div class="detail-field"><span class="field-label">Discount</span><span class="field-value" style="color:#dc2626;">- Rs. ' + fmtNum(o.discount) + '</span></div>';
         html += '<div class="detail-field"><span class="field-label">Shipping</span><span class="field-value">Rs. ' + fmtNum(o.shipping) + '</span></div>';
         html += '<div class="detail-field"><span class="field-label">Tax %</span><span class="field-value">' + (o.tax_percent || 0) + '%</span></div>';
+        html += '<div class="detail-field"><span class="field-label">Payment Method</span><span class="field-value">' + esc(o.payment_method || 'N/A') + '</span></div>';
+        html += '<div class="detail-field"><span class="field-label">Payment Status</span><span class="field-value"><span class="s-badge ' + esc(o.payment_status) + '">' + esc(o.payment_status) + '</span></span></div>';
         html += '<div class="detail-field"><span class="field-label">Grand Total</span><span class="field-value" style="font-weight:700;color:#059669;">Rs. ' + fmtNum(o.total_amount) + '</span></div>';
         html += '</div></div>';
 
@@ -1042,24 +1098,18 @@ function goToDate(dateStr) {
 }
 
 function exportDailyCSV() {
-    let csv = 'Time,Order #,Customer,Phone,Items,Qty,Amount,Discount,Shipping,Payment Method,Payment Status,Order Status,Source,Staff\n';
-    const rows = document.querySelectorAll('#ordersTable tbody tr.clickable-row');
-    rows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 10) {
-            const time = cells[1].textContent.trim();
-            const orderNum = cells[2].textContent.trim();
-            const customer = cells[3].querySelector('div').textContent.trim();
-            const phone = cells[3].querySelectorAll('div')[1] ? cells[3].querySelectorAll('div')[1].textContent.trim() : '';
-            const items = cells[4].textContent.trim().replace(/,/g, ';');
-            const amount = cells[5].textContent.trim().replace('Rs. ', '').replace(/,/g, '');
-            const payStatus = cells[6].querySelector('.s-badge').textContent.trim();
-            const payMethod = cells[6].querySelectorAll('div')[0] ? cells[6].querySelectorAll('div')[0].textContent.trim() : '';
-            const status = cells[7].textContent.trim();
-            const source = cells[8].textContent.trim();
-            const staff = cells[9].textContent.trim();
-            csv += `"${time}","${orderNum}","${customer}","${phone}","${items}","","${amount}","","","${payMethod}","${payStatus}","${status}","${source}","${staff}"\n`;
-        }
+    const q = function(v) { return '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"'; };
+    let csv = 'Time,Order #,Customer,Phone,Items,Products,Qty,Amount,Discount,Shipping,Payment Method,Payment Status,Order Status,Source,Staff' + String.fromCharCode(10);
+    (window.ordersData || []).forEach(function(o) {
+        const items = (o.items || []).map(function(it) {
+            return it.product_name + (it.variation_name ? ' - ' + it.variation_name : '') + ' x' + it.quantity;
+        }).join('; ');
+        csv += [
+            q(o.time), q(o.order_number), q(o.customer_name), q(o.customer_phone),
+            q(items), q(o.items_count), q(o.total_qty), q(o.total_amount),
+            q(o.discount), q(o.shipping), q(o.payment_method), q(o.payment_status),
+            q(o.order_status), q(o.order_from), q(o.created_by)
+        ].join(',') + String.fromCharCode(10);
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');

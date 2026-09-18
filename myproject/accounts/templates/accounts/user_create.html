@@ -146,7 +146,7 @@
                                         <div class="perm-card-body">
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_view_dashboard" id="can_view_dashboard">
-                                                <label for="can_view_dashboard">View Dashboard</label>
+                                                <label for="can_view_dashboard">Dashboard Access</label>
                                             </div>
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_view_total_revenue" id="can_view_total_revenue">
@@ -155,6 +155,22 @@
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_view_low_stock_alerts" id="can_view_low_stock_alerts">
                                                 <label for="can_view_low_stock_alerts">Show Low Stock Alert</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_incomplete_attendance" id="can_view_dashboard_incomplete_attendance">
+                                                <label for="can_view_dashboard_incomplete_attendance">Incomplete Attendance Alert</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_sales_overview" id="can_view_dashboard_sales_overview">
+                                                <label for="can_view_dashboard_sales_overview">Sales Overview</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_orders_overview" id="can_view_dashboard_orders_overview">
+                                                <label for="can_view_dashboard_orders_overview">Orders Overview</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_orders_by_source" id="can_view_dashboard_orders_by_source">
+                                                <label for="can_view_dashboard_orders_by_source">Orders by Source</label>
                                             </div>
                                         </div>
                                     </div>
@@ -198,6 +214,10 @@
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_view_orders_list" id="can_view_orders_list">
                                                 <label for="can_view_orders_list">View All Orders List</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_access_offer_price" id="can_access_offer_price">
+                                                <label for="can_access_offer_price">Access to Offer Price</label>
                                             </div>
                                         </div>
                                     </div>
@@ -287,6 +307,21 @@
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_process_refunds" id="can_process_refunds">
                                                 <label for="can_process_refunds">Process Refunds</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 🆕 CONTENT MANAGEMENT MODULE -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-secondary">
+                                            <i class="fas fa-file-alt"></i> Content Management Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_content_management" id="can_view_content_management">
+                                                <label for="can_view_content_management">View Content Management</label>
                                             </div>
                                         </div>
                                     </div>
@@ -417,12 +452,32 @@
                                                 <label for="can_view_sales_reports">Sales Reports</label>
                                             </div>
                                             <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_daily_sales_reports" id="can_view_daily_sales_reports">
+                                                <label for="can_view_daily_sales_reports">Daily Sales Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_product_sales_reports" id="can_view_product_sales_reports">
+                                                <label for="can_view_product_sales_reports">Product Sales Reports</label>
+                                            </div>
+                                            <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_view_financial_reports" id="can_view_financial_reports">
                                                 <label for="can_view_financial_reports">Financial Reports</label>
                                             </div>
                                             <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_orders_by_source_report" id="can_view_orders_by_source_report">
+                                                <label for="can_view_orders_by_source_report">Orders by Source Report</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_rtv_report" id="can_view_rtv_report">
+                                                <label for="can_view_rtv_report">RTV Report</label>
+                                            </div>
+                                            <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_export_data" id="can_export_data">
                                                 <label for="can_export_data">Export Data</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_follow_up_report" id="can_view_follow_up_report">
+                                                <label for="can_view_follow_up_report">Can View Follow Up Report</label>
                                             </div>
                                         </div>
                                     </div>
@@ -523,6 +578,10 @@
                                                     <input type="checkbox" class="form-check-input" name="can_delete_ncm_orders" id="can_delete_ncm_orders">
                                                     <label for="can_delete_ncm_orders">Delete NCM Orders</label>
                                                 </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_export_logistics_orders" id="can_export_logistics_orders">
+                                                    <label for="can_export_logistics_orders">Export Logistics Orders</label>
+                                                </div>
                                             </div>
 
                                             <!-- Bulk Logs -->
@@ -535,6 +594,10 @@
                                                 <div class="perm-item">
                                                     <input type="checkbox" class="form-check-input" name="can_manage_ncm_bulk_logs" id="can_manage_ncm_bulk_logs">
                                                     <label for="can_manage_ncm_bulk_logs">Manage Bulk Logs</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_export_logistics_bulk_logs" id="can_export_logistics_bulk_logs">
+                                                    <label for="can_export_logistics_bulk_logs">Export Bulk Logs</label>
                                                 </div>
                                             </div>
 
@@ -600,6 +663,14 @@
                                                     <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_payroll" id="can_view_hrm_payroll">
                                                     <label for="can_view_hrm_payroll">Payroll Management</label>
                                                 </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_incomplete_attendance" id="can_view_hrm_incomplete_attendance">
+                                                    <label for="can_view_hrm_incomplete_attendance">Incomplete Attendance Alert</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_fix_hrm_incomplete_attendance" id="can_fix_hrm_incomplete_attendance">
+                                                    <label for="can_fix_hrm_incomplete_attendance">Fix Incomplete Attendance</label>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -615,6 +686,79 @@
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_access_todo" id="can_access_todo">
                                                 <label for="can_access_todo">Access to Todo/Ticketing</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Sentinel Vault (Audit Trail) Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);">
+                                            <i class="fas fa-shield-halved"></i> Sentinel Vault (Audit Trail)
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_audit_trail" id="can_view_audit_trail">
+                                                <label for="can_view_audit_trail">Access Sentinel Vault</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_all_users_activity" id="can_view_all_users_activity">
+                                                <label for="can_view_all_users_activity">View Everyone's Activity</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_audit_logs" id="can_export_audit_logs">
+                                                <label for="can_export_audit_logs">Export Audit Logs</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_manage_sessions" id="can_manage_sessions">
+                                                <label for="can_manage_sessions">Revoke Sessions &amp; Resolve Alerts</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_configure_audit" id="can_configure_audit">
+                                                <label for="can_configure_audit">Configure Vault Settings</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Resources Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);">
+                                            <i class="fas fa-book-open"></i> Resources Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_resources" id="can_view_resources">
+                                                <label for="can_view_resources">View Resources</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_resources" id="can_create_resources">
+                                                <label for="can_create_resources">Create/Edit/Delete Resources</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Follow Up Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                                            <i class="fas fa-phone-volume"></i> Follow Up Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_access_follow_ups" id="can_access_follow_ups">
+                                                <label for="can_access_follow_ups">Can Access Follow Ups</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_follow_ups" id="can_export_follow_ups">
+                                                <label for="can_export_follow_ups">Can Export Follow Ups</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_setup_follow_up_status" id="can_setup_follow_up_status">
+                                                <label for="can_setup_follow_up_status">Can Setup Follow Up Status</label>
                                             </div>
                                         </div>
                                     </div>
@@ -1004,97 +1148,105 @@ document.getElementById('userCreateForm').addEventListener('submit', function(e)
 });
 
 // Role permissions configuration
-const roleDefaults = {
-    'warehouse': {
-        permissions: [
-            'can_view_dashboard',
-            'can_view_orders', 'can_view_on_hold_orders', 'can_view_products', 'can_view_customers',
-            'can_view_dispatch', 'can_manage_dispatch', 'can_delete_dispatch', 'can_scan_barcodes',
-            'can_view_inventory', 'can_manage_inventory', 'can_adjust_stock',
-            'can_view_returns', 'can_view_own_targets',
-            'can_view_cost_price', 'can_edit_prices'
-        ]
-    },
-    'sales': {
-        permissions: [
-            'can_view_dashboard',
-            'can_view_orders', 'can_create_orders',
-            'can_view_products', 'can_view_customers', 'can_create_customers',
-            'can_edit_customers', 'can_give_discounts', 'can_view_inventory',
-            'can_view_returns', 'can_create_returns', 'can_view_own_targets',
-            'can_edit_prices'
-        ]
-    }
-};
+const roleDefaults = {{ role_defaults_json|safe }};
+
+// Helper to reliably check/uncheck
+function setCheckboxState(name, state) {
+    const cb = document.querySelector(`input[name="${name}"]`);
+    if (cb) cb.checked = state;
+}
 
 // Role selection handler
 document.getElementById('roleSelect').addEventListener('change', function() {
-    const role = this.value;
-    const permSection = document.getElementById('permissionsSection');
-    const roleInfo = document.getElementById('roleInfo');
-    const roleTitle = document.getElementById('roleTitle');
-    const roleDesc = document.getElementById('roleDesc');
-    const selectedOption = this.options[this.selectedIndex];
-    const description = selectedOption.getAttribute('data-description') || '';
+    try {
+        const role = this.value;
+        const permSection = document.getElementById('permissionsSection');
+        const roleInfo = document.getElementById('roleInfo');
+        const roleTitle = document.getElementById('roleTitle');
+        const roleDesc = document.getElementById('roleDesc');
+        const selectedOption = this.options[this.selectedIndex];
+        const description = selectedOption.getAttribute('data-description') || '';
 
-    if (role === 'administrator') {
-        permSection.style.display = 'none';
-        roleInfo.classList.remove('d-none');
-        roleTitle.textContent = 'Administrator - Full Access';
-        roleDesc.textContent = 'Administrators have all permissions by default. No customization needed.';
-        document.getElementById('can_view_cost_price').checked = false;
-        document.getElementById('can_edit_prices').checked = false;
-        document.getElementById('can_give_discounts').checked = false;
-        document.getElementById('max_discount_percent').value = '0.00';
-        document.getElementById('max_discount_percent').disabled = true;
-        // Reset HRM checkboxes
-        const hrmMain = document.getElementById('can_view_hrm');
-        if (hrmMain) {
-            hrmMain.checked = false;
+        if (role === 'administrator') {
+            if (permSection) permSection.style.display = 'none';
+            if (roleInfo) roleInfo.classList.remove('d-none');
+            if (roleTitle) roleTitle.textContent = 'Administrator - Full Access';
+            if (roleDesc) roleDesc.textContent = 'Administrators have all permissions by default. No customization needed.';
+            
+            setCheckboxState('can_view_cost_price', false);
+            setCheckboxState('can_edit_prices', false);
+            setCheckboxState('can_give_discounts', false);
+            
+            const maxDisc = document.getElementById('max_discount_percent');
+            if (maxDisc) {
+                maxDisc.value = '0.00';
+                maxDisc.disabled = true;
+            }
+            
+            // Reset HRM checkboxes
+            setCheckboxState('can_view_hrm', false);
             const hrmSub = document.getElementById('hrmSubPermissions');
             if (hrmSub) { hrmSub.style.opacity = '0.5'; hrmSub.style.pointerEvents = 'none'; }
             document.querySelectorAll('.hrm-sub-perm').forEach(cb => cb.checked = false);
-        }
-    } else if (role) {
-        permSection.style.display = 'block';
-        roleInfo.classList.remove('d-none');
-        roleTitle.textContent = selectedOption.textContent + ' Role Selected';
-        roleDesc.textContent = description || 'Customize permissions below as needed.';
+            
+        } else if (role) {
+            if (permSection) permSection.style.display = 'block';
+            if (roleInfo) roleInfo.classList.remove('d-none');
+            if (roleTitle) roleTitle.textContent = selectedOption.textContent + ' Role Selected';
+            if (roleDesc) roleDesc.textContent = description || 'Customize permissions below as needed.';
 
-        // Uncheck all first
-        uncheckAllPermissions();
-
-        // Check default permissions if available for this role
-        if (roleDefaults[role]) {
-            roleDefaults[role].permissions.forEach(perm => {
-                const checkbox = document.getElementById(perm);
-                if (checkbox) checkbox.checked = true;
+            // 1. First UNCHECK EVERYTHING
+            document.querySelectorAll('#permissionsSection input[type="checkbox"]').forEach(cb => {
+                cb.checked = false;
             });
+            const maxDisc = document.getElementById('max_discount_percent');
+            if (maxDisc) maxDisc.value = '0.00';
+            const hrmSub = document.getElementById('hrmSubPermissions');
+            if (hrmSub) { hrmSub.style.opacity = '0.5'; hrmSub.style.pointerEvents = 'none'; }
+            
+            // 2. CHECK the defaults for THIS ROLE
+            if (roleDefaults[role]) {
+                let perms = roleDefaults[role].permissions || [];
+                perms.forEach(perm => {
+                    setCheckboxState(perm, true);
+                });
+                
+                let discount = roleDefaults[role].max_discount_percent || '0.00';
+                if (maxDisc) {
+                    maxDisc.value = discount;
+                    if (parseFloat(discount) > 0) {
+                        maxDisc.disabled = false;
+                    }
+                }
+            }
+            
+            // 3. Update inputs
+            if (typeof updateDiscountInput === 'function') updateDiscountInput();
+            
+            const hrmMain = document.querySelector('input[name="can_view_hrm"]');
+            if (hrmMain && typeof toggleHrmSubPermissions === 'function') {
+                toggleHrmSubPermissions(hrmMain);
+            }
         }
-
-        // Set default discount for sales
-        if (role === 'sales') {
-            document.getElementById('max_discount_percent').value = '10.00';
-        } else {
-            document.getElementById('max_discount_percent').value = '0.00';
-        }
-        updateDiscountInput();
-    } else {
-        permSection.style.display = 'none';
-        roleInfo.classList.add('d-none');
+    } catch (e) {
+        console.error("Error in role selection change event:", e);
     }
+});
+
 // Enable/disable Max Discount % input based on Give Discounts checkbox
 function updateDiscountInput() {
     const giveDiscounts = document.getElementById('can_give_discounts');
     const discountInput = document.getElementById('max_discount_percent');
-    if (giveDiscounts.checked) {
-        discountInput.disabled = false;
-        if (!discountInput.value || discountInput.value === '0' || discountInput.value === '0.00') {
-            discountInput.value = '10.00';
+    if (giveDiscounts && discountInput) {
+        if (giveDiscounts.checked) {
+            discountInput.disabled = false;
+            if (!discountInput.value || discountInput.value === '0' || discountInput.value === '0.00') {
+                discountInput.value = '10.00';
+            }
+        } else {
+            discountInput.disabled = true;
+            discountInput.value = '0.00';
         }
-    } else {
-        discountInput.disabled = true;
-        discountInput.value = '0.00';
     }
 }
 
@@ -1102,7 +1254,12 @@ document.getElementById('can_give_discounts').addEventListener('change', updateD
 
 window.addEventListener('DOMContentLoaded', function() {
     updateDiscountInput();
-});
+    
+    // Trigger change event to populate role defaults if a role is already selected
+    const roleSelect = document.getElementById('roleSelect');
+    if (roleSelect && roleSelect.value) {
+        roleSelect.dispatchEvent(new Event('change'));
+    }
 });
 
 // Check all permissions

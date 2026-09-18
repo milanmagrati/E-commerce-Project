@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load dashboard_extras %}
-{% block title %}Dashboard - Admin Panel{% endblock %}
+{% block title %}Dashboard - {{ COMPANY_NAME }}{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -15,11 +15,11 @@
         <div class="card stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Total Products</p>
-                        <h3 class="mb-0">{{ total_products }}</h3>
+                    <div style="min-width: 0;">
+                        <p class="text-muted mb-1 text-truncate">Total Products</p>
+                        <h4 class="mb-0 fw-bold text-truncate" style="font-size: clamp(0.75rem, 1vw + 0.25rem, 1.15rem);" title="{{ total_products }}">{{ total_products }}</h4>
                     </div>
-                    <div class="stat-icon bg-primary">
+                    <div class="stat-icon bg-primary flex-shrink-0 ms-2">
                         <i class="fas fa-box"></i>
                     </div>
                 </div>
@@ -31,11 +31,11 @@
         <div class="card stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Total Orders</p>
-                        <h3 class="mb-0">{{ total_orders }}</h3>
+                    <div style="min-width: 0;">
+                        <p class="text-muted mb-1 text-truncate">Total Orders</p>
+                        <h4 class="mb-0 fw-bold text-truncate" style="font-size: clamp(0.75rem, 1vw + 0.25rem, 1.15rem);" title="{{ total_orders }}">{{ total_orders }}</h4>
                     </div>
-                    <div class="stat-icon bg-success">
+                    <div class="stat-icon bg-success flex-shrink-0 ms-2">
                         <i class="fas fa-shopping-cart"></i>
                     </div>
                 </div>
@@ -47,11 +47,11 @@
         <div class="card stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Pending Orders</p>
-                        <h3 class="mb-0">{{ pending_orders }}</h3>
+                    <div style="min-width: 0;">
+                        <p class="text-muted mb-1 text-truncate">Pending Orders</p>
+                        <h4 class="mb-0 fw-bold text-truncate" style="font-size: clamp(0.75rem, 1vw + 0.25rem, 1.15rem);" title="{{ pending_orders }}">{{ pending_orders }}</h4>
                     </div>
-                    <div class="stat-icon bg-warning">
+                    <div class="stat-icon bg-warning flex-shrink-0 ms-2">
                         <i class="fas fa-clock"></i>
                     </div>
                 </div>
@@ -64,11 +64,11 @@
         <div class="card stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <p class="text-muted mb-1">Total Revenue</p>
-                        <h3 class="mb-0">रू {{ total_revenue|floatformat:2 }}</h3>
+                    <div style="min-width: 0;">
+                        <p class="text-muted mb-1 text-truncate">Total Revenue</p>
+                        <h4 class="mb-0 fw-bold text-truncate" style="font-size: clamp(0.75rem, 1vw + 0.25rem, 1.15rem);" title="रू {{ total_revenue|floatformat:2 }}">रू&nbsp;{{ total_revenue|floatformat:2 }}</h4>
                     </div>
-                    <div class="stat-icon bg-info">
+                    <div class="stat-icon bg-info flex-shrink-0 ms-2">
                         <i class="fas fa-dollar-sign"></i>
                     </div>
                 </div>
@@ -80,6 +80,7 @@
 
 <!-- Charts Row -->
 <div class="row g-4 mb-4">
+    {% if can_view_sales_overview %}
     <div class="col-xl-8">
         <div class="card">
             <div class="card-header">
@@ -90,19 +91,23 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
-    <div class="col-xl-4">
+    <div class="{% if can_view_sales_overview %}col-xl-4{% else %}col-xl-5 col-lg-6 col-md-8 mx-auto{% endif %}">
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">Order Status</h5>
             </div>
             <div class="card-body">
-                <canvas id="orderStatusChart"></canvas>
+                <div class="order-status-chart-wrap">
+                    <canvas id="orderStatusChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
+{% if can_view_orders_overview %}
 <!-- Orders Overview Row -->
 <div class="row g-4 mb-4">
     <div class="col-xl-12">
@@ -152,7 +157,9 @@
         </div>
     </div>
 </div>
+{% endif %}
 
+{% if can_view_orders_by_source %}
 <!-- Order Sources Row -->
 <div class="row g-4 mb-4">
     <div class="col-xl-12">
@@ -204,6 +211,151 @@
         </div>
     </div>
 </div>
+{% endif %}
+
+{% if can_view_incomplete_attendance_alert %}
+<!-- Incomplete Attendance Alert -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card incomplete-att-card">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0 d-flex align-items-center gap-2 flex-wrap">
+                    <span class="incomplete-att-icon-wrap">
+                        <i class="fas fa-triangle-exclamation"></i>
+                    </span>
+                    Incomplete Attendance
+                    {% if incomplete_attendance_count > 0 %}
+                    <span class="badge incomplete-att-count-badge">{{ incomplete_attendance_count }}</span>
+                    {% endif %}
+                    <span class="incomplete-att-range-label">Last 7 Days</span>
+                </h5>
+                <a href="{% url 'hrm:attendance_policy_list' %}?open_incomplete=1" class="btn btn-sm btn-view-all-att">
+                    {% if can_fix_incomplete_attendance %}
+                    <i class="fas fa-arrow-right"></i> Review &amp; Fix
+                    {% else %}
+                    <i class="fas fa-arrow-right"></i> Review
+                    {% endif %}
+                </a>
+            </div>
+            <div class="card-body p-0">
+                {% if incomplete_attendance_items %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 incomplete-att-table">
+                        <thead>
+                            <tr>
+                                <th>Employee</th>
+                                <th>Department</th>
+                                <th>Date</th>
+                                <th>Clock In</th>
+                                <th>Clock Out</th>
+                                <th>Flag</th>
+                                <th>Remarks</th>
+                                <th>Modified By</th>
+                                <th style="width:60px;">Logs</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in incomplete_attendance_items %}
+                            <tr>
+                                <td>
+                                    <strong>{{ item.employee_name }}</strong>
+                                    <div class="text-muted small">{{ item.employee_id }}</div>
+                                </td>
+                                <td>{{ item.department }}</td>
+                                <td>{{ item.date|date:"d M, Y" }}</td>
+                                <td>
+                                    {% if item.clock_in %}{{ item.clock_in|time:"h:i A" }}{% else %}<span class="text-danger fw-semibold">Missing</span>{% endif %}
+                                </td>
+                                <td>
+                                    {% if item.clock_out %}{{ item.clock_out|time:"h:i A" }}{% else %}<span class="text-danger fw-semibold">Missing</span>{% endif %}
+                                </td>
+                                <td>
+                                    {% if not item.clock_in %}
+                                    <span class="badge incomplete-att-flag-badge"><i class="fas fa-triangle-exclamation"></i> Clock In Missing</span>
+                                    {% else %}
+                                    <span class="badge incomplete-att-flag-badge"><i class="fas fa-triangle-exclamation"></i> Clock Out Missing</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.remarks %}
+                                    <span class="incomplete-att-remarks" title="{{ item.remarks }}">{{ item.remarks }}</span>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.fixed_by %}
+                                    <div class="fw-semibold" style="font-size:.78rem;">{{ item.fixed_by }}</div>
+                                    <div class="text-muted" style="font-size:.7rem;">{{ item.fixed_at }}</div>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary position-relative" title="View fix history" onclick="dashIncAttViewLogs({{ item.id }})">
+                                        <i class="fas fa-clock-rotate-left fa-sm"></i>
+                                        {% if item.fix_logs_count > 0 %}<span class="badge rounded-pill bg-secondary" style="font-size:.6rem;position:absolute;top:-6px;right:-6px;">{{ item.fix_logs_count }}</span>{% endif %}
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if incomplete_attendance_count > 5 %}
+                <div class="incomplete-att-more">
+                    <a href="{% url 'hrm:attendance_policy_list' %}?open_incomplete=1">
+                        + {{ incomplete_attendance_count|add:"-5" }} more record{{ incomplete_attendance_count|add:"-5"|pluralize }} in the last 7 days &mdash; view all
+                    </a>
+                </div>
+                {% endif %}
+                {% else %}
+                <div class="incomplete-att-empty">
+                    <div class="empty-icon">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <p class="mb-0">No incomplete attendance in the last 7 days</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Attendance Fix Logs Modal -->
+<div class="modal fade" id="dashIncAttLogsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="d-flex align-items-center justify-content-between p-3" style="background:linear-gradient(135deg,#334155,#64748b);">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="incomplete-att-icon-wrap" style="background:rgba(255,255,255,.15);">
+                        <i class="fas fa-clock-rotate-left"></i>
+                    </div>
+                    <div>
+                        <div class="fw-bold text-white fs-6" id="dashIncAttLogsTitle">Fix History</div>
+                        <div class="text-white-50 small" id="dashIncAttLogsSubtitle">All corrections made to this record</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div id="dashIncAttLogsLoading" class="text-center py-5">
+                    <div class="spinner-border text-secondary" role="status"></div>
+                </div>
+                <div id="dashIncAttLogsEmpty" class="text-center py-5 text-muted" style="display:none;">
+                    <i class="fas fa-inbox fa-3x mb-3 d-block" style="color:#cbd5e1;"></i>
+                    No fixes have been logged for this record yet.
+                </div>
+                <div id="dashIncAttLogsError" class="text-center py-5 text-danger" style="display:none;"></div>
+                <div id="dashIncAttLogsList" style="display:none;"></div>
+            </div>
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Recent Orders and Low Stock -->
 <div class="row g-4">
@@ -540,6 +692,172 @@
     font-size: 13px;
 }
 
+/* ── Incomplete Attendance Card ── */
+.incomplete-att-card {
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    overflow: hidden;
+}
+.incomplete-att-card .card-header {
+    background: linear-gradient(135deg, #fff7ed 0%, #fff 100%);
+    border-bottom: 1px solid #fed7aa;
+    padding: 16px 20px;
+}
+.incomplete-att-icon-wrap {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 14px;
+}
+.incomplete-att-count-badge {
+    background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+    color: #fff;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+    min-width: 24px;
+    text-align: center;
+    animation: pulse-badge-amber 2s infinite;
+}
+@keyframes pulse-badge-amber {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(245,158,11,0); }
+}
+.incomplete-att-range-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #b45309;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    border-radius: 20px;
+    padding: 2px 10px;
+}
+.btn-view-all-att {
+    background: transparent;
+    color: #d97706;
+    border: 1.5px solid #fcd34d;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 14px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+.btn-view-all-att:hover {
+    background: #d97706;
+    color: #fff;
+    border-color: #d97706;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(217,119,6,0.3);
+}
+.incomplete-att-table th {
+    font-size: 11px;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border-top: none;
+    padding: 12px 20px;
+}
+.incomplete-att-table td {
+    font-size: 13px;
+    padding: 12px 20px;
+    vertical-align: middle;
+}
+.incomplete-att-table tbody tr:last-child td { border-bottom: none; }
+.incomplete-att-flag-badge {
+    background: #fef2f2 !important;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 4px 9px;
+    border-radius: 6px;
+    white-space: nowrap;
+}
+.incomplete-att-remarks {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 180px;
+    font-size: 12.5px;
+    color: #44403c;
+    cursor: help;
+}
+.inc-att-log-entry {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    background: #f8fafc;
+}
+.inc-att-log-entry:last-child { margin-bottom: 0; }
+.inc-att-log-diff { font-size: .82rem; color: #334155; line-height: 1.6; }
+.inc-att-log-field { color: #64748b; font-weight: 600; }
+.inc-att-log-remarks {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed #e2e8f0;
+    font-size: .82rem;
+    color: #475569;
+    font-style: italic;
+}
+.incomplete-att-more {
+    padding: 12px 20px;
+    text-align: center;
+    border-top: 1px solid #f3f4f6;
+}
+.incomplete-att-more a {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #d97706;
+    text-decoration: none;
+}
+.incomplete-att-more a:hover { text-decoration: underline; }
+
+/* Empty state */
+.incomplete-att-empty {
+    padding: 40px 20px;
+    text-align: center;
+}
+.incomplete-att-empty .empty-icon {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: #059669;
+    margin-bottom: 12px;
+}
+.incomplete-att-empty p {
+    color: #6b7280;
+    font-size: 13px;
+}
+
+/* Keeps the doughnut a consistent, professional size whether it's sharing
+   the row with Sales Overview or standing alone (permission-gated). */
+.order-status-chart-wrap {
+    position: relative;
+    height: 280px;
+    max-width: 320px;
+    margin: 0 auto;
+}
+.order-status-chart-wrap canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
 .stat-card {
     border: none;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -567,6 +885,71 @@
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+
+{% if can_view_incomplete_attendance_alert %}
+<script>
+    /* ── Incomplete Attendance: Fix Logs (audit history) ── */
+    function escDashIncAtt(str) {
+        var d = document.createElement('div');
+        d.appendChild(document.createTextNode(str));
+        return d.innerHTML;
+    }
+    function dashIncAttViewLogs(id) {
+        document.getElementById('dashIncAttLogsLoading').style.display = 'block';
+        document.getElementById('dashIncAttLogsEmpty').style.display = 'none';
+        document.getElementById('dashIncAttLogsError').style.display = 'none';
+        var listEl = document.getElementById('dashIncAttLogsList');
+        listEl.style.display = 'none';
+        listEl.innerHTML = '';
+        var modal = bootstrap.Modal.getInstance(document.getElementById('dashIncAttLogsModal')) || new bootstrap.Modal(document.getElementById('dashIncAttLogsModal'));
+        modal.show();
+
+        fetch('/hrm/attendance/' + id + '/fix-logs/')
+            .then(function(r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function(data) {
+                document.getElementById('dashIncAttLogsLoading').style.display = 'none';
+                if (!data.success) {
+                    document.getElementById('dashIncAttLogsError').textContent = data.error || 'Failed to load history.';
+                    document.getElementById('dashIncAttLogsError').style.display = 'block';
+                    return;
+                }
+                document.getElementById('dashIncAttLogsTitle').textContent = data.employee_name + ' (' + data.employee_code + ')';
+                document.getElementById('dashIncAttLogsSubtitle').textContent = data.department + ' — ' + data.date_display;
+
+                if (!data.logs.length) {
+                    document.getElementById('dashIncAttLogsEmpty').style.display = 'block';
+                    return;
+                }
+
+                var html = '';
+                data.logs.forEach(function(log) {
+                    html += '<div class="inc-att-log-entry">'
+                        + '<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">'
+                        + '<div class="fw-semibold" style="font-size:.85rem;"><i class="fas fa-user-pen me-1 text-secondary"></i>' + escDashIncAtt(log.fixed_by) + '</div>'
+                        + '<div class="text-muted" style="font-size:.75rem;">' + escDashIncAtt(log.fixed_at) + '</div>'
+                        + '</div>'
+                        + '<div class="inc-att-log-diff">'
+                        + '<span class="inc-att-log-field">Clock In:</span> ' + (log.old_clock_in ? escDashIncAtt(log.old_clock_in) : '<em>Missing</em>')
+                        + ' <i class="fas fa-arrow-right-long mx-1 text-muted"></i> <strong>' + (log.new_clock_in ? escDashIncAtt(log.new_clock_in) : '<em>Missing</em>') + '</strong><br>'
+                        + '<span class="inc-att-log-field">Clock Out:</span> ' + (log.old_clock_out ? escDashIncAtt(log.old_clock_out) : '<em>Missing</em>')
+                        + ' <i class="fas fa-arrow-right-long mx-1 text-muted"></i> <strong>' + (log.new_clock_out ? escDashIncAtt(log.new_clock_out) : '<em>Missing</em>') + '</strong>'
+                        + '</div>'
+                        + (log.remarks ? '<div class="inc-att-log-remarks"><i class="fas fa-comment-dots me-1"></i>' + escDashIncAtt(log.remarks) + '</div>' : '')
+                        + '</div>';
+                });
+                listEl.innerHTML = html;
+                listEl.style.display = 'block';
+            })
+            .catch(function() {
+                document.getElementById('dashIncAttLogsLoading').style.display = 'none';
+                document.getElementById('dashIncAttLogsError').textContent = 'Network error. Please try again.';
+                document.getElementById('dashIncAttLogsError').style.display = 'block';
+            });
+    }
+</script>
+{% endif %}
+
+{% if can_view_sales_overview %}
 <script>
     // Sales Chart
     const monthlySalesData = JSON.parse('{{ monthly_sales|escapejs }}');
@@ -605,7 +988,10 @@
             }
         }
     });
+</script>
+{% endif %}
 
+<script>
     // Order Status Doughnut Chart
     const pendingOrders = parseInt('{{ pending_orders }}', 10) || 0;
     const processingOrders = parseInt('{{ processing_orders }}', 10) || 0;
@@ -629,7 +1015,7 @@
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
                     position: 'bottom'
@@ -638,6 +1024,17 @@
         }
     });
 
+    // Shared date helpers (used by Orders by Source & Orders Overview filters)
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    function getLocalDateStr(d) {
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+</script>
+
+{% if can_view_orders_by_source %}
+<script>
     // Order Source by Date - Line Chart with Filter
     let sourceChart = null;
     
@@ -749,14 +1146,6 @@
     }
     
     // Set default dates for custom range (today and 30 days ago)
-    const today = new Date();
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    function getLocalDateStr(d) {
-        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-    }
-    
     document.getElementById('customFromDate').value = getLocalDateStr(thirtyDaysAgo);
     document.getElementById('customToDate').value = getLocalDateStr(today);
     
@@ -813,7 +1202,18 @@
         // Update chart with custom range
         updateOrderSourceChart(null, fromDate, toDate);
     });
-    
+
+    // Allow Enter key to apply custom range
+    document.getElementById('customToDate').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            document.getElementById('applyCustomRange').click();
+        }
+    });
+</script>
+{% endif %}
+
+{% if can_view_orders_overview %}
+<script>
     // Orders Overview Chart
     let ordersOverviewChart = null;
 
@@ -940,13 +1340,7 @@
     document.getElementById('overviewToDate').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') { document.getElementById('applyOverviewCustomRange').click(); }
     });
-
-    // Allow Enter key to apply custom range
-    document.getElementById('customToDate').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            document.getElementById('applyCustomRange').click();
-        }
-    });
 </script>
+{% endif %}
 
 {% endblock %}

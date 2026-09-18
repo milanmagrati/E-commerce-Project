@@ -141,8 +141,8 @@
                         <!-- Action buttons -->
                         <div class="d-flex gap-1 flex-shrink-0">
                             {% if reg.status == 'pending' %}
-                            <button class="reg-btn-icon" style="color:#28a745;border-color:#d1fae5;" title="Approve" onclick="updateStatus({{ reg.id }}, 'approved')"><i class="fas fa-check fa-sm"></i></button>
-                            <button class="reg-btn-icon" style="color:#dc2626;border-color:#fecaca;" title="Reject" onclick="updateStatus({{ reg.id }}, 'rejected')"><i class="fas fa-times fa-sm"></i></button>
+                            <button class="reg-btn-icon" style="color:#28a745;border-color:#d1fae5;" title="Approve" onclick="updateStatus({{ reg.id }}, 'approved', this)"><i class="fas fa-check fa-sm"></i></button>
+                            <button class="reg-btn-icon" style="color:#dc2626;border-color:#fecaca;" title="Reject" onclick="updateStatus({{ reg.id }}, 'rejected', this)"><i class="fas fa-times fa-sm"></i></button>
                             {% endif %}
                             <button class="reg-btn-icon" style="color:#3b82f6;border-color:#dbeafe;" title="View" onclick="viewRecord({{ reg.id }})"><i class="fas fa-eye fa-sm"></i></button>
                             <button class="reg-btn-icon" style="color:#f59e0b;border-color:#fef3c7;" title="Edit" onclick="editRecord({{ reg.id }})"><i class="fas fa-edit fa-sm"></i></button>
@@ -707,8 +707,8 @@
                 document.getElementById('regEmployee').value = data.employee_id;
                 document.getElementById('regEmployee').disabled = true;
                 loadAttendanceRecords(data.attendance_record_id);
-                document.getElementById('regClockIn').value = data.clock_in;
-                document.getElementById('regClockOut').value = data.clock_out;
+                document.getElementById('regClockIn').value = data.clock_in_raw;
+                document.getElementById('regClockOut').value = data.clock_out_raw;
                 document.getElementById('regReason').value = data.reason;
                 document.getElementById('regDraft').checked = data.is_draft;
                 clearErrors(); hideFormAlert(); setSaveLoading(false);
@@ -811,16 +811,26 @@
         });
     }
 
-    function updateStatus(id, status) {
+    function updateStatus(id, status, btn) {
         var labels = {approved:'Approve', rejected:'Reject', pending:'Reset to Pending'};
         if (!confirm(labels[status] + ' this regularization request?')) return;
+
+        // Disable both action buttons on this card so a slow request can't be
+        // double-submitted (which looked like "approve does nothing" when a
+        // second click raced the first one's reload).
+        var card = btn ? btn.closest('.reg-card') : null;
+        var actionBtns = card ? card.querySelectorAll('.reg-btn-icon') : [];
+        actionBtns.forEach(function(b){ b.disabled = true; b.style.opacity = '0.6'; });
 
         fetch('/hrm/attendance-regularizations/' + id + '/status/', {
             method: 'POST',
             headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({status: status})
         })
-        .then(function(r){ return r.json(); })
+        .then(function(r){
+            if (!r.ok) { throw new Error('Request failed with status ' + r.status); }
+            return r.json();
+        })
         .then(function(data){
             if (data.success) {
                 sessionStorage.setItem('regToast', JSON.stringify({
@@ -829,7 +839,14 @@
                     msg: 'Request has been ' + status + '.'
                 }));
                 location.reload();
+            } else {
+                actionBtns.forEach(function(b){ b.disabled = false; b.style.opacity = ''; });
+                showPageToast('danger', 'Error', data.error || ('Failed to ' + labels[status].toLowerCase() + ' this request.'));
             }
+        })
+        .catch(function(){
+            actionBtns.forEach(function(b){ b.disabled = false; b.style.opacity = ''; });
+            showPageToast('danger', 'Network Error', 'Could not ' + labels[status].toLowerCase() + ' this request. Please try again.');
         });
     }
 

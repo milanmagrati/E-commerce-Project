@@ -1,7 +1,10 @@
 {% extends 'base.html' %}
-{% block title %}Messages - Admin Panel{% endblock %}
+{% block title %}Messages - {{ COMPANY_NAME }}{% endblock %}
 
 {% block extra_css %}
+<!-- Flatpickr CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/confirmDate/confirmDate.min.css">
 <style>
     /* ==================== CHAT INBOX - PREMIUM DESIGN ==================== */
     .chat-page-header {
@@ -497,6 +500,11 @@
             <p>Internal team messaging &mdash; stay connected with your team</p>
         </div>
         <div class="d-flex gap-2 flex-wrap" style="position:relative;z-index:1;">
+            {% if request.user.is_superuser or request.user.role == 'administrator' %}
+            <button class="chat-header-btn" data-bs-toggle="modal" data-bs-target="#throwNoticeModal" style="background: linear-gradient(135deg, #ef4444, #b91c1c); color: white;">
+                <i class="fas fa-bullhorn me-2"></i> Throw Notice
+            </button>
+            {% endif %}
             {% if request.user.is_superuser or request.user.role == 'administrator' or request.user.can_access_todo %}
             <a href="{% url 'todo:board' %}" class="chat-header-btn" style="text-decoration:none;">
                 <i class="fas fa-tasks me-2"></i> Todo
@@ -730,6 +738,455 @@
     </div>
 </div>
 {% endif %}
+
+<!-- Throw Notice Modal (Admin only) -->
+{% if request.user.is_superuser or request.user.role == 'administrator' %}
+<div class="modal fade" id="throwNoticeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
+            <div class="modal-header border-0 py-3" style="background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%); color: #fff;">
+                <h5 class="modal-title fw-bold"><i class="fas fa-bullhorn me-2"></i> Global Notice Management</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            
+            <div class="modal-header border-bottom p-0" style="background: #f8fafc;">
+                <ul class="nav nav-tabs w-100 border-0" id="noticeTabs" role="tablist">
+                    <li class="nav-item flex-fill text-center" role="presentation">
+                        <button class="nav-link active w-100 py-3 fw-bold text-dark border-0 border-bottom border-3 border-danger" id="create-notice-tab" data-bs-toggle="tab" data-bs-target="#create-notice" type="button" role="tab" style="background: transparent;">
+                            <i class="fas fa-edit me-2"></i> Create Notice
+                        </button>
+                    </li>
+                    <li class="nav-item flex-fill text-center" role="presentation">
+                        <button class="nav-link w-100 py-3 fw-bold text-muted border-0" id="notice-history-tab" data-bs-toggle="tab" data-bs-target="#notice-history" type="button" role="tab" style="background: transparent;" onclick="loadNoticeHistory()">
+                            <i class="fas fa-history me-2"></i> Notice History
+                        </button>
+                    </li>
+                </ul>
+            </div>
+            
+            <div class="modal-body p-3 bg-light">
+                <div class="tab-content" id="noticeTabsContent">
+                    <!-- CREATE NOTICE TAB -->
+                    <div class="tab-pane fade show active" id="create-notice" role="tabpanel">
+                        <form id="throwNoticeForm">
+                            <div class="mb-2">
+                                <label class="form-label fw-bold text-muted mb-1">Notice Content</label>
+                                <div id="noticeEditor" style="height:240px; background: white;"></div>
+                                <small class="text-muted" style="font-size: 0.7rem; line-height: 1;">Images are framed and scaled to fit automatically when the notice is shown.</small>
+                            </div>
+                            <div class="row mb-1">
+                                <div class="col-md-6 mb-1">
+                                    <label class="form-label fw-bold text-muted mb-0" style="font-size: 0.85rem;">Start Showing From</label>
+                                    <input type="text" class="form-control" id="noticeDisplayFrom" style="border-radius:8px; border:2px solid #e2e8f0; padding:6px 10px; background-color: white; font-size: 0.9rem;" placeholder="mm/dd/yyyy --:-- --">
+                                    <small class="text-muted" style="font-size: 0.7rem; line-height: 1;">Leave empty to show immediately <a href="#" onclick="if(fpFrom) { fpFrom.clear(); } return false;" style="color:#ef4444;text-decoration:none;margin-left:5px;"><i class="fas fa-times"></i> Clear</a></small>
+                                </div>
+                                <div class="col-md-6 mb-1">
+                                    <label class="form-label fw-bold text-muted mb-0" style="font-size: 0.85rem;">Stop Showing At</label>
+                                    <input type="text" class="form-control" id="noticeDisplayUntil" style="border-radius:8px; border:2px solid #e2e8f0; padding:6px 10px; background-color: white; font-size: 0.9rem;" placeholder="mm/dd/yyyy --:-- --" required>
+                                </div>
+                                <div class="col-md-6 mb-1">
+                                    <label class="form-label fw-bold text-muted mb-0" style="font-size: 0.85rem;">Auto-Set Duration</label>
+                                    <div class="input-group" style="border-radius:8px; overflow:hidden; border:2px solid #e2e8f0; width: 100%;">
+                                        <input type="number" min="1" class="form-control border-0" id="noticeDurationValue" placeholder="amount" style="padding:6px 10px; box-shadow:none; font-size: 0.9rem;">
+                                        <select class="form-select border-0 bg-light" id="noticeDurationUnit" style="max-width: 100px; padding:6px 10px; box-shadow:none; border-left: 2px solid #e2e8f0 !important; font-size: 0.9rem;">
+                                            <option value="minutes">minutes</option>
+                                            <option value="hours">hours</option>
+                                            <option value="days">days</option>
+                                        </select>
+                                    </div>
+                                    <small class="text-muted" style="font-size: 0.7rem; line-height: 1;">Updates "Stop Showing At" field</small>
+                                </div>
+                                <div class="col-md-6 mb-1">
+                                    <label class="form-label fw-bold text-muted mb-0" style="font-size: 0.85rem;">Display Frequency</label>
+                                    <select class="form-select" id="noticeDisplayFrequency" style="border-radius:8px; border:2px solid #e2e8f0; padding:6px 10px; background-color: white; font-size: 0.9rem;">
+                                        <option value="every_refresh">Every Refresh</option>
+                                        <option value="once_per_session">Once Per Session</option>
+                                        <option value="once_per_hour">Once Per Hour</option>
+                                        <option value="once_per_day">Once Per Day</option>
+                                        <option value="once_per_week">Once Per Week</option>
+                                        <option value="once_only">Show Only Once</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="d-grid">
+                                <button type="submit" class="btn text-white" style="background: linear-gradient(135deg, #ef4444, #b91c1c); border-radius:12px; padding:12px; font-weight:600; font-size:1.1rem;" id="btnSubmitNotice">
+                                    <i class="fas fa-paper-plane me-2"></i> Throw Notice Now
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- HISTORY TAB -->
+                    <div class="tab-pane fade" id="notice-history" role="tabpanel">
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-hover align-middle bg-white rounded shadow-sm">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th style="width: 35%">Notice Snippet</th>
+                                        <th style="width: 20%">Start Time</th>
+                                        <th style="width: 20%">End Time</th>
+                                        <th style="width: 15%">Status</th>
+                                        <th style="width: 10%">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="noticeHistoryTableBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center py-4 text-muted">
+                                            <i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>Loading history...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    #noticeTabs .nav-link { transition: all 0.3s; }
+    #noticeTabs .nav-link.active { color: #b91c1c !important; }
+    #noticeTabs .nav-link:not(.active):hover { color: #ef4444 !important; border-bottom: 3px solid #fca5a5 !important; }
+
+    /* Composer: show inserted images framed and scaled down, so the editor stays
+       usable instead of being filled by one full-resolution photo. Mirrors the
+       .global-notice-body rules in base.html that style the notice when it fires. */
+    #noticeEditor .ql-editor { word-wrap: break-word; overflow-wrap: break-word; }
+    #noticeEditor .ql-editor img {
+        display: block;
+        max-width: 100%;
+        max-height: 170px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        margin: 10px auto;
+        padding: 4px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, .10);
+        cursor: default;
+    }
+    #noticeEditor .ql-editor .ql-align-center img { margin-left: auto; margin-right: auto; }
+    #noticeEditor .ql-editor .ql-align-right img { margin-left: auto; margin-right: 0; }
+    #noticeEditor .ql-editor .ql-align-left img { margin-left: 0; margin-right: auto; }
+    #noticeEditor .ql-editor blockquote {
+        border-left: 4px solid #ef4444; padding-left: 1rem; color: #475569; font-style: italic;
+    }
+</style>
+
+<!-- Quill Editor CSS & JS -->
+<link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var toolbarOptions = [
+            ['bold', 'italic', 'underline', 'strike'],        // toggled buttons
+            ['blockquote', 'code-block'],
+            [{ 'header': 1 }, { 'header': 2 }],               // custom button values
+            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+            [{ 'script': 'sub'}, { 'script': 'super' }],      // superscript/subscript
+            [{ 'indent': '-1'}, { 'indent': '+1' }],          // outdent/indent
+            [{ 'direction': 'rtl' }],                         // text direction
+            [{ 'size': ['small', false, 'large', 'huge'] }],  // custom dropdown
+            [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+            [{ 'color': [] }, { 'background': [] }],          // dropdown with defaults from theme
+            [{ 'align': [] }],
+            ['clean'],                                         // remove formatting button
+            ['link', 'image']                                  // link and image
+        ];
+
+        var quill = new Quill('#noticeEditor', {
+            modules: {
+                toolbar: toolbarOptions
+            },
+            theme: 'snow',
+            placeholder: 'Write your global notice here...'
+        });
+        window.quill = quill;
+
+        // Images are embedded inline (base64) in the notice body, and every logged-in
+        // user's poller re-fetches that body every 10s — so a straight phone photo
+        // would be several MB on the wire each time. Downscale before embedding.
+        var MAX_NOTICE_IMAGE_DIM = 1200;
+
+        function downscaleNoticeImage(file) {
+            return new Promise(function(resolve, reject) {
+                var reader = new FileReader();
+                reader.onerror = function() { reject(new Error('read failed')); };
+                reader.onload = function() {
+                    var dataUrl = reader.result;
+                    if (typeof dataUrl !== 'string' || dataUrl.indexOf('data:image/') !== 0) {
+                        reject(new Error('not an image'));
+                        return;
+                    }
+                    // Leave GIFs alone — a canvas redraw would drop the animation.
+                    if (dataUrl.indexOf('data:image/gif') === 0) { resolve(dataUrl); return; }
+
+                    var img = new Image();
+                    img.onerror = function() { resolve(dataUrl); };
+                    img.onload = function() {
+                        var longest = Math.max(img.width, img.height);
+                        var scale = longest > MAX_NOTICE_IMAGE_DIM ? (MAX_NOTICE_IMAGE_DIM / longest) : 1;
+                        // Small file that already fits — keep the original bytes.
+                        if (scale === 1 && dataUrl.length < 400000) { resolve(dataUrl); return; }
+                        try {
+                            var canvas = document.createElement('canvas');
+                            canvas.width = Math.round(img.width * scale);
+                            canvas.height = Math.round(img.height * scale);
+                            var ctx = canvas.getContext('2d');
+                            // JPEG has no alpha, so flatten onto white instead of black.
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            var out = canvas.toDataURL('image/jpeg', 0.85);
+                            resolve(out.length < dataUrl.length ? out : dataUrl);
+                        } catch (e) {
+                            resolve(dataUrl);
+                        }
+                    };
+                    img.src = dataUrl;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function insertNoticeImage(file) {
+            if (!file || file.type.indexOf('image/') !== 0) return;
+            downscaleNoticeImage(file).then(function(dataUrl) {
+                var range = quill.getSelection(true) || { index: quill.getLength() };
+                quill.insertEmbed(range.index, 'image', dataUrl, 'user');
+                quill.insertText(range.index + 1, '\n', 'user');
+                quill.setSelection(range.index + 2, 0, 'user');
+            }).catch(function() {
+                alertify.error('Could not read that image');
+            });
+        }
+
+        quill.getModule('toolbar').addHandler('image', function() {
+            var input = document.createElement('input');
+            input.setAttribute('type', 'file');
+            input.setAttribute('accept', 'image/*');
+            input.onchange = function() {
+                if (input.files && input.files[0]) insertNoticeImage(input.files[0]);
+            };
+            input.click();
+        });
+
+        // Pasted / dropped images go through the same downscale + framing path.
+        quill.root.addEventListener('paste', function(e) {
+            var items = (e.clipboardData && e.clipboardData.items) || [];
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].type && items[i].type.indexOf('image/') === 0) {
+                    e.preventDefault();
+                    insertNoticeImage(items[i].getAsFile());
+                    return;
+                }
+            }
+        });
+        quill.root.addEventListener('drop', function(e) {
+            var files = (e.dataTransfer && e.dataTransfer.files) || [];
+            if (files.length && files[0].type.indexOf('image/') === 0) {
+                e.preventDefault();
+                insertNoticeImage(files[0]);
+            }
+        });
+
+        const throwNoticeForm = document.getElementById('throwNoticeForm');
+        if (throwNoticeForm) {
+            throwNoticeForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const content = quill.root.innerHTML.trim();
+                const displayFrom = document.getElementById('noticeDisplayFrom').value;
+                const displayUntil = document.getElementById('noticeDisplayUntil').value;
+                const displayFrequency = document.getElementById('noticeDisplayFrequency').value;
+
+                if (content === '<p><br></p>' || content === '') {
+                    alertify.error('Notice content cannot be empty');
+                    return;
+                }
+                
+                if (!displayUntil) {
+                    alertify.error('Stop Showing At is required');
+                    return;
+                }
+
+                const btn = document.getElementById('btnSubmitNotice');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Sending...';
+
+                function getCookie(name) {
+                    var cookieValue = null;
+                    if (document.cookie && document.cookie !== '') {
+                        var cookies = document.cookie.split(';');
+                        for (var i = 0; i < cookies.length; i++) {
+                            var cookie = cookies[i].trim();
+                            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                                break;
+                            }
+                        }
+                    }
+                    return cookieValue;
+                }
+
+                let url = '/api/create-notice/';
+                if (window.editingNoticeId) {
+                    url = '/api/update-notice/' + window.editingNoticeId + '/';
+                }
+
+                fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        content: content,
+                        display_from: displayFrom,
+                        display_until: displayUntil,
+                        display_frequency: displayFrequency
+                    })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alertify.success(window.editingNoticeId ? 'Notice updated successfully!' : 'Notice thrown globally successfully!');
+                        var modal = bootstrap.Modal.getInstance(document.getElementById('throwNoticeModal'));
+                        if (modal) modal.hide();
+                        quill.setContents([]);
+                        if (window.cancelEditNotice) window.cancelEditNotice();
+                    } else {
+                        alertify.error(data.message || 'Error saving notice');
+                    }
+                    btn.disabled = false;
+                    btn.innerHTML = window.editingNoticeId ? '<i class="fas fa-save me-2"></i> Update Notice' : '<i class="fas fa-paper-plane me-2"></i> Throw Notice Now';
+                })
+                .catch(err => {
+                    console.error(err);
+                    alertify.error('An error occurred');
+                    btn.disabled = false;
+                    btn.innerHTML = window.editingNoticeId ? '<i class="fas fa-save me-2"></i> Update Notice' : '<i class="fas fa-paper-plane me-2"></i> Throw Notice Now';
+                });
+            });
+        }
+        
+        // Tab switching style
+        const tabLinks = document.querySelectorAll('#noticeTabs .nav-link');
+        tabLinks.forEach(link => {
+            link.addEventListener('click', function() {
+                tabLinks.forEach(l => {
+                    l.classList.remove('text-dark', 'border-bottom', 'border-3', 'border-danger');
+                    l.classList.add('text-muted');
+                });
+                this.classList.remove('text-muted');
+                this.classList.add('text-dark', 'border-bottom', 'border-3', 'border-danger');
+            });
+        });
+    });
+
+    function getCookie(name) {
+        var cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            var cookies = document.cookie.split(';');
+            for (var i = 0; i < cookies.length; i++) {
+                var cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    function loadNoticeHistory() {
+        const tbody = document.getElementById('noticeHistoryTableBody');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>Loading history...</td></tr>';
+        
+        fetch('/api/notice-history/')
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                tbody.innerHTML = '';
+                if (data.notices.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No notices found.</td></tr>';
+                    return;
+                }
+                
+                data.notices.forEach(n => {
+                    let badgeClass = 'bg-secondary';
+                    if (n.status === 'Active') badgeClass = 'bg-success';
+                    if (n.status === 'Scheduled') badgeClass = 'bg-info';
+                    if (n.status === 'Expired') badgeClass = 'bg-warning text-dark';
+                    
+                    let actionBtn = '';
+                    if (n.status === 'Active' || n.status === 'Scheduled') {
+                        actionBtn = `<button class="btn btn-sm btn-danger" onclick="stopNotice(${n.id}, this)">Stop</button>`;
+                    } else {
+                        actionBtn = `<span class="text-muted"><i class="fas fa-ban"></i></span>`;
+                    }
+                    
+                    let editBtn = `<button class="btn btn-sm btn-outline-primary ms-1" onclick="editNotice(${n.id}, \`${encodeURIComponent(n.raw_content)}\`, '${n.raw_display_from}', '${n.raw_display_until}', '${n.display_frequency || 'every_refresh'}')"><i class="fas fa-edit"></i></button>`;
+                    
+                    tbody.innerHTML += `
+                        <tr>
+                            <td class="text-muted small">${n.snippet}</td>
+                            <td class="small fw-semibold">${n.display_from}</td>
+                            <td class="small fw-semibold">${n.display_until}</td>
+                            <td><span class="badge ${badgeClass}">${n.status}</span></td>
+                            <td>
+                                <div class="d-flex">
+                                    ${actionBtn}
+                                    ${editBtn}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+            } else {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">Error: ${data.message}</td></tr>`;
+            }
+        })
+        .catch(err => {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-danger">Failed to load history</td></tr>';
+        });
+    }
+
+    function stopNotice(id, btnElement) {
+        if (!confirm("Are you sure you want to stop this notice?")) return;
+        
+        const originalText = btnElement.innerHTML;
+        btnElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btnElement.disabled = true;
+        
+        fetch(`/api/notice/${id}/stop/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alertify.success('Notice stopped successfully');
+                loadNoticeHistory(); // reload table
+            } else {
+                alertify.error('Error: ' + data.message);
+                btnElement.innerHTML = originalText;
+                btnElement.disabled = false;
+            }
+        })
+        .catch(err => {
+            alertify.error('Network error');
+            btnElement.innerHTML = originalText;
+            btnElement.disabled = false;
+        });
+    }
+</script>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -781,7 +1238,7 @@
             var checked = document.querySelectorAll('.group-member-checkbox:checked').length;
             if (selectedCountEl) selectedCountEl.textContent = checked;
             if (createGroupBtn) {
-                createGroupBtn.disabled = checked === 0 || !groupNameInput.value.trim();
+                createGroupBtn.disabled = checked === 0;
             }
         }
 
@@ -814,7 +1271,7 @@
                     memberIds.push(parseInt(cb.value));
                 });
 
-                if (!groupName || memberIds.length === 0) return;
+                if (memberIds.length === 0) return;
 
                 createGroupBtn.disabled = true;
                 createGroupBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Creating...';
@@ -863,5 +1320,161 @@
             });
         }
     });
+
+    window.editingNoticeId = null;
+    window.editNotice = function(id, encodedContent, displayFrom, displayUntil, displayFrequency) {
+        window.editingNoticeId = id;
+        
+        // Switch tab
+        document.getElementById('create-notice-tab').click();
+        
+        // Populate form
+        let content = decodeURIComponent(encodedContent);
+        // If quill is global, use it. Otherwise, we can assign to a global variable.
+        if (typeof window.quill !== 'undefined') {
+            window.quill.root.innerHTML = content;
+        } else {
+            let qe = document.querySelector('#noticeEditor .ql-editor');
+            if (qe) qe.innerHTML = content;
+        }
+        
+        // displayFrom/displayUntil come from the backend as "Y-m-dTH:i" strings, but the
+        // flatpickr instances are configured with dateFormat "m/d/Y h:i K". Passing the raw
+        // string straight to setDate() makes flatpickr parse it against that mismatched format
+        // and produce a garbled date. Convert to a real Date object first to sidestep parsing.
+        if (fpFrom) fpFrom.setDate(displayFrom ? new Date(displayFrom) : null);
+        if (fpUntil) fpUntil.setDate(displayUntil ? new Date(displayUntil) : null);
+
+        // Clear any leftover duration value from a previous edit session so it doesn't
+        // silently overwrite the just-loaded "Stop Showing At" the next time it's touched.
+        const durationValEl = document.getElementById('noticeDurationValue');
+        if (durationValEl) durationValEl.value = '';
+
+        const freqEl = document.getElementById('noticeDisplayFrequency');
+        if (freqEl && displayFrequency) {
+            freqEl.value = displayFrequency;
+        }
+        
+        // Update button text
+        const submitBtn = document.getElementById('btnSubmitNotice');
+        if (submitBtn) {
+            submitBtn.innerHTML = '<i class="fas fa-save me-2"></i> Update Notice';
+        }
+        
+        // Show cancel button
+        let cancelBtn = document.getElementById('cancelEditNotice');
+        if (!cancelBtn) {
+            cancelBtn = document.createElement('button');
+            cancelBtn.id = 'cancelEditNotice';
+            cancelBtn.className = 'btn btn-secondary ms-2';
+            cancelBtn.innerText = 'Cancel';
+            cancelBtn.onclick = function(e) {
+                e.preventDefault();
+                window.cancelEditNotice();
+            };
+            if (submitBtn && submitBtn.parentNode) {
+                submitBtn.parentNode.insertBefore(cancelBtn, submitBtn.nextSibling);
+            }
+        }
+        if (cancelBtn) cancelBtn.style.display = 'inline-block';
+    };
+
+    window.cancelEditNotice = function() {
+        window.editingNoticeId = null;
+        if (typeof window.quill !== 'undefined') {
+            window.quill.setContents([]);
+        } else {
+            let qe = document.querySelector('#noticeEditor .ql-editor');
+            if (qe) qe.innerHTML = '<p><br></p>';
+        }
+        
+        // Clear flatpickr inputs safely
+        if (fpFrom) fpFrom.clear();
+        if (fpUntil) fpUntil.clear();
+        
+        const durationVal = document.getElementById('noticeDurationValue');
+        if (durationVal) durationVal.value = '';
+
+        // Back to a blank compose form — otherwise the next new notice silently
+        // inherits the frequency of the notice that was being edited.
+        const freqReset = document.getElementById('noticeDisplayFrequency');
+        if (freqReset) freqReset.value = 'every_refresh';
+
+        const submitBtn = document.getElementById('btnSubmitNotice');
+        if (submitBtn) {
+            submitBtn.innerHTML = '<i class="fas fa-paper-plane me-2"></i> Throw Notice Now';
+        }
+        
+        const cancelBtn = document.getElementById('cancelEditNotice');
+        if (cancelBtn) cancelBtn.style.display = 'none';
+    };
+
+    // Initialize Flatpickr for Date Inputs
+    let fpFrom = null;
+    let fpUntil = null;
+    
+    function calculateUntilDate() {
+        const durationVal = document.getElementById('noticeDurationValue');
+        const durationUnit = document.getElementById('noticeDurationUnit');
+        if (!durationVal || !durationVal.value) return;
+        
+        const val = parseInt(durationVal.value);
+        if (isNaN(val) || val <= 0) return;
+        
+        const unit = durationUnit.value;
+        
+        let baseTime = fpFrom && fpFrom.selectedDates && fpFrom.selectedDates[0] ? fpFrom.selectedDates[0] : new Date();
+        let newTime = new Date(baseTime.getTime());
+        
+        if (unit === 'minutes') {
+            newTime.setMinutes(newTime.getMinutes() + val);
+        } else if (unit === 'hours') {
+            newTime.setHours(newTime.getHours() + val);
+        } else if (unit === 'days') {
+            newTime.setDate(newTime.getDate() + val);
+        }
+        
+        if (fpUntil) {
+            fpUntil.setDate(newTime, true);
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        if (typeof flatpickr !== 'undefined') {
+            const getPlugin = () => new confirmDatePlugin({
+                confirmIcon: "<i class='fas fa-check me-1'></i> ",
+                confirmText: "Choose",
+                showAlways: true,
+                theme: "light"
+            });
+            
+            fpUntil = flatpickr("#noticeDisplayUntil", {
+                enableTime: true,
+                allowInput: true,
+                minuteIncrement: 1,
+                dateFormat: "m/d/Y h:i K",
+                plugins: [getPlugin()]
+            });
+            
+            fpFrom = flatpickr("#noticeDisplayFrom", {
+                enableTime: true,
+                allowInput: true,
+                minuteIncrement: 1,
+                dateFormat: "m/d/Y h:i K",
+                plugins: [getPlugin()],
+                onChange: function(selectedDates, dateStr, instance) {
+                    calculateUntilDate();
+                }
+            });
+            
+            const durationVal = document.getElementById('noticeDurationValue');
+            const durationUnit = document.getElementById('noticeDurationUnit');
+            if (durationVal) durationVal.addEventListener('input', calculateUntilDate);
+            if (durationUnit) durationUnit.addEventListener('change', calculateUntilDate);
+        }
+    });
 </script>
+<!-- Flatpickr JS -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/confirmDate/confirmDate.js"></script>
 {% endblock %}

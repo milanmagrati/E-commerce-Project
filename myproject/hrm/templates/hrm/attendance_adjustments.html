@@ -1,0 +1,812 @@
+{% extends 'base.html' %}
+{% block title %}Attendance Adjustments - HRM{% endblock %}
+
+{% block content %}
+<!-- Page Toast Notification -->
+<div id="pageToast" class="page-toast" style="display:none;">
+    <div class="page-toast-inner">
+        <div class="page-toast-icon" id="pageToastIcon"></div>
+        <div class="page-toast-body">
+            <div class="page-toast-title" id="pageToastTitle"></div>
+            <div class="page-toast-msg" id="pageToastMsg"></div>
+        </div>
+        <button class="page-toast-close" onclick="dismissToast()">&times;</button>
+        <div class="page-toast-progress"><div class="page-toast-progress-bar" id="pageToastProgress"></div></div>
+    </div>
+</div>
+
+<div class="container-fluid py-3 adj-wrapper">
+
+    <!-- Header Banner -->
+    <div class="adj-banner mb-4">
+        <div class="d-flex align-items-center gap-3">
+            <div class="adj-banner-icon"><i class="fas fa-user-clock"></i></div>
+            <div>
+                <h4 class="fw-bold mb-0 text-white">Attendance Adjustments</h4>
+                <div class="text-white-50 small mt-1">Every fix made from the Incomplete Attendance tool, plus records still waiting on one &mdash; full detail, editing, and a recoverable trash.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border adj-stat-card adj-stat-total h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">Total Adjustments</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ total_adjustments }}</div>
+                        <div class="text-muted" style="font-size:.7rem;">Incomplete + fixed</div>
+                    </div>
+                    <div class="ms-auto adj-stat-icon" style="background:#eef2ff;"><i class="fas fa-list-check" style="color:#6366f1;"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border adj-stat-card adj-stat-incomplete h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">Currently Incomplete</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1" id="statIncomplete">{{ incomplete_count }}</div>
+                        <div style="font-size:.7rem;color:#c2410c;">Needs a fix</div>
+                    </div>
+                    <div class="ms-auto adj-stat-icon" style="background:#ffedd5;"><i class="fas fa-triangle-exclamation" style="color:#c2410c;"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border adj-stat-card adj-stat-fixed h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">Previously Fixed</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1">{{ fixed_count }}</div>
+                        <div style="font-size:.7rem;color:#059669;">Has a fix history</div>
+                    </div>
+                    <div class="ms-auto adj-stat-icon" style="background:#ecfdf5;"><i class="fas fa-clock-rotate-left" style="color:#059669;"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border adj-stat-card adj-stat-trash h-100">
+                <div class="card-body d-flex align-items-center gap-3 py-3">
+                    <div>
+                        <div class="text-muted small">In Trash</div>
+                        <div class="fw-bold fs-4 lh-1 mt-1" id="statTrashed">{{ trashed_count }}</div>
+                        <div style="font-size:.7rem;color:#9ca3af;">Awaiting restore/purge</div>
+                    </div>
+                    <div class="ms-auto adj-stat-icon" style="background:#f3f4f6;"><i class="fas fa-trash-can" style="color:#6b7280;"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav adj-tabs mb-3" id="adjTabs">
+        <li class="nav-item">
+            <button class="nav-link active" data-tab="active" onclick="Adj.switchTab('active')">
+                <i class="fas fa-table-list me-1"></i> Adjustments
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-tab="trash" onclick="Adj.switchTab('trash')">
+                <i class="fas fa-trash-can me-1"></i> Trash
+                <span class="badge rounded-pill adj-trash-badge" id="trashTabBadge" style="{% if trashed_count == 0 %}display:none;{% endif %}">{{ trashed_count }}</span>
+            </button>
+        </li>
+    </ul>
+
+    <!-- Filters -->
+    <div class="card mb-3 shadow-sm border">
+        <div class="card-body py-2 px-3">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="input-group" style="max-width:240px;">
+                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-search fa-sm"></i></span>
+                    <input type="text" class="form-control border-start-0 ps-0" id="adjSearch" placeholder="Search employee..." style="box-shadow:none;" onkeydown="if(event.key==='Enter'){Adj.applyFilters();}">
+                </div>
+                <select class="form-select border" id="adjDepartment" style="max-width:180px;border-radius:8px;" onchange="Adj.applyFilters();">
+                    <option value="">All Departments</option>
+                    {% for d in departments %}
+                    <option value="{{ d.id }}">{{ d.name }}</option>
+                    {% endfor %}
+                </select>
+                <select class="form-select border adj-active-only" id="adjStatusFilter" style="max-width:170px;border-radius:8px;" onchange="Adj.applyFilters();">
+                    <option value="all">All Adjustments</option>
+                    <option value="incomplete">Currently Incomplete</option>
+                    <option value="fixed">Previously Fixed</option>
+                </select>
+                <input type="date" class="form-control border" id="adjDateFrom" style="max-width:150px;border-radius:8px;" title="From date" onchange="Adj.applyFilters();">
+                <span class="text-muted small">to</span>
+                <input type="date" class="form-control border" id="adjDateTo" style="max-width:150px;border-radius:8px;" title="To date" onchange="Adj.applyFilters();">
+                <button class="btn btn-outline-secondary btn-sm" onclick="Adj.applyFilters();"><i class="fas fa-filter me-1"></i>Apply</button>
+                <button class="btn btn-outline-secondary btn-sm" title="Reset filters" onclick="Adj.resetFilters();"><i class="fas fa-rotate-left"></i></button>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <span class="text-muted small">Per Page:</span>
+                    <select class="form-select form-select-sm border" id="adjPerPage" style="width:80px;border-radius:6px;" onchange="Adj.applyFilters();">
+                        <option value="10">10</option>
+                        <option value="15" selected>15</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table Card -->
+    <div class="card shadow-sm border">
+        <div class="card-body p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <small class="text-muted" id="adjCountLabel"></small>
+            </div>
+
+            <div id="adjLoading" class="text-center py-5">
+                <div class="spinner-border text-success" role="status"></div>
+            </div>
+            <div id="adjEmpty" class="text-center py-5 text-muted" style="display:none;">
+                <i class="fas fa-circle-check fa-3x mb-3 d-block" style="color:#a7f3d0;"></i>
+                <div id="adjEmptyMsg">No records found.</div>
+            </div>
+
+            <div class="table-responsive" id="adjTableWrap" style="display:none;">
+                <table class="table table-hover align-middle mb-0" id="adjTable">
+                    <thead>
+                        <tr class="text-muted text-uppercase" style="letter-spacing:.03em;">
+                            <th>Employee</th>
+                            <th>Department</th>
+                            <th>Date</th>
+                            <th>Clock In</th>
+                            <th>Clock Out</th>
+                            <th>Status</th>
+                            <th style="min-width:170px;">Remarks</th>
+                            <th style="min-width:130px;" id="adjLastColHeader">Modified By</th>
+                            <th style="width:150px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="adjTbody"></tbody>
+                </table>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mt-3" id="adjPagination" style="display:none;">
+                <small class="text-muted" id="adjPageInfo"></small>
+                <div class="d-flex gap-1">
+                    <button class="btn btn-sm btn-outline-secondary" id="adjPrevBtn" onclick="Adj.goPage(-1)"><i class="fas fa-chevron-left"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary" id="adjNextBtn" onclick="Adj.goPage(1)"><i class="fas fa-chevron-right"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Fix History Modal -->
+<div class="modal fade" id="adjLogsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="adj-modal-header" style="background:linear-gradient(135deg,#334155,#64748b);">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="adj-modal-header-icon"><i class="fas fa-clock-rotate-left"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6" id="adjLogsTitle">Fix History</div>
+                        <div class="text-white-50 small" id="adjLogsSubtitle">All corrections made to this record</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="Adj.getModal('adjLogsModal').hide()"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div id="adjLogsLoading" class="text-center py-5"><div class="spinner-border text-secondary" role="status"></div></div>
+                <div id="adjLogsEmpty" class="text-center py-5 text-muted" style="display:none;">
+                    <i class="fas fa-inbox fa-3x mb-3 d-block" style="color:#cbd5e1;"></i>
+                    No fixes have been logged for this record yet.
+                </div>
+                <div id="adjLogsError" class="text-center py-5 text-danger" style="display:none;"></div>
+                <div id="adjLogsList" style="display:none;"></div>
+            </div>
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button class="btn btn-outline-secondary px-4" onclick="Adj.getModal('adjLogsModal').hide()">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Soft-delete (Move to Trash) Confirm Modal -->
+<div class="modal fade" id="adjTrashModal" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="adj-danger-header">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="adj-danger-icon"><i class="fas fa-trash-can"></i></div>
+                    <span class="fw-bold text-white">Move to Trash</span>
+                </div>
+                <button type="button" class="btn-close btn-close-white btn-sm" onclick="Adj.getModal('adjTrashModal').hide()"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <p class="mb-1 text-muted small">Move the attendance record for</p>
+                <p class="fw-bold mb-1" id="adjTrashName" style="color:#1a1a2e;"></p>
+                <p class="text-muted small mb-0">to the trash? You can restore it any time before it's permanently deleted.</p>
+            </div>
+            <div class="modal-footer border-top bg-light px-3 py-2 gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="Adj.getModal('adjTrashModal').hide()">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm flex-fill" onclick="Adj.confirmTrash()">
+                    <span id="adjTrashBtnNormal"><i class="fas fa-trash-can me-1"></i>Move to Trash</span>
+                    <span id="adjTrashBtnLoading" class="d-none"><span class="spinner-border spinner-border-sm me-1"></span>Moving...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Restore Confirm Modal -->
+<div class="modal fade" id="adjRestoreModal" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="adj-restore-header">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="adj-danger-icon"><i class="fas fa-trash-can-arrow-up"></i></div>
+                    <span class="fw-bold text-white">Restore Record</span>
+                </div>
+                <button type="button" class="btn-close btn-close-white btn-sm" onclick="Adj.getModal('adjRestoreModal').hide()"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <p class="mb-1 text-muted small">Restore the attendance record for</p>
+                <p class="fw-bold mb-1" id="adjRestoreName" style="color:#1a1a2e;"></p>
+                <p class="text-muted small mb-0">back to the active list?</p>
+            </div>
+            <div class="modal-footer border-top bg-light px-3 py-2 gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="Adj.getModal('adjRestoreModal').hide()">Cancel</button>
+                <button type="button" class="btn btn-success btn-sm flex-fill" onclick="Adj.confirmRestore()">
+                    <span id="adjRestoreBtnNormal"><i class="fas fa-trash-can-arrow-up me-1"></i>Restore</span>
+                    <span id="adjRestoreBtnLoading" class="d-none"><span class="spinner-border spinner-border-sm me-1"></span>Restoring...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hard Delete (Permanent) Confirm Modal -->
+{% if is_admin_user %}
+<div class="modal fade" id="adjHardDeleteModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="adj-danger-header">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="adj-danger-icon"><i class="fas fa-triangle-exclamation"></i></div>
+                    <span class="fw-bold text-white">Permanently Delete</span>
+                </div>
+                <button type="button" class="btn-close btn-close-white btn-sm" onclick="Adj.getModal('adjHardDeleteModal').hide()"></button>
+            </div>
+            <div class="modal-body py-4">
+                <p class="mb-1 text-muted small text-center">You are about to permanently delete the record for</p>
+                <p class="fw-bold text-center mb-2" id="adjHardDeleteName" style="color:#1a1a2e;"></p>
+                <div class="adj-warning-box mb-3">
+                    <i class="fas fa-circle-exclamation me-1"></i>
+                    This cannot be undone. The record and its raw biometric punches for that day will be gone for good.
+                </div>
+                <label class="small fw-semibold text-muted mb-1 d-block">Type <span class="text-danger">DELETE</span> to confirm</label>
+                <input type="text" class="form-control" id="adjHardDeleteConfirmInput" placeholder="DELETE" autocomplete="off" oninput="Adj.checkHardDeleteConfirm()">
+            </div>
+            <div class="modal-footer border-top bg-light px-3 py-2 gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="Adj.getModal('adjHardDeleteModal').hide()">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm flex-fill" id="adjHardDeleteBtn" disabled onclick="Adj.confirmHardDelete()">
+                    <span id="adjHardDeleteBtnNormal"><i class="fas fa-fire me-1"></i>Delete Forever</span>
+                    <span id="adjHardDeleteBtnLoading" class="d-none"><span class="spinner-border spinner-border-sm me-1"></span>Deleting...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<style>
+    .adj-wrapper { width:100%; max-width:100%; overflow-x:hidden; box-sizing:border-box; }
+    .adj-wrapper *, .adj-wrapper *::before, .adj-wrapper *::after { box-sizing:border-box; }
+
+    /* ── Banner ── */
+    .adj-banner { background:linear-gradient(135deg,#1a7a4a 0%,#28a745 100%); border-radius:14px; padding:1.4rem 1.6rem; box-shadow:0 8px 24px rgba(40,167,69,.18); }
+    .adj-banner-icon { width:52px; height:52px; border-radius:14px; background:rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; font-size:1.4rem; color:#fff; flex-shrink:0; }
+
+    /* ── Stat Cards ── */
+    .adj-stat-card { border:1px solid #e9ecef; border-radius:12px; border-left:4px solid #dee2e6; overflow:hidden; }
+    .adj-stat-total      { border-left-color:#6366f1; }
+    .adj-stat-incomplete { border-left-color:#f97316; }
+    .adj-stat-fixed      { border-left-color:#28a745; }
+    .adj-stat-trash      { border-left-color:#9ca3af; }
+    .adj-stat-icon { width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.15rem; flex-shrink:0; }
+
+    /* ── Tabs ── */
+    .adj-tabs { border-bottom:2px solid #e9ecef; gap:.25rem; }
+    .adj-tabs .nav-link { border:none; background:none; color:#6c757d; font-weight:600; font-size:.85rem; padding:.6rem 1.1rem; border-radius:8px 8px 0 0; display:flex; align-items:center; }
+    .adj-tabs .nav-link:hover { background:#f8f9fa; color:#374151; }
+    .adj-tabs .nav-link.active { color:#1a7a4a; background:#ecfdf5; box-shadow:inset 0 -2px 0 #28a745; }
+    .adj-trash-badge { background:#6b7280; color:#fff; font-size:.65rem; margin-left:6px; }
+
+    /* ── Table ── */
+    #adjTable th { font-size:.7rem; font-weight:700; padding-bottom:.6rem; }
+    #adjTable td { font-size:.85rem; vertical-align:middle; }
+    .adj-row-incomplete td { background:#fffaf5; box-shadow:inset 3px 0 0 #f97316; }
+    .adj-row-incomplete:hover td { background:#fff3e6; }
+    .adj-row-trashed td { background:#f9fafb; box-shadow:inset 3px 0 0 #9ca3af; }
+    .adj-row-trashed:hover td { background:#f3f4f6; }
+    .adj-remarks { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; max-width:220px; font-size:.8rem; color:#44403c; cursor:help; }
+    .adj-badge { font-weight:600; font-size:.7rem; border-radius:20px; padding:3px 10px; display:inline-flex; align-items:center; gap:4px; }
+    .adj-status-present  { background:#ecfdf5; color:#059669; }
+    .adj-status-absent   { background:#fef2f2; color:#dc2626; }
+    .adj-status-late     { background:#fff7ed; color:#ea580c; }
+    .adj-status-half_day { background:#fffbeb; color:#d97706; }
+    .adj-status-on_leave { background:#eef2ff; color:#4f46e5; }
+    .adj-status-incomplete { background:#ffedd5; color:#9a3412; }
+    .btn-icon { width:28px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; border:1px solid #e5e7eb; background:#fff; transition:all .2s; cursor:pointer; }
+    .btn-icon:hover { background:#f3f4f6; border-color:#d1d5db; }
+
+    /* ── Inline edit row ── */
+    .adj-edit-row td { border-top:none; background:#fffbeb; }
+
+    /* ── Modals ── */
+    .adj-modal-header { padding:1.2rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
+    .adj-modal-header-icon { width:46px; height:46px; border-radius:12px; background:rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; font-size:1.2rem; color:#fff; flex-shrink:0; }
+    .adj-danger-header { background:linear-gradient(135deg,#dc2626,#ef4444); padding:1rem 1.25rem; display:flex; align-items:center; justify-content:space-between; }
+    .adj-restore-header { background:linear-gradient(135deg,#1a7a4a,#28a745); padding:1rem 1.25rem; display:flex; align-items:center; justify-content:space-between; }
+    .adj-danger-icon { width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; color:#fff; }
+    .adj-warning-box { background:#fef2f2; border:1.5px solid #fecaca; border-radius:8px; padding:.6rem .8rem; font-size:.78rem; color:#991b1b; }
+
+    /* ── Log entries (fix history) ── */
+    .adj-log-entry { border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; margin-bottom:10px; background:#f8fafc; }
+    .adj-log-entry:last-child { margin-bottom:0; }
+    .adj-log-diff { font-size:.82rem; color:#334155; line-height:1.6; }
+    .adj-log-field { color:#64748b; font-weight:600; }
+    .adj-log-remarks { margin-top:8px; padding-top:8px; border-top:1px dashed #e2e8f0; font-size:.82rem; color:#475569; font-style:italic; }
+
+    /* ── Page Toast (shared pattern) ── */
+    .page-toast { position:fixed; top:24px; right:24px; z-index:9999; animation:adjToastSlideIn .4s cubic-bezier(.21,1.02,.73,1); }
+    .page-toast-inner { min-width:340px; max-width:420px; background:#fff; border-radius:14px; box-shadow:0 12px 40px rgba(0,0,0,.15),0 4px 12px rgba(0,0,0,.08); overflow:hidden; display:flex; align-items:center; gap:14px; padding:16px 18px 16px 16px; position:relative; }
+    .page-toast-icon { width:42px; height:42px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:1.15rem; }
+    .page-toast.toast-success .page-toast-icon { background:linear-gradient(135deg,#d1fae5,#a7f3d0); color:#059669; }
+    .page-toast.toast-danger  .page-toast-icon { background:linear-gradient(135deg,#fee2e2,#fecaca); color:#dc2626; }
+    .page-toast.toast-info    .page-toast-icon { background:linear-gradient(135deg,#dbeafe,#bfdbfe); color:#2563eb; }
+    .page-toast-body { flex:1; min-width:0; }
+    .page-toast-title { font-size:.82rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+    .page-toast.toast-success .page-toast-title { color:#065f46; }
+    .page-toast.toast-danger  .page-toast-title { color:#991b1b; }
+    .page-toast.toast-info    .page-toast-title { color:#1e40af; }
+    .page-toast-msg { font-size:.85rem; color:#374151; line-height:1.4; }
+    .page-toast-close { background:none; border:none; font-size:1.4rem; color:#9ca3af; cursor:pointer; line-height:1; padding:0; margin-left:4px; align-self:flex-start; }
+    .page-toast-close:hover { color:#374151; }
+    .page-toast-progress { position:absolute; bottom:0; left:0; right:0; height:3px; background:#f3f4f6; border-radius:0 0 14px 14px; overflow:hidden; }
+    .page-toast-progress-bar { height:100%; width:100%; border-radius:0 0 14px 14px; animation:adjToastCountdown 4s linear forwards; }
+    .page-toast.toast-success .page-toast-progress-bar { background:linear-gradient(90deg,#059669,#34d399); }
+    .page-toast.toast-danger  .page-toast-progress-bar { background:linear-gradient(90deg,#dc2626,#f87171); }
+    .page-toast.toast-info    .page-toast-progress-bar { background:linear-gradient(90deg,#2563eb,#60a5fa); }
+    @keyframes adjToastSlideIn  { from{opacity:0;transform:translateX(60px) scale(.95)} to{opacity:1;transform:translateX(0) scale(1)} }
+    @keyframes adjToastSlideOut { from{opacity:1;transform:translateX(0) scale(1)} to{opacity:0;transform:translateX(60px) scale(.95)} }
+    @keyframes adjToastCountdown { from{width:100%} to{width:0%} }
+</style>
+
+{% block extra_js %}
+<script>
+(function () {
+    var CSRF = '{{ csrf_token }}';
+    var CAN_FIX = {% if can_fix_adjustments %}true{% else %}false{% endif %};
+    var IS_ADMIN = {% if is_admin_user %}true{% else %}false{% endif %};
+    var LIST_URL = '{% url "hrm:attendance_adjustments_list_ajax" %}';
+
+    var state = { view: 'active', page: 1, totalPages: 1 };
+    var records = {};
+    var pendingId = null;
+    var toastTimer = null;
+
+    /* ── Helpers ── */
+    function esc(str) {
+        var d = document.createElement('div');
+        d.appendChild(document.createTextNode(str == null ? '' : String(str)));
+        return d.innerHTML;
+    }
+    function escAttr(str) { return esc(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+    function getModal(elId) {
+        var el = document.getElementById(elId);
+        return bootstrap.Modal.getInstance(el) || new bootstrap.Modal(el);
+    }
+
+    /* ── Page Toast ── */
+    function showPageToast(type, title, msg) {
+        var toast = document.getElementById('pageToast');
+        toast.className = 'page-toast toast-' + type;
+        document.getElementById('pageToastTitle').textContent = title;
+        document.getElementById('pageToastMsg').textContent = msg;
+        var icons = { success:'fa-check-circle', danger:'fa-exclamation-circle', info:'fa-info-circle' };
+        document.getElementById('pageToastIcon').innerHTML = '<i class="fas ' + (icons[type] || 'fa-check-circle') + '"></i>';
+        toast.style.display = 'block';
+        toast.style.animation = 'adjToastSlideIn .4s cubic-bezier(.21,1.02,.73,1)';
+        var bar = document.getElementById('pageToastProgress');
+        bar.style.animation = 'none'; void bar.offsetWidth;
+        bar.style.animation = 'adjToastCountdown 4s linear forwards';
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(dismissToast, 4200);
+    }
+    window.dismissToast = function () {
+        var toast = document.getElementById('pageToast');
+        toast.style.animation = 'adjToastSlideOut .3s ease forwards';
+        setTimeout(function () { toast.style.display = 'none'; }, 300);
+        if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    };
+
+    /* ── Tabs ── */
+    function switchTab(tab) {
+        state.view = tab;
+        state.page = 1;
+        document.querySelectorAll('#adjTabs .nav-link').forEach(function (btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-tab') === tab);
+        });
+        document.querySelectorAll('.adj-active-only').forEach(function (el) {
+            el.style.display = tab === 'trash' ? 'none' : '';
+        });
+        document.getElementById('adjLastColHeader').textContent = tab === 'trash' ? 'Deleted' : 'Modified By';
+        fetchList();
+    }
+
+    /* ── Filters ── */
+    function applyFilters() { state.page = 1; fetchList(); }
+    function resetFilters() {
+        document.getElementById('adjSearch').value = '';
+        document.getElementById('adjDepartment').value = '';
+        document.getElementById('adjStatusFilter').value = 'all';
+        document.getElementById('adjDateFrom').value = '';
+        document.getElementById('adjDateTo').value = '';
+        state.page = 1;
+        fetchList();
+    }
+    function goPage(delta) {
+        var newPage = state.page + delta;
+        if (newPage < 1 || newPage > state.totalPages) return;
+        state.page = newPage;
+        fetchList();
+    }
+
+    /* ── List fetch/render ── */
+    function fetchList() {
+        var params = new URLSearchParams({
+            view: state.view,
+            page: state.page,
+            per_page: document.getElementById('adjPerPage').value,
+            search: document.getElementById('adjSearch').value.trim(),
+            department: document.getElementById('adjDepartment').value,
+            status_filter: document.getElementById('adjStatusFilter').value,
+            date_from: document.getElementById('adjDateFrom').value,
+            date_to: document.getElementById('adjDateTo').value
+        });
+        document.getElementById('adjLoading').style.display = 'block';
+        document.getElementById('adjTableWrap').style.display = 'none';
+        document.getElementById('adjEmpty').style.display = 'none';
+        document.getElementById('adjPagination').style.display = 'none';
+        fetch(LIST_URL + '?' + params.toString())
+            .then(function (r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function (data) {
+                document.getElementById('adjLoading').style.display = 'none';
+                if (!data.success) { showPageToast('danger', 'Error', data.error || 'Failed to load records.'); return; }
+                state.totalPages = data.total_pages || 1;
+                document.getElementById('adjCountLabel').textContent = data.count + ' record' + (data.count === 1 ? '' : 's');
+                renderTable(data.results);
+                if (data.results.length === 0) {
+                    document.getElementById('adjEmptyMsg').textContent = state.view === 'trash'
+                        ? 'The trash is empty.' : 'No incomplete or fixed attendance records found.';
+                    document.getElementById('adjEmpty').style.display = 'block';
+                    return;
+                }
+                document.getElementById('adjTableWrap').style.display = 'block';
+                if (data.total_pages > 1) {
+                    document.getElementById('adjPagination').style.display = 'flex';
+                    document.getElementById('adjPageInfo').textContent = 'Page ' + data.page + ' of ' + data.total_pages;
+                    document.getElementById('adjPrevBtn').disabled = !data.has_previous;
+                    document.getElementById('adjNextBtn').disabled = !data.has_next;
+                }
+            })
+            .catch(function () {
+                document.getElementById('adjLoading').style.display = 'none';
+                showPageToast('danger', 'Network Error', 'Could not load records. Please try again.');
+            });
+    }
+
+    var MISSING_LABELS = { clock_in: 'Clock In Missing', clock_out: 'Clock Out Missing', both: 'Both Missing' };
+
+    function statusBadge(r) {
+        if (r.missing !== 'none') {
+            return '<span class="adj-badge adj-status-incomplete"><i class="fas fa-triangle-exclamation"></i>' + MISSING_LABELS[r.missing] + '</span>';
+        }
+        return '<span class="adj-badge adj-status-' + esc(r.status) + '">' + esc(r.status_display) + '</span>';
+    }
+
+    function renderTable(recs) {
+        records = {};
+        var html = '';
+        recs.forEach(function (r) {
+            records[r.id] = r;
+            var rowClass = state.view === 'trash' ? 'adj-row-trashed' : (r.missing !== 'none' ? 'adj-row-incomplete' : '');
+            html += '<tr class="' + rowClass + '" data-id="' + r.id + '">'
+                + '<td><div class="fw-semibold">' + esc(r.employee_name) + '</div><div class="text-muted" style="font-size:.72rem;">' + esc(r.employee_code) + '</div></td>'
+                + '<td>' + esc(r.department) + '</td>'
+                + '<td>' + esc(r.date_display) + '</td>'
+                + '<td>' + (r.clock_in ? esc(r.clock_in_display) : '<span class="text-danger fw-semibold" style="font-size:.8rem;">Missing</span>') + '</td>'
+                + '<td>' + (r.clock_out ? esc(r.clock_out_display) : '<span class="text-danger fw-semibold" style="font-size:.8rem;">Missing</span>') + '</td>'
+                + '<td>' + statusBadge(r) + '</td>'
+                + '<td>' + (r.remarks ? '<span class="adj-remarks" title="' + escAttr(r.remarks) + '">' + esc(r.remarks) + '</span>' : '<span class="text-muted">&mdash;</span>') + '</td>';
+
+            if (state.view === 'trash') {
+                html += '<td>' + (r.deleted_by
+                    ? '<div class="fw-semibold" style="font-size:.8rem;">' + esc(r.deleted_by) + '</div><div class="text-muted" style="font-size:.7rem;">' + esc(r.deleted_at) + '</div>'
+                    : '<span class="text-muted">&mdash;</span>') + '</td>';
+                html += '<td><div class="d-flex gap-1">'
+                    + '<button class="btn-icon text-secondary position-relative" onclick="Adj.viewLogs(' + r.id + ')" title="View fix history"><i class="fas fa-clock-rotate-left fa-sm"></i>'
+                    + (r.fix_logs_count > 0 ? '<span class="badge rounded-pill bg-secondary" style="font-size:.55rem;position:absolute;top:-6px;right:-6px;">' + r.fix_logs_count + '</span>' : '')
+                    + '</button>'
+                    + (CAN_FIX ? '<button class="btn btn-sm btn-outline-success" onclick="Adj.openRestore(' + r.id + ')" title="Restore"><i class="fas fa-trash-can-arrow-up fa-sm"></i></button>' : '')
+                    + (IS_ADMIN ? '<button class="btn btn-sm btn-outline-danger" onclick="Adj.openHardDelete(' + r.id + ')" title="Delete permanently"><i class="fas fa-fire fa-sm"></i></button>' : '')
+                    + '</div></td>';
+            } else {
+                html += '<td>' + (r.fixed_by
+                    ? '<div class="fw-semibold" style="font-size:.8rem;">' + esc(r.fixed_by) + '</div><div class="text-muted" style="font-size:.7rem;">' + esc(r.fixed_at) + '</div>'
+                    : '<span class="text-muted">&mdash;</span>') + '</td>';
+                html += '<td><div class="d-flex gap-1">'
+                    + (CAN_FIX ? '<button class="btn-icon text-warning" onclick="Adj.toggleEdit(' + r.id + ')" title="Edit"><i class="fas fa-pen fa-sm"></i></button>' : '')
+                    + '<button class="btn-icon text-secondary position-relative" onclick="Adj.viewLogs(' + r.id + ')" title="View fix history"><i class="fas fa-clock-rotate-left fa-sm"></i>'
+                    + (r.fix_logs_count > 0 ? '<span class="badge rounded-pill bg-secondary" style="font-size:.55rem;position:absolute;top:-6px;right:-6px;">' + r.fix_logs_count + '</span>' : '')
+                    + '</button>'
+                    + (CAN_FIX ? '<button class="btn-icon text-danger" onclick="Adj.openTrash(' + r.id + ')" title="Move to trash"><i class="fas fa-trash-can fa-sm"></i></button>' : '')
+                    + '</div></td>';
+            }
+            html += '</tr>';
+
+            if (CAN_FIX && state.view !== 'trash') {
+                html += '<tr class="adj-edit-row" id="adjEditRow' + r.id + '" style="display:none;">'
+                    + '<td colspan="9">'
+                    + '<div class="d-flex align-items-end gap-3 flex-wrap p-2">'
+                    + '<div><label class="small text-muted d-block mb-1">Clock In</label>'
+                    + '<input type="time" class="form-control form-control-sm" id="adjEditIn' + r.id + '" value="' + esc(r.clock_in) + '" style="width:130px;"></div>'
+                    + '<div><label class="small text-muted d-block mb-1">Clock Out</label>'
+                    + '<input type="time" class="form-control form-control-sm" id="adjEditOut' + r.id + '" value="' + esc(r.clock_out) + '" style="width:130px;"></div>'
+                    + '<div class="flex-grow-1" style="min-width:220px;"><label class="small text-muted d-block mb-1">Remarks <span class="fw-normal">(reason for the edit)</span></label>'
+                    + '<input type="text" class="form-control form-control-sm" id="adjEditRemarks' + r.id + '" maxlength="255" placeholder="e.g. Corrected after checking CCTV" value="' + escAttr(r.remarks || '') + '"></div>'
+                    + '<button class="btn btn-sm btn-success" onclick="Adj.saveEdit(' + r.id + ')" id="adjEditSaveBtn' + r.id + '"><i class="fas fa-check me-1"></i>Save</button>'
+                    + '<button class="btn btn-sm btn-outline-secondary" onclick="Adj.toggleEdit(' + r.id + ')">Cancel</button>'
+                    + '<div class="small text-danger w-100" id="adjEditErr' + r.id + '" style="display:none;"></div>'
+                    + '</div></td></tr>';
+            }
+        });
+        document.getElementById('adjTbody').innerHTML = html;
+    }
+
+    /* ── Inline Edit ── */
+    function toggleEdit(id) {
+        var row = document.getElementById('adjEditRow' + id);
+        if (!row) return;
+        var showing = row.style.display !== 'none';
+        document.querySelectorAll('.adj-edit-row').forEach(function (r) { r.style.display = 'none'; });
+        row.style.display = showing ? 'none' : 'table-row';
+    }
+    function saveEdit(id) {
+        if (!CAN_FIX) return;
+        var rec = records[id];
+        if (!rec) return;
+        var clockIn = document.getElementById('adjEditIn' + id).value;
+        var clockOut = document.getElementById('adjEditOut' + id).value;
+        var remarks = document.getElementById('adjEditRemarks' + id).value.trim();
+        var errEl = document.getElementById('adjEditErr' + id);
+        errEl.style.display = 'none';
+        if (!clockIn && !clockOut) {
+            errEl.textContent = 'Provide at least one time.';
+            errEl.style.display = 'block';
+            return;
+        }
+        var btn = document.getElementById('adjEditSaveBtn' + id);
+        var originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        fetch('/hrm/attendance/' + id + '/update/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                clock_in: clockIn, clock_out: clockOut, shift: rec.shift_id || '',
+                is_holiday: rec.is_holiday ? 'true' : 'false', notes: rec.notes || '',
+                remarks: remarks, status: rec.status, source: 'adjustment_edit'
+            })
+        })
+        .then(function (r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+        .then(function (data) {
+            if (data.success) {
+                showPageToast('success', 'Saved', 'Attendance record updated.');
+                fetchList();
+            } else {
+                btn.disabled = false; btn.innerHTML = originalHtml;
+                errEl.textContent = data.error || 'Failed to save.';
+                errEl.style.display = 'block';
+            }
+        })
+        .catch(function () {
+            btn.disabled = false; btn.innerHTML = originalHtml;
+            errEl.textContent = 'Network error. Please try again.';
+            errEl.style.display = 'block';
+        });
+    }
+
+    /* ── Fix History ── */
+    function viewLogs(id) {
+        document.getElementById('adjLogsLoading').style.display = 'block';
+        document.getElementById('adjLogsEmpty').style.display = 'none';
+        document.getElementById('adjLogsError').style.display = 'none';
+        var listEl = document.getElementById('adjLogsList');
+        listEl.style.display = 'none';
+        listEl.innerHTML = '';
+        getModal('adjLogsModal').show();
+
+        fetch('/hrm/attendance/' + id + '/fix-logs/')
+            .then(function (r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function (data) {
+                document.getElementById('adjLogsLoading').style.display = 'none';
+                if (!data.success) {
+                    document.getElementById('adjLogsError').textContent = data.error || 'Failed to load history.';
+                    document.getElementById('adjLogsError').style.display = 'block';
+                    return;
+                }
+                document.getElementById('adjLogsTitle').textContent = data.employee_name + ' (' + data.employee_code + ')';
+                document.getElementById('adjLogsSubtitle').textContent = data.department + ' — ' + data.date_display;
+                if (!data.logs.length) {
+                    document.getElementById('adjLogsEmpty').style.display = 'block';
+                    return;
+                }
+                var html = '';
+                data.logs.forEach(function (log) {
+                    html += '<div class="adj-log-entry">'
+                        + '<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">'
+                        + '<div class="fw-semibold" style="font-size:.85rem;"><i class="fas fa-user-pen me-1 text-secondary"></i>' + esc(log.fixed_by) + '</div>'
+                        + '<div class="text-muted" style="font-size:.75rem;">' + esc(log.fixed_at) + '</div>'
+                        + '</div>'
+                        + '<div class="adj-log-diff">'
+                        + '<span class="adj-log-field">Clock In:</span> ' + (log.old_clock_in ? esc(log.old_clock_in) : '<em>Missing</em>')
+                        + ' <i class="fas fa-arrow-right-long mx-1 text-muted"></i> <strong>' + (log.new_clock_in ? esc(log.new_clock_in) : '<em>Missing</em>') + '</strong><br>'
+                        + '<span class="adj-log-field">Clock Out:</span> ' + (log.old_clock_out ? esc(log.old_clock_out) : '<em>Missing</em>')
+                        + ' <i class="fas fa-arrow-right-long mx-1 text-muted"></i> <strong>' + (log.new_clock_out ? esc(log.new_clock_out) : '<em>Missing</em>') + '</strong>'
+                        + '</div>'
+                        + (log.remarks ? '<div class="adj-log-remarks"><i class="fas fa-comment-dots me-1"></i>' + esc(log.remarks) + '</div>' : '')
+                        + '</div>';
+                });
+                listEl.innerHTML = html;
+                listEl.style.display = 'block';
+            })
+            .catch(function () {
+                document.getElementById('adjLogsLoading').style.display = 'none';
+                document.getElementById('adjLogsError').textContent = 'Network error. Please try again.';
+                document.getElementById('adjLogsError').style.display = 'block';
+            });
+    }
+
+    /* ── Move to Trash ── */
+    function openTrash(id) {
+        pendingId = id;
+        var r = records[id];
+        document.getElementById('adjTrashName').textContent = r ? (r.employee_name + ' — ' + r.date_display) : '';
+        getModal('adjTrashModal').show();
+    }
+    function confirmTrash() {
+        if (!pendingId) return;
+        var normal = document.getElementById('adjTrashBtnNormal'), loading = document.getElementById('adjTrashBtnLoading');
+        normal.classList.add('d-none'); loading.classList.remove('d-none');
+        fetch('/hrm/attendance/' + pendingId + '/delete/', { method: 'POST', headers: { 'X-CSRFToken': CSRF } })
+            .then(function (r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function (data) {
+                normal.classList.remove('d-none'); loading.classList.add('d-none');
+                getModal('adjTrashModal').hide();
+                if (data.success) {
+                    showPageToast('success', 'Moved to Trash', 'The record can be restored from the Trash tab.');
+                    bumpBadge(1);
+                    fetchList();
+                } else {
+                    showPageToast('danger', 'Error', data.error || 'Failed to move record to trash.');
+                }
+            })
+            .catch(function () {
+                normal.classList.remove('d-none'); loading.classList.add('d-none');
+                getModal('adjTrashModal').hide();
+                showPageToast('danger', 'Network Error', 'Could not connect. Please try again.');
+            });
+    }
+
+    /* ── Restore ── */
+    function openRestore(id) {
+        pendingId = id;
+        var r = records[id];
+        document.getElementById('adjRestoreName').textContent = r ? (r.employee_name + ' — ' + r.date_display) : '';
+        getModal('adjRestoreModal').show();
+    }
+    function confirmRestore() {
+        if (!pendingId) return;
+        var normal = document.getElementById('adjRestoreBtnNormal'), loading = document.getElementById('adjRestoreBtnLoading');
+        normal.classList.add('d-none'); loading.classList.remove('d-none');
+        fetch('/hrm/attendance/' + pendingId + '/restore/', { method: 'POST', headers: { 'X-CSRFToken': CSRF } })
+            .then(function (r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function (data) {
+                normal.classList.remove('d-none'); loading.classList.add('d-none');
+                getModal('adjRestoreModal').hide();
+                if (data.success) {
+                    showPageToast('success', 'Restored', 'The record is active again.');
+                    bumpBadge(-1);
+                    fetchList();
+                } else {
+                    showPageToast('danger', 'Error', data.error || 'Failed to restore record.');
+                }
+            })
+            .catch(function () {
+                normal.classList.remove('d-none'); loading.classList.add('d-none');
+                getModal('adjRestoreModal').hide();
+                showPageToast('danger', 'Network Error', 'Could not connect. Please try again.');
+            });
+    }
+
+    /* ── Hard Delete (admin only) ── */
+    function openHardDelete(id) {
+        pendingId = id;
+        var r = records[id];
+        document.getElementById('adjHardDeleteName').textContent = r ? (r.employee_name + ' — ' + r.date_display) : '';
+        var input = document.getElementById('adjHardDeleteConfirmInput');
+        if (input) input.value = '';
+        checkHardDeleteConfirm();
+        getModal('adjHardDeleteModal').show();
+    }
+    function checkHardDeleteConfirm() {
+        var input = document.getElementById('adjHardDeleteConfirmInput');
+        var btn = document.getElementById('adjHardDeleteBtn');
+        if (input && btn) btn.disabled = input.value.trim().toUpperCase() !== 'DELETE';
+    }
+    function confirmHardDelete() {
+        if (!pendingId) return;
+        var normal = document.getElementById('adjHardDeleteBtnNormal'), loading = document.getElementById('adjHardDeleteBtnLoading');
+        normal.classList.add('d-none'); loading.classList.remove('d-none');
+        fetch('/hrm/attendance/' + pendingId + '/hard-delete/', { method: 'POST', headers: { 'X-CSRFToken': CSRF } })
+            .then(function (r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function (data) {
+                normal.classList.remove('d-none'); loading.classList.add('d-none');
+                getModal('adjHardDeleteModal').hide();
+                if (data.success) {
+                    showPageToast('success', 'Deleted Permanently', 'The record has been removed for good.');
+                    bumpBadge(-1);
+                    fetchList();
+                } else {
+                    showPageToast('danger', 'Error', data.error || 'Failed to permanently delete record.');
+                }
+            })
+            .catch(function () {
+                normal.classList.remove('d-none'); loading.classList.add('d-none');
+                getModal('adjHardDeleteModal').hide();
+                showPageToast('danger', 'Network Error', 'Could not connect. Please try again.');
+            });
+    }
+
+    function bumpBadge(delta) {
+        var badge = document.getElementById('trashTabBadge');
+        var statEl = document.getElementById('statTrashed');
+        var n = Math.max(0, (parseInt(badge.textContent, 10) || 0) + delta);
+        badge.textContent = n;
+        badge.style.display = n > 0 ? 'inline-block' : 'none';
+        if (statEl) statEl.textContent = n;
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchList();
+    });
+
+    window.Adj = {
+        getModal: getModal,
+        switchTab: switchTab,
+        applyFilters: applyFilters,
+        resetFilters: resetFilters,
+        goPage: goPage,
+        toggleEdit: toggleEdit,
+        saveEdit: saveEdit,
+        viewLogs: viewLogs,
+        openTrash: openTrash,
+        confirmTrash: confirmTrash,
+        openRestore: openRestore,
+        confirmRestore: confirmRestore,
+        openHardDelete: openHardDelete,
+        checkHardDeleteConfirm: checkHardDeleteConfirm,
+        confirmHardDelete: confirmHardDelete
+    };
+})();
+</script>
+{% endblock %}
+{% endblock %}

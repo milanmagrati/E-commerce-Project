@@ -1,0 +1,393 @@
+{% extends 'sentinel/_shell.html' %}
+{% load sentinel_extras %}
+
+{% block vault_body %}
+
+<div class="sv-tiles">
+    <div class="sv-tile sv-tone-sky">
+        <div class="sv-tile-label"><i class="fas fa-database"></i> Events stored</div>
+        <div class="sv-tile-value" data-countup="{{ storage.events }}">0</div>
+        <div class="sv-tile-meta">{{ storage.page_views }} are page views</div>
+    </div>
+    <div class="sv-tile sv-tone-violet">
+        <div class="sv-tile-label"><i class="fas fa-tower-broadcast"></i> Sessions</div>
+        <div class="sv-tile-value" data-countup="{{ storage.sessions }}">0</div>
+        <div class="sv-tile-meta">{{ storage.devices }} device fingerprint{{ storage.devices|pluralize }}</div>
+    </div>
+    <div class="sv-tile sv-tone-amber">
+        <div class="sv-tile-label"><i class="fas fa-hourglass-half"></i> Past retention</div>
+        <div class="sv-tile-value" data-countup="{{ storage.expiring }}">0</div>
+        <div class="sv-tile-meta">removed on the next prune</div>
+    </div>
+    <div class="sv-tile sv-tone-emerald">
+        <div class="sv-tile-label"><i class="fas fa-clock-rotate-left"></i> Oldest record</div>
+        <div class="sv-tile-value" style="font-size:1.05rem;padding-top:.6rem;">
+            {% if storage.oldest %}{{ storage.oldest|sentinel_clock }}{% else %}—{% endif %}
+        </div>
+        <div class="sv-tile-meta">beginning of the trail</div>
+    </div>
+</div>
+
+<form method="POST">
+    {% csrf_token %}
+
+    <div class="sv-grid sv-grid-2" style="margin-bottom:1.2rem;">
+
+        <!-- ══ Capture depth ═════════════════════════════════════════════ -->
+        <div class="sv-panel">
+            <div class="sv-panel-head">
+                <div>
+                    <h2><i class="fas fa-video"></i> What gets recorded</h2>
+                    <p class="sv-sub">More detail means a bigger table — tune to what you actually review</p>
+                </div>
+            </div>
+            <div class="sv-panel-body" style="display:grid;gap:1.1rem;">
+                <label class="sv-switch">
+                    <input type="checkbox" name="capture_page_views" {% if config.capture_page_views %}checked{% endif %}>
+                    <span class="sv-switch-track"></span>
+                    <span class="sv-switch-text">
+                        <strong>Record page visits</strong>
+                        <span>Log which screens each person opened, not just what they changed.
+                              This is the single largest source of rows.</span>
+                    </span>
+                </label>
+
+                <label class="sv-switch">
+                    <input type="checkbox" name="capture_field_diffs" {% if config.capture_field_diffs %}checked{% endif %}>
+                    <span class="sv-switch-track"></span>
+                    <span class="sv-switch-text">
+                        <strong>Record before/after values</strong>
+                        <span>Capture the old and new value of every changed field. Turning this off
+                              still records <em>which</em> fields changed, just not their contents.</span>
+                    </span>
+                </label>
+
+                <label class="sv-switch">
+                    <input type="checkbox" name="capture_anonymous" {% if config.capture_anonymous %}checked{% endif %}>
+                    <span class="sv-switch-track"></span>
+                    <span class="sv-switch-text">
+                        <strong>Record signed-out visitors</strong>
+                        <span>Includes public storefront traffic. Leave off unless you are investigating
+                              something specific — it can multiply volume many times over.</span>
+                    </span>
+                </label>
+
+                <div>
+                    <label class="sv-label" for="svExcluded">Never record these paths</label>
+                    <textarea class="sv-textarea" id="svExcluded" name="excluded_paths" rows="5"
+                              style="font-family:ui-monospace,Menlo,monospace;font-size:.78rem;"
+                              >{{ config.excluded_paths }}</textarea>
+                    <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                        One URL prefix per line. Sentinel's own polling endpoints are always excluded.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ Retention ═════════════════════════════════════════════════ -->
+        <div class="sv-panel">
+            <div class="sv-panel-head">
+                <div>
+                    <h2><i class="fas fa-box-archive"></i> How long it's kept</h2>
+                    <p class="sv-sub">Enforced by <code style="color:var(--sv-accent);">manage.py sentinel_prune</code></p>
+                </div>
+            </div>
+            <div class="sv-panel-body" style="display:grid;gap:1.1rem;">
+                <div>
+                    <label class="sv-label" for="svRetention">Event retention (days)</label>
+                    <input class="sv-input" id="svRetention" type="number" name="retention_days"
+                           min="1" max="3650" value="{{ config.retention_days }}">
+                    <p class="sv-faint" style="font-size:.72rem;margin:.35rem 0 0;">
+                        Sign-ins, data changes, deletions and exports.
+                    </p>
+                </div>
+                <div>
+                    <label class="sv-label" for="svViewRetention">Page-view retention (days)</label>
+                    <input class="sv-input" id="svViewRetention" type="number" name="page_view_retention_days"
+                           min="1" max="3650" value="{{ config.page_view_retention_days }}">
+                    <p class="sv-faint" style="font-size:.72rem;margin:.35rem 0 0;">
+                        Low-value read-only visits expire sooner to keep the table lean.
+                    </p>
+                </div>
+
+                <hr class="sv-hr">
+
+                <div>
+                    <div class="sv-label">Run the sweep from the command line</div>
+                    <div class="sv-code" style="user-select:all;">python manage.py sentinel_prune</div>
+                    <p class="sv-faint" style="font-size:.72rem;margin:.5rem 0 0;line-height:1.6;">
+                        Add <code>--dry-run</code> to preview, or
+                        <code>--archive vault.jsonl.gz</code> to write expiring events to a compressed
+                        file before deletion. Schedule it daily from cron so the table never
+                        gets large enough to need the housekeeping panel below.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ Alert thresholds ══════════════════════════════════════════════ -->
+    <div class="sv-panel" style="margin-bottom:1.2rem;">
+        <div class="sv-panel-head">
+            <div>
+                <h2><i class="fas fa-bell"></i> When to raise an alert</h2>
+                <p class="sv-sub">Set these to match your team's real rhythm — an alert nobody trusts is an alert nobody reads</p>
+            </div>
+        </div>
+        <div class="sv-panel-body">
+            <div class="sv-grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));">
+                <div>
+                    <label class="sv-label" for="svFailThreshold">Failed sign-ins before alerting</label>
+                    <input class="sv-input" id="svFailThreshold" type="number" name="failed_login_threshold"
+                           min="1" max="100" value="{{ config.failed_login_threshold }}">
+                </div>
+                <div>
+                    <label class="sv-label" for="svFailWindow">…counted over (minutes)</label>
+                    <input class="sv-input" id="svFailWindow" type="number" name="failed_login_window_minutes"
+                           min="1" max="1440" value="{{ config.failed_login_window_minutes }}">
+                </div>
+                <div>
+                    <label class="sv-label" for="svBulkDelete">Deletions per hour before alerting</label>
+                    <input class="sv-input" id="svBulkDelete" type="number" name="bulk_delete_threshold"
+                           min="1" max="1000" value="{{ config.bulk_delete_threshold }}">
+                </div>
+                <div>
+                    <label class="sv-label" for="svDenials">Permission denials per hour</label>
+                    <input class="sv-input" id="svDenials" type="number" name="denial_threshold"
+                           min="1" max="1000" value="{{ config.denial_threshold }}">
+                </div>
+                <div>
+                    <label class="sv-label" for="svOfficeStart">Office hours start (Nepal)</label>
+                    <input class="sv-input" id="svOfficeStart" type="time" name="office_hours_start"
+                           value="{{ config.office_hours_start|time:'H:i' }}">
+                </div>
+                <div>
+                    <label class="sv-label" for="svOfficeEnd">Office hours end (Nepal)</label>
+                    <input class="sv-input" id="svOfficeEnd" type="time" name="office_hours_end"
+                           value="{{ config.office_hours_end|time:'H:i' }}">
+                </div>
+            </div>
+
+            <hr class="sv-hr">
+
+            <div class="sv-grid sv-grid-2">
+                <label class="sv-switch">
+                    <input type="checkbox" name="alert_on_new_device" {% if config.alert_on_new_device %}checked{% endif %}>
+                    <span class="sv-switch-track"></span>
+                    <span class="sv-switch-text">
+                        <strong>Alert on unrecognised devices</strong>
+                        <span>Raise an alert the first time an account signs in from a new
+                              browser/OS/network combination.</span>
+                    </span>
+                </label>
+                <label class="sv-switch">
+                    <input type="checkbox" name="alert_on_off_hours" {% if config.alert_on_off_hours %}checked{% endif %}>
+                    <span class="sv-switch-track"></span>
+                    <span class="sv-switch-text">
+                        <strong>Alert on off-hours access</strong>
+                        <span>Flag sign-ins outside the window above, and add risk to every action
+                              taken during those hours.</span>
+                    </span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <button type="submit" class="sv-btn sv-btn-primary"><i class="fas fa-floppy-disk"></i> Save settings</button>
+        <a href="{% url 'sentinel:home' %}" class="sv-btn">Cancel</a>
+        {% if config.updated_by %}
+        <span class="sv-faint" style="font-size:.75rem;">
+            Last changed by <strong>{{ config.updated_by.username }}</strong>, {{ config.updated_at|sentinel_ago }}
+        </span>
+        {% endif %}
+    </div>
+</form>
+
+<!-- ══ Storage & housekeeping ════════════════════════════════════════════ -->
+<div class="sv-panel" style="margin-top:1.4rem;">
+    <div class="sv-panel-head">
+        <div>
+            <h2><i class="fas fa-hard-drive"></i> Storage &amp; housekeeping</h2>
+            <p class="sv-sub">
+                {{ storage.bytes|filesizeformat }} on disk across
+                {{ storage.events|add:storage.sessions|add:storage.alerts|add:storage.devices }} row(s)
+            </p>
+        </div>
+    </div>
+    <div class="sv-panel-body">
+
+        <div class="sv-table-wrap" style="margin-bottom:1.1rem;">
+            <table class="sv-table">
+                <thead>
+                    <tr><th>Table</th><th style="width:130px;">Rows</th>
+                        <th style="width:130px;">On disk</th><th>Safe to remove</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><i class="fas fa-list-check"></i> Audit events</td>
+                        <td><strong>{{ storage.events }}</strong></td>
+                        <td class="sv-cell-dim">{{ storage.sizes.events|filesizeformat }}</td>
+                        <td class="sv-cell-dim">{{ storage.page_views }} page view(s) ·
+                            {{ storage.expiring }} past retention</td>
+                    </tr>
+                    <tr>
+                        <td><i class="fas fa-tower-broadcast"></i> Sessions</td>
+                        <td><strong>{{ storage.sessions }}</strong></td>
+                        <td class="sv-cell-dim">{{ storage.sizes.sessions|filesizeformat }}</td>
+                        <td class="sv-cell-dim">{{ storage.closed_sessions }} closed</td>
+                    </tr>
+                    <tr>
+                        <td><i class="fas fa-triangle-exclamation"></i> Security alerts</td>
+                        <td><strong>{{ storage.alerts }}</strong></td>
+                        <td class="sv-cell-dim">{{ storage.sizes.alerts|filesizeformat }}</td>
+                        <td class="sv-cell-dim">{{ storage.closed_alerts }} resolved or dismissed</td>
+                    </tr>
+                    <tr>
+                        <td><i class="fas fa-fingerprint"></i> Known devices</td>
+                        <td><strong>{{ storage.devices }}</strong></td>
+                        <td class="sv-cell-dim">{{ storage.sizes.devices|filesizeformat }}</td>
+                        <td class="sv-cell-dim">Remove individually from the device registry</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        {% if can_purge %}
+        <div class="sv-callout sv-tone-amber" style="margin-bottom:1.1rem;">
+            <i class="fas fa-triangle-exclamation"></i>
+            <div>
+                <strong>Deletions here are permanent.</strong>
+                There is no undo and no recycle bin. Every purge is itself recorded — who ran it,
+                when, and how many rows went — so the trail always shows that it was shortened.
+                Export first from the Activity Ledger if you may need the detail later.
+            </div>
+        </div>
+
+        <div class="sv-grid sv-grid-2" style="gap:.9rem;">
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Apply the retention window now?<br><small>{{ storage.sweep.events }} event(s), {{ storage.sweep.page_views }} page view(s), {{ storage.sweep.sessions }} session(s) and {{ storage.sweep.alerts }} alert(s) are past it.</small>">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="sweep">
+                <button class="sv-btn sv-btn-primary w-100" type="submit">
+                    <i class="fas fa-broom"></i> Run retention sweep now
+                </button>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    Removes anything past the {{ storage.window.event_days }}-day window above
+                    ({{ storage.window.view_days }} days for page views) — the same thing the
+                    cron command does. <strong>{{ storage.sweep.events|add:storage.sweep.page_views|add:storage.sweep.sessions|add:storage.sweep.alerts }}</strong> row(s) qualify right now.
+                </p>
+            </form>
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Delete all {{ storage.page_views }} page-view record(s)?<br><small>Who opened which screen will be lost. Data changes, sign-ins and deletions are kept.</small>">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="page_views">
+                <button class="sv-btn w-100" type="submit">
+                    <i class="fas fa-eye-slash"></i> Delete all page views ({{ storage.page_views }})
+                </button>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    Page visits are the single largest source of rows and the least useful to keep.
+                    Turn off <em>Record page visits</em> above to stop them accumulating again.
+                </p>
+            </form>
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Delete all {{ storage.closed_sessions }} closed session record(s)?<br><small>Live sessions are untouched.</small>">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="closed_sessions">
+                <button class="sv-btn w-100" type="submit">
+                    <i class="fas fa-tower-broadcast"></i> Delete closed sessions ({{ storage.closed_sessions }})
+                </button>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    Sign-in history for sessions that have already ended. Anyone signed in right
+                    now keeps their row.
+                </p>
+            </form>
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Delete all {{ storage.closed_alerts }} resolved or dismissed alert(s)?">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="closed_alerts">
+                <button class="sv-btn w-100" type="submit">
+                    <i class="fas fa-triangle-exclamation"></i> Delete closed alerts ({{ storage.closed_alerts }})
+                </button>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    Only alerts somebody has already decided about. Open findings stay put.
+                </p>
+            </form>
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Delete every audit record older than the number of days entered?<br><small>This ignores the retention setting and cannot be undone.</small>">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="older_than">
+                <label class="sv-label" for="svPurgeDays">Delete everything older than</label>
+                <div class="d-flex gap-2">
+                    <input class="sv-input" id="svPurgeDays" type="number" name="days"
+                           min="1" max="3650" value="365" style="max-width:120px;">
+                    <button class="sv-btn sv-btn-danger" type="submit">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    A one-off cut, independent of the retention window. Use it to clear a backlog
+                    that built up before retention was configured.
+                </p>
+            </form>
+
+            <form method="POST" action="{% url 'sentinel:storage' %}" data-confirm
+                  data-message="Rebuild the vault tables to return free space to the disk?<br><small>Takes a few seconds and briefly locks these tables. Nothing is deleted.</small>">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reclaim">
+                <button class="sv-btn w-100" type="submit">
+                    <i class="fas fa-compress"></i> Reclaim disk space
+                </button>
+                <p class="sv-faint" style="font-size:.72rem;margin:.4rem 0 0;">
+                    Deleting rows does not shrink the database file on its own — the pages stay
+                    reserved. Run this after a purge to actually hand the space back.
+                </p>
+            </form>
+        </div>
+        {% else %}
+        <div class="sv-callout sv-tone-slate">
+            <i class="fas fa-lock"></i>
+            <div>Only an administrator can delete records from the vault.</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="sv-panel" style="margin-top:1.4rem;">
+    <div class="sv-panel-head"><h2><i class="fas fa-circle-info"></i> How Sentinel Vault captures</h2></div>
+    <div class="sv-panel-body">
+        <div class="sv-grid sv-grid-3" style="font-size:.82rem;line-height:1.65;">
+            <div>
+                <div class="sv-section-title" style="margin-top:0;">Sign-ins &amp; devices</div>
+                <p class="sv-muted">
+                    Hooked into Django's authentication signals, so every entry point is covered —
+                    the admin dashboard, the storefront, and anything added later. Each device is
+                    fingerprinted from its browser family, OS and network block, deliberately coarse
+                    so a browser update doesn't read as a new machine.
+                </p>
+            </div>
+            <div>
+                <div class="sv-section-title" style="margin-top:0;">Data changes</div>
+                <p class="sv-muted">
+                    Model signals snapshot each record before and after it is saved, so the trail
+                    records exactly which fields changed and to what. Passwords, tokens and API keys
+                    are replaced with <code>••••••••</code> before anything is written.
+                </p>
+            </div>
+            <div>
+                <div class="sv-section-title" style="margin-top:0;">Risk scoring</div>
+                <p class="sv-muted">
+                    Every action scores 0–100 from its type, the sensitivity of the record and fields
+                    touched, whether the device is recognised, and the time of day. The reasons behind
+                    a score are stored with the event and shown in its detail panel.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

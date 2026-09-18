@@ -120,7 +120,7 @@
                                         <div class="perm-card-body">
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_view_dashboard" id="can_view_dashboard" {% if edit_user.can_view_dashboard %}checked{% endif %}>
-                                                <label for="can_view_dashboard">View Dashboard</label>
+                                                <label for="can_view_dashboard">Dashboard Access</label>
                                             </div>
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_view_total_revenue" id="can_view_total_revenue" {% if edit_user.can_view_total_revenue %}checked{% endif %}>
@@ -129,6 +129,22 @@
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_view_low_stock_alerts" id="can_view_low_stock_alerts" {% if edit_user.can_view_low_stock_alerts %}checked{% endif %}>
                                                 <label for="can_view_low_stock_alerts">Show Low Stock Alert</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_incomplete_attendance" id="can_view_dashboard_incomplete_attendance" {% if edit_user.can_view_dashboard_incomplete_attendance %}checked{% endif %}>
+                                                <label for="can_view_dashboard_incomplete_attendance">Incomplete Attendance Alert</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_sales_overview" id="can_view_dashboard_sales_overview" {% if edit_user.can_view_dashboard_sales_overview %}checked{% endif %}>
+                                                <label for="can_view_dashboard_sales_overview">Sales Overview</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_orders_overview" id="can_view_dashboard_orders_overview" {% if edit_user.can_view_dashboard_orders_overview %}checked{% endif %}>
+                                                <label for="can_view_dashboard_orders_overview">Orders Overview</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_orders_by_source" id="can_view_dashboard_orders_by_source" {% if edit_user.can_view_dashboard_orders_by_source %}checked{% endif %}>
+                                                <label for="can_view_dashboard_orders_by_source">Orders by Source</label>
                                             </div>
                                         </div>
                                     </div>
@@ -172,6 +188,10 @@
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_view_orders_list" id="can_view_orders_list" {% if edit_user.can_view_orders_list %}checked{% endif %}>
                                                 <label for="can_view_orders_list">View All Orders List</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_access_offer_price" id="can_access_offer_price" {% if edit_user.can_access_offer_price %}checked{% endif %}>
+                                                <label for="can_access_offer_price">Access to Offer Price</label>
                                             </div>
                                         </div>
                                     </div>
@@ -297,6 +317,21 @@
                                     </div>
                                 </div>
 
+                                <!-- 🆕 CONTENT MANAGEMENT MODULE -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-secondary">
+                                            <i class="fas fa-file-alt"></i> Content Management Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_content_management" id="can_view_content_management" {% if edit_user.can_view_content_management %}checked{% endif %}>
+                                                <label for="can_view_content_management">View Content Management</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Dispatch Module -->
                                 <div class="col-lg-6 col-xl-4 mb-3">
                                     <div class="perm-card">
@@ -403,8 +438,20 @@
                                                 <label for="can_view_financial_reports">Financial Reports</label>
                                             </div>
                                             <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_orders_by_source_report" id="can_view_orders_by_source_report" {% if edit_user.can_view_orders_by_source_report %}checked{% endif %}>
+                                                <label for="can_view_orders_by_source_report">Orders by Source Report</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_rtv_report" id="can_view_rtv_report" {% if edit_user.can_view_rtv_report %}checked{% endif %}>
+                                                <label for="can_view_rtv_report">RTV Report</label>
+                                            </div>
+                                            <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_export_data" id="can_export_data" {% if edit_user.can_export_data %}checked{% endif %}>
                                                 <label for="can_export_data">Export Data</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_follow_up_report" id="can_view_follow_up_report" {% if edit_user.can_view_follow_up_report %}checked{% endif %}>
+                                                <label for="can_view_follow_up_report">Can View Follow Up Report</label>
                                             </div>
                                         </div>
                                     </div>
@@ -505,6 +552,10 @@
                                                     <input type="checkbox" class="form-check-input" name="can_delete_ncm_orders" id="can_delete_ncm_orders" {% if edit_user.can_delete_ncm_orders %}checked{% endif %}>
                                                     <label for="can_delete_ncm_orders">Delete NCM Orders</label>
                                                 </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_export_logistics_orders" id="can_export_logistics_orders" {% if edit_user.can_export_logistics_orders %}checked{% endif %}>
+                                                    <label for="can_export_logistics_orders">Export Logistics Orders</label>
+                                                </div>
                                             </div>
 
                                             <!-- Bulk Logs -->
@@ -517,6 +568,10 @@
                                                 <div class="perm-item">
                                                     <input type="checkbox" class="form-check-input" name="can_manage_ncm_bulk_logs" id="can_manage_ncm_bulk_logs" {% if edit_user.can_manage_ncm_bulk_logs %}checked{% endif %}>
                                                     <label for="can_manage_ncm_bulk_logs">Manage Bulk Logs</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_export_logistics_bulk_logs" id="can_export_logistics_bulk_logs" {% if edit_user.can_export_logistics_bulk_logs %}checked{% endif %}>
+                                                    <label for="can_export_logistics_bulk_logs">Export Bulk Logs</label>
                                                 </div>
                                             </div>
 
@@ -582,6 +637,14 @@
                                                     <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_payroll" id="can_view_hrm_payroll" {% if edit_user.can_view_hrm_payroll %}checked{% endif %}>
                                                     <label for="can_view_hrm_payroll">Payroll Management</label>
                                                 </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_incomplete_attendance" id="can_view_hrm_incomplete_attendance" {% if edit_user.can_view_hrm_incomplete_attendance %}checked{% endif %}>
+                                                    <label for="can_view_hrm_incomplete_attendance">Incomplete Attendance Alert</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_fix_hrm_incomplete_attendance" id="can_fix_hrm_incomplete_attendance" {% if edit_user.can_fix_hrm_incomplete_attendance %}checked{% endif %}>
+                                                    <label for="can_fix_hrm_incomplete_attendance">Fix Incomplete Attendance</label>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -597,6 +660,79 @@
                                             <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_access_todo" id="can_access_todo" {% if edit_user.can_access_todo %}checked{% endif %}>
                                                 <label for="can_access_todo">Access to Todo/Ticketing</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Sentinel Vault (Audit Trail) Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);">
+                                            <i class="fas fa-shield-halved"></i> Sentinel Vault (Audit Trail)
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_audit_trail" id="can_view_audit_trail" {% if edit_user.can_view_audit_trail %}checked{% endif %}>
+                                                <label for="can_view_audit_trail">Access Sentinel Vault</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_all_users_activity" id="can_view_all_users_activity" {% if edit_user.can_view_all_users_activity %}checked{% endif %}>
+                                                <label for="can_view_all_users_activity">View Everyone's Activity</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_audit_logs" id="can_export_audit_logs" {% if edit_user.can_export_audit_logs %}checked{% endif %}>
+                                                <label for="can_export_audit_logs">Export Audit Logs</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_manage_sessions" id="can_manage_sessions" {% if edit_user.can_manage_sessions %}checked{% endif %}>
+                                                <label for="can_manage_sessions">Revoke Sessions &amp; Resolve Alerts</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_configure_audit" id="can_configure_audit" {% if edit_user.can_configure_audit %}checked{% endif %}>
+                                                <label for="can_configure_audit">Configure Vault Settings</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Resources Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);">
+                                            <i class="fas fa-book-open"></i> Resources Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_resources" id="can_view_resources" {% if edit_user.can_view_resources %}checked{% endif %}>
+                                                <label for="can_view_resources">View Resources</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_resources" id="can_create_resources" {% if edit_user.can_create_resources %}checked{% endif %}>
+                                                <label for="can_create_resources">Create/Edit/Delete Resources</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Follow Up Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                                            <i class="fas fa-phone-volume"></i> Follow Up Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_access_follow_ups" id="can_access_follow_ups" {% if edit_user.can_access_follow_ups %}checked{% endif %}>
+                                                <label for="can_access_follow_ups">Can Access Follow Ups</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_follow_ups" id="can_export_follow_ups" {% if edit_user.can_export_follow_ups %}checked{% endif %}>
+                                                <label for="can_export_follow_ups">Can Export Follow Ups</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_setup_follow_up_status" id="can_setup_follow_up_status" {% if edit_user.can_setup_follow_up_status %}checked{% endif %}>
+                                                <label for="can_setup_follow_up_status">Can Setup Follow Up Status</label>
                                             </div>
                                         </div>
                                     </div>
@@ -801,6 +937,8 @@ function uncheckAll() {
         cb.checked = false;
     });
     document.getElementById('max_discount_percent').value = '0.00';
+    const hrmSub = document.getElementById('hrmSubPermissions');
+    if (hrmSub) { hrmSub.style.opacity = '0.5'; hrmSub.style.pointerEvents = 'none'; }
     updateDiscountInput();
 }
 
@@ -818,36 +956,89 @@ function toggleHrmSubPermissions(mainCheckbox) {
 }
 
 // Hide/show permissions based on role
-document.getElementById('roleSelect').addEventListener('change', function() {
-    const permSection = document.getElementById('permissionsSection');
-    const roleAlert = document.getElementById('roleAlert');
-    const selectedOption = this.options[this.selectedIndex];
-    const roleName = selectedOption.textContent;
+const roleDefaults = {{ role_defaults_json|safe }};
 
-    if (this.value === 'administrator') {
-        if (permSection) permSection.style.display = 'none';
-        roleAlert.innerHTML = '<i class="fas fa-crown text-warning"></i> <strong>Administrator selected:</strong> Full access granted automatically.';
-        roleAlert.className = 'alert alert-warning mt-4';
-        document.getElementById('can_view_cost_price').checked = false;
-        document.getElementById('can_edit_prices').checked = false;
-        document.getElementById('can_give_discounts').checked = false;
-        document.getElementById('max_discount_percent').value = '0.00';
-        document.getElementById('max_discount_percent').disabled = true;
-        // Reset HRM checkboxes
-        const hrmMain = document.getElementById('can_view_hrm');
-        if (hrmMain) {
-            hrmMain.checked = false;
+// Helper to reliably check/uncheck
+function setCheckboxState(name, state) {
+    const cb = document.querySelector(`input[name="${name}"]`);
+    if (cb) cb.checked = state;
+}
+
+document.getElementById('roleSelect').addEventListener('change', function() {
+    try {
+        const permSection = document.getElementById('permissionsSection');
+        const roleAlert = document.getElementById('roleAlert');
+        const selectedOption = this.options[this.selectedIndex];
+        const roleName = selectedOption.textContent;
+        const role = this.value;
+
+        if (role === 'administrator') {
+            if (permSection) permSection.style.display = 'none';
+            if (roleAlert) {
+                roleAlert.innerHTML = '<i class="fas fa-crown text-warning"></i> <strong>Administrator selected:</strong> Full access granted automatically.';
+                roleAlert.className = 'alert alert-warning mt-4';
+            }
+            setCheckboxState('can_view_cost_price', false);
+            setCheckboxState('can_edit_prices', false);
+            setCheckboxState('can_give_discounts', false);
+            
+            const maxDisc = document.getElementById('max_discount_percent');
+            if (maxDisc) {
+                maxDisc.value = '0.00';
+                maxDisc.disabled = true;
+            }
+            
+            // Reset HRM checkboxes
+            setCheckboxState('can_view_hrm', false);
             const hrmSub = document.getElementById('hrmSubPermissions');
             if (hrmSub) { hrmSub.style.opacity = '0.5'; hrmSub.style.pointerEvents = 'none'; }
             document.querySelectorAll('.hrm-sub-perm').forEach(cb => cb.checked = false);
+            
+        } else if (role) {
+            if (permSection) permSection.style.display = 'block';
+            if (roleAlert) {
+                roleAlert.innerHTML = `<i class="fas fa-info-circle"></i> <strong>${roleName} role selected:</strong> Customize permissions below.`;
+                roleAlert.className = 'alert alert-info mt-4';
+            }
+            
+            // 1. First UNCHECK EVERYTHING
+            document.querySelectorAll('#permissionsSection input[type="checkbox"]').forEach(cb => {
+                cb.checked = false;
+            });
+            const maxDisc = document.getElementById('max_discount_percent');
+            if (maxDisc) maxDisc.value = '0.00';
+            const hrmSub = document.getElementById('hrmSubPermissions');
+            if (hrmSub) { hrmSub.style.opacity = '0.5'; hrmSub.style.pointerEvents = 'none'; }
+            
+            // 2. CHECK the defaults for THIS ROLE
+            if (roleDefaults[role]) {
+                let perms = roleDefaults[role].permissions || [];
+                perms.forEach(perm => {
+                    setCheckboxState(perm, true);
+                });
+                
+                let discount = roleDefaults[role].max_discount_percent || '0.00';
+                if (maxDisc) {
+                    maxDisc.value = discount;
+                    if (parseFloat(discount) > 0) {
+                        maxDisc.disabled = false;
+                    }
+                }
+            }
+            
+            // 3. Update inputs
+            if (typeof updateDiscountInput === 'function') updateDiscountInput();
+            
+            const hrmMain = document.querySelector('input[name="can_view_hrm"]');
+            if (hrmMain && typeof toggleHrmSubPermissions === 'function') {
+                toggleHrmSubPermissions(hrmMain);
+            }
         }
-    } else {
-        if (permSection) permSection.style.display = 'block';
-        roleAlert.innerHTML = `<i class="fas fa-info-circle"></i> <strong>${roleName} role selected:</strong> Customize permissions below.`;
-        roleAlert.className = 'alert alert-info mt-4';
-        updateDiscountInput();
+    } catch (e) {
+        console.error("Error in role selection change event:", e);
     }
 });
+
 // Enable/disable Max Discount % input based on Give Discounts checkbox
 function updateDiscountInput() {
     const giveDiscounts = document.getElementById('can_give_discounts');
@@ -867,6 +1058,24 @@ document.getElementById('can_give_discounts').addEventListener('change', updateD
 
 window.addEventListener('DOMContentLoaded', function() {
     updateDiscountInput();
+    
+    // Hide permissions if administrator
+    const roleSelect = document.getElementById('roleSelect');
+    const permSection = document.getElementById('permissionsSection');
+    if (roleSelect && roleSelect.value === 'administrator') {
+        if (permSection) permSection.style.display = 'none';
+        const roleAlert = document.getElementById('roleAlert');
+        if(roleAlert) {
+            roleAlert.innerHTML = '<i class="fas fa-crown text-warning"></i> <strong>Administrator selected:</strong> Full access granted automatically.';
+            roleAlert.className = 'alert alert-warning mt-4';
+        }
+    }
+    
+    // Trigger HRM sub-permissions toggle if HRM is already checked
+    const hrmMain = document.getElementById('can_view_hrm');
+    if (hrmMain) {
+        toggleHrmSubPermissions(hrmMain);
+    }
 });
 
 // Form submission with confirmation

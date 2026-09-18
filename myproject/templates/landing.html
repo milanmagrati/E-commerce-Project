@@ -1,0 +1,292 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ COMPANY_NAME|default:'Trendy Shopping' }} — Run your entire shop from one system</title>
+    <meta name="description" content="{{ COMPANY_NAME|default:'Trendy Shopping' }} — online and offline selling, inventory, logistics, CRM and staff management on one connected system built for Nepali commerce.">
+    {% if COMPANY_FAVICON %}<link rel="icon" href="{{ COMPANY_FAVICON.url }}" type="image/x-icon">{% endif %}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{% static 'css/landing.css' %}?v=1">
+</head>
+<body>
+
+<!-- ============================== NAV ============================== -->
+<div class="nav-outer">
+    <nav class="nav" id="siteNav">
+        <a href="/" class="brand">
+            <span class="brand-mark">
+                {% if COMPANY_LOGO %}
+                    <img src="{{ COMPANY_LOGO.url }}" alt="{{ COMPANY_NAME }}">
+                {% else %}
+                    {{ COMPANY_NAME|default:'Trendy Shopping'|slice:":1" }}
+                {% endif %}
+            </span>
+            <span class="brand-name">{{ COMPANY_NAME|default:'Trendy Shopping' }}</span>
+        </a>
+
+        <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+            <i class="fas fa-bars"></i>
+        </button>
+
+        <div class="nav-links">
+            <a href="#solutions">Solutions</a>
+            <a href="#platform">Platform</a>
+            <a href="#integrations">Integrations</a>
+            <a href="#company">Company</a>
+        </div>
+
+        <div class="nav-cta">
+            <a href="{% url 'login' %}" class="btn btn-ghost-dark">Login</a>
+            <a href="{% url 'login' %}" class="btn btn-dark">Get started</a>
+        </div>
+    </nav>
+</div>
+
+<!-- ============================== HERO ============================== -->
+<header class="hero">
+    <div class="wrap hero-grid">
+        <div>
+            {% if landing.hero_pill_text %}<span class="pill">{{ landing.hero_pill_text }}</span>{% endif %}
+            <h1 class="serif">{{ landing.hero_headline }}</h1>
+            <p class="hero-sub">{{ landing.hero_subtext|linebreaksbr }}</p>
+            <div class="hero-actions">
+                {% if landing.hero_cta_primary_text %}
+                <a href="{{ hero_primary_url }}" class="btn btn-accent btn-lg">{{ landing.hero_cta_primary_text }} <i class="fas fa-arrow-right"></i></a>
+                {% endif %}
+                {% if landing.hero_cta_secondary_text %}
+                <a href="{{ hero_secondary_url }}" class="btn btn-outline btn-lg">{{ landing.hero_cta_secondary_text }}</a>
+                {% endif %}
+            </div>
+            {% if landing.hero_note_text %}
+            <p class="hero-note">
+                <i class="fas fa-location-dot"></i>
+                {{ landing.hero_note_text }}
+            </p>
+            {% endif %}
+        </div>
+
+        <!-- Hero visual -->
+        {% if primary_stats or secondary_stats %}
+        <div class="panel" aria-hidden="true">
+            {% for stat in primary_stats %}
+            <div class="panel-row">
+                <span class="panel-label">{% if stat.dot_color %}<span class="dot {{ stat.dot_color }}"></span> {% endif %}{{ stat.label }}</span>
+                <span class="panel-value">{{ stat.value }}</span>
+            </div>
+            {% endfor %}
+
+            {% if primary_stats and secondary_stats %}<div class="panel-divider"></div>{% endif %}
+
+            {% for stat in secondary_stats %}
+            <div class="panel-stock"><span>{{ stat.label }}</span><span>{{ stat.value }}</span></div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</header>
+
+<!-- ============================ TRUSTED ============================ -->
+{% if brand_logos %}
+<section class="trusted">
+    <div class="wrap">
+        {% if landing.trusted_label %}<p class="trusted-label">{{ landing.trusted_label }}</p>{% endif %}
+        <div class="trusted-row">
+            {% for brand in brand_logos %}
+            {% if brand.logo %}
+                <img src="{{ brand.logo.url }}" alt="{{ brand.name }}" class="trusted-logo">
+            {% else %}
+                <span>{{ brand.name }}</span>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- =========================== SOLUTIONS =========================== -->
+<section class="light-section" id="solutions">
+    <div class="wrap">
+        <div class="section-head">
+            <p class="eyebrow">{{ landing.solutions_eyebrow }}</p>
+            <h2 class="serif">{{ landing.solutions_heading }}</h2>
+            <p>{{ landing.solutions_subtext }}</p>
+        </div>
+
+        <div class="split">
+            <div class="split-card dark">
+                <h3>{{ landing.solution_card1_title }}</h3>
+                <p>{{ landing.solution_card1_text }}</p>
+                <a href="#platform" class="learn">Learn more &rarr;</a>
+            </div>
+            <div class="split-card light">
+                <h3>{{ landing.solution_card2_title }}</h3>
+                <p>{{ landing.solution_card2_text }}</p>
+                <a href="#platform" class="learn">Learn more &rarr;</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ============================ PLATFORM ============================ -->
+{% if platform_cards %}
+<section class="platform" id="platform">
+    <div class="wrap">
+        <div class="section-head">
+            <p class="eyebrow">{{ landing.platform_eyebrow }}</p>
+            <h2 class="serif">{{ landing.platform_heading }}</h2>
+            <p>{{ landing.platform_subtext }}</p>
+        </div>
+
+        <div class="feature-grid">
+            {% for card in platform_cards %}
+            <div class="feature">
+                <div class="feature-icon"><i class="{{ card.icon }}"></i></div>
+                <h4>{{ card.title }}</h4>
+                <p>{{ card.description }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- ========================== INTEGRATIONS ========================== -->
+{% if integration_cards %}
+<section class="integrations" id="integrations">
+    <div class="wrap">
+        <div class="integration-box">
+            <div class="section-head" style="margin-bottom: 0;">
+                <p class="eyebrow">{{ landing.integrations_eyebrow }}</p>
+                <h2 class="serif">{{ landing.integrations_heading }}</h2>
+            </div>
+
+            <div class="integration-grid">
+                {% for card in integration_cards %}
+                <div class="integration">
+                    <i class="{{ card.icon }}"></i>
+                    <div><strong>{{ card.title }}</strong><small>{{ card.description }}</small></div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- ============================ CTA BAND ============================ -->
+<section class="cta-band">
+    <div class="cta-inner">
+        <h2 class="serif">{{ landing.cta_heading }}</h2>
+        <p>{{ landing.cta_subtext }}</p>
+        <div class="cta-actions">
+            <a href="{% url 'login' %}" class="btn btn-accent btn-lg">{{ landing.cta_primary_text }} <i class="fas fa-arrow-right"></i></a>
+            <a href="{% url 'store:landing' %}" class="btn btn-outline btn-lg">{{ landing.cta_secondary_text }}</a>
+        </div>
+    </div>
+</section>
+
+<!-- ============================= FOOTER ============================= -->
+<footer class="footer" id="company">
+    <div class="wrap">
+        <div class="footer-top">
+            <div class="footer-about">
+                <a href="/" class="brand">
+                    <span class="brand-mark">
+                        {% if COMPANY_LOGO %}
+                            <img src="{{ COMPANY_LOGO.url }}" alt="{{ COMPANY_NAME }}">
+                        {% else %}
+                            {{ COMPANY_NAME|default:'Trendy Shopping'|slice:":1" }}
+                        {% endif %}
+                    </span>
+                    <span class="brand-name" style="color: var(--text);">{{ COMPANY_NAME|default:'Trendy Shopping' }}</span>
+                </a>
+                <p>{{ COMPANY_TAGLINE|default:'The operating system for selling in Nepal — online and offline commerce infrastructure.' }}</p>
+                <div class="social">
+                    {% if landing.social_instagram %}<a href="{{ landing.social_instagram }}" target="_blank" rel="noopener" aria-label="Instagram"><i class="fab fa-instagram"></i></a>{% endif %}
+                    {% if landing.social_facebook %}<a href="{{ landing.social_facebook }}" target="_blank" rel="noopener" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>{% endif %}
+                    {% if landing.social_tiktok %}<a href="{{ landing.social_tiktok }}" target="_blank" rel="noopener" aria-label="TikTok"><i class="fab fa-tiktok"></i></a>{% endif %}
+                    {% if landing.social_whatsapp %}<a href="{{ landing.social_whatsapp }}" target="_blank" rel="noopener" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>{% endif %}
+                    {% if landing.social_email %}<a href="mailto:{{ landing.social_email }}" aria-label="Email"><i class="fas fa-envelope"></i></a>{% endif %}
+                </div>
+            </div>
+
+            <div class="footer-col">
+                <h5>Solutions</h5>
+                <ul>
+                    <li><a href="#solutions">Online sellers</a></li>
+                    <li><a href="#solutions">Physical stores</a></li>
+                    <li><a href="#platform">Platform overview</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-col">
+                <h5>Product</h5>
+                <ul>
+                    <li><a href="#platform">Features</a></li>
+                    <li><a href="#integrations">Integrations</a></li>
+                    <li><a href="{% url 'store:landing' %}">Storefront</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-col">
+                <h5>Account</h5>
+                <ul>
+                    <li><a href="{% url 'login' %}">Login</a></li>
+                    <li><a href="{% url 'password_reset' %}">Reset password</a></li>
+                    <li><a href="{% url 'store:order_track' %}">Track an order</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="business">
+            <p class="business-title"><i class="fas fa-shield-halved"></i> Verified business details</p>
+            <div class="business-grid">
+                <div class="business-item">
+                    <dt>Registered business name</dt>
+                    <dd>{{ COMPANY_NAME|default:'Trendy Shopping' }}</dd>
+                </div>
+                <div class="business-item">
+                    <dt>Company address</dt>
+                    <dd>{{ landing.business_address|default:'Add your address' }}</dd>
+                </div>
+                <div class="business-item">
+                    <dt>PAN / VAT</dt>
+                    <dd>{{ landing.business_pan|default:'Add your PAN' }}</dd>
+                </div>
+                <div class="business-item">
+                    <dt>Contact</dt>
+                    <dd>{{ landing.business_contact|default:'Add your email' }}</dd>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            {% if legal_pages %}
+            <div class="legal">
+                {% for page in legal_pages %}
+                <a href="{% url 'store:dynamic_page' page.slug %}">{{ page.title }}</a>
+                {% endfor %}
+            </div>
+            {% endif %}
+            <p>&copy; {% now "Y" %} {{ COMPANY_NAME|default:'Trendy Shopping' }}. All rights reserved.</p>
+        </div>
+    </div>
+</footer>
+
+<script>
+    // Mobile nav toggle
+    document.getElementById('navToggle').addEventListener('click', function () {
+        document.getElementById('siteNav').classList.toggle('open');
+    });
+
+    // Close mobile nav after tapping an anchor link
+    document.querySelectorAll('.nav-links a').forEach(function (link) {
+        link.addEventListener('click', function () {
+            document.getElementById('siteNav').classList.remove('open');
+        });
+    });
+</script>
+
+</body>
+</html>

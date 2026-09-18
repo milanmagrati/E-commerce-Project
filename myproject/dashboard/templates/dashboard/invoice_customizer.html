@@ -1,0 +1,1280 @@
+{% extends 'base.html' %}
+{% comment %}
+Setup → Invoice Customizer.
+
+Left: the design controls, grouped into tabs. Right: a sticky live preview that
+renders the real invoice template through the same context builder the print
+view uses, so nothing can drift between preview and paper.
+
+The settings form and the element (line) editor are deliberately two separate
+forms — HTML cannot nest them — and the tab switcher shows/hides panes across
+both containers.
+{% endcomment %}
+{% block title %}Invoice Customizer{% endblock %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --ic-ink: #101828;
+        --ic-muted: #667085;
+        --ic-line: #E4E7EC;
+        --ic-soft: #F7F8FA;
+        --ic-brand: #4F46E5;
+        --ic-brand-dark: #3730A3;
+        --ic-green: #059669;
+        --ic-red: #DC2626;
+        --ic-radius: 14px;
+    }
+
+    .ic-wrap { max-width: 1700px; margin: 0 auto; padding: 1.5rem 1rem 3rem; color: var(--ic-ink); }
+
+    /* ── Header ──────────────────────────────────────────────── */
+    .ic-header {
+        position: relative; overflow: hidden;
+        background: linear-gradient(135deg, #4F46E5 0%, #6D28D9 55%, #9333EA 100%);
+        color: #fff; border-radius: 18px; padding: 1.6rem 1.9rem; margin-bottom: 1.25rem;
+        box-shadow: 0 18px 40px -20px rgba(79, 70, 229, .7);
+    }
+    .ic-header::after {
+        content: ''; position: absolute; right: -70px; top: -90px;
+        width: 300px; height: 300px; border-radius: 50%; background: rgba(255, 255, 255, .09);
+    }
+    .ic-header-inner {
+        position: relative; z-index: 1; display: flex; flex-wrap: wrap;
+        gap: 1rem; align-items: flex-end; justify-content: space-between;
+    }
+    .ic-eyebrow {
+        display: inline-flex; align-items: center; gap: .45rem;
+        font-size: .68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+        background: rgba(255, 255, 255, .18); padding: .28rem .7rem; border-radius: 999px;
+    }
+    .ic-header h1 { font-size: 1.6rem; font-weight: 800; margin: .55rem 0 .3rem; }
+    .ic-header p { margin: 0; opacity: .92; font-size: .9rem; max-width: 62ch; }
+    .ic-stats { display: flex; gap: .6rem; flex-wrap: wrap; }
+    .ic-stat {
+        background: rgba(255, 255, 255, .16); border-radius: 12px;
+        padding: .5rem .85rem; min-width: 92px;
+    }
+    .ic-stat b { display: block; font-size: 1.15rem; line-height: 1.2; }
+    .ic-stat span { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; opacity: .9; }
+
+    /* ── Split layout ────────────────────────────────────────── */
+    .ic-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 460px); gap: 1.1rem; align-items: start; }
+    @media (max-width: 1200px) { .ic-split { grid-template-columns: minmax(0, 1fr); } }
+
+    .ic-card {
+        background: #fff; border: 1px solid var(--ic-line);
+        border-radius: var(--ic-radius); box-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+    }
+
+    /* ── Tabs ────────────────────────────────────────────────── */
+    .ic-tabs {
+        display: flex; gap: .3rem; flex-wrap: wrap; padding: .55rem;
+        background: #fff; border: 1px solid var(--ic-line); border-radius: var(--ic-radius);
+        margin-bottom: .9rem; position: sticky; top: 0; z-index: 20;
+    }
+    .ic-tab {
+        border: 1px solid transparent; background: transparent; color: var(--ic-muted);
+        font-size: .82rem; font-weight: 700; padding: .48rem .85rem; border-radius: 10px;
+        cursor: pointer; display: inline-flex; align-items: center; gap: .4rem;
+        transition: all .15s; white-space: nowrap;
+    }
+    .ic-tab:hover { background: var(--ic-soft); color: var(--ic-ink); }
+    .ic-tab.is-active { background: var(--ic-brand); border-color: var(--ic-brand); color: #fff; }
+    .ic-tab .badge-count {
+        background: rgba(0, 0, 0, .12); border-radius: 999px; padding: 0 .4rem; font-size: .7rem;
+    }
+    .ic-tab.is-active .badge-count { background: rgba(255, 255, 255, .28); }
+
+    .ic-pane { display: none; }
+    .ic-pane.is-active { display: block; }
+
+    /* ── Sections & fields ───────────────────────────────────── */
+    .ic-section { padding: 1.15rem 1.25rem; border-bottom: 1px solid var(--ic-line); }
+    .ic-section:last-child { border-bottom: none; }
+    .ic-section > h3 {
+        font-size: .74rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+        color: var(--ic-muted); margin: 0 0 .2rem;
+    }
+    .ic-section > .ic-hint { font-size: .8rem; color: var(--ic-muted); margin: 0 0 .9rem; }
+
+    .ic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .85rem; }
+    .ic-grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .ic-field { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+    .ic-field.span-all { grid-column: 1 / -1; }
+    .ic-field label {
+        font-size: .76rem; font-weight: 700; color: var(--ic-ink);
+        display: flex; align-items: center; gap: .35rem;
+    }
+    .ic-field .help { font-size: .72rem; color: var(--ic-muted); font-weight: 500; }
+    .ic-field input[type="text"],
+    .ic-field input[type="number"],
+    .ic-field input[type="email"],
+    .ic-field input[type="file"],
+    .ic-field select,
+    .ic-field textarea {
+        width: 100%; border: 1px solid var(--ic-line); border-radius: 9px;
+        padding: .48rem .65rem; font-size: .85rem; color: var(--ic-ink);
+        background: #fff; font-family: inherit; transition: border-color .15s, box-shadow .15s;
+    }
+    .ic-field input:focus, .ic-field select:focus, .ic-field textarea:focus {
+        outline: none; border-color: var(--ic-brand); box-shadow: 0 0 0 3px rgba(79, 70, 229, .12);
+    }
+    .ic-field textarea { resize: vertical; min-height: 78px; line-height: 1.5; }
+    .ic-field textarea.code { font-family: 'Courier New', monospace; font-size: .78rem; min-height: 130px; }
+
+    /* Colour + range rows */
+    .ic-color { display: flex; align-items: center; gap: .5rem; }
+    .ic-color input[type="color"] {
+        width: 42px; height: 34px; padding: 2px; border: 1px solid var(--ic-line);
+        border-radius: 8px; background: #fff; cursor: pointer; flex: 0 0 auto;
+    }
+    .ic-color input[type="text"] { font-family: 'Courier New', monospace; text-transform: lowercase; }
+    .ic-range { display: flex; align-items: center; gap: .6rem; }
+    .ic-range input[type="range"] { flex: 1; accent-color: var(--ic-brand); }
+    .ic-range output {
+        font-size: .78rem; font-weight: 800; min-width: 46px; text-align: right;
+        color: var(--ic-brand-dark); font-variant-numeric: tabular-nums;
+    }
+
+    /* Switches */
+    .ic-switches { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .5rem; }
+    .ic-switch {
+        display: flex; align-items: center; gap: .6rem; cursor: pointer;
+        border: 1px solid var(--ic-line); border-radius: 10px; padding: .55rem .7rem;
+        background: #fff; transition: border-color .15s, background .15s; min-width: 0;
+    }
+    .ic-switch:hover { border-color: #cfd4dc; background: var(--ic-soft); }
+    .ic-switch input { display: none; }
+    .ic-switch .track {
+        flex: 0 0 auto; width: 34px; height: 19px; border-radius: 999px; background: #d0d5dd;
+        position: relative; transition: background .18s;
+    }
+    .ic-switch .track::after {
+        content: ''; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+        border-radius: 50%; background: #fff; transition: transform .18s;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+    }
+    .ic-switch input:checked + .track { background: var(--ic-green); }
+    .ic-switch input:checked + .track::after { transform: translateX(15px); }
+    .ic-switch .txt { font-size: .8rem; font-weight: 600; line-height: 1.25; min-width: 0; }
+    .ic-switch .txt small { display: block; font-weight: 500; color: var(--ic-muted); font-size: .7rem; }
+
+    /* Paired toggle + label input */
+    .ic-pair {
+        display: flex; gap: .6rem; align-items: center;
+        border: 1px solid var(--ic-line); border-radius: 10px; padding: .5rem .65rem;
+    }
+    .ic-pair .ic-switch { border: none; padding: 0; background: none; flex: 0 0 auto; }
+    .ic-pair .ic-switch:hover { background: none; }
+    .ic-pair input[type="text"] {
+        flex: 1; min-width: 0; border: 1px solid var(--ic-line); border-radius: 8px;
+        padding: .35rem .55rem; font-size: .82rem;
+    }
+
+    /* Logo preview */
+    .ic-logo-preview {
+        display: flex; align-items: center; gap: .8rem; padding: .7rem;
+        border: 1px dashed var(--ic-line); border-radius: 10px; background: var(--ic-soft);
+    }
+    .ic-logo-preview img { max-height: 52px; max-width: 150px; object-fit: contain; }
+    .ic-logo-preview .none { font-size: .8rem; color: var(--ic-muted); }
+
+    /* ── Save bar ────────────────────────────────────────────── */
+    .ic-savebar {
+        position: sticky; bottom: 0; z-index: 15;
+        display: flex; gap: .6rem; align-items: center; justify-content: flex-end;
+        padding: .8rem 1.25rem; background: #fff;
+        border-top: 1px solid var(--ic-line); border-radius: 0 0 var(--ic-radius) var(--ic-radius);
+        box-shadow: 0 -6px 18px -12px rgba(16, 24, 40, .35);
+    }
+    .ic-savebar .note { margin-right: auto; font-size: .76rem; color: var(--ic-muted); }
+    .ic-btn {
+        border: 1px solid var(--ic-line); background: #fff; color: var(--ic-ink);
+        font-size: .82rem; font-weight: 700; padding: .5rem .95rem; border-radius: 9px;
+        cursor: pointer; display: inline-flex; align-items: center; gap: .4rem;
+        text-decoration: none; transition: all .15s; font-family: inherit;
+    }
+    .ic-btn:hover { background: var(--ic-soft); color: var(--ic-ink); border-color: #cfd4dc; }
+    .ic-btn-primary { background: var(--ic-brand); border-color: var(--ic-brand); color: #fff; }
+    .ic-btn-primary:hover { background: var(--ic-brand-dark); border-color: var(--ic-brand-dark); color: #fff; }
+    .ic-btn-danger { color: var(--ic-red); border-color: #fecaca; }
+    .ic-btn-danger:hover { background: #fef2f2; color: var(--ic-red); border-color: #fca5a5; }
+    .ic-btn-sm { padding: .28rem .55rem; font-size: .74rem; border-radius: 7px; }
+
+    /* ── Element (line) manager ──────────────────────────────── */
+    .ic-linegroup { padding: 1rem 1.25rem; border-bottom: 1px solid var(--ic-line); }
+    .ic-linegroup:last-of-type { border-bottom: none; }
+    .ic-linegroup-head {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: .7rem; margin-bottom: .6rem; flex-wrap: wrap;
+    }
+    .ic-linegroup-head h4 { font-size: .86rem; font-weight: 800; margin: 0; }
+    .ic-linegroup-head .sub { font-size: .74rem; color: var(--ic-muted); font-weight: 500; }
+
+    .ic-line {
+        display: flex; align-items: center; gap: .6rem;
+        border: 1px solid var(--ic-line); border-radius: 10px;
+        padding: .5rem .6rem; margin-bottom: .45rem; background: #fff;
+        transition: border-color .15s, opacity .15s;
+    }
+    .ic-line:hover { border-color: #cfd4dc; }
+    .ic-line.is-off { opacity: .5; background: var(--ic-soft); }
+    .ic-line-move { display: flex; flex-direction: column; gap: 2px; flex: 0 0 auto; }
+    .ic-line-move button {
+        border: 1px solid var(--ic-line); background: #fff; border-radius: 5px;
+        width: 22px; height: 16px; line-height: 1; font-size: .6rem; cursor: pointer;
+        color: var(--ic-muted); padding: 0; display: flex; align-items: center; justify-content: center;
+    }
+    .ic-line-move button:hover { background: var(--ic-soft); color: var(--ic-ink); }
+    .ic-line-body { flex: 1; min-width: 0; }
+    .ic-line-label { font-size: .84rem; font-weight: 700; word-break: break-word; }
+    .ic-line-meta {
+        font-size: .72rem; color: var(--ic-muted); margin-top: 1px;
+        display: flex; gap: .4rem; flex-wrap: wrap; align-items: center;
+    }
+    .ic-chip {
+        display: inline-block; font-size: .66rem; font-weight: 700; padding: .05rem .4rem;
+        border-radius: 5px; background: #EEF2FF; color: #4338CA; letter-spacing: .02em;
+    }
+    .ic-chip.static { background: #FEF3C7; color: #92400E; }
+    .ic-chip.muted { background: var(--ic-soft); color: var(--ic-muted); }
+    .ic-line-actions { display: flex; gap: .3rem; flex: 0 0 auto; align-items: center; }
+    .ic-line-actions form { display: inline; margin: 0; }
+    .ic-empty {
+        font-size: .8rem; color: var(--ic-muted); padding: .8rem;
+        border: 1px dashed var(--ic-line); border-radius: 10px; text-align: center;
+    }
+
+    /* ── Preview pane ────────────────────────────────────────── */
+    .ic-preview { position: sticky; top: 4.6rem; }
+    .ic-preview-head {
+        display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+        padding: .7rem .9rem; border-bottom: 1px solid var(--ic-line);
+    }
+    .ic-preview-head strong { font-size: .82rem; margin-right: auto; }
+    .ic-preview-frame {
+        background: #eef0f4; border-radius: 0 0 var(--ic-radius) var(--ic-radius);
+        overflow: hidden; padding: .5rem;
+    }
+    .ic-preview-frame iframe {
+        width: 100%; height: 72vh; min-height: 480px; border: 0;
+        background: #fff; border-radius: 8px; display: block;
+    }
+    .ic-seg { display: inline-flex; border: 1px solid var(--ic-line); border-radius: 8px; overflow: hidden; }
+    .ic-seg button {
+        border: 0; background: #fff; padding: .28rem .55rem; font-size: .72rem;
+        font-weight: 700; color: var(--ic-muted); cursor: pointer;
+    }
+    .ic-seg button + button { border-left: 1px solid var(--ic-line); }
+    .ic-seg button.is-active { background: var(--ic-brand); color: #fff; }
+
+    /* ── Danger zone ─────────────────────────────────────────── */
+    .ic-danger { border-color: #fecaca; }
+    .ic-danger .ic-section > h3 { color: var(--ic-red); }
+
+    /* ── Modal tweaks ────────────────────────────────────────── */
+    .ic-modal .modal-content { border: 0; border-radius: var(--ic-radius); }
+    .ic-modal .modal-header { border-bottom: 1px solid var(--ic-line); padding: .9rem 1.1rem; }
+    .ic-modal .modal-title { font-size: 1rem; font-weight: 800; }
+    .ic-modal .modal-body { padding: 1.1rem; }
+    .ic-modal .modal-footer { border-top: 1px solid var(--ic-line); padding: .8rem 1.1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ic-wrap">
+
+    <!-- ══════════════ Header ══════════════ -->
+    <div class="ic-header">
+        <div class="ic-header-inner">
+            <div>
+                <span class="ic-eyebrow"><i class="fas fa-file-invoice"></i> Setup</span>
+                <h1>Invoice Customizer</h1>
+                <p>
+                    Design the invoice that prints from the orders list. Add your VAT/PAN number, phone
+                    and address, rename any label, switch sections and columns on or off, and restyle
+                    the whole document — the preview on the right is the real invoice template.
+                </p>
+            </div>
+            <div class="ic-stats">
+                <div class="ic-stat"><b>{{ active_element_count }}/{{ element_count }}</b><span>Lines on</span></div>
+                <div class="ic-stat"><b>{{ cfg.get_paper_size_display|truncatechars:8 }}</b><span>Paper</span></div>
+                <div class="ic-stat"><b>{{ cfg.updated_at|date:"d M" }}</b><span>Updated</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════ Tabs ══════════════ -->
+    <div class="ic-tabs" role="tablist">
+        <button type="button" class="ic-tab is-active" data-tab="business"><i class="fas fa-building"></i> Business</button>
+        <button type="button" class="ic-tab" data-tab="layout"><i class="fas fa-table-columns"></i> Layout</button>
+        <button type="button" class="ic-tab" data-tab="items"><i class="fas fa-list-ul"></i> Items table</button>
+        <button type="button" class="ic-tab" data-tab="totals"><i class="fas fa-calculator"></i> Totals</button>
+        <button type="button" class="ic-tab" data-tab="footer"><i class="fas fa-shoe-prints"></i> Footer</button>
+        <button type="button" class="ic-tab" data-tab="style"><i class="fas fa-palette"></i> Style</button>
+        <button type="button" class="ic-tab" data-tab="lines">
+            <i class="fas fa-plus-minus"></i> Add / remove lines
+            <span class="badge-count">{{ element_count }}</span>
+        </button>
+    </div>
+
+    <div class="ic-split">
+
+        <!-- ══════════════ LEFT: controls ══════════════ -->
+        <div>
+
+            <form method="post" action="{% url 'invoice_customizer' %}" enctype="multipart/form-data" id="icSettingsForm">
+                {% csrf_token %}
+                <div class="ic-card" id="icFormPanes">
+
+                    <!-- ─────────── Business ─────────── -->
+                    <div class="ic-pane is-active" data-pane="business">
+                        <div class="ic-section">
+                            <h3>Business identity</h3>
+                            <p class="ic-hint">
+                                These print in the invoice header. Any field left blank simply does not print —
+                                add the matching line under <em>Add / remove lines</em> if you want it somewhere else.
+                            </p>
+                            <div class="ic-grid cols-2">
+                                <div class="ic-field">
+                                    <label>Business name <span class="help">(blank = Company Setup name)</span></label>
+                                    <input type="text" name="business_name" value="{{ cfg.business_name }}" placeholder="Trendy Shopping" maxlength="200">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Tagline</label>
+                                    <input type="text" name="business_tagline" value="{{ cfg.business_tagline }}" placeholder="Quality you can trust" maxlength="300">
+                                </div>
+                                <div class="ic-field">
+                                    <label>VAT / PAN number</label>
+                                    <input type="text" name="vat_number" value="{{ cfg.vat_number }}" placeholder="601234567" maxlength="60">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Registration number</label>
+                                    <input type="text" name="registration_number" value="{{ cfg.registration_number }}" placeholder="Reg. 123456/078/079" maxlength="60">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Phone</label>
+                                    <input type="text" name="business_phone" value="{{ cfg.business_phone }}" placeholder="01-4567890" maxlength="60">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Alternate phone</label>
+                                    <input type="text" name="business_alt_phone" value="{{ cfg.business_alt_phone }}" placeholder="9800000000" maxlength="60">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Email</label>
+                                    <input type="text" name="business_email" value="{{ cfg.business_email }}" placeholder="hello@example.com" maxlength="120">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Website</label>
+                                    <input type="text" name="business_website" value="{{ cfg.business_website }}" placeholder="www.example.com" maxlength="160">
+                                </div>
+                                <div class="ic-field span-all">
+                                    <label>Address</label>
+                                    <textarea name="business_address" rows="2" placeholder="Kumaripati, Lalitpur, Nepal">{{ cfg.business_address }}</textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ic-section">
+                            <h3>Logo</h3>
+                            <p class="ic-hint">Leave empty to fall back to the logo from Company Setup.</p>
+                            <div class="ic-grid cols-2">
+                                <div class="ic-field">
+                                    <label>Upload a logo</label>
+                                    <input type="file" name="logo" accept="image/*">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Current logo</label>
+                                    <div class="ic-logo-preview">
+                                        {% if cfg.logo %}
+                                            <img src="{{ cfg.logo.url }}" alt="Invoice logo">
+                                            <label class="ic-switch" style="border:none;padding:0;background:none;">
+                                                <input type="checkbox" name="remove_logo">
+                                                <span class="track"></span>
+                                                <span class="txt">Remove</span>
+                                            </label>
+                                        {% else %}
+                                            <span class="none">No invoice logo — Company Setup logo is used.</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Logo height <span class="help">16–160 px</span></label>
+                                    <div class="ic-range">
+                                        <input type="range" name="logo_height" min="16" max="160" step="2"
+                                               value="{{ cfg.logo_height }}" oninput="this.nextElementSibling.value = this.value + 'px'">
+                                        <output>{{ cfg.logo_height }}px</output>
+                                    </div>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Visibility</label>
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="show_logo" {% if cfg.show_logo %}checked{% endif %}>
+                                        <span class="track"></span>
+                                        <span class="txt">Print the logo</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ─────────── Layout ─────────── -->
+                    <div class="ic-pane" data-pane="layout">
+                        <div class="ic-section">
+                            <h3>Document</h3>
+                            <div class="ic-grid cols-2">
+                                <div class="ic-field">
+                                    <label>Document title</label>
+                                    <input type="text" name="document_title" value="{{ cfg.document_title }}" placeholder="INVOICE" maxlength="60">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Invoice number prefix <span class="help">printed before the order number</span></label>
+                                    <input type="text" name="invoice_number_prefix" value="{{ cfg.invoice_number_prefix }}" placeholder="INV-" maxlength="20">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Header layout</label>
+                                    <select name="header_layout">
+                                        {% for value, label in header_layout_choices %}
+                                        <option value="{{ value }}" {% if cfg.header_layout == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ic-section">
+                            <h3>Sections</h3>
+                            <p class="ic-hint">Switch off any block you do not want on the paper.</p>
+                            <div class="ic-switches">
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_header" {% if cfg.show_header %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Header<small>Business name, logo</small></span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_meta" {% if cfg.show_meta %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Invoice meta box<small>Number, date, time</small></span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_bill_to" {% if cfg.show_bill_to %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Bill To box<small>Customer details</small></span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_ship_to" {% if cfg.show_ship_to %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Ship To box<small>Second address panel</small></span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_items" {% if cfg.show_items %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Items table</span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_totals" {% if cfg.show_totals %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Totals box</span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_footer" {% if cfg.show_footer %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Footer</span>
+                                </label>
+                            </div>
+                            <div class="ic-grid cols-2" style="margin-top:.85rem;">
+                                <div class="ic-field">
+                                    <label>“Bill To” heading</label>
+                                    <input type="text" name="bill_to_title" value="{{ cfg.bill_to_title }}" maxlength="60">
+                                </div>
+                                <div class="ic-field">
+                                    <label>“Ship To” heading</label>
+                                    <input type="text" name="ship_to_title" value="{{ cfg.ship_to_title }}" maxlength="60">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ─────────── Items ─────────── -->
+                    <div class="ic-pane" data-pane="items">
+                        <div class="ic-section">
+                            <h3>Columns</h3>
+                            <p class="ic-hint">Toggle a column off to drop it, or rename its heading.</p>
+                            <div class="ic-grid cols-2">
+                                <div class="ic-pair">
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="col_index" {% if cfg.col_index %}checked{% endif %}>
+                                        <span class="track"></span>
+                                    </label>
+                                    <input type="text" name="col_index_label" value="{{ cfg.col_index_label }}" placeholder="#" maxlength="40" aria-label="Row number column heading">
+                                </div>
+                                <div class="ic-pair">
+                                    <label class="ic-switch"><input type="checkbox" checked disabled><span class="track"></span></label>
+                                    <input type="text" name="col_product_label" value="{{ cfg.col_product_label }}" placeholder="Product" maxlength="40" aria-label="Product column heading">
+                                </div>
+                                <div class="ic-pair">
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="col_qty" {% if cfg.col_qty %}checked{% endif %}>
+                                        <span class="track"></span>
+                                    </label>
+                                    <input type="text" name="col_qty_label" value="{{ cfg.col_qty_label }}" placeholder="Qty" maxlength="40" aria-label="Quantity column heading">
+                                </div>
+                                <div class="ic-pair">
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="col_price" {% if cfg.col_price %}checked{% endif %}>
+                                        <span class="track"></span>
+                                    </label>
+                                    <input type="text" name="col_price_label" value="{{ cfg.col_price_label }}" placeholder="Unit Price" maxlength="40" aria-label="Unit price column heading">
+                                </div>
+                                <div class="ic-pair">
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="col_total" {% if cfg.col_total %}checked{% endif %}>
+                                        <span class="track"></span>
+                                    </label>
+                                    <input type="text" name="col_total_label" value="{{ cfg.col_total_label }}" placeholder="Total" maxlength="40" aria-label="Line total column heading">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ic-section">
+                            <h3>Inside the product cell</h3>
+                            <div class="ic-switches">
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="col_sku" {% if cfg.col_sku %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">SKU line</span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="col_type_tag" {% if cfg.col_type_tag %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Type tag<small>Simple / Variant / Bundle</small></span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="col_variant" {% if cfg.col_variant %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Variation name</span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="col_bundle_components" {% if cfg.col_bundle_components %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Bundle contents</span>
+                                </label>
+                            </div>
+                            <div class="ic-grid" style="margin-top:.85rem;">
+                                <div class="ic-field span-all">
+                                    <label>Text when the order has no items</label>
+                                    <input type="text" name="empty_items_text" value="{{ cfg.empty_items_text }}" maxlength="120">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ─────────── Totals ─────────── -->
+                    <div class="ic-pane" data-pane="totals">
+                        <div class="ic-section">
+                            <h3>Rows</h3>
+                            <p class="ic-hint">Each row can be switched off or relabelled. Extra rows live under <em>Add / remove lines</em> → “Totals box”.</p>
+                            <div class="ic-grid cols-2">
+                                <div class="ic-pair">
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="show_subtotal" {% if cfg.show_subtotal %}checked{% endif %}>
+                                        <span class="track"></span>
+                                    </label>
+                                    <input type="text" name="label_subtotal" value="{{ cfg.label_subtotal }}" maxlength="40" aria-label="Subtotal label">
+                                </div>
+                                <div class="ic-pair">
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="show_discount" {% if cfg.show_discount %}checked{% endif %}>
+                                        <span class="track"></span>
+                                    </label>
+                                    <input type="text" name="label_discount" value="{{ cfg.label_discount }}" maxlength="40" aria-label="Discount label">
+                                </div>
+                                <div class="ic-pair">
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="show_shipping" {% if cfg.show_shipping %}checked{% endif %}>
+                                        <span class="track"></span>
+                                    </label>
+                                    <input type="text" name="label_shipping" value="{{ cfg.label_shipping }}" maxlength="40" aria-label="Shipping label">
+                                </div>
+                                <div class="ic-pair">
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="show_delivery" {% if cfg.show_delivery %}checked{% endif %}>
+                                        <span class="track"></span>
+                                    </label>
+                                    <input type="text" name="label_delivery" value="{{ cfg.label_delivery }}" maxlength="40" aria-label="Delivery charge label">
+                                </div>
+                                <div class="ic-pair">
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="show_tax" {% if cfg.show_tax %}checked{% endif %}>
+                                        <span class="track"></span>
+                                    </label>
+                                    <input type="text" name="label_tax" value="{{ cfg.label_tax }}" maxlength="40" aria-label="Tax label">
+                                </div>
+                                <div class="ic-pair">
+                                    <label class="ic-switch"><input type="checkbox" checked disabled><span class="track"></span></label>
+                                    <input type="text" name="label_grand_total" value="{{ cfg.label_grand_total }}" maxlength="40" aria-label="Grand total label">
+                                </div>
+                            </div>
+                            <div class="ic-switches" style="margin-top:.85rem;">
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="hide_zero_totals" {% if cfg.hide_zero_totals %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Hide zero rows<small>Skip discount/tax when they are 0</small></span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_amount_in_words" {% if cfg.show_amount_in_words %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Amount in words<small>Under the grand total</small></span>
+                                </label>
+                            </div>
+                            <div class="ic-grid" style="margin-top:.85rem;">
+                                <div class="ic-field">
+                                    <label>“In words” label</label>
+                                    <input type="text" name="label_amount_in_words" value="{{ cfg.label_amount_in_words }}" maxlength="60">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ic-section">
+                            <h3>Currency</h3>
+                            <div class="ic-grid cols-2">
+                                <div class="ic-field">
+                                    <label>Symbol <span class="help">e.g. रू, Rs., NPR</span></label>
+                                    <input type="text" name="currency_symbol" value="{{ cfg.currency_symbol }}" maxlength="10">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Position</label>
+                                    <select name="currency_position">
+                                        {% for value, label in currency_position_choices %}
+                                        <option value="{{ value }}" {% if cfg.currency_position == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Grouping</label>
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="thousand_separator" {% if cfg.thousand_separator %}checked{% endif %}>
+                                        <span class="track"></span><span class="txt">Thousand separators<small>1,300.00 instead of 1300.00</small></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ─────────── Footer ─────────── -->
+                    <div class="ic-pane" data-pane="footer">
+                        <div class="ic-section">
+                            <h3>Blocks</h3>
+                            <div class="ic-switches">
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_payment_method" {% if cfg.show_payment_method %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Payment method badge</span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_partial_payment" {% if cfg.show_partial_payment %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Partial payment line<small>Paid / remaining</small></span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_admin_notes" {% if cfg.show_admin_notes %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Admin notes box</span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_customer_notes" {% if cfg.show_customer_notes %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Order notes box</span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_terms" {% if cfg.show_terms %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Terms &amp; conditions</span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_printed_by" {% if cfg.show_printed_by %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">“Printed by” line</span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_signature" {% if cfg.show_signature %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Signature lines</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="ic-section">
+                            <h3>Wording</h3>
+                            <div class="ic-grid cols-2">
+                                <div class="ic-field">
+                                    <label>Admin notes heading</label>
+                                    <input type="text" name="admin_notes_title" value="{{ cfg.admin_notes_title }}" maxlength="60">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Order notes heading</label>
+                                    <input type="text" name="customer_notes_title" value="{{ cfg.customer_notes_title }}" maxlength="60">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Terms heading</label>
+                                    <input type="text" name="terms_title" value="{{ cfg.terms_title }}" maxlength="60">
+                                </div>
+                                <div class="ic-field span-all">
+                                    <label>Terms &amp; conditions <span class="help">one per line</span></label>
+                                    <textarea name="terms_text" rows="4" placeholder="Goods once sold are not returnable after 7 days.&#10;Warranty claims require this invoice.">{{ cfg.terms_text }}</textarea>
+                                </div>
+                                <div class="ic-field span-all">
+                                    <label>Thank-you line <span class="help">use {company} for the business name</span></label>
+                                    <input type="text" name="thank_you_text" value="{{ cfg.thank_you_text }}" maxlength="200">
+                                </div>
+                                <div class="ic-field span-all">
+                                    <label>Small print</label>
+                                    <input type="text" name="footer_note" value="{{ cfg.footer_note }}" maxlength="200">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Left signature label</label>
+                                    <input type="text" name="signature_left_label" value="{{ cfg.signature_left_label }}" maxlength="60">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Right signature label</label>
+                                    <input type="text" name="signature_right_label" value="{{ cfg.signature_right_label }}" maxlength="60">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ─────────── Style ─────────── -->
+                    <div class="ic-pane" data-pane="style">
+                        <div class="ic-section">
+                            <h3>Paper &amp; type</h3>
+                            <div class="ic-grid cols-2">
+                                <div class="ic-field">
+                                    <label>Paper size</label>
+                                    <select name="paper_size">
+                                        {% for value, label in paper_choices %}
+                                        <option value="{{ value }}" {% if cfg.paper_size == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Font</label>
+                                    <select name="font_family">
+                                        {% for value, label in font_choices %}
+                                        <option value="{{ value }}" {% if cfg.font_family == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Base font size <span class="help">8–18 px</span></label>
+                                    <div class="ic-range">
+                                        <input type="range" name="base_font_size" min="8" max="18" step="1"
+                                               value="{{ cfg.base_font_size }}" data-cssvar="--inv-size" data-unit="px"
+                                               oninput="this.nextElementSibling.value = this.value + 'px'">
+                                        <output>{{ cfg.base_font_size }}px</output>
+                                    </div>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Corner radius <span class="help">0–24 px</span></label>
+                                    <div class="ic-range">
+                                        <input type="range" name="corner_radius" min="0" max="24" step="1"
+                                               value="{{ cfg.corner_radius }}" data-cssvar="--inv-radius" data-unit="px"
+                                               oninput="this.nextElementSibling.value = this.value + 'px'">
+                                        <output>{{ cfg.corner_radius }}px</output>
+                                    </div>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Table style</label>
+                                    <select name="table_style">
+                                        {% for value, label in table_style_choices %}
+                                        <option value="{{ value }}" {% if cfg.table_style == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Accent treatment</label>
+                                    <select name="accent_mode">
+                                        {% for value, label in accent_mode_choices %}
+                                        <option value="{{ value }}" {% if cfg.accent_mode == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="ic-switches" style="margin-top:.85rem;">
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="compact_mode" {% if cfg.compact_mode %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Compact spacing<small>Fits more rows per page</small></span>
+                                </label>
+                                <label class="ic-switch">
+                                    <input type="checkbox" name="show_outer_border" {% if cfg.show_outer_border %}checked{% endif %}>
+                                    <span class="track"></span><span class="txt">Outer border</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="ic-section">
+                            <h3>Colours</h3>
+                            <div class="ic-grid cols-2">
+                                <div class="ic-field">
+                                    <label>Accent</label>
+                                    <div class="ic-color">
+                                        <input type="color" value="{{ cfg.accent_color }}" data-syncs="accent_color">
+                                        <input type="text" name="accent_color" value="{{ cfg.accent_color }}" maxlength="7" data-cssvar="--inv-accent">
+                                    </div>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Text</label>
+                                    <div class="ic-color">
+                                        <input type="color" value="{{ cfg.text_color }}" data-syncs="text_color">
+                                        <input type="text" name="text_color" value="{{ cfg.text_color }}" maxlength="7" data-cssvar="--inv-ink">
+                                    </div>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Secondary text</label>
+                                    <div class="ic-color">
+                                        <input type="color" value="{{ cfg.muted_color }}" data-syncs="muted_color">
+                                        <input type="text" name="muted_color" value="{{ cfg.muted_color }}" maxlength="7" data-cssvar="--inv-muted">
+                                    </div>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Borders</label>
+                                    <div class="ic-color">
+                                        <input type="color" value="{{ cfg.border_color }}" data-syncs="border_color">
+                                        <input type="text" name="border_color" value="{{ cfg.border_color }}" maxlength="7" data-cssvar="--inv-line">
+                                    </div>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Page background</label>
+                                    <div class="ic-color">
+                                        <input type="color" value="{{ cfg.page_background }}" data-syncs="page_background">
+                                        <input type="text" name="page_background" value="{{ cfg.page_background }}" maxlength="7" data-cssvar="--inv-bg">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ic-section">
+                            <h3>Watermark</h3>
+                            <div class="ic-grid cols-2">
+                                <div class="ic-field">
+                                    <label>Enable</label>
+                                    <label class="ic-switch">
+                                        <input type="checkbox" name="show_watermark" {% if cfg.show_watermark %}checked{% endif %}>
+                                        <span class="track"></span><span class="txt">Print a watermark</span>
+                                    </label>
+                                </div>
+                                <div class="ic-field">
+                                    <label>Text</label>
+                                    <input type="text" name="watermark_text" value="{{ cfg.watermark_text }}" placeholder="PAID" maxlength="60">
+                                </div>
+                                <div class="ic-field">
+                                    <label>Opacity <span class="help">1–40 %</span></label>
+                                    <div class="ic-range">
+                                        <input type="range" name="watermark_opacity" min="1" max="40" step="1"
+                                               value="{{ cfg.watermark_opacity }}"
+                                               oninput="this.nextElementSibling.value = this.value + '%'">
+                                        <output>{{ cfg.watermark_opacity }}%</output>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ic-section">
+                            <h3>Advanced</h3>
+                            <p class="ic-hint">Extra CSS appended to the invoice stylesheet — use it for anything the controls above do not cover.</p>
+                            <div class="ic-field">
+                                <label>Custom CSS</label>
+                                <textarea name="custom_css" class="code" rows="6" placeholder=".brand-name { text-transform: uppercase; }">{{ cfg.custom_css }}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Save bar (only for the settings panes) -->
+                    <div class="ic-savebar" id="icSaveBar">
+                        <span class="note"><i class="fas fa-circle-info"></i> Saving reloads the preview.</span>
+                        <button type="reset" class="ic-btn"><i class="fas fa-rotate-left"></i> Undo edits</button>
+                        <button type="submit" class="ic-btn ic-btn-primary"><i class="fas fa-floppy-disk"></i> Save invoice design</button>
+                    </div>
+                </div>
+            </form>
+
+            <!-- ─────────── Lines (outside the settings form) ─────────── -->
+            <div class="ic-pane" data-pane="lines" id="icLinesPane">
+                <div class="ic-card">
+                    <div class="ic-section" style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:240px;">
+                            <h3 style="margin-bottom:.15rem;">Invoice lines</h3>
+                            <p class="ic-hint" style="margin:0;">
+                                Every label/value pair on the invoice is a line here. Add a VAT number, a second phone,
+                                a delivery note — pull it from the order, or type fixed text. Delete or hide anything
+                                you do not want.
+                            </p>
+                        </div>
+                        <button type="button" class="ic-btn ic-btn-primary" data-line-new>
+                            <i class="fas fa-plus"></i> Add a line
+                        </button>
+                    </div>
+
+                    {% for group in grouped_elements %}
+                    <div class="ic-linegroup">
+                        <div class="ic-linegroup-head">
+                            <div>
+                                <h4>{{ group.label }}</h4>
+                                <div class="sub">{{ group.elements|length }} line{{ group.elements|length|pluralize }}</div>
+                            </div>
+                            <button type="button" class="ic-btn ic-btn-sm" data-line-new data-section="{{ group.key }}">
+                                <i class="fas fa-plus"></i> Add here
+                            </button>
+                        </div>
+
+                        {% for element in group.elements %}
+                        <div class="ic-line {% if not element.is_active %}is-off{% endif %}">
+                            <div class="ic-line-move">
+                                <form method="post" action="{% url 'invoice_element_move' element.id %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="direction" value="up">
+                                    <button type="submit" title="Move up"><i class="fas fa-chevron-up"></i></button>
+                                </form>
+                                <form method="post" action="{% url 'invoice_element_move' element.id %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="direction" value="down">
+                                    <button type="submit" title="Move down"><i class="fas fa-chevron-down"></i></button>
+                                </form>
+                            </div>
+
+                            <div class="ic-line-body">
+                                <div class="ic-line-label">
+                                    {% if element.label %}{{ element.label }}{% else %}<em style="color:var(--ic-muted);">(no label)</em>{% endif %}
+                                </div>
+                                <div class="ic-line-meta">
+                                    {% if element.source == 'field' %}
+                                        <span class="ic-chip">{{ element.token }}</span>
+                                    {% else %}
+                                        <span class="ic-chip static">fixed text</span>
+                                        <span>{{ element.static_value|truncatechars:56 }}</span>
+                                    {% endif %}
+                                    {% if element.hide_if_empty %}<span class="ic-chip muted">hides when empty</span>{% endif %}
+                                    {% if element.is_bold %}<span class="ic-chip muted">bold</span>{% endif %}
+                                    {% if not element.full_width %}<span class="ic-chip muted">inline</span>{% endif %}
+                                </div>
+                            </div>
+
+                            <div class="ic-line-actions">
+                                <button type="button" class="ic-btn ic-btn-sm" title="Edit"
+                                        data-line-edit
+                                        data-id="{{ element.id }}"
+                                        data-section="{{ element.section }}"
+                                        data-label="{{ element.label }}"
+                                        data-source="{{ element.source }}"
+                                        data-token="{{ element.token }}"
+                                        data-static="{{ element.static_value }}"
+                                        data-active="{{ element.is_active|yesno:'1,0' }}"
+                                        data-hide-empty="{{ element.hide_if_empty|yesno:'1,0' }}"
+                                        data-bold="{{ element.is_bold|yesno:'1,0' }}"
+                                        data-full="{{ element.full_width|yesno:'1,0' }}">
+                                    <i class="fas fa-pen"></i>
+                                </button>
+                                <form method="post" action="{% url 'invoice_element_toggle' element.id %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="ic-btn ic-btn-sm" title="{% if element.is_active %}Hide from the invoice{% else %}Show on the invoice{% endif %}">
+                                        <i class="fas {% if element.is_active %}fa-eye{% else %}fa-eye-slash{% endif %}"></i>
+                                    </button>
+                                </form>
+                                <form method="post" action="{% url 'invoice_element_delete' element.id %}"
+                                      onsubmit="return confirm('Remove this line from the invoice?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="ic-btn ic-btn-sm ic-btn-danger" title="Delete"><i class="fas fa-trash"></i></button>
+                                </form>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="ic-empty">Nothing here yet.</div>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Danger zone -->
+                <div class="ic-card ic-danger" style="margin-top:1rem;">
+                    <div class="ic-section">
+                        <h3>Reset</h3>
+                        <p class="ic-hint">Your business details and logo are never touched by a reset.</p>
+                        <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                            <form method="post" action="{% url 'invoice_customizer_reset' %}"
+                                  onsubmit="return confirm('Restore the default invoice lines? Custom lines will be deleted.');">
+                                {% csrf_token %}
+                                <input type="hidden" name="scope" value="lines">
+                                <button type="submit" class="ic-btn ic-btn-danger"><i class="fas fa-list"></i> Restore default lines</button>
+                            </form>
+                            <form method="post" action="{% url 'invoice_customizer_reset' %}"
+                                  onsubmit="return confirm('Restore the default styling and wording?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="scope" value="style">
+                                <button type="submit" class="ic-btn ic-btn-danger"><i class="fas fa-palette"></i> Restore default styling</button>
+                            </form>
+                            <form method="post" action="{% url 'invoice_customizer_reset' %}"
+                                  onsubmit="return confirm('Restore EVERYTHING to the factory invoice design?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="scope" value="all">
+                                <button type="submit" class="ic-btn ic-btn-danger"><i class="fas fa-triangle-exclamation"></i> Reset everything</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══════════════ RIGHT: live preview ══════════════ -->
+        <div class="ic-preview">
+            <div class="ic-card">
+                <div class="ic-preview-head">
+                    <strong><i class="fas fa-eye"></i> Live preview</strong>
+                    <div class="ic-seg" id="icPreviewSource">
+                        <button type="button" class="is-active" data-sample="0">Latest order</button>
+                        <button type="button" data-sample="1">Sample</button>
+                    </div>
+                    <button type="button" class="ic-btn ic-btn-sm" id="icRefresh" title="Reload the preview">
+                        <i class="fas fa-rotate"></i>
+                    </button>
+                    <a class="ic-btn ic-btn-sm" id="icOpen" href="{% url 'invoice_preview' %}" target="_blank" title="Open in a new tab">
+                        <i class="fas fa-up-right-from-square"></i>
+                    </a>
+                </div>
+                <div class="ic-preview-frame">
+                    <iframe id="icPreview" src="{% url 'invoice_preview' %}" title="Invoice preview"></iframe>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /ic-split -->
+</div>
+
+<!-- ══════════════ Line editor modal ══════════════ -->
+<div class="modal fade ic-modal" id="icLineModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" method="post" action="{% url 'invoice_element_save' %}" id="icLineForm">
+            {% csrf_token %}
+            <input type="hidden" name="element_id" id="icLineId" value="">
+            <div class="modal-header">
+                <h5 class="modal-title" id="icLineTitle">Add an invoice line</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="ic-grid cols-2">
+                    <div class="ic-field span-all">
+                        <label>Where does it print?</label>
+                        <select name="section" id="icLineSection">
+                            {% for value, label in section_choices %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="ic-field span-all">
+                        <label>Label <span class="help">printed before the value; leave blank for none</span></label>
+                        <input type="text" name="label" id="icLineLabel" maxlength="80" placeholder="VAT No. :-">
+                    </div>
+                    <div class="ic-field span-all">
+                        <label>Value comes from</label>
+                        <select name="source" id="icLineSource">
+                            {% for value, label in source_choices %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="ic-field span-all" id="icTokenField">
+                        <label>Data field</label>
+                        <select name="token" id="icLineToken">
+                            <option value="">— choose a field —</option>
+                            {% for group in token_groups %}
+                            <optgroup label="{{ group.group }}">
+                                {% for option in group.options %}
+                                <option value="{{ option.token }}">{{ option.label }}</option>
+                                {% endfor %}
+                            </optgroup>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="ic-field span-all" id="icStaticField">
+                        <label>Fixed text</label>
+                        <input type="text" name="static_value" id="icLineStatic" maxlength="400" placeholder="e.g. 601234567">
+                    </div>
+                    <div class="ic-field span-all">
+                        <label>Options</label>
+                        <div class="ic-switches">
+                            <label class="ic-switch">
+                                <input type="checkbox" name="is_active" id="icLineActive" checked>
+                                <span class="track"></span><span class="txt">Show on the invoice</span>
+                            </label>
+                            <label class="ic-switch">
+                                <input type="checkbox" name="hide_if_empty" id="icLineHideEmpty" checked>
+                                <span class="track"></span><span class="txt">Hide when empty</span>
+                            </label>
+                            <label class="ic-switch">
+                                <input type="checkbox" name="is_bold" id="icLineBold">
+                                <span class="track"></span><span class="txt">Bold</span>
+                            </label>
+                            <label class="ic-switch">
+                                <input type="checkbox" name="full_width" id="icLineFull" checked>
+                                <span class="track"></span><span class="txt">Own line<small>Off = shares the row</small></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="ic-btn" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="ic-btn ic-btn-primary"><i class="fas fa-check"></i> Save line</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    'use strict';
+
+    // ── Tabs ────────────────────────────────────────────────────────────
+    // Panes live in two containers (the settings form, and the lines block
+    // outside it), so the switcher walks the whole document.
+    var tabs  = Array.prototype.slice.call(document.querySelectorAll('.ic-tab'));
+    var panes = Array.prototype.slice.call(document.querySelectorAll('.ic-pane'));
+    var saveBar = document.getElementById('icSaveBar');
+    var STORAGE_KEY = 'invoiceCustomizerTab';
+
+    function activate(name) {
+        tabs.forEach(function (tab) { tab.classList.toggle('is-active', tab.dataset.tab === name); });
+        panes.forEach(function (pane) { pane.classList.toggle('is-active', pane.dataset.pane === name); });
+        if (saveBar) { saveBar.style.display = (name === 'lines') ? 'none' : ''; }
+        try { sessionStorage.setItem(STORAGE_KEY, name); } catch (e) { /* private mode */ }
+    }
+
+    tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () { activate(tab.dataset.tab); });
+    });
+
+    var initial = 'business';
+    try { initial = sessionStorage.getItem(STORAGE_KEY) || 'business'; } catch (e) { /* ignore */ }
+    if (!panes.some(function (p) { return p.dataset.pane === initial; })) { initial = 'business'; }
+    activate(initial);
+
+    // ── Preview ─────────────────────────────────────────────────────────
+    var frame = document.getElementById('icPreview');
+    var openLink = document.getElementById('icOpen');
+    var baseUrl = frame ? frame.getAttribute('src') : '';
+    var useSample = false;
+
+    function previewUrl() {
+        var url = baseUrl + (useSample ? '?sample=1&' : '?') + 't=' + Date.now();
+        return url;
+    }
+    function reloadPreview() {
+        if (!frame) { return; }
+        frame.src = previewUrl();
+        if (openLink) { openLink.href = baseUrl + (useSample ? '?sample=1' : ''); }
+    }
+
+    var refreshBtn = document.getElementById('icRefresh');
+    if (refreshBtn) { refreshBtn.addEventListener('click', reloadPreview); }
+
+    var sourceSeg = document.getElementById('icPreviewSource');
+    if (sourceSeg) {
+        sourceSeg.addEventListener('click', function (event) {
+            var button = event.target.closest('button');
+            if (!button) { return; }
+            useSample = button.dataset.sample === '1';
+            Array.prototype.forEach.call(sourceSeg.querySelectorAll('button'), function (b) {
+                b.classList.toggle('is-active', b === button);
+            });
+            reloadPreview();
+        });
+    }
+
+    // Unsaved colour/size tweaks are pushed straight into the preview's CSS
+    // variables so the pane responds while you drag. Saving is what persists.
+    function pushVar(name, value) {
+        try {
+            var doc = frame && frame.contentDocument;
+            if (doc && doc.documentElement) { doc.documentElement.style.setProperty(name, value); }
+        } catch (e) { /* frame not ready */ }
+    }
+    document.querySelectorAll('[data-cssvar]').forEach(function (input) {
+        input.addEventListener('input', function () {
+            var value = input.value.trim();
+            if (!value) { return; }
+            pushVar(input.dataset.cssvar, value + (input.dataset.unit || ''));
+        });
+    });
+
+    // Colour swatch <-> hex text, both directions.
+    document.querySelectorAll('input[type="color"][data-syncs]').forEach(function (swatch) {
+        var text = document.querySelector('input[name="' + swatch.dataset.syncs + '"]');
+        if (!text) { return; }
+        swatch.addEventListener('input', function () {
+            text.value = swatch.value;
+            text.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        text.addEventListener('input', function () {
+            if (/^#[0-9a-fA-F]{6}$/.test(text.value.trim())) { swatch.value = text.value.trim(); }
+        });
+    });
+
+    // ── Line editor modal ───────────────────────────────────────────────
+    var modalEl = document.getElementById('icLineModal');
+    var modal = (modalEl && window.bootstrap) ? new bootstrap.Modal(modalEl) : null;
+    var fields = {
+        id: document.getElementById('icLineId'),
+        section: document.getElementById('icLineSection'),
+        label: document.getElementById('icLineLabel'),
+        source: document.getElementById('icLineSource'),
+        token: document.getElementById('icLineToken'),
+        staticValue: document.getElementById('icLineStatic'),
+        active: document.getElementById('icLineActive'),
+        hideEmpty: document.getElementById('icLineHideEmpty'),
+        bold: document.getElementById('icLineBold'),
+        full: document.getElementById('icLineFull'),
+        title: document.getElementById('icLineTitle'),
+        tokenWrap: document.getElementById('icTokenField'),
+        staticWrap: document.getElementById('icStaticField')
+    };
+
+    function syncSourceFields() {
+        if (!fields.source) { return; }
+        var isField = fields.source.value === 'field';
+        if (fields.tokenWrap) { fields.tokenWrap.style.display = isField ? '' : 'none'; }
+        if (fields.staticWrap) { fields.staticWrap.style.display = isField ? 'none' : ''; }
+    }
+    if (fields.source) { fields.source.addEventListener('change', syncSourceFields); }
+
+    function openModal(preset) {
+        fields.id.value = preset.id || '';
+        fields.section.value = preset.section || 'bill_to';
+        fields.label.value = preset.label || '';
+        fields.source.value = preset.source || 'field';
+        fields.token.value = preset.token || '';
+        fields.staticValue.value = preset.staticValue || '';
+        fields.active.checked = preset.active !== false;
+        fields.hideEmpty.checked = preset.hideEmpty !== false;
+        fields.bold.checked = !!preset.bold;
+        fields.full.checked = preset.full !== false;
+        fields.title.textContent = preset.id ? 'Edit invoice line' : 'Add an invoice line';
+        syncSourceFields();
+        if (modal) { modal.show(); }
+    }
+
+    document.querySelectorAll('[data-line-new]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            openModal({ section: button.dataset.section || 'bill_to' });
+        });
+    });
+
+    document.querySelectorAll('[data-line-edit]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var d = button.dataset;
+            openModal({
+                id: d.id,
+                section: d.section,
+                label: d.label,
+                source: d.source,
+                token: d.token,
+                staticValue: d.static,
+                active: d.active === '1',
+                hideEmpty: d.hideEmpty === '1',
+                bold: d.bold === '1',
+                full: d.full === '1'
+            });
+        });
+    });
+
+    // Picking a data field with no label yet? Borrow the field's own name.
+    if (fields.token && fields.label) {
+        fields.token.addEventListener('change', function () {
+            if (fields.label.value.trim()) { return; }
+            var option = fields.token.options[fields.token.selectedIndex];
+            if (option && option.value) { fields.label.value = option.textContent.trim() + ' :-'; }
+        });
+    }
+})();
+</script>
+{% endblock %}

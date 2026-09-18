@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load dashboard_extras %}
-{% block title %}Possible Redirection - Admin Panel{% endblock %}
+{% block title %}Possible Redirection - {{ COMPANY_NAME }}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -8,13 +8,98 @@
     body { overflow-x: hidden; }
     .main-content { overflow-x: hidden; width: 100%; max-width: 100vw; box-sizing: border-box; }
     .redirect-table { min-width: 600px; width: 100%; table-layout: auto; }
-    
+
     @media (max-width: 992px) {
         .hide-md { display: none !important; }
     }
     @media (max-width: 768px) {
         .hide-sm { display: none !important; }
     }
+
+    /* ── Comment button in actions column ── */
+    .pr-comment-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: none;
+        background: #eff6ff;
+        color: #3b82f6;
+        cursor: pointer;
+        transition: all 0.18s;
+        font-size: 0.82rem;
+        flex-shrink: 0;
+    }
+    .pr-comment-btn:hover {
+        background: #3b82f6;
+        color: #fff;
+        box-shadow: 0 3px 10px rgba(59,130,246,0.28);
+        transform: translateY(-2px);
+    }
+
+    /* ── Comments Modal thread ── */
+    .pr-comments-thread {
+        max-height: 380px;
+        overflow-y: auto;
+        padding-right: 4px;
+        margin-bottom: 1rem;
+    }
+    .pr-comments-thread::-webkit-scrollbar { width: 4px; }
+    .pr-comments-thread::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+    .pr-comment-item {
+        display: flex;
+        gap: 0.75rem;
+        padding: 0.85rem;
+        border-radius: 12px;
+        margin-bottom: 0.55rem;
+        animation: fadeInUp 0.28s ease;
+    }
+    .pr-comment-item:hover { background: #f8fafc; }
+    .pr-comment-item .ci-avatar {
+        width: 38px; height: 38px;
+        border-radius: 11px;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 0.8rem; flex-shrink: 0;
+    }
+    .pr-comment-item .ci-avatar.ncm  { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; }
+    .pr-comment-item .ci-avatar.vendor { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
+    .pr-comment-item .ci-body { flex: 1; min-width: 0; }
+    .pr-comment-item .ci-meta { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.22rem; }
+    .pr-comment-item .ci-name { font-weight: 700; font-size: 0.82rem; color: #1e293b; }
+    .pr-comment-item .ci-time { font-size: 0.75rem; color: #94a3b8; }
+    .pr-comment-item .ci-text { color: #475569; font-size: 0.87rem; line-height: 1.55; word-break: break-word; }
+
+    .pr-comments-loading, .pr-comments-empty {
+        text-align: center; padding: 2.2rem 1rem; color: #94a3b8;
+    }
+    .pr-comments-empty i { font-size: 2.4rem; opacity: 0.4; display: block; margin-bottom: 0.75rem; }
+
+    .pr-comment-compose {
+        display: flex; gap: 0.65rem; align-items: flex-end;
+        padding-top: 1rem; border-top: 1px solid #f1f5f9;
+    }
+    .pr-comment-compose textarea {
+        flex: 1; border: 2px solid #e2e8f0; border-radius: 12px;
+        padding: 0.65rem 0.95rem; font-size: 0.87rem; resize: none;
+        transition: all 0.25s; min-height: 44px; max-height: 120px;
+        background: #f8fafc; color: #1e293b;
+    }
+    .pr-comment-compose textarea:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102,126,234,0.12);
+        outline: none; background: #fff;
+    }
+    .pr-comment-compose .send-btn {
+        width: 42px; height: 42px; border-radius: 11px; border: none;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: #fff; display: flex; align-items: center; justify-content: center;
+        cursor: pointer; transition: all 0.2s; flex-shrink: 0;
+    }
+    .pr-comment-compose .send-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(102,126,234,0.38); }
+    .pr-comment-compose .send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 </style>
 {% endblock %}
 
@@ -38,10 +123,20 @@
                 </a>
             </div>
         </div>
-        <p class="text-muted mt-1 mb-0">
-            NCM RTV (Return to Vendor) orders that can be redirected to a different customer/branch via NCM Redirect API instead of returning to warehouse.
-            {% if linked_count %}<span class="badge bg-info text-dark ms-1">{{ linked_count }} linked to local orders</span>{% endif %}
-        </p>
+        <div class="pr-guide">
+            <div class="pr-guide__head">
+                <span class="pr-guide__badge"><i class="fas fa-book-open"></i> Quick Guide</span>
+                <span class="pr-guide__flow"><b>1</b> Sync <i class="fas fa-chevron-right"></i> <b>2</b> Open <i class="fas fa-random"></i> <i class="fas fa-chevron-right"></i> <b>3</b> Confirm</span>
+                {% if linked_count %}<span class="badge bg-info text-dark ms-auto">{{ linked_count }} linked</span>{% endif %}
+            </div>
+            <div class="pr-guide__body">
+                <span class="pr-guide__row"><i class="fas fa-random"></i> Redirect RTV parcels to a new customer via NCM instead of returning them.</span>
+                <span class="pr-guide__row"><i class="fas fa-filter"></i> Lists only what's redirectable now — in-transit, delivered, returned or done are hidden.</span>
+                <span class="pr-guide__row"><i class="fas fa-warehouse"></i> "Arrived at <b>RETURN</b> …" means it already came back — that's <b>Return Arrived</b>, not a candidate.</span>
+                <span class="pr-guide__row"><i class="fas fa-sync-alt"></i> Auto-checks NCM on each load; a <span class="pr-guide__chip">Verifying</span> row is still confirming.</span>
+                <span class="pr-guide__row"><i class="fas fa-arrow-right"></i> Redirected orders move to <a href="{% url 'redirect_orders_list' %}">Redirect Orders</a>; counts cover all RTVs.</span>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -53,7 +148,7 @@
                 <div class="d-flex align-items-center">
                     <div class="flex-grow-1">
                         <h6 class="text-muted mb-1 text-uppercase stat-label">Total RTV Orders</h6>
-                        <h3 class="mb-0 stat-value">{{ total_redirectable }}</h3>
+                        <h3 class="mb-0 stat-value">{{ total_rtv_orders }}</h3>
                     </div>
                     <div class="stat-icon text-primary"><i class="fas fa-random fa-2x"></i></div>
                 </div>
@@ -80,6 +175,9 @@
                     <div class="flex-grow-1">
                         <h6 class="text-muted mb-1 text-uppercase stat-label">Already Redirected</h6>
                         <h3 class="text-success mb-0 stat-value">{{ already_redirected }}</h3>
+                        <a href="{% url 'redirect_orders_list' %}" class="small text-decoration-none">
+                            Moved to Redirect Orders <i class="fas fa-arrow-right ms-1"></i>
+                        </a>
                     </div>
                     <div class="stat-icon text-success"><i class="fas fa-check-circle fa-2x"></i></div>
                 </div>
@@ -110,14 +208,6 @@
                 </select>
             </div>
             <div class="col-lg-2 col-md-3">
-                <label class="form-label small text-muted mb-1">Redirection Status</label>
-                <select name="redirection" class="form-select form-select-sm">
-                    <option value="">All</option>
-                    <option value="pending" {% if redirection_filter == 'pending' %}selected{% endif %}>Pending</option>
-                    <option value="redirected" {% if redirection_filter == 'redirected' %}selected{% endif %}>Redirected</option>
-                </select>
-            </div>
-            <div class="col-lg-2 col-md-3">
                 <label class="form-label small text-muted mb-1">Start Date</label>
                 <input type="date" class="form-control form-control-sm" name="start_date" value="{{ start_date }}">
             </div>
@@ -145,6 +235,7 @@
                 <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
                 <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
                 <option value="200" {% if per_page == '200' %}selected{% endif %}>200</option>
+                    <option value="500" {% if per_page == '500' %}selected{% endif %}>500</option>
             </select>
         </div>
     </div>
@@ -164,7 +255,7 @@
             <tbody>
                 {% if rtv_entries %}
                     {% for entry in rtv_entries %}
-                    <tr class="order-row" data-ncm-id="{{ entry.ncm_order_id }}">
+                    <tr class="order-row" data-ncm-id="{{ entry.ncm_order_id }}"{% if entry.status_uncertain %} data-status-uncertain="1"{% endif %}>
                         <td>
                             <button type="button" class="btn btn-link fw-bold text-primary p-0 border-0 text-decoration-none od-id-link" onclick="openDetailModal({{ entry.ncm_order_id }})">
                                 <i class="fas fa-search-plus me-1 small opacity-50"></i>#{{ entry.ncm_order_id }}
@@ -183,6 +274,11 @@
                                     <button type="button" class="btn btn-outline-info py-0 px-1 matches-toggle-btn" onclick="toggleMatches({{ entry.ncm_order_id }})" title="{{ entry.matching_count }} matching new order(s) — click to expand">
                                         <i class="fas fa-bullseye me-1"></i>{{ entry.matching_count }} match{{ entry.matching_count|pluralize:"es" }}
                                     </button>
+                                    {% if entry.contested_count %}
+                                        <span class="badge bg-warning text-dark ms-1" title="{{ entry.contested_count }} of these order(s) also match an RTV listed above — expand to see which, then decide which package goes to that customer.">
+                                            <i class="fas fa-users me-1"></i>{{ entry.contested_count }} shared
+                                        </span>
+                                    {% endif %}
                                 </div>
                             {% endif %}
                         </td>
@@ -205,59 +301,92 @@
                             {% else %}
                                 <div class="small text-warning mt-1"><i class="fas fa-hourglass-half me-1"></i>Pending</div>
                             {% endif %}
+                            {% if entry.last_status %}
+                                <div class="small text-muted mt-1" title="NCM delivery status"><i class="fas fa-truck me-1"></i>{{ entry.last_status }}</div>
+                            {% endif %}
+                            {% if entry.status_uncertain %}
+                                {# The RTV row and the linked order disagree about whether the
+                                   parcel is at a branch, so we don't yet know if this row belongs
+                                   here. The page asks NCM on load and reloads itself with the
+                                   answer — say so rather than presenting a guess as fact. #}
+                                <div class="small text-info mt-1" title="This row's two stored NCM statuses disagree ({{ entry.last_status|default:'—' }} vs {{ entry.ncm_status|default:'—' }}). Checking with NCM…">
+                                    <i class="fas fa-sync-alt fa-spin me-1"></i>Verifying with NCM
+                                </div>
+                            {% endif %}
                         </td>
                         <td class="hide-md">
-                            <span class="small text-muted text-truncate d-inline-block" style="max-width: 200px;" title="{{ entry.comment }}">
-                                {{ entry.comment|default:"—"|truncatechars:50 }}
-                            </span>
+                            {% with comment=entry.comment|default:"—" %}
+                            {% if 'Exchange' in comment or 'Double Order' in comment %}
+                            <span class="comment-tag exchange"><i class="fas fa-exchange-alt"></i> {{ comment }}</span>
+                            {% elif 'Late Delivery' in comment or 'Late Process' in comment %}
+                            <span class="comment-tag late-delivery"><i class="fas fa-clock"></i> {{ comment }}</span>
+                            {% elif 'PNR' in comment or 'PUR' in comment or 'PSO' in comment %}
+                            <span class="comment-tag pnr-pur-pso"><i class="fas fa-ban"></i> {{ comment }}</span>
+                            {% elif 'Ignorance' in comment or 'Rejection' in comment or 'not ordered' in comment %}
+                            <span class="comment-tag ignorance"><i class="fas fa-user-times"></i> {{ comment }}</span>
+                            {% elif 'Product Issue' in comment or 'Size' in comment or 'Quality' in comment or 'Price' in comment %}
+                            <span class="comment-tag product-issue"><i class="fas fa-box-open"></i> {{ comment }}</span>
+                            {% elif 'Wrong Location' in comment or 'Coverage' in comment %}
+                            <span class="comment-tag location"><i class="fas fa-map-marker-alt"></i> {{ comment }}</span>
+                            {% elif 'Wrong Number' in comment or 'Unable to contact' in comment %}
+                            <span class="comment-tag contact"><i class="fas fa-phone-slash"></i> {{ comment }}</span>
+                            {% elif 'vendor request' in comment or 'vendor' in comment and 'return' in comment %}
+                            <span class="comment-tag vendor-req"><i class="fas fa-store"></i> {{ comment }}</span>
+                            {% elif comment == "—" %}
+                            <span class="comment-tag default" style="opacity:0.5;"><i class="fas fa-minus-circle"></i>
+                                No comment</span>
+                            {% else %}
+                            <span class="comment-tag default"><i class="fas fa-comment-dots"></i> {{ comment }}</span>
+                            {% endif %}
+                            {% endwith %}
                         </td>
                         <td class="hide-sm">
-                            <span class="small text-muted">{{ entry.rtv_date|date:"M d, Y" }}</span>
+                            {% if entry.rtv_date %}
+                            <span class="small text-muted">{% if not entry.rtv_date_trusted %}~ {% endif %}{{ entry.rtv_date|date:"M d, Y" }}</span>
                             <div class="small text-muted">{{ entry.rtv_date|time:"h:i A" }}</div>
+                            {% else %}
+                            <span class="small text-muted fst-italic" title="No RTV date from NCM yet">syncing…</span>
+                            {% endif %}
                         </td>
                         <td class="text-center">
                             <div class="btn-group btn-group-sm" role="group">
                                 {% if entry.has_local %}
                                     <a href="{% url 'order_detail' entry.local_order_id %}" class="btn btn-outline-primary" title="View Local Order"><i class="fas fa-eye"></i></a>
                                 {% endif %}
+                                <button type="button" class="pr-comment-btn" title="View NCM Comments" onclick="openPrCommentModal({{ entry.ncm_order_id }})">
+                                    <i class="fas fa-comments"></i>
+                                </button>
                                 <button type="button" class="btn btn-outline-success redirect-btn" title="Edit & Redirect" onclick="openRedirectModal({{ entry.ncm_order_id }})">
                                     <i class="fas fa-random"></i>
                                 </button>
                             </div>
                         </td>
                     </tr>
-                    {% if entry.matching_orders %}
+                    {% if entry.matching_rows %}
                     <tr id="matches-row-{{ entry.ncm_order_id }}" class="matches-detail-row" style="display:none;">
                         <td colspan="7" class="p-0">
                             <div class="p-2 border-start border-4 border-info" style="background:#f0f8ff;">
                                 <div class="fw-bold small text-info mb-2">
                                     <i class="fas fa-bullseye me-1"></i>{{ entry.matching_count }} Matching New Order{{ entry.matching_count|pluralize }} — same branch
                                     <span class="text-muted fw-normal ms-1">(Branch: {{ entry.rtv.to_branch }})</span>
-                                    {% if entry.is_branch_only_match %}
-                                    <span class="badge bg-warning text-dark ms-2" title="No product description available — matches are branch-only, not verified by product">
-                                        <i class="fas fa-exclamation-triangle me-1"></i>Branch match only — no product info
-                                    </span>
-                                    {% else %}
                                     <span class="badge bg-success ms-2">
-                                        <i class="fas fa-check me-1"></i>Product matched
+                                        <i class="fas fa-check me-1"></i>Products &amp; quantities match exactly
                                     </span>
-                                    {% endif %}
                                     <button type="button" class="btn-close btn-sm float-end" onclick="toggleMatches({{ entry.ncm_order_id }})" style="font-size:0.6rem;"></button>
                                 </div>
-                                {% if entry.local_order_product_names %}
+                                {% if entry.rtv_product_ref_display %}
                                 <div class="mb-2 px-1 d-flex align-items-start gap-2 flex-wrap">
-                                    <span class="text-muted small fw-semibold text-nowrap"><i class="fas fa-box me-1 text-warning"></i>RTV Order Products:</span>
+                                    <span class="text-muted small fw-semibold text-nowrap"><i class="fas fa-box me-1 text-warning"></i>RTV Product Ref:</span>
                                     <span class="small text-dark">
-                                        {% for pname in entry.local_order_product_names %}
+                                        {% for pname in entry.rtv_product_ref_display %}
                                             <span class="badge bg-warning text-dark me-1">{{ pname }}</span>
                                         {% endfor %}
                                     </span>
+                                    {% if entry.rtv_ref_source_is_local %}
                                     <small class="text-muted fst-italic">(matched from linked local order)</small>
-                                </div>
-                                {% elif entry.rtv.product_description %}
-                                <div class="mb-2 px-1">
-                                    <span class="text-muted small fw-semibold"><i class="fas fa-box me-1 text-warning"></i>RTV Product Description:</span>
-                                    <span class="small ms-1 text-dark">{{ entry.rtv.product_description }}</span>
+                                    {% else %}
+                                    <small class="text-muted fst-italic">(from NCM package description)</small>
+                                    {% endif %}
                                 </div>
                                 {% endif %}
                                 <div class="table-responsive">
@@ -269,57 +398,90 @@
                                                 <th class="hide-sm">Phone</th>
                                                 <th class="hide-md">Branch</th>
                                                 <th class="hide-sm">Order Products</th>
-                                                {% if entry.local_order_product_names or entry.rtv.product_description %}<th class="hide-md">RTV Product Ref</th>{% endif %}
+                                                <th class="hide-md">RTV Product Ref</th>
                                                 <th class="hide-sm">Status</th>
                                                 <th class="text-end">Total</th>
                                                 <th class="text-center">Use Customer</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {% for match in entry.matching_orders %}
-                                            <tr>
+                                            {% for row in entry.matching_rows %}
+                                            {% with match=row.order %}
+                                            <tr{% if row.claimed_by %} class="table-warning"{% endif %}>
                                                 <td>
                                                     <a href="{% url 'order_detail' match.id %}" target="_blank" class="text-decoration-none fw-bold text-primary">#{{ match.order_number }}</a>
+                                                    {% if row.claimed_by %}
+                                                    <div class="small text-muted mt-1">
+                                                        <i class="fas fa-users me-1 text-warning"></i>Also suggested for
+                                                        {% for other in row.claimed_by %}
+                                                            <button type="button" class="btn btn-link btn-sm p-0 align-baseline text-decoration-none" onclick="focusRtvRow({{ other }})" title="Jump to RTV #{{ other }}">RTV #{{ other }}</button>{% if not forloop.last %}, {% endif %}
+                                                        {% endfor %}
+                                                        — only one package can go to this customer.
+                                                    </div>
+                                                    {% endif %}
                                                 </td>
                                                 <td><strong>{{ match.customer_name }}</strong></td>
                                                 <td class="hide-sm text-muted">{{ match.customer_phone }}</td>
                                                 <td class="hide-md"><span class="badge bg-secondary">{{ match.branch_city }}</span></td>
+                                                {% comment %}
+                                                Both product columns iterate row.products so each RTV reference
+                                                prints on the same line as the order item it matched.
+                                                {% endcomment %}
                                                 <td class="hide-sm">
-                                                    {% for item in match.items.all %}
-                                                        <div class="text-truncate" style="max-width:150px;" title="{{ item.product_name }}">{{ item.product_name }} &times;{{ item.quantity }}</div>
+                                                    {% for p in row.products %}
+                                                        <div class="text-truncate" style="max-width:220px;" title="{{ p.item.product_name }} ×{{ p.item.quantity }}">{{ p.item.product_name }} &times;{{ p.item.quantity }}</div>
                                                     {% endfor %}
                                                 </td>
-                                                {% if entry.local_order_product_names or entry.rtv.product_description %}
                                                 <td class="small hide-md" style="max-width:160px;">
-                                                    {% if entry.local_order_product_names %}
-                                                        {% for pname in entry.local_order_product_names %}
-                                                            <div class="text-truncate text-dark" title="{{ pname }}">{{ pname }}</div>
-                                                        {% endfor %}
-                                                    {% else %}
-                                                        <span class="text-muted" title="{{ entry.rtv.product_description }}">{{ entry.rtv.product_description|truncatechars:60 }}</span>
+                                                    {% for p in row.products %}
+                                                        <div class="text-truncate text-dark" title="{{ p.rtv_ref }}">{{ p.rtv_ref|default:"—" }}</div>
+                                                    {% endfor %}
+                                                </td>
+                                                <td class="hide-sm"><span class="badge bg-success">{{ match.order_status }}</span></td>
+                                                {% comment %}
+                                                Show what the courier would actually collect. A partially
+                                                paid order has already taken money up front, so quoting the
+                                                gross total here would have the operator redirect a parcel
+                                                with the wrong COD.
+                                                {% endcomment %}
+                                                <td class="text-end fw-bold">
+                                                    Rs.{{ match.amount_due|floatformat:2 }}
+                                                    {% if match.is_partial_payment %}
+                                                    <div class="small text-muted fw-normal" style="white-space:nowrap;">
+                                                        <span class="badge bg-warning text-dark" style="font-size:0.6rem;">PARTIAL</span>
+                                                        Rs.{{ match.partial_amount_paid|default_if_none:0|floatformat:2 }} paid of Rs.{{ match.total_amount|floatformat:2 }}
+                                                    </div>
                                                     {% endif %}
                                                 </td>
-                                                {% endif %}
-                                                <td class="hide-sm"><span class="badge bg-warning text-dark">{{ match.order_status }}</span></td>
-                                                <td class="text-end fw-bold">Rs.{{ match.total_amount }}</td>
                                                 <td class="text-center">
+                                                    {% comment %}
+                                                    Details ride on data-* attributes rather than a long
+                                                    onclick argument list — the financials below have to
+                                                    travel with the customer, and positional args were
+                                                    already at the limit of what stays readable.
+                                                    {% endcomment %}
                                                     <button type="button" class="btn btn-success btn-sm py-0"
-                                                        onclick="openRedirectWithNewCustomer(
-                                                            {{ entry.ncm_order_id }},
-                                                            '{{ match.customer_name|escapejs }}',
-                                                            '{{ match.customer_phone|escapejs }}',
-                                                            '{{ match.customer_email|escapejs }}',
-                                                            '{{ match.shipping_address|escapejs }}',
-                                                            '{{ match.landmark|escapejs }}',
-                                                            '{{ match.branch_city|escapejs }}',
-                                                            '{{ match.order_number|escapejs }}',
-                                                            {{ match.id }}
-                                                        )"
-                                                        title="Pre-fill redirect form with this customer's details">
+                                                        data-ncm-id="{{ entry.ncm_order_id }}"
+                                                        data-name="{{ match.customer_name }}"
+                                                        data-phone="{{ match.customer_phone }}"
+                                                        data-email="{{ match.customer_email }}"
+                                                        data-address="{{ match.shipping_address }}"
+                                                        data-landmark="{{ match.landmark }}"
+                                                        data-city="{{ match.branch_city }}"
+                                                        data-order-num="{{ match.order_number }}"
+                                                        data-order-id="{{ match.id }}"
+                                                        data-total="{{ match.total_amount|default_if_none:0|floatformat:'2u' }}"
+                                                        data-discount="{{ match.discount_amount|default_if_none:0|floatformat:'2u' }}"
+                                                        data-shipping="{{ match.shipping_charge|default_if_none:0|floatformat:'2u' }}"
+                                                        data-is-partial="{{ match.is_partial_payment|yesno:'1,0' }}"
+                                                        data-paid="{{ match.partial_amount_paid|default_if_none:0|floatformat:'2u' }}"
+                                                        onclick="openRedirectWithNewCustomer(this)"
+                                                        title="Pre-fill redirect form with this customer's details and amounts">
                                                         <i class="fas fa-user-check me-1"></i>Use
                                                     </button>
                                                 </td>
                                             </tr>
+                                            {% endwith %}
                                             {% endfor %}
                                         </tbody>
                                     </table>
@@ -352,36 +514,23 @@
 <nav aria-label="Page navigation">
     <ul class="pagination justify-content-center">
         {% if rtvs_page.has_previous %}
-            <li class="page-item"><a class="page-link" href="?page=1&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-backward"></i></a></li>
-            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.previous_page_number }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-left"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page=1&search={{ search_query|urlencode }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-backward"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.previous_page_number }}&search={{ search_query|urlencode }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-left"></i></a></li>
         {% endif %}
         {% for num in rtvs_page.paginator.page_range %}
             {% if num == rtvs_page.number %}
                 <li class="page-item active"><span class="page-link">{{ num }}</span></li>
             {% elif num > rtvs_page.number|add:'-3' and num < rtvs_page.number|add:'3' %}
-                <li class="page-item"><a class="page-link" href="?page={{ num }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ num }}&search={{ search_query|urlencode }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a></li>
             {% endif %}
         {% endfor %}
         {% if rtvs_page.has_next %}
-            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.next_page_number }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-right"></i></a></li>
-            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.paginator.num_pages }}&search={{ search_query|urlencode }}&redirection={{ redirection_filter }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-forward"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.next_page_number }}&search={{ search_query|urlencode }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-chevron-right"></i></a></li>
+            <li class="page-item"><a class="page-link" href="?page={{ rtvs_page.paginator.num_pages }}&search={{ search_query|urlencode }}&api_config={{ api_config_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}"><i class="fas fa-step-forward"></i></a></li>
         {% endif %}
     </ul>
 </nav>
 {% endif %}
-
-<!-- Info Card -->
-<div class="card shadow-sm mb-4 border-start border-primary border-3">
-    <div class="card-body py-3">
-        <h6 class="fw-bold mb-2"><i class="fas fa-info-circle text-primary me-2"></i>How Redirection Works</h6>
-        <ol class="mb-0 small text-muted">
-            <li>Click <strong>"Sync RTV from NCM"</strong> to fetch the latest RTV (Return to Vendor) orders from NCM.</li>
-            <li>All NCM RTV orders appear here. Orders linked to local orders show customer details.</li>
-            <li>Click the <span class="badge bg-success"><i class="fas fa-random"></i></span> button to open the redirect modal &mdash; details are fetched from NCM if no local order exists.</li>
-            <li>Use <strong>"NCM — Redirect Order"</strong> to redirect via NCM's redirect API to a new customer/address.</li>
-        </ol>
-    </div>
-</div>
 
 <!-- Hidden URL template for order detail links -->
 <span id="odOrderDetailUrlTpl" data-url="{% url 'order_detail' 99999 %}" style="display:none;"></span>
@@ -497,7 +646,7 @@
             <div class="od-section-header"><i class="fas fa-calculator text-success me-2"></i>Financial Details</div>
             <div class="od-section-body">
               <div class="row g-3">
-                <div class="col-6 col-md-3"><div class="od-field-label">Total / COD Amount</div><div class="od-field-value fw-bold text-success" style="font-size:1.2rem;" id="od_total_amount">—</div></div>
+                <div class="col-6 col-md-3"><div class="od-field-label">Total Amount</div><div class="od-field-value fw-bold text-success" style="font-size:1.2rem;" id="od_total_amount">—</div></div>
                 <div class="col-6 col-md-3"><div class="od-field-label">NCM COD Charge</div><div class="od-field-value" id="od_cod_charge_ncm">—</div></div>
                 <div class="col-6 col-md-3"><div class="od-field-label">Discount</div><div class="od-field-value text-danger" id="od_discount_amount">—</div></div>
                 <div class="col-6 col-md-3"><div class="od-field-label">Shipping Charge</div><div class="od-field-value" id="od_shipping_charge">—</div></div>
@@ -530,6 +679,9 @@
       </div><!-- /modal-body -->
 
       <div class="modal-footer od-footer">
+        <span id="od_redirect_ineligible_hint" class="text-danger small me-auto" style="display:none;">
+          <i class="fas fa-truck-loading me-1"></i>Not yet redirectable — still in transit
+        </span>
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"><i class="fas fa-times me-1"></i>Close</button>
         <a id="od_local_order_link" class="btn btn-outline-primary btn-sm" style="display:none;" target="_blank" rel="noopener"><i class="fas fa-external-link-alt me-1"></i>View Local Order</a>
         <button type="button" class="btn btn-success btn-sm" id="od_redirect_btn"><i class="fas fa-random me-1"></i>Open Redirect</button>
@@ -681,6 +833,7 @@
                                 <i class="fas fa-calculator text-info me-2"></i>Financial Details
                             </div>
                             <div class="section-body">
+                                <div id="rf_amount_source_note" class="alert alert-info py-2 px-3 small mb-3" style="display:none;"></div>
                                 <div class="row g-3">
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold">Discount (Rs.)</label>
@@ -692,7 +845,7 @@
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold">Total Amount (Rs.) <span class="text-danger">*</span></label>
-                                        <input type="number" class="form-control fw-bold" id="rf_total_amount" name="total_amount" step="0.01" min="0" required>
+                                        <input type="number" class="form-control fw-bold" id="rf_total_amount" name="total_amount" step="0.01" min="0" required oninput="calcRemaining()">
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label fw-semibold">Package Weight (kg)</label>
@@ -926,6 +1079,50 @@
 
     .filter-card { border: none; border-radius: 0.5rem; }
 
+    /* ── Quick Guide (compact framed manual under the page title) ── */
+    .pr-guide {
+        border: 1px solid #dbe3f4;
+        background: #f7f9ff;
+        border-radius: 0.6rem;
+        padding: 0.55rem 0.8rem;
+        margin-top: 0.6rem;
+    }
+    .pr-guide__head {
+        display: flex; align-items: center; gap: 0.6rem;
+        flex-wrap: wrap; margin-bottom: 0.45rem;
+    }
+    .pr-guide__badge {
+        display: inline-flex; align-items: center; gap: 0.35rem;
+        font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em;
+        text-transform: uppercase; color: #2b4bce;
+        background: #e7edff; border-radius: 999px; padding: 0.2rem 0.6rem;
+    }
+    .pr-guide__flow {
+        display: inline-flex; align-items: center; gap: 0.3rem;
+        font-size: 0.74rem; color: #64748b;
+    }
+    .pr-guide__flow b {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1rem; height: 1rem; border-radius: 50%;
+        background: #4e73df; color: #fff; font-size: 0.62rem; font-weight: 700;
+    }
+    .pr-guide__flow > i { color: #b6c2d9; font-size: 0.6rem; }
+    .pr-guide__body {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 0.25rem 1.3rem;
+    }
+    .pr-guide__row {
+        font-size: 0.76rem; line-height: 1.4; color: #55617a;
+    }
+    .pr-guide__row > i {
+        color: #4e73df; width: 0.9rem; text-align: center; margin-right: 0.15rem;
+    }
+    .pr-guide__chip {
+        font-size: 0.68rem; font-weight: 600; color: #0d6efd;
+        background: #e7f1ff; border-radius: 5px; padding: 0.02rem 0.3rem;
+        white-space: nowrap;
+    }
+
     .bulk-bar { border: 2px solid #4e73df; border-radius: 0.5rem; animation: slideDown 0.3s ease; }
     @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -967,6 +1164,72 @@
     }
     .redirect-loading-box { text-align: center; }
 
+    /* Comment tags */
+    .comment-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.38rem 0.85rem;
+        border-radius: 9px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        max-width: 100%;
+        min-width: 0;
+        word-break: break-word;
+        white-space: normal;
+        overflow-wrap: break-word;
+        line-height: 1.4;
+    }
+
+    .comment-tag.exchange {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .comment-tag.late-delivery {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .comment-tag.pnr-pur-pso {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+
+    .comment-tag.ignorance {
+        background: #fce7f3;
+        color: #9d174d;
+    }
+
+    .comment-tag.product-issue {
+        background: #fef9c3;
+        color: #854d0e;
+    }
+
+    .comment-tag.location {
+        background: #e0e7ff;
+        color: #3730a3;
+    }
+
+    .comment-tag.contact {
+        background: #f1f5f9;
+        color: #475569;
+    }
+
+    .comment-tag.vendor-req {
+        background: #ecfdf5;
+        color: #065f46;
+    }
+
+    .comment-tag.default {
+        background: #f1f5f9;
+        color: #475569;
+    }
+
+    .comment-tag i {
+        flex-shrink: 0;
+    }
+
     @media (max-width: 768px) {
         .stat-value { font-size: 1.2rem; }
         .redirect-table { font-size: 0.85rem; }
@@ -997,6 +1260,29 @@
 <script>
 const CSRF_TOKEN = document.querySelector('[name=csrfmiddlewaretoken]')?.value
     || '{{ csrf_token }}';
+
+// Mirror of NCMService.is_return_arrival (services/ncm_service.py). NCM names
+// the branch a parcel just reached, prefixing it with RETURN on the way back:
+// "Arrived at POKHARA" is still redirectable, "Arrived at RETURN NAYA BUSPARK"
+// means it came all the way home and never will be. Both start with "Arrived",
+// so the disabled-button copy has to tell them apart or it tells the operator
+// to wait for something that already happened.
+function isReturnLegArrival(status) {
+    const text = (status || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return text.startsWith('arrived') && text.includes('return');
+}
+
+function redirectIneligibleReason(status) {
+    if (isReturnLegArrival(status)) {
+        return 'Already returned to the courier’s return branch'
+            + (status ? ' (' + status + ')' : '')
+            + ' — redirection is only possible while it is still at the delivery branch.';
+    }
+    return 'Not yet redirectable — NCM reports this package is still in transit'
+        + (status ? ' (' + status + ')' : '')
+        + '. Redirect unlocks once it’s marked Arrived at the delivery branch, '
+        + 'Pickup Complete, or Returned to Warehouse.';
+}
 
 // ========== NCM RTV SYNC ==========
 function syncRtvFromNcm() {
@@ -1076,21 +1362,37 @@ function togglePartialPayment() {
     if (!isPartial) {
         document.getElementById('rf_partial_paid').value = '';
         document.getElementById('rf_remaining').value = '';
-        document.getElementById('rf_cod_display').value = '';
-    } else {
-        calcRemaining();
     }
+    // Always recalc: switching the toggle off still has to push the full total
+    // back into the COD field, which the early return used to skip.
+    calcRemaining();
+}
+
+function currentCodAmount() {
+    const total = safeFloat(document.getElementById('rf_total_amount').value);
+    const paid = safeFloat(document.getElementById('rf_partial_paid').value);
+    const isPartial = document.getElementById('rf_is_partial').checked;
+    return isPartial ? Math.max(0, total - paid) : total;
 }
 
 function calcRemaining() {
     const total = safeFloat(document.getElementById('rf_total_amount').value);
     const paid = safeFloat(document.getElementById('rf_partial_paid').value);
-    const remaining = Math.max(0, total - paid);
-    document.getElementById('rf_remaining').value = remaining.toFixed(2);
-
     const isPartial = document.getElementById('rf_is_partial').checked;
-    const codAmount = isPartial ? remaining : total;
-    document.getElementById('rf_cod_display').value = 'Rs.' + codAmount.toFixed(2);
+    const remaining = Math.max(0, total - paid);
+    const codAmount = currentCodAmount();
+
+    document.getElementById('rf_remaining').value = isPartial ? remaining.toFixed(2) : '';
+    document.getElementById('rf_cod_display').value = isPartial ? 'Rs.' + codAmount.toFixed(2) : '';
+
+    // The NCM redirect COD box is the number NCM actually collects, so it has to
+    // track every edit to total/paid — not just the one value set when the modal
+    // opened.
+    const sendToEl = document.getElementById('rf_send_to');
+    const ncmCodEl = document.getElementById('rf_ncm_cod_charge');
+    if (ncmCodEl && sendToEl && sendToEl.value === 'ncm_redirect') {
+        ncmCodEl.value = codAmount.toFixed(2);
+    }
 }
 
 // ========== ORDER DETAIL MODAL ==========
@@ -1255,11 +1557,26 @@ function populateDetailModal(order, rtv) {
         document.getElementById('od_local_order_link').style.display = 'none';
     }
 
-    // Wire redirect button
-    document.getElementById('od_redirect_btn').onclick = function() {
+    // Wire redirect button — disabled while NCM still reports the package in
+    // transit, same rule the table's own redirect/Use buttons apply, so this
+    // modal can't be used to reach a redirect the server will reject anyway.
+    const odRedirectBtn = document.getElementById('od_redirect_btn');
+    const odIneligibleHint = document.getElementById('od_redirect_ineligible_hint');
+    const isRedirectEligible = !!rtv.redirect_eligible;
+    odRedirectBtn.disabled = !isRedirectEligible;
+    odRedirectBtn.classList.toggle('btn-success', isRedirectEligible);
+    odRedirectBtn.classList.toggle('btn-outline-secondary', !isRedirectEligible);
+    odRedirectBtn.title = isRedirectEligible ? '' : redirectIneligibleReason(rtv.last_status);
+    odIneligibleHint.style.display = isRedirectEligible ? 'none' : '';
+    if (!isRedirectEligible) {
+        odIneligibleHint.innerHTML = isReturnLegArrival(rtv.last_status)
+            ? '<i class="fas fa-warehouse me-1"></i>Already back at the return branch — not redirectable'
+            : '<i class="fas fa-truck-loading me-1"></i>Not yet redirectable — still in transit';
+    }
+    odRedirectBtn.onclick = isRedirectEligible ? function() {
         bootstrap.Modal.getInstance(document.getElementById('orderDetailModal')).hide();
         setTimeout(() => openRedirectModal(_currentDetailNcmId), 400);
-    };
+    } : null;
 
     document.getElementById('odLoading').style.display = 'none';
     document.getElementById('odContent').style.display = 'block';
@@ -1304,8 +1621,9 @@ function openRedirectModal(ncmOrderId) {
         loadingEl.style.display = 'none';
         document.getElementById('redirectModalContent').style.display = 'block';
         try {
-            populateRedirectModal(data.order);
+            populateRedirectModal(data.order, data.rtv || {});
         } catch (e) {
+            _overrideCustomer = null;  // never let a half-applied override arm the next open
             document.getElementById('redirectModalContent').style.display = 'none';
             loadingEl.style.display = 'block';
             loadingEl.innerHTML =
@@ -1320,7 +1638,8 @@ function openRedirectModal(ncmOrderId) {
     });
 }
 
-function populateRedirectModal(order) {
+function populateRedirectModal(order, rtv) {
+    rtv = rtv || {};
     _currentOrderData = order;
 
     // Safe element getter — logs warning if element not found
@@ -1487,15 +1806,31 @@ function populateRedirectModal(order) {
 
     // Build dynamic dropdown options based on order state
     const sendToSelect = _el('rf_send_to');
+    const redirectEligible = rtv.redirect_eligible !== false; // default true when unknown (e.g. no RTV record)
     if (sendToSelect) {
         sendToSelect.innerHTML = '<option value="">-- Save Only (Don\'t Send) --</option>';
         if (order.ncm_order_id) {
-            sendToSelect.innerHTML += `<option value="ncm_redirect" selected>NCM — Redirect Order (ID: ${order.ncm_order_id})</option>`;
+            if (redirectEligible) {
+                sendToSelect.innerHTML += `<option value="ncm_redirect" selected>NCM — Redirect Order (ID: ${order.ncm_order_id})</option>`;
+            } else {
+                // NCM only accepts a redirect while the package is actually at
+                // the delivery branch (Arrived / Pickup Complete / Returned to
+                // Warehouse) — this one either hasn't got there or has already
+                // come back past it, so the option is offered but disabled and
+                // nothing defaults to it, instead of letting the operator fill
+                // out the whole form only to have NCM reject it at submit time.
+                const _tooLate = isReturnLegArrival(rtv.last_status);
+                const _why = _tooLate ? 'already returned to the return branch' : 'not yet, still in transit';
+                sendToSelect.innerHTML += `<option value="ncm_redirect" disabled>NCM — Redirect Order (ID: ${order.ncm_order_id}) — ${_why}${rtv.last_status ? ' (' + escHtml(rtv.last_status) + ')' : ''}</option>`;
+            }
             sendToSelect.innerHTML += '<option value="ncm">NCM — Create New Order</option>';
         } else {
             sendToSelect.innerHTML += '<option value="ncm">NCM — Create New Order</option>';
         }
         sendToSelect.innerHTML += '<option value="pnd">Pick and Drop</option>';
+        if (!redirectEligible && order.ncm_order_id) {
+            sendToSelect.value = '';
+        }
     }
 
     // Pre-fill NCM redirect fields
@@ -1536,10 +1871,48 @@ function populateRedirectModal(order) {
         // Store the matched order's ID so the backend can mark it as Redirected
         const matchedEl = _el('rf_matched_order_id');
         if (matchedEl) matchedEl.value = ov.matchedOrderId || '';
+
+        // Financials follow the matched order too. Leaving the returned order's
+        // amounts in place made the modal quote a stale total and, worse, a COD
+        // that ignored what the new customer had already paid up front.
+        const moneyFields = {
+            'rf_total_amount': ov.total,
+            'rf_discount_amount': ov.discount,
+            'rf_shipping_charge': ov.shipping,
+        };
+        for (const [id, val] of Object.entries(moneyFields)) {
+            const el = _el(id);
+            if (el && val !== undefined && val !== null && val !== '') el.value = val;
+        }
+        const ovPartialEl = _el('rf_is_partial');
+        if (ovPartialEl) ovPartialEl.checked = !!ov.isPartial;
+        const ovPaidEl = _el('rf_partial_paid');
+        if (ovPaidEl) ovPaidEl.value = ov.isPartial ? (ov.paid || '0.00') : '';
+        togglePartialPayment();   // shows/hides the partial row and recalcs remaining + COD
+
+        // Note the swap in the modal so the operator can see which order the
+        // numbers came from rather than wondering why the total changed.
+        // Quote the figure the form will actually post, not the stored one —
+        // on a row whose remaining_amount has drifted from total minus paid the
+        // two differ, and the banner must match what NCM is told to collect.
+        const codNow = currentCodAmount().toFixed(2);
+        const srcNote = _el('rf_amount_source_note');
+        if (srcNote) {
+            srcNote.style.display = '';
+            srcNote.innerHTML = ov.isPartial
+                ? `Amounts taken from order <strong>#${escHtml(ov.orderNum)}</strong> — total Rs.${escHtml(ov.total)},
+                   Rs.${escHtml(ov.paid)} already paid, so <strong>Rs.${codNow}</strong> is collected on delivery.`
+                : `Amounts taken from order <strong>#${escHtml(ov.orderNum)}</strong> — <strong>Rs.${codNow}</strong> is collected on delivery.`;
+        }
+
         setTimeout(() => showToast(
-            'Customer pre-filled from order #' + ov.orderNum + ' — verify details before redirecting.',
+            'Customer and amounts pre-filled from order #' + ov.orderNum +
+            ' (COD Rs.' + codNow + ') — verify details before redirecting.',
             'text-bg-info'
         ), 400);
+    } else {
+        const srcNote = _el('rf_amount_source_note');
+        if (srcNote) { srcNote.style.display = 'none'; srcNote.innerHTML = ''; }
     }
 
     toggleLogisticsOptions();
@@ -1795,8 +2168,44 @@ function toggleMatches(ncmId) {
     row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
 }
 
-function openRedirectWithNewCustomer(ncmId, name, phone, email, address, landmark, city, orderNum, matchedOrderId) {
-    _overrideCustomer = { name, phone, email, address, landmark, city, orderNum, matchedOrderId: matchedOrderId || null };
+// Jump to the RTV row that shares a matching order, expanding its match list so
+// the two candidates can be compared before deciding which package to redirect.
+function focusRtvRow(ncmId) {
+    const row = document.querySelector(`tr[data-ncm-id="${ncmId}"]`);
+    if (!row) {
+        showToast(`RTV #${ncmId} is not on this page — clear the filters or check another page.`, 'text-bg-warning');
+        return;
+    }
+    const matches = document.getElementById('matches-row-' + ncmId);
+    if (matches) matches.style.display = 'table-row';
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const previous = row.style.backgroundColor;
+    row.style.transition = 'background-color 0.4s ease';
+    row.style.backgroundColor = '#fff3cd';
+    setTimeout(() => { row.style.backgroundColor = previous; }, 2200);
+}
+
+function openRedirectWithNewCustomer(btn) {
+    const d = btn.dataset;
+    const ncmId = d.ncmId;
+    // The redirect is fulfilling the MATCHED order, so its money travels with
+    // its customer: total/discount/shipping and the partial-payment state all
+    // come from that order, not from the returned one sitting in the modal.
+    _overrideCustomer = {
+        name: d.name || '',
+        phone: d.phone || '',
+        email: d.email || '',
+        address: d.address || '',
+        landmark: d.landmark || '',
+        city: d.city || '',
+        orderNum: d.orderNum || '',
+        matchedOrderId: d.orderId || null,
+        total: d.total,
+        discount: d.discount,
+        shipping: d.shipping,
+        isPartial: d.isPartial === '1',
+        paid: d.paid,
+    };
     // Collapse the matches row before opening modal
     const matchRow = document.getElementById('matches-row-' + ncmId);
     if (matchRow) matchRow.style.display = 'none';
@@ -1812,6 +2221,272 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('rf_pnd_weight').value = this.value;
         });
     }
+
+    // Background comment sync
+    function commentSync() {
+        // Use localStorage (shared across tabs) to prevent multiple tabs from firing simultaneously
+        var lastCommentSync = parseInt(localStorage.getItem('rtv_last_comment_sync') || '0', 10);
+        if (Date.now() - lastCommentSync < 60000) { // 60-second cooldown
+            return;
+        }
+        var syncUrl = '{% url "ncm_rtvs_sync" %}?mode=comments';
+        localStorage.setItem('rtv_last_comment_sync', String(Date.now())); // mark before fetch to avoid double-trigger
+        fetch(syncUrl, {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.success && data.comments_updated > 0) {
+                showToast(data.comments_updated + ' comment(s) fetched from NCM', 'text-bg-success');
+                setTimeout(function () { location.reload(); }, 1500);
+            }
+        })
+        .catch(function () { /* silent fail */ });
+    }
+
+    // Reload once the list is known to be out of date — but never while a modal
+    // is open. Staff type a new customer's name and address straight into the
+    // redirect modal, and reloading under them would throw that away; the
+    // reload just waits for them to close it.
+    function statusReload(message, bgClass) {
+        showToast(message, bgClass);
+        var attempt = function () {
+            if (document.querySelector('.modal.show')) {
+                setTimeout(attempt, 5000);
+                return;
+            }
+            location.reload();
+        };
+        setTimeout(attempt, 1500);
+    }
+
+    // Background NCM status refresh for the rows on screen.
+    //
+    // Nothing else keeps these rows honest: the RTV list sync only refreshes
+    // orders NCM still reports as RTVs, and the background bulk sync skips
+    // RTV'd orders entirely (their local status is terminal). That is why a
+    // package that had already been delivered stayed listed here until someone
+    // opened its order detail page — that page's load-time sync was the only
+    // writer of a fresh NCM status. This asks NCM directly for the IDs shown.
+    //
+    // `force` skips the cross-tab cooldown. It is passed only on a load that
+    // rendered at least one row whose two stored NCM statuses disagree (see
+    // _rtv_status_disagreement in the view): those rows are listed on a status
+    // we already know is contradicted, so waiting out a 90-second cooldown that
+    // another tab may have started minutes ago means the operator is shown a
+    // parcel NCM will refuse to redirect. The server keeps its own 45-second
+    // throttle, so this cannot turn into a hammer.
+    function statusRefresh(force) {
+        var rows = document.querySelectorAll('tr.order-row[data-ncm-id]');
+        if (!rows.length) { return; }
+
+        // Background tabs don't ask NCM anything — the visibilitychange handler
+        // below refreshes the moment the tab is looked at instead, which is how
+        // this page is actually used (left open and switched back to).
+        if (document.hidden) { return; }
+
+        // Mid-redirect is the wrong moment to start a refresh that can end in a
+        // reload; the next tick picks it up once the modal is closed.
+        if (document.querySelector('.modal.show')) { return; }
+
+        // Shared across tabs, same as the comment sync above, so several open
+        // tabs don't each fire the request.
+        var lastStatusRefresh = parseInt(localStorage.getItem('pr_last_status_refresh') || '0', 10);
+        if (!force && Date.now() - lastStatusRefresh < 90000) { // 90-second cooldown
+            return;
+        }
+        localStorage.setItem('pr_last_status_refresh', String(Date.now()));
+
+        var ids = Array.prototype.map.call(rows, function (r) { return r.dataset.ncmId; });
+        var body = new URLSearchParams();
+        body.append('ncm_ids', ids.join(','));
+
+        fetch('{% url "possible_redirection_refresh_status" %}', {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': prGetCSRFToken(),
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: body.toString()
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!data || !data.success) { return; }
+            if (data.dropped && data.dropped.length) {
+                statusReload(
+                    data.dropped.length + ' order(s) no longer redirectable — removing from the list',
+                    'text-bg-warning'
+                );
+            } else if (data.rtv_updated || data.orders_updated) {
+                // Statuses moved but the rows are still candidates — reload so
+                // the badges match what NCM just told us.
+                statusReload('NCM status updated', 'text-bg-success');
+            }
+        })
+        .catch(function () { /* silent fail */ });
+    }
+
+    // ==================== NCM COMMENTS MODAL ====================
+    let _prCurrentOrderId = null;
+
+    function prGetCSRFToken() {
+        const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+        if (cookie) return cookie.split('=')[1];
+        const el = document.querySelector('[name=csrfmiddlewaretoken]');
+        return el ? el.value : '';
+    }
+
+    function prEscapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text || '';
+        return div.innerHTML;
+    }
+
+    window.openPrCommentModal = function (orderId) {
+        _prCurrentOrderId = orderId;
+        document.getElementById('prModalOrderId').textContent = orderId;
+        document.getElementById('prCommentInput').value = '';
+        const modalEl = document.getElementById('prCommentModal');
+        const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+        modal.show();
+        prLoadComments(orderId);
+    };
+
+    function prLoadComments(orderId) {
+        const thread = document.getElementById('prCommentsThread');
+        thread.innerHTML = '<div class="pr-comments-loading"><div class="spinner-border text-primary spinner-border-sm" role="status"></div><p class="mt-2 mb-0 small">Loading comments...</p></div>';
+        fetch('/api/ncm-rtv/' + encodeURIComponent(orderId) + '/comments/', {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(r => r.json())
+        .then(function (data) {
+            if (data.success && data.comments && data.comments.length > 0) {
+                let html = '';
+                data.comments.forEach(function (c) {
+                    const isNCM = (c.added_by || '').toLowerCase().indexOf('ncm') >= 0;
+                    const avatarClass = isNCM ? 'ncm' : 'vendor';
+                    const initials = isNCM ? 'N' : 'V';
+                    html += '<div class="pr-comment-item">' +
+                        '<div class="ci-avatar ' + avatarClass + '">' + initials + '</div>' +
+                        '<div class="ci-body">' +
+                        '<div class="ci-meta">' +
+                        '<span class="ci-name">' + prEscapeHtml(c.added_by || 'Unknown') + '</span>' +
+                        '<span class="ci-time">' + prEscapeHtml(c.added_time || '') + '</span>' +
+                        '</div>' +
+                        '<div class="ci-text">' + prEscapeHtml(c.comment || '') + '</div>' +
+                        '</div></div>';
+                });
+                thread.innerHTML = html;
+                thread.scrollTop = thread.scrollHeight;
+            } else {
+                thread.innerHTML = '<div class="pr-comments-empty"><i class="fas fa-comments d-block"></i><p>No comments yet</p></div>';
+            }
+        })
+        .catch(function () {
+            thread.innerHTML = '<div class="pr-comments-empty"><i class="fas fa-exclamation-circle d-block text-danger"></i><p>Failed to load comments</p></div>';
+        });
+    }
+
+    window.prSendComment = function () {
+        const input = document.getElementById('prCommentInput');
+        const text = input.value.trim();
+        if (!text || !_prCurrentOrderId) return;
+        const btn = document.getElementById('prSendCommentBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner-border spinner-border-sm"></div>';
+        fetch('/api/ncm-rtv/' + encodeURIComponent(_prCurrentOrderId) + '/comment/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': prGetCSRFToken(),
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ comment: text })
+        })
+        .then(r => r.json())
+        .then(function (data) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i>';
+            if (data.success) {
+                input.value = '';
+                input.style.height = 'auto';
+                showToast('Comment added successfully!', 'text-bg-success');
+                prLoadComments(_prCurrentOrderId);
+            } else {
+                showToast(data.message || 'Failed to add comment', 'text-bg-danger');
+            }
+        })
+        .catch(function () {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i>';
+            showToast('Network error. Please try again.', 'text-bg-danger');
+        });
+    };
+
+    // Enter key sends comment
+    const prCommentInput = document.getElementById('prCommentInput');
+    if (prCommentInput) {
+        prCommentInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                prSendComment();
+            }
+        });
+    }
+
+    // Check once on load, then every 30 minutes
+    commentSync();
+    setInterval(commentSync, 1800000);
+
+    // Status is the thing that decides whether a row belongs here at all, so
+    // it is checked on every load, every 5 minutes while the tab stays open,
+    // and whenever the tab is brought back to the front. One bulk NCM request
+    // covers the whole page, and the cooldown inside makes the extra triggers
+    // nearly free.
+    //
+    // A row the view flagged as unverified overrides that cooldown, once, on
+    // this load — that is what makes going straight to this page (rather than
+    // via an order detail page) enough to clear a parcel NCM has already moved
+    // back into transit.
+    statusRefresh(document.querySelector('tr.order-row[data-status-uncertain]') !== null);
+    setInterval(statusRefresh, 300000);
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) { statusRefresh(); }
+    });
 });
 </script>
+
+<!-- ===================== NCM COMMENTS MODAL ===================== -->
+<div class="modal fade" id="prCommentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:520px;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-comments me-2"></i>
+                    NCM Comments &mdash; Order #<span id="prModalOrderId"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="prCommentsThread" class="pr-comments-thread">
+                    <div class="pr-comments-loading">
+                        <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
+                        <p class="mt-2 mb-0 small">Loading comments...</p>
+                    </div>
+                </div>
+                <div class="pr-comment-compose">
+                    <textarea id="prCommentInput" placeholder="Write a comment… (Enter to send)" rows="1"
+                        oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';"></textarea>
+                    <button class="send-btn" id="prSendCommentBtn" onclick="prSendComment()" title="Send">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}

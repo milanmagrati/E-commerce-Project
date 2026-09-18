@@ -12,8 +12,8 @@
     background: #fff;
     border-radius: 16px;
     box-shadow: 0 4px 24px rgba(0,0,0,.07);
-    overflow: visible;
-    min-height: calc(100vh - 180px);
+    overflow: hidden;
+    height: calc(100vh - 180px);
   }
 
   /* ---- Left nav panel ---- */
@@ -25,9 +25,8 @@
     border-radius: 16px 0 0 16px;
     display: flex;
     flex-direction: column;
-    align-self: flex-start;
-    position: sticky;
-    top: 80px;
+    height: 100%;
+    overflow-y: auto;
   }
 
   .sh-nav-header {
@@ -104,9 +103,11 @@
   /* ---- Right content panel ---- */
   .sh-content {
     flex: 1;
-    overflow-y: visible;
+    overflow-y: auto;
     padding: 2rem 2.5rem 50vh;
     min-width: 0;
+    height: 100%;
+    position: relative;
   }
 
   /* ---- Section anchor blocks ---- */
@@ -917,7 +918,7 @@
     <div class="sh-divider" style="margin:2.5rem 0"></div>
     <div class="sh-section" id="sh-api-settings">
     <div class="sh-section-title"><i class="fas fa-clock me-2 text-primary"></i>API Sync Settings</div>
-    <div class="sh-section-sub">Control how frequently the system calls external APIs (NCM). Changes take effect immediately without restarting the server.</div>
+    <div class="sh-section-sub">Control how frequently the system calls external APIs (NCM). Changes take effect immediately &mdash; no restart, and open pages pick up the new intervals on their next heartbeat.</div>
     <div class="sh-divider"></div>
 
     <form method="post" action="{% url 'settings_hub' %}?section=api_settings">
@@ -933,8 +934,8 @@
                   <i class="fas fa-sync-alt text-primary"></i>
                 </div>
                 <div>
-                  <div class="fw-bold" style="font-size:.95rem;color:#32325d;">Order Auto-Sync</div>
-                  <div class="text-muted" style="font-size:.78rem;">NCM order polling interval</div>
+                  <div class="fw-bold" style="font-size:.95rem;color:#32325d;">Background NCM Sync</div>
+                  <div class="text-muted" style="font-size:.78rem;">How often the server calls NCM</div>
                 </div>
               </div>
               <label class="form-label fw-semibold" style="font-size:.82rem;color:#525f7f;">Interval (seconds)</label>
@@ -945,7 +946,8 @@
               <div class="text-muted mt-2" style="font-size:.75rem;">
                 Min: 60s &nbsp;|&nbsp; Max: 86400s (24 hr)<br>
                 Current: <strong id="sync-interval-display">{{ api_settings.order_sync_interval }}s</strong>
-                = <strong id="sync-interval-hr-display"></strong>
+                = <strong id="sync-interval-hr-display"></strong><br>
+                <span id="sync-interval-cost" class="d-inline-block mt-1"></span>
               </div>
             </div>
           </div>
@@ -960,17 +962,19 @@
                   <i class="fas fa-broadcast-tower text-success"></i>
                 </div>
                 <div>
-                  <div class="fw-bold" style="font-size:.95rem;color:#32325d;">Webhook Check</div>
-                  <div class="text-muted" style="font-size:.78rem;">Pending update polling interval</div>
+                  <div class="fw-bold" style="font-size:.95rem;color:#32325d;">Live Page Refresh</div>
+                  <div class="text-muted" style="font-size:.78rem;">How often open pages repaint status</div>
                 </div>
               </div>
               <label class="form-label fw-semibold" style="font-size:.82rem;color:#525f7f;">Interval (seconds)</label>
-              <input type="number" class="form-control" name="webhook_check_interval"
-                     value="{{ api_settings.webhook_check_interval }}"
+              <input type="number" class="form-control" name="page_refresh_interval"
+                     value="{{ api_settings.page_refresh_interval }}"
                      min="10" max="3600" required
                      style="border-radius:10px;font-size:.9rem;">
               <div class="text-muted mt-2" style="font-size:.75rem;">
-                Min: 10s &nbsp;|&nbsp; Max: 3600s (1 hr)
+                Min: 10s &nbsp;|&nbsp; Max: 3600s (1 hr)<br>
+                Reads the local database only &mdash; costs no NCM API calls, so a
+                short interval here is cheap.
               </div>
             </div>
           </div>
@@ -1004,20 +1008,106 @@
 
       <!-- Quick presets -->
       <div class="mt-4">
-        <label class="form-label fw-semibold" style="font-size:.82rem;color:#525f7f;">Quick Presets for Order Sync</label>
+        <label class="form-label fw-semibold" style="font-size:.82rem;color:#525f7f;">Quick Presets for Background NCM Sync</label>
         <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset(60)">Every 1 min</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset(300)">Every 5 min</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset(900)">Every 15 min</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="setPreset(900)">Every 15 min (recommended)</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset(1800)">Every 30 min</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset(3600)">Every 1 hour</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset(7200)">Every 2 hours</button>
-          <button type="button" class="btn btn-sm btn-outline-primary" onclick="setPreset(14400)">Every 4 hours (default)</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset(14400)">Every 4 hours</button>
         </div>
+      </div>
+
+      <!-- Order statuses eligible for the background NCM bulk-sync (cPanel cron -> sync_all_ncm_orders) -->
+      <div class="mt-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <label class="form-label fw-semibold mb-0" style="font-size:.82rem;color:#525f7f;">
+            Order Statuses to Include in Background Sync
+            <span class="badge rounded-pill bg-light text-dark border ms-1" id="bulkSyncStatusCount" style="font-weight:600;"></span>
+          </label>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkSyncSelectAll">Select All</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkSyncClearAll">Clear All</button>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-2" id="bulkSyncStatusGroup">
+          {% for choice in bulk_sync_status_choices %}
+          <input type="checkbox" class="btn-check bulk-sync-status-check" name="included_statuses"
+                 value="{{ choice.value }}" id="incstat-{{ forloop.counter }}" autocomplete="off"
+                 {% if choice.checked %}checked{% endif %}>
+          <label class="btn btn-outline-primary btn-sm" for="incstat-{{ forloop.counter }}" style="border-radius:20px;">{{ choice.label }}</label>
+          {% empty %}
+          <small class="text-muted">No order statuses found in Setup Management yet.</small>
+          {% endfor %}
+        </div>
+        <small class="text-muted d-block mt-2">
+          <i class="fas fa-info-circle"></i> Leave all unchecked to use the default: sync every active order except cancelled/delivered/return statuses.
+        </small>
+      </div>
+
+      <!-- Use NCM's own event time for activity-log entries created by the
+           background sync, instead of the moment the sync ran. -->
+      <div class="mt-4">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch"
+                 name="bulk_sync_fetch_event_times" id="bulkSyncFetchEventTimes"
+                 {% if api_settings.bulk_sync_fetch_event_times %}checked{% endif %}>
+          <label class="form-check-label fw-semibold" for="bulkSyncFetchEventTimes"
+                 style="font-size:.82rem;color:#525f7f;">
+            Use NCM's real event times in the order timeline
+          </label>
+        </div>
+        <small class="text-muted d-block mt-2">
+          <i class="fas fa-info-circle"></i> Fetches NCM's own timestamp for each order whose status
+          changed (one extra API request per changed order &mdash; not per order scanned). When off,
+          activity log entries are dated with the time the sync ran, which can be days after the
+          event actually happened in NCM.
+        </small>
+      </div>
+
+      <!-- Background sync health -->
+      <div class="mt-4 p-3" style="background:#f7fafc;border:1px solid #e9ecef;border-radius:12px;">
+        <div class="fw-semibold mb-2" style="font-size:.82rem;color:#525f7f;">
+          <i class="fas fa-heartbeat me-1 text-danger"></i>Background Sync Status
+        </div>
+        <div class="row g-2" style="font-size:.78rem;">
+          <div class="col-md-4">
+            <span class="text-muted">Last run finished:</span><br>
+            <strong>
+              {% if api_settings.last_bulk_sync_finished_at %}
+                {{ api_settings.last_bulk_sync_finished_at|date:"M d, Y h:i:s A" }}
+              {% else %}
+                <span class="text-danger">Never</span>
+              {% endif %}
+            </strong>
+          </div>
+          <div class="col-md-4">
+            <span class="text-muted">Currently running:</span><br>
+            <strong>{% if bulk_sync_is_running %}<span class="text-success">Yes</span>{% else %}No{% endif %}</strong>
+          </div>
+          <div class="col-md-4">
+            <span class="text-muted">Last result:</span><br>
+            <strong>
+              {% with s=api_settings.last_bulk_sync_summary %}
+                {% if s %}{{ s.updated_count|default:0 }} of {{ s.total_orders|default:0 }} updated,
+                  {{ s.error_count|default:0 }} error{{ s.error_count|default:0|pluralize }}
+                {% else %}&mdash;{% endif %}
+              {% endwith %}
+            </strong>
+          </div>
+        </div>
+        <small class="text-muted d-block mt-2">
+          <i class="fas fa-info-circle"></i> The sync is driven by open staff pages &mdash; it runs
+          whenever someone has the system open and the interval above has elapsed. Set
+          <code>NCM_HEARTBEAT_TOKEN</code> in <code>.env</code> and point an uptime pinger at
+          <code>/ncm/api/heartbeat/?token=&hellip;</code> to keep it running overnight too.
+        </small>
       </div>
 
       <!-- Last updated info -->
       <div class="mt-3">
-        <small class="text-muted"><i class="fas fa-info-circle me-1"></i>Last updated: {{ api_settings.updated_at|date:"Y-m-d H:i:s" }}</small>
+        <small class="text-muted"><i class="fas fa-info-circle me-1"></i>Settings last edited: {{ api_settings.updated_at|date:"Y-m-d H:i:s" }}</small>
       </div>
 
       <div class="mt-4">
@@ -1179,24 +1269,30 @@ function shScrollTo(id) {
   if (!el) return;
   // Immediately highlight the clicked nav item
   shSetActive(id);
-  var offset = 90;
-  var top = el.getBoundingClientRect().top + window.pageYOffset - offset;
-  window.scrollTo({ top: top, behavior: 'smooth' });
+  var scrollContainer = document.querySelector('.sh-content');
+  if (scrollContainer) {
+    var offset = 20;
+    var top = el.offsetTop - offset;
+    scrollContainer.scrollTo({ top: top, behavior: 'smooth' });
+  }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
   _shSections = Array.from(document.querySelectorAll('.sh-section'));
   _shNavLinks = Array.from(document.querySelectorAll('.sh-nav-link[data-target]'));
 
-  window.addEventListener('scroll', function() {
-    if (!_shSections.length) return;
-    var scrollPos = window.pageYOffset + 150;
-    var current = _shSections[0].id;
-    _shSections.forEach(function(sec) {
-      if (sec.offsetTop <= scrollPos) current = sec.id;
+  var scrollContainer = document.querySelector('.sh-content');
+  if (scrollContainer) {
+    scrollContainer.addEventListener('scroll', function() {
+      if (!_shSections.length) return;
+      var scrollPos = scrollContainer.scrollTop + 150;
+      var current = _shSections[0].id;
+      _shSections.forEach(function(sec) {
+        if (sec.offsetTop <= scrollPos) current = sec.id;
+      });
+      shSetActive(current);
     });
-    shSetActive(current);
-  });
+  }
 });
 
 /* ===================== COMPANY SETUP JS ===================== */
@@ -1485,6 +1581,24 @@ function updateSyncDisplay(val) {
   var hrDisplay = document.getElementById('sync-interval-hr-display');
   if (display) display.textContent = val + 's';
   if (hrDisplay) hrDisplay.textContent = fmtSeconds(val);
+
+  // Make the cost of a short interval visible before it's saved. Each run
+  // sends one bulk-status request per 100 active NCM orders, plus roughly one
+  // follow-up request per order that actually changed.
+  var cost = document.getElementById('sync-interval-cost');
+  if (cost) {
+    var seconds = parseInt(val, 10);
+    var activeOrders = {{ active_ncm_order_count|default:0 }};
+    if (!seconds || seconds < 1 || !activeOrders) { cost.textContent = ''; return; }
+    var runsPerDay = Math.floor(86400 / seconds);
+    var perRun = Math.ceil(activeOrders / 100);
+    var callsPerDay = runsPerDay * perRun;
+    cost.innerHTML = '<i class="fas fa-calculator"></i> ≈ <strong>' +
+      callsPerDay.toLocaleString() + '</strong> NCM API calls/day for ' +
+      activeOrders.toLocaleString() + ' active order' + (activeOrders === 1 ? '' : 's') +
+      ' (plus a few per status change).';
+    cost.style.color = seconds < 300 ? '#e67e22' : '';
+  }
 }
 
 function setPreset(seconds) {
@@ -1503,6 +1617,39 @@ document.addEventListener('DOMContentLoaded', function() {
     input.addEventListener('input', function() { updateSyncDisplay(this.value); });
   }
 });
+
+/* ===================== BULK SYNC STATUS TOGGLES ===================== */
+(function() {
+  var checks = document.querySelectorAll('.bulk-sync-status-check');
+  var countBadge = document.getElementById('bulkSyncStatusCount');
+  var selectAllBtn = document.getElementById('bulkSyncSelectAll');
+  var clearAllBtn = document.getElementById('bulkSyncClearAll');
+
+  function updateCount() {
+    if (!countBadge) return;
+    var checkedCount = document.querySelectorAll('.bulk-sync-status-check:checked').length;
+    countBadge.textContent = checkedCount > 0 ? checkedCount + ' selected' : 'All (default)';
+  }
+
+  checks.forEach(function(chk) {
+    chk.addEventListener('change', updateCount);
+  });
+
+  if (selectAllBtn) {
+    selectAllBtn.addEventListener('click', function() {
+      checks.forEach(function(chk) { chk.checked = true; });
+      updateCount();
+    });
+  }
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', function() {
+      checks.forEach(function(chk) { chk.checked = false; });
+      updateCount();
+    });
+  }
+
+  updateCount();
+})();
 
 /* ===================== MAINTENANCE MODE ===================== */
 var _mmIsEnabled = {{ maintenance.is_enabled|yesno:"true,false" }};

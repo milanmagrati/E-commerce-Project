@@ -23,15 +23,15 @@ print("ORDER REDIRECTION IMPLEMENTATION TEST SUITE")
 print("="*80)
 
 # Test 1: Verify Migration Applied
-print("\n✅ TEST 1: Verify Migration 0054 Applied")
+print("\n[OK] TEST 1: Verify Migration 0054 Applied")
 print("-" * 80)
 loader = MigrationLoader(None, ignore_no_migrations=True)
 migrated_apps = loader.disk_migrations
 
 if ('dashboard', '0054_add_metadata_to_orderactivitylog') in loader.applied_migrations:
-    print("  ✓ Migration 0054_add_metadata_to_orderactivitylog is APPLIED")
+    print("  [SUCCESS] Migration 0054_add_metadata_to_orderactivitylog is APPLIED")
 else:
-    print("  ✗ Migration 0054_add_metadata_to_orderactivitylog is NOT applied")
+    print("  [FAILED] Migration 0054_add_metadata_to_orderactivitylog is NOT applied")
     print("    Run: python manage.py migrate")
 
 # Test 2: Verify Model Configuration
@@ -40,7 +40,7 @@ print("-" * 80)
 
 # Check if metadata field exists
 metadata_field = OrderActivityLog._meta.get_field('metadata')
-print(f"  ✓ metadata field exists: {metadata_field}")
+print(f"  [SUCCESS] metadata field exists: {metadata_field}")
 print(f"    - Type: {type(metadata_field).__name__}")
 print(f"    - Blank: {metadata_field.blank}")
 print(f"    - Null: {metadata_field.null}")
@@ -50,9 +50,9 @@ print(f"    - Default: {metadata_field.default}")
 action_type_field = OrderActivityLog._meta.get_field('action_type')
 choices = dict(action_type_field.choices)
 if 'redirected' in choices:
-    print(f"  ✓ 'redirected' action_type exists: {choices['redirected']}")
+    print(f"  [SUCCESS] 'redirected' action_type exists: {choices['redirected']}")
 else:
-    print(f"  ✗ 'redirected' action_type NOT found")
+    print(f"  [FAILED] 'redirected' action_type NOT found")
     print(f"    Available choices: {list(choices.keys())}")
 
 # Test 3: Verify Database Schema
@@ -70,12 +70,12 @@ with connection.cursor() as cursor:
     result = cursor.fetchone()
     if result:
         col_name, col_type, nullable = result
-        print(f"  ✓ metadata column exists in database")
+        print(f"  [SUCCESS] metadata column exists in database")
         print(f"    - Column: {col_name}")
         print(f"    - Type: {col_type}")
         print(f"    - Nullable: {nullable}")
     else:
-        print(f"  ✗ metadata column NOT found in database")
+        print(f"  [FAILED] metadata column NOT found in database")
         print(f"    Run: python manage.py migrate")
 
 # Test 4: Verify Redirect Functions Exist
@@ -90,13 +90,13 @@ try:
         redirect_rtv_save,
         redirect_order_to_ncm,
     )
-    print("  ✓ redirect_order_get exists")
-    print("  ✓ redirect_order_save exists")
-    print("  ✓ redirect_rtv_get exists")
-    print("  ✓ redirect_rtv_save exists")
-    print("  ✓ redirect_order_to_ncm exists")
+    print("  [SUCCESS] redirect_order_get exists")
+    print("  [SUCCESS] redirect_order_save exists")
+    print("  [SUCCESS] redirect_rtv_get exists")
+    print("  [SUCCESS] redirect_rtv_save exists")
+    print("  [SUCCESS] redirect_order_to_ncm exists")
 except ImportError as e:
-    print(f"  ✗ Error importing redirect functions: {e}")
+    print(f"  [FAILED] Error importing redirect functions: {e}")
 
 # Test 5: Verify Template File
 print("\n✅ TEST 5: Verify Template File")
@@ -120,11 +120,11 @@ if os.path.exists(template_path):
 
     for check_str, description in checks:
         if check_str in template_content:
-            print(f"  ✓ {description}: '{check_str}'")
+            print(f"  [SUCCESS] {description}: '{check_str}'")
         else:
-            print(f"  ✗ {description} NOT found: '{check_str}'")
+            print(f"  [FAILED] {description} NOT found: '{check_str}'")
 else:
-    print(f"  ✗ Template file not found: {template_path}")
+    print(f"  [FAILED] Template file not found: {template_path}")
 
 # Test 6: Verify CSS Styles
 print("\n✅ TEST 6: Verify CSS Styles")
@@ -145,9 +145,9 @@ if os.path.exists(template_path):
 
     for css_class, description in css_checks:
         if css_class in template_content:
-            print(f"  ✓ {description}: {css_class}")
+            print(f"  [SUCCESS] {description}: {css_class}")
         else:
-            print(f"  ✗ {description} NOT found: {css_class}")
+            print(f"  [FAILED] {description} NOT found: {css_class}")
 
 # Test 7: Test Data Creation and Retrieval
 print("\n✅ TEST 7: Test Metadata Storage and Retrieval")
@@ -179,13 +179,13 @@ try:
         # Retrieve and verify
         retrieved_log = OrderActivityLog.objects.get(id=test_log.id)
         if retrieved_log.metadata == test_metadata:
-            print(f"  ✓ Metadata stored and retrieved correctly")
+            print(f"  [SUCCESS] Metadata stored and retrieved correctly")
             print(f"    - Customer Name: {retrieved_log.metadata.get('customer_name')}")
             print(f"    - Customer Phone: {retrieved_log.metadata.get('customer_phone')}")
             print(f"    - Shipping Address: {retrieved_log.metadata.get('shipping_address')}")
             print(f"    - Branch City: {retrieved_log.metadata.get('branch_city')}")
         else:
-            print(f"  ✗ Metadata mismatch")
+            print(f"  [FAILED] Metadata mismatch")
             print(f"    Expected: {test_metadata}")
             print(f"    Got: {retrieved_log.metadata}")
 
@@ -194,7 +194,7 @@ try:
     else:
         print(f"  ⚠ No sample orders found. Cannot test data storage.")
 except Exception as e:
-    print(f"  ✗ Error testing metadata: {e}")
+    print(f"  [FAILED] Error testing metadata: {e}")
 
 # Final Summary
 print("\n" + "="*80)

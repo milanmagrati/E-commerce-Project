@@ -1,0 +1,327 @@
+{% extends 'sentinel/_shell.html' %}
+{% load sentinel_extras %}
+
+{% block vault_body %}
+
+<div class="sv-tiles">
+    <div class="sv-tile sv-tone-{% if stats.critical %}rose{% elif stats.open %}amber{% else %}emerald{% endif %}">
+        <div class="sv-tile-label"><i class="fas fa-bell"></i> Open alerts</div>
+        <div class="sv-tile-value" data-countup="{{ stats.open }}">0</div>
+        <div class="sv-tile-meta">awaiting a decision</div>
+    </div>
+    <div class="sv-tile sv-tone-rose">
+        <div class="sv-tile-label"><i class="fas fa-radiation"></i> Critical</div>
+        <div class="sv-tile-value" data-countup="{{ stats.critical }}">0</div>
+        <div class="sv-tile-meta">investigate first</div>
+    </div>
+    <div class="sv-tile sv-tone-amber">
+        <div class="sv-tile-label"><i class="fas fa-triangle-exclamation"></i> Warnings</div>
+        <div class="sv-tile-value" data-countup="{{ stats.warning }}">0</div>
+        <div class="sv-tile-meta">worth a look</div>
+    </div>
+    <div class="sv-tile sv-tone-emerald">
+        <div class="sv-tile-label"><i class="fas fa-circle-check"></i> Resolved · 7d</div>
+        <div class="sv-tile-value" data-countup="{{ stats.resolved_7d }}">0</div>
+        <div class="sv-tile-meta">closed by the team</div>
+    </div>
+</div>
+
+{% if by_kind %}
+<div class="sv-panel" style="margin-bottom:1.2rem;">
+    <div class="sv-panel-head">
+        <h2><i class="fas fa-chart-simple"></i> Open alerts by type</h2>
+    </div>
+    <div class="sv-panel-body">
+        <div class="d-flex gap-2 flex-wrap">
+            {% for row in by_kind %}
+            <a href="?status=open&kind={{ row.kind }}" class="sv-chip sv-tone-{% cycle 'rose' 'amber' 'violet' 'sky' 'cyan' 'indigo' 'teal' 'emerald' %}"
+               style="text-decoration:none;padding:.45rem .8rem;font-size:.78rem;">
+                {{ row.kind|cut:"_"|title }} <strong style="margin-left:.2rem;">{{ row.count }}</strong>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="sv-panel">
+    <div class="sv-panel-head" style="flex-wrap:wrap;gap:.75rem;">
+        <div>
+            <h2><i class="fas fa-shield-virus"></i> Threat console</h2>
+            <p class="sv-sub">Every anomaly the vault detected, with a full decision trail</p>
+        </div>
+        <form method="GET" class="d-flex gap-2 flex-wrap">
+            <select class="sv-select" name="status" style="width:auto;" onchange="this.form.submit()">
+                <option value="open" {% if status == 'open' %}selected{% endif %}>Open &amp; acknowledged</option>
+                <option value="all"  {% if status == 'all' %}selected{% endif %}>Everything</option>
+                {% for value, label in statuses %}
+                <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select class="sv-select" name="kind" style="width:auto;" onchange="this.form.submit()">
+                <option value="">All types</option>
+                {% for value, label in kinds %}
+                <option value="{{ value }}" {% if kind == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select class="sv-select" name="severity" style="width:auto;" onchange="this.form.submit()">
+                <option value="">Any severity</option>
+                {% for value, label in severities %}
+                <option value="{{ value }}" {% if severity == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    <div class="sv-panel-body is-flush">
+        <form method="POST" action="{% url 'sentinel:bulk_alert_action' %}" id="svBulkForm">
+            {% csrf_token %}
+            {% if can_manage and page_obj %}
+            <div class="d-flex align-items-center gap-2 flex-wrap"
+                 style="padding:.75rem 1.15rem;border-bottom:1px solid var(--sv-line);">
+                <label class="sv-switch" style="align-items:center;">
+                    <input type="checkbox" id="svSelectAll">
+                    <span class="sv-switch-track"></span>
+                    <span class="sv-switch-text"><strong style="font-size:.8rem;">Select all on page</strong></span>
+                </label>
+                <span style="flex:1;"></span>
+                <button type="submit" name="action" value="ack" class="sv-btn sv-btn-sm" disabled data-bulk>
+                    <i class="fas fa-eye"></i> Acknowledge
+                </button>
+                <button type="submit" name="action" value="resolve" class="sv-btn sv-btn-sm sv-btn-primary" disabled data-bulk>
+                    <i class="fas fa-check"></i> Resolve
+                </button>
+                <button type="submit" name="action" value="dismiss" class="sv-btn sv-btn-sm" disabled data-bulk>
+                    <i class="fas fa-xmark"></i> Dismiss
+                </button>
+                {% if can_purge %}
+                <button type="button" class="sv-btn sv-btn-sm sv-btn-danger" disabled data-bulk
+                        id="svAlertDelete" title="Only resolved or dismissed alerts are deleted">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
+                {% endif %}
+            </div>
+            {% if can_purge and closed_total %}
+            <div class="sv-bulkbar" style="background:transparent;border-bottom-color:var(--sv-line);">
+                <span class="sv-faint">
+                    {{ closed_total }} resolved or dismissed alert{{ closed_total|pluralize }} stored.
+                </span>
+                <button type="button" class="sv-btn sv-btn-sm sv-btn-danger" id="svAlertDeleteClosed"
+                        style="margin-left:auto;">
+                    <i class="fas fa-broom"></i> Delete all closed alerts
+                </button>
+            </div>
+            {% endif %}
+            {% endif %}
+            <input type="hidden" name="scope" value="" id="svAlertScope">
+
+            {% for alert in page_obj %}
+            <div class="sv-feed-item" style="align-items:flex-start;padding:1.05rem 1.15rem;">
+                {% if can_manage and alert.viewer_may_judge %}
+                <input type="checkbox" name="alert_ids" value="{{ alert.id }}" class="sv-alert-check"
+                       style="margin-top:.5rem;accent-color:#10b981;width:16px;height:16px;">
+                {% endif %}
+                <div class="sv-ev-icon sv-tone-{{ alert.tone }}" style="width:38px;height:38px;">
+                    <i class="fas fa-shield-virus"></i>
+                </div>
+                <div class="sv-feed-body">
+                    <div class="d-flex align-items-center gap-2 flex-wrap" style="margin-bottom:.3rem;">
+                        <strong style="font-size:.9rem;">{{ alert.title }}</strong>
+                        <span class="sv-chip sv-tone-{{ alert.tone }}">{{ alert.get_severity_display }}</span>
+                        <span class="sv-chip sv-tone-slate">{{ alert.get_kind_display }}</span>
+                        {% if alert.status == 'open' %}
+                        <span class="sv-chip sv-tone-rose">Open</span>
+                        {% elif alert.status == 'ack' %}
+                        <span class="sv-chip sv-tone-amber">Acknowledged</span>
+                        {% elif alert.status == 'resolved' %}
+                        <span class="sv-chip sv-tone-emerald">Resolved</span>
+                        {% else %}
+                        <span class="sv-chip sv-tone-slate">Dismissed</span>
+                        {% endif %}
+                        {% if alert.occurrence_count > 1 %}
+                        <span class="sv-chip sv-tone-violet">×{{ alert.occurrence_count }} occurrences</span>
+                        {% endif %}
+                    </div>
+
+                    {% if alert.detail %}
+                    <p class="sv-muted" style="font-size:.83rem;margin:0 0 .45rem;">{{ alert.detail }}</p>
+                    {% endif %}
+
+                    <div class="sv-feed-meta" style="margin-bottom:.5rem;">
+                        {% if alert.subject_user_id %}
+                        <a href="{% url 'sentinel:dossier' alert.subject_user_id %}"
+                           style="color:var(--sv-sky);text-decoration:none;">
+                            <i class="fas fa-user"></i> {{ alert.subject_username }}
+                        </a>
+                        {% elif alert.subject_username %}
+                        <span><i class="fas fa-user"></i> {{ alert.subject_username }}</span>
+                        {% endif %}
+                        {% if alert.ip_address %}
+                        <span class="sv-cell-mono">· {{ alert.ip_address }}</span>
+                        {% endif %}
+                        <span>· first seen {{ alert.created_at|sentinel_clock }}</span>
+                        {% if alert.occurrence_count > 1 %}
+                        <span>· last {{ alert.last_seen_at|sentinel_ago }}</span>
+                        {% endif %}
+                    </div>
+
+                    {% if alert.evidence %}
+                    <details style="margin-bottom:.55rem;">
+                        <summary style="cursor:pointer;font-size:.75rem;color:var(--sv-text-faint);">
+                            <i class="fas fa-microscope"></i> Evidence
+                        </summary>
+                        <div class="sv-code" style="margin-top:.45rem;">{{ alert.evidence|as_json }}</div>
+                    </details>
+                    {% endif %}
+
+                    {% if alert.resolution_note %}
+                    <p style="font-size:.78rem;color:var(--sv-emerald);margin:0 0 .5rem;">
+                        <i class="fas fa-comment-dots"></i> {{ alert.resolution_note }}
+                        {% if alert.resolved_by %}— {{ alert.resolved_by.username }}{% endif %}
+                    </p>
+                    {% endif %}
+
+                    <div class="d-flex gap-1 flex-wrap">
+                        {% if alert.session_id %}
+                        <a href="{% url 'sentinel:session_detail' alert.session_id %}" class="sv-btn sv-btn-sm">
+                            <i class="fas fa-tower-broadcast"></i> Session
+                        </a>
+                        {% endif %}
+                        {% if alert.event_id %}
+                        <button type="button" class="sv-btn sv-btn-sm" data-sv-event="{{ alert.event_id }}">
+                            <i class="fas fa-magnifying-glass"></i> Triggering event
+                        </button>
+                        {% endif %}
+                        {% if can_manage and not alert.viewer_may_judge %}
+                        <span class="sv-chip sv-tone-slate" title="An auditee cannot close their own finding">
+                            <i class="fas fa-lock"></i> Administrator review required
+                        </span>
+                        {% endif %}
+                        {% if can_manage and alert.viewer_may_judge %}
+                            {% if alert.is_open %}
+                            <button type="button" class="sv-btn sv-btn-sm" data-alert="{{ alert.id }}" data-action="ack">
+                                <i class="fas fa-eye"></i> Acknowledge
+                            </button>
+                            <button type="button" class="sv-btn sv-btn-sm sv-btn-primary" data-alert="{{ alert.id }}" data-action="resolve">
+                                <i class="fas fa-check"></i> Resolve
+                            </button>
+                            <button type="button" class="sv-btn sv-btn-sm" data-alert="{{ alert.id }}" data-action="dismiss">
+                                <i class="fas fa-xmark"></i> Dismiss
+                            </button>
+                            {% else %}
+                            <button type="button" class="sv-btn sv-btn-sm" data-alert="{{ alert.id }}" data-action="reopen">
+                                <i class="fas fa-rotate-left"></i> Reopen
+                            </button>
+                            {% endif %}
+                            {% if alert.subject_user_id %}
+                            <button type="button" class="sv-btn sv-btn-sm sv-btn-danger"
+                                    data-revoke-all="{{ alert.subject_user_id }}" data-name="{{ alert.subject_username }}">
+                                <i class="fas fa-power-off"></i> Sign out everywhere
+                            </button>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <div class="sv-empty">
+                <i class="fas fa-shield-heart" style="color:var(--sv-emerald);opacity:.55;"></i>
+                <h3>Nothing to investigate</h3>
+                <p>No alerts match this view. The vault keeps watching.</p>
+            </div>
+            {% endfor %}
+        </form>
+        {% include 'sentinel/_pager.html' %}
+    </div>
+</div>
+
+{% include 'sentinel/_drawer.html' %}
+{% endblock %}
+
+{% block vault_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const checks = document.querySelectorAll('.sv-alert-check');
+    const bulkButtons = document.querySelectorAll('[data-bulk]');
+    const selectAll = document.getElementById('svSelectAll');
+
+    function syncBulk() {
+        const any = Array.from(checks).some(function (c) { return c.checked; });
+        bulkButtons.forEach(function (b) { b.disabled = !any; });
+    }
+    checks.forEach(function (c) { c.addEventListener('change', syncBulk); });
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            checks.forEach(function (c) { c.checked = selectAll.checked; });
+            syncBulk();
+        });
+    }
+
+    {% if can_purge %}
+    /* Deleting alerts is a POST on the same bulk form, but it never goes through
+       without its own confirmation — the other three actions are reversible and
+       this one is not. */
+    const bulkForm = document.getElementById('svBulkForm');
+    function submitDelete(scope, message) {
+        Sentinel.confirmThen(message, function () {
+            document.getElementById('svAlertScope').value = scope;
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'action';
+            hidden.value = 'delete';
+            bulkForm.appendChild(hidden);
+            bulkForm.submit();
+        });
+    }
+    const deleteBtn = document.getElementById('svAlertDelete');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function () {
+            submitDelete('', 'Delete the selected alert(s)?<br><small>Only alerts already ' +
+                             'resolved or dismissed are removed; anything still open is kept ' +
+                             'so the decision stays on record. Permanent — there is no undo.</small>');
+        });
+    }
+    const deleteClosed = document.getElementById('svAlertDeleteClosed');
+    if (deleteClosed) {
+        deleteClosed.addEventListener('click', function () {
+            submitDelete('closed', 'Delete <b>all {{ closed_total }}</b> resolved and dismissed ' +
+                                   'alert(s)?<br><small>Open findings are untouched. Permanent — ' +
+                                   'there is no undo.</small>');
+        });
+    }
+    {% endif %}
+
+    document.querySelectorAll('[data-alert]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const action = btn.dataset.action;
+            if (action === 'resolve' || action === 'dismiss') {
+                const note = window.prompt('Add a note for the record (optional):', '');
+                if (note === null) return;
+                Sentinel.post('/sentinel/alerts/' + btn.dataset.alert + '/action/', {
+                    action: action, note: note,
+                    next: window.location.pathname + window.location.search,
+                });
+            } else {
+                Sentinel.post('/sentinel/alerts/' + btn.dataset.alert + '/action/', {
+                    action: action,
+                    next: window.location.pathname + window.location.search,
+                });
+            }
+        });
+    });
+
+    document.querySelectorAll('[data-revoke-all]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            Sentinel.confirmThen(
+                'Sign <b>' + Sentinel.esc(btn.dataset.name) + '</b> out of every device immediately?' +
+                '<br><small>All their live sessions will be terminated.</small>',
+                function () {
+                    Sentinel.post('/sentinel/users/' + btn.dataset.revokeAll + '/revoke-all/', {
+                        next: window.location.pathname + window.location.search,
+                    });
+                });
+        });
+    });
+});
+</script>
+{% endblock %}

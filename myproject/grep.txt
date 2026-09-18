@@ -1,0 +1,21 @@
+def google_imports_page(request):
+
+def add_sheet_connection(request):
+
+def edit_sheet_connection(request, connection_id):
+
+def delete_sheet_connection(request, connection_id):
+
+def get_connection_data(request, connection_id):
+
+def test_connection(request):
+
+def trigger_sync(request, connection_id):
+
+def get_sheet_data_table(request, connection_id):
+
+def sync_logs(request, connection_id):
+
+def view_connection_sheet(request, connection_id):
+
+def update_sheet_cell(request, connection_id):

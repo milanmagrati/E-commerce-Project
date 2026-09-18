@@ -1,0 +1,212 @@
+{% extends 'base.html' %}
+{% comment %}
+Setup → Store Button Labels.
+
+One form, one row, no checkboxes: every box is a text input whose placeholder
+is the wording that ships, so an empty box reads as "leave it as it is" rather
+than as "print nothing here". The live preview beside each group shows the
+button as the shop will draw it.
+{% endcomment %}
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .sl-wrap { max-width: 1100px; margin: 0 auto; padding: 1.75rem 1.25rem 4rem; color: #101828; }
+
+    .sl-header {
+        position: relative; overflow: hidden;
+        background: linear-gradient(135deg, #E8590C 0%, #C2410C 55%, #7C2D12 100%);
+        color: #fff; border-radius: 18px; padding: 1.9rem 2rem; margin-bottom: 1.5rem;
+        box-shadow: 0 18px 40px -18px rgba(232, 89, 12, .6);
+    }
+    .sl-header::after {
+        content: ''; position: absolute; right: -70px; top: -90px;
+        width: 300px; height: 300px; border-radius: 50%;
+        background: rgba(255, 255, 255, .09);
+    }
+    .sl-header-inner { position: relative; z-index: 1; }
+    .sl-eyebrow {
+        display: inline-flex; align-items: center; gap: .45rem;
+        font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+        background: rgba(255, 255, 255, .18); padding: .3rem .7rem; border-radius: 999px;
+        margin-bottom: .7rem;
+    }
+    .sl-header h1 { font-size: 1.75rem; font-weight: 800; margin: 0 0 .35rem; letter-spacing: -.02em; }
+    .sl-header p { margin: 0; opacity: .92; font-size: .93rem; max-width: 74ch; }
+
+    .sl-card { background: #fff; border: 1px solid #E4E7EC; border-radius: 14px; margin-bottom: 1.25rem; }
+    .sl-card > h2 {
+        font-size: .95rem; font-weight: 700; margin: 0;
+        padding: 1rem 1.25rem; border-bottom: 1px solid #E4E7EC;
+        display: flex; align-items: center; gap: .5rem;
+    }
+    .sl-card-body { padding: 1.25rem; }
+
+    .sl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.1rem; }
+
+    .sl-field label {
+        display: block; font-size: .76rem; font-weight: 700; letter-spacing: .04em;
+        text-transform: uppercase; color: #475467; margin-bottom: .35rem;
+    }
+    .sl-field input {
+        width: 100%; padding: .6rem .75rem; font-size: .92rem;
+        border: 1px solid #D0D5DD; border-radius: 10px; background: #fff;
+    }
+    .sl-field input:focus { outline: 0; border-color: #E8590C; box-shadow: 0 0 0 3px rgba(232, 89, 12, .12); }
+    .sl-help { display: block; font-size: .76rem; color: #667085; margin-top: .3rem; line-height: 1.45; }
+    .sl-default { color: #98A2B3; }
+
+    .sl-note {
+        display: flex; gap: .6rem; align-items: flex-start;
+        background: #FFFAF5; border: 1px solid #FCD9B6; color: #7C2D12;
+        border-radius: 12px; padding: .8rem 1rem; font-size: .85rem; margin-bottom: 1.25rem;
+    }
+
+    .sl-preview {
+        border: 1px solid #E4E7EC; border-radius: 12px; background: #F9FAFB;
+        padding: 1rem 1.1rem; margin-top: 1.1rem;
+    }
+    .sl-preview-k {
+        font-size: .7rem; font-weight: 700; letter-spacing: .1em;
+        text-transform: uppercase; color: #667085; margin-bottom: .6rem;
+    }
+    .sl-btnrow { display: flex; flex-wrap: wrap; gap: .55rem; }
+    .sl-btn {
+        border-radius: 10px; padding: .6rem 1.1rem; font-size: .88rem; font-weight: 600;
+        border: 1px solid transparent; background: #fff; color: #101828;
+    }
+    .sl-btn.is-accent { background: #C2410C; color: #fff; }
+    .sl-btn.is-outline { border-color: #D0D5DD; }
+    .sl-btn.is-muted { background: #98A2B3; color: #fff; }
+    .sl-btn small { display: block; font-weight: 500; opacity: .8; font-size: .72rem; }
+
+    .sl-actions {
+        display: flex; flex-wrap: wrap; gap: .6rem; align-items: center;
+        padding: 1rem 1.25rem; border-top: 1px solid #E4E7EC; background: #FCFCFD;
+        border-radius: 0 0 14px 14px;
+    }
+    .sl-save {
+        background: #C2410C; color: #fff; border: 0; border-radius: 10px;
+        padding: .65rem 1.4rem; font-weight: 700; font-size: .9rem;
+    }
+    .sl-reset {
+        background: #fff; color: #B42318; border: 1px solid #FDA29B; border-radius: 10px;
+        padding: .65rem 1.1rem; font-weight: 600; font-size: .9rem;
+    }
+    .sl-count { margin-left: auto; font-size: .82rem; color: #667085; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sl-wrap">
+
+    <div class="sl-header">
+        <div class="sl-header-inner">
+            <span class="sl-eyebrow"><i class="fas fa-font"></i> Storefront</span>
+            <h1>Store Button Labels</h1>
+            <p>Rename any button the shopper sees — in Nepali, in English, or both on
+               one button. Leave a box empty to keep the wording that ships; the grey
+               text inside each box is exactly what that empty box will print.</p>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+        <div class="sl-note"><i class="fas fa-circle-check mt-1"></i><span>{{ message }}</span></div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="sl-note">
+        <i class="fas fa-circle-info mt-1"></i>
+        <span>Saved wording appears on the shop within a minute — each web worker
+              keeps its own copy of these labels for up to 60 seconds.</span>
+    </div>
+
+    <form method="POST" action="{% url 'store_label_save' %}">
+        {% csrf_token %}
+
+        {% for group in groups %}
+        <div class="sl-card">
+            <h2><i class="fas fa-square-pen"></i> {{ group.name }}</h2>
+            <div class="sl-card-body">
+                <div class="sl-grid">
+                    {% for f in group.fields %}
+                    <div class="sl-field">
+                        <label for="sl-{{ f.key }}">{{ f.label }}</label>
+                        <input type="text" id="sl-{{ f.key }}" name="{{ f.key }}"
+                               value="{{ f.value }}" placeholder="{{ f.default }}"
+                               data-sl-preview="{{ f.key }}" autocomplete="off">
+                        <span class="sl-help">{{ f.help }}
+                            <span class="sl-default">Default: {{ f.default }}</span></span>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {% if group.name == 'Product page' %}
+                <div class="sl-preview">
+                    <div class="sl-preview-k">Preview</div>
+                    <div class="sl-btnrow">
+                        <span class="sl-btn is-outline" data-sl-shows="add_to_cart">{{ preview.add_to_cart }}</span>
+                        <span class="sl-btn is-accent" data-sl-shows="order_now">{{ preview.order_now }}</span>
+                        <span class="sl-btn is-muted" data-sl-shows="sold_out">{{ preview.sold_out }}</span>
+                        <span class="sl-btn is-outline">&#9825;
+                            <span data-sl-shows="save_for_later">{{ preview.save_for_later }}</span></span>
+                    </div>
+                </div>
+                {% else %}
+                <div class="sl-preview">
+                    <div class="sl-preview-k">Preview</div>
+                    <div class="sl-btnrow">
+                        <span class="sl-btn is-accent">
+                            <span data-sl-shows="confirm_title">{{ preview.confirm_title }}</span>
+                            <small data-sl-shows="confirm_sub">{{ preview.confirm_sub }}</small>
+                        </span>
+                        <span class="sl-btn is-outline">
+                            <span data-sl-shows="inquiry_title">{{ preview.inquiry_title }}</span>
+                            <small data-sl-shows="inquiry_sub">{{ preview.inquiry_sub }}</small>
+                        </span>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if forloop.last %}
+            <div class="sl-actions">
+                <button type="submit" class="sl-save"><i class="fas fa-floppy-disk"></i> Save labels</button>
+                <span class="sl-count">{{ customised }} of {{ total }} customised</span>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </form>
+
+    <form method="POST" action="{% url 'store_label_reset' %}"
+          onsubmit="return confirm('Clear every box and go back to the wording that ships?');">
+        {% csrf_token %}
+        <button type="submit" class="sl-reset"><i class="fas fa-rotate-left"></i> Reset all to default</button>
+    </form>
+</div>
+
+<script>
+// Typing in a box rewrites the button beside it. Falls back to the box's
+// placeholder — the shipped wording — the moment the box is emptied, which is
+// exactly what saving an empty box does.
+(function () {
+    function bind() {
+        document.querySelectorAll('[data-sl-preview]').forEach(function (input) {
+            var key = input.getAttribute('data-sl-preview');
+            var target = document.querySelector('[data-sl-shows="' + key + '"]');
+            if (!target) return;
+            input.addEventListener('input', function () {
+                target.textContent = input.value.trim() || input.placeholder;
+            });
+        });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bind);
+    } else {
+        bind();
+    }
+}());
+</script>
+{% endblock %}

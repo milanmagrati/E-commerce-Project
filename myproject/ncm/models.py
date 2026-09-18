@@ -12,6 +12,7 @@ class NCMBulkLog(models.Model):
         ('completed', 'Completed'),
         ('partial', 'Partial Success'),
         ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
     ]
 
     batch_number = models.CharField(max_length=50, unique=True, db_index=True)
@@ -23,6 +24,26 @@ class NCMBulkLog(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='processing')
     from_branch = models.CharField(max_length=100, default='TINKUNE')
     delivery_type = models.CharField(max_length=20, default='Door2Door')
+
+    # The orders this batch was asked to send, captured before the first API
+    # call. Without it a batch whose worker died knows only how MANY orders it
+    # owed (total_orders) - the child rows below are written after each send, so
+    # everything not yet reached is unrecoverable. See dashboard/bulk_batch.py.
+    selected_order_ids = models.JSONField(null=True, blank=True)
+
+    # The send parameters that only ever lived in the POST body: which API
+    # account to use, the fallback package weight, whether to stamp
+    # order.logistics. A resume has to reproduce them or it would send the rest
+    # of the batch on the default account, at the default weight.
+    send_options = models.JSONField(null=True, blank=True)
+
+    # Cooperative cancellation. The send loop reads this between orders and
+    # stops; there is no way to kill the worker outright.
+    cancel_requested = models.BooleanField(default=False)
+
+    # Last sign of life from whoever is processing this batch. A 'processing'
+    # batch with a stale (or null) heartbeat is stalled, not running.
+    worker_heartbeat_at = models.DateTimeField(null=True, blank=True)
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

@@ -27,7 +27,10 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = ["*"]
+# ALLOWED_HOSTS must be explicitly set in production .env, e.g.:
+#   ALLOWED_HOSTS=office.orajil.com.np,www.office.orajil.com.np
+# Defaulting to '*' in development only; production MUST override this.
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="office.orajil.com.np,www.office.orajil.com.np,orajil.com.np,www.orajil.com.np,localhost,127.0.0.1", cast=Csv())
 
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
@@ -57,6 +60,10 @@ EXTERNAL_APPS = [
     "rest_framework.authtoken",
     "integrations",
     "bill_rewards",
+    "google_sheets",
+    "trendycrm",
+    "resources",
+    "sentinel",
 ]
 INSTALLED_APPS.extend(EXTERNAL_APPS)
 
@@ -73,11 +80,16 @@ REST_FRAMEWORK = {
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'myproject.middleware.GracefulSessionInterruptionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    # Sentinel Vault must sit after AuthenticationMiddleware (needs request.user)
+    # and after MessageMiddleware (reads the 'permission_denied' message tag this
+    # project's RBAC decorators emit, to record access denials).
+    'sentinel.middleware.SentinelAuditMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
@@ -98,12 +110,16 @@ TEMPLATES = [
                 'chat.context_processors.unread_message_count',
                 'store.context_processors.store_context',
                 'dashboard.context_processors.maintenance_mode',
+                'dashboard.context_processors.expiry_notifications',
+                'dashboard.context_processors.incomplete_attendance_alert',
             ],
         },
     },
 ]
 
 WSGI_APPLICATION = 'myproject.wsgi.application'
+ASGI_APPLICATION = 'myproject.asgi.application'
+
 
 
 # Database
@@ -117,8 +133,18 @@ DATABASES = {
         'PASSWORD': config('DB_PASSWORD'),
         'HOST': config('DB_HOST', default='localhost'),
         'PORT': config('DB_PORT', default='3306'),
+        # ── Production robustness settings ──────────────────────────────
+        # Reuse DB connections for 60 seconds instead of open/closing per request.
+        # Prevents 'MySQL server has gone away' under high load.
+        'CONN_MAX_AGE': config('DB_CONN_MAX_AGE', default=60, cast=int),
+        # CONN_HEALTH_CHECKS: ping the connection before reuse (Django 4.1+)
+        'CONN_HEALTH_CHECKS': True,
         'OPTIONS': {
             'charset': 'utf8mb4',
+            # Abort if DB doesn't respond in 10 seconds (prevents worker hang → 500)
+            'connect_timeout': 10,
+            # Re-raise exceptions instead of swallowing them silently
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
         },
     }
 }
@@ -168,26 +194,46 @@ MEDIA_URL = '/media/'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'
-LOGOUT_REDIRECT_URL = 'login'
+LOGOUT_REDIRECT_URL = 'dashboard'  # 'dashboard' ('/') shows the public landing page to logged-out visitors
 
 # ========== SESSION CONFIGURATION ==========
 # Session settings for 12-hour persistent login
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Store sessions in database
 SESSION_COOKIE_AGE = 43200  # 12 hours in seconds
 SESSION_COOKIE_HTTPONLY = True  # Prevent JS access for security
-SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
+SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=False, cast=bool)  # Set True in .env for production HTTPS
+CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=False, cast=bool)  # Set True in .env for production HTTPS
+
+# For cPanel/Apache deployments where HTTPS is terminated by the proxy
+# (Apache sits in front of Django). This lets Django detect HTTPS correctly.
+# Only enable this if your cPanel uses Apache as a reverse proxy with SSL:
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Keep session even after browser closes
 SESSION_SAVE_EVERY_REQUEST = True  # Reset expiry on every request (sliding window)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# ======================== Cache Configuration ========================
+# Using LocMemCache (per-process in-memory) which works without Redis.
+# Each worker has its own cache — but 60-second TTL is short enough that
+# stale data is acceptable. Swap BACKEND to Redis if you add Redis later:
+#   BACKEND: 'django.core.cache.backends.redis.RedisCache'
+#   LOCATION: 'redis://127.0.0.1:6379/1'
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'dashboard-ctx-cache',
+    }
+}
+
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_USE_TLS = True
 EMAIL_PORT = 587
-EMAIL_HOST_USER = "ermilan30@gmail.com"
-EMAIL_HOST_PASSWORD = 'uuqw cnwz ybnt wvut'
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='ermilan30@gmail.com')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = 'System Admin <ermilan30@gmail.com>'
 # Password Reset Settings
 PASSWORD_RESET_TIMEOUT = 3600  # 1 hour
@@ -202,10 +248,32 @@ NCM_API_BASE_URL_V2 = config('NCM_API_BASE_URL_V2')
 # ===================== Webhook Configuration =====================
 # Webhook Security: Set this in your .env file
 NCM_WEBHOOK_SECRET = config('NCM_WEBHOOK_SECRET', default=None)
+WOOCOMMERCE_WEBHOOK_SECRET = config('WOOCOMMERCE_WEBHOOK_SECRET', default='')
 
+# ==================== WooCommerce REST API (polling) ====================
+# Generate under WooCommerce > Settings > Advanced > REST API in wp-admin.
+# Read permission is enough - polling only pulls orders, it doesn't write back.
+WOOCOMMERCE_SITE_URL = config('WOOCOMMERCE_SITE_URL', default='')
+WOOCOMMERCE_CONSUMER_KEY = config('WOOCOMMERCE_CONSUMER_KEY', default='')
+WOOCOMMERCE_CONSUMER_SECRET = config('WOOCOMMERCE_CONSUMER_SECRET', default='')
+SITE_URL = config('SITE_URL', default='https://office.orajil.com.np').rstrip('/')
+
+META_PAGE_ACCESS_TOKEN = config('META_PAGE_ACCESS_TOKEN', default='')
+FACEBOOK_APP_ID = config('FACEBOOK_APP_ID', default='')
+FACEBOOK_APP_SECRET = config('FACEBOOK_APP_SECRET', default='')
+INSTAGRAM_APP_ID = config('INSTAGRAM_APP_ID', default='')
+INSTAGRAM_APP_SECRET = config('INSTAGRAM_APP_SECRET', default='')
+TIKTOK_CLIENT_ID = config('TIKTOK_CLIENT_ID', default='')
+TIKTOK_CLIENT_SECRET = config('TIKTOK_CLIENT_SECRET', default='')
+FACEBOOK_WEBHOOK_VERIFY_TOKEN = config('FACEBOOK_WEBHOOK_VERIFY_TOKEN', default='')
+
+# Kept for backward compatibility
+FACEBOOK_CLIENT_ID = config('FACEBOOK_CLIENT_ID', default=FACEBOOK_APP_ID)
+FACEBOOK_CLIENT_SECRET = config('FACEBOOK_CLIENT_SECRET', default=FACEBOOK_APP_SECRET)
+FACEBOOK_CONFIG_ID = config('FACEBOOK_CONFIG_ID', default='')
 # ===================== Pick and Drop API Configuration =====================
-PND_API_KEY = config('PND_API_KEY', default='adfe61efa5c52c6')
-PND_API_SECRET = config('PND_API_SECRET', default='228689edbe6b937')
+PND_API_KEY = config('PND_API_KEY', default='')
+PND_API_SECRET = config('PND_API_SECRET', default='')
 PND_API_BASE_URL = config('PND_API_BASE_URL', default='https://pickndropnepal.com')
 
 # ===================== SMS Configuration =====================
@@ -221,13 +289,23 @@ TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN', default=None)
 TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER', default=None)
 
 # ===================== Real-time Configuration =====================
-# Auto-sync polling interval (seconds)
-ORDER_AUTO_SYNC_INTERVAL = config('ORDER_AUTO_SYNC_INTERVAL', default=14400, cast=int)
-
-# Check for pending updates every X minutes
-WEBHOOK_PENDING_CHECK_INTERVAL = config('WEBHOOK_PENDING_CHECK_INTERVAL', default=30, cast=int)
+# Sync cadence lives in the database (dashboard.APISettings, editable at
+# Settings -> API Sync Settings), not here - the old ORDER_AUTO_SYNC_INTERVAL /
+# WEBHOOK_PENDING_CHECK_INTERVAL env vars were read by nothing and have been
+# removed rather than left to look authoritative.
+#
+# Optional shared secret for /ncm/api/heartbeat/. The heartbeat normally runs
+# off a staff session, which means the background NCM sync only ticks while
+# somebody has a tab open. Set this and point any external uptime pinger at
+# https://<site>/ncm/api/heartbeat/?token=<value> to keep it ticking overnight.
+# Left empty, the token door is closed entirely.
+NCM_HEARTBEAT_TOKEN = config('NCM_HEARTBEAT_TOKEN', default='')
 
 # ======================== Logging Configuration ========================
+# Ensure logs directory exists before configuring handlers
+_LOG_DIR = os.path.join(BASE_DIR, 'logs')
+os.makedirs(_LOG_DIR, exist_ok=True)
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -249,18 +327,38 @@ LOGGING = {
             'level': 'INFO',
             'formatter': 'simple',
         },
+        # ── NEW: Captures ALL Django 500 errors to a dedicated log ───────
+        'error_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'ERROR',
+            'filename': os.path.join(_LOG_DIR, 'django_errors.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
         'ncm_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
-            'filename': os.path.join(BASE_DIR, 'logs', 'ncm_integration.log'),
+            'filename': os.path.join(_LOG_DIR, 'ncm_integration.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10 MB
             'backupCount': 5,
             'formatter': 'verbose',
         },
+        'trendycrm_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'filename': os.path.join(_LOG_DIR, 'trendycrm.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            # Customer messages routinely contain emoji and Devanagari.
+            'encoding': 'utf-8',
+        },
         'ncm_webhook_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
-            'filename': os.path.join(BASE_DIR, 'logs', 'ncm_webhooks.log'),
+            'filename': os.path.join(_LOG_DIR, 'ncm_webhooks.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10 MB
             'backupCount': 5,
             'formatter': 'verbose',
@@ -268,7 +366,7 @@ LOGGING = {
         'ncm_sms_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
-            'filename': os.path.join(BASE_DIR, 'logs', 'ncm_sms.log'),
+            'filename': os.path.join(_LOG_DIR, 'ncm_sms.log'),
             'maxBytes': 1024 * 1024 * 5,  # 5 MB
             'backupCount': 3,
             'formatter': 'verbose',
@@ -276,7 +374,7 @@ LOGGING = {
         'adms_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
-            'filename': os.path.join(BASE_DIR, 'logs', 'adms.log'),
+            'filename': os.path.join(_LOG_DIR, 'adms.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10 MB
             'backupCount': 5,
             'formatter': 'verbose',
@@ -284,13 +382,43 @@ LOGGING = {
         'integrations_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
-            'filename': os.path.join(BASE_DIR, 'logs', 'integrations.log'),
+            'filename': os.path.join(_LOG_DIR, 'integrations.log'),
             'maxBytes': 1024 * 1024 * 10,  # 10 MB
             'backupCount': 5,
             'formatter': 'verbose',
         },
+        # Sentinel Vault's *own* failures. The audit trail lives in the database;
+        # this file only records when recording itself broke, which must never be
+        # silent — a vault that quietly stopped capturing is worse than none.
+        'sentinel_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'filename': os.path.join(_LOG_DIR, 'sentinel.log'),
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
     },
     'loggers': {
+        # ── NEW: Catch ALL unhandled 500 errors from Django core ─────────
+        'django': {
+            'handlers': ['console', 'error_file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # ── NEW: Log every 500 request with full traceback ───────────────
+        'django.request': {
+            'handlers': ['error_file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # ── NEW: Log DB errors (connection drops, timeouts) ──────────────
+        'django.db.backends': {
+            'handlers': ['error_file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
         'ncm': {
             'handlers': ['console', 'ncm_file'],
             'level': 'DEBUG',
@@ -316,13 +444,30 @@ LOGGING = {
             'level': 'DEBUG',
             'propagate': False,
         },
+        # Storefront: back-in-stock alert flush, and anywhere else store/ code
+        # calls logging.getLogger('store').
+        'store': {
+            'handlers': ['console', 'error_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # CRM inbox, Meta sync and the AI auto-reply engine. Without this the
+        # reason a reply was skipped ("staff replied recently", "out of credits",
+        # "rate limited") was never written anywhere.
+        'trendycrm': {
+            'handlers': ['console', 'trendycrm_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'sentinel': {
+            'handlers': ['console', 'sentinel_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }
 
-# Ensure logs directory exists
-LOG_DIR = os.path.join(BASE_DIR, 'logs')
-if not os.path.exists(LOG_DIR):
-    os.makedirs(LOG_DIR)
+# logs directory is already guaranteed to exist above (os.makedirs(_LOG_DIR, exist_ok=True))
 
 # ===================== Bill OCR & Rewards Configuration =====================
 # OCR Provider: 'auto', 'aws_textract', 'google_docai', or 'manual'
@@ -349,4 +494,4 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
 # Run synchronously for local dev unless redis is available and explicit
-CELERY_TASK_ALWAYS_EAGER = config('CELERY_TASK_ALWAYS_EAGER', default=True, cast=bool)
+# Trigger reload

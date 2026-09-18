@@ -16,11 +16,16 @@ from django.conf import settings
 from functools import wraps
 
 # Import NCM service from services folder
-from services.ncm_service import NCMService
+from accounts.decorators import has_any_permission
+from services.ncm_service import NCMService, fetch_order_status_raw
+from services.status_override import (clear_manual_status_override,
+                                      manual_override_holds)
 from ncm.webhook_handler import NCMWebhookHandler
+from ncm.bulk_sync import run_bulk_ncm_status_sync
 
 # Import models from accounts app
 from dashboard.models import Order, OrderActivityLog
+from dashboard.timezone_utils import parse_ncm_datetime
 from ncm.models import WebhookLog
 
 import json
@@ -43,12 +48,8 @@ def ncm_permission_required(permission_field):
     def decorator(view_func):
         @wraps(view_func)
         def wrapper(request, *args, **kwargs):
-            # Allow superusers and administrators
-            if request.user.is_superuser or request.user.role == 'administrator':
-                return view_func(request, *args, **kwargs)
-            
-            # Check specific permission
-            if not getattr(request.user, permission_field, False):
+            # Same admin bypass as every other permission check in the project
+            if not has_any_permission(request.user, permission_field):
                 messages.error(request, '❌ You do not have permission to access this page')
                 logger.warning(f"Access denied for user {request.user.username} - Missing permission: {permission_field}")
                 return redirect('orders_list')
@@ -120,24 +121,6 @@ def get_or_create_system_user():
         logger.info("Created system user for webhook operations")
     
     return user
-
-
-def is_order_eligible_for_status_update(order):
-    """
-    Check if order is in a state that should receive status updates.
-    Prevents updating already delivered orders or cancelled ones.
-    """
-    ineligible_statuses = ['delivered', 'cancelled', 'return_initiated', 'return_approved']
-    
-    if order.status in ineligible_statuses:
-        logger.info(f"Order {order.order_number} not eligible for webhook update (status: {order.status})")
-        return False
-    
-    if not order.ncm_order_id:
-        logger.warning(f"Order {order.order_number} has no NCM order ID")
-        return False
-    
-    return True
 
 
 # ===================== BRANCHES JSON ENDPOINT =====================
@@ -242,7 +225,7 @@ def create_ncm_shipment(request, order_id):
         # Prepare NCM data - use branch NAME for NCM API (not code)
         # IMPORTANT: 'name' field is customer/receiver name, NOT admin/staff name
         # For partial payments, send remaining amount as COD (not full total)
-        cod_amount = order.remaining_amount if order.is_partial_payment and order.remaining_amount is not None else order.total_amount
+        cod_amount = order.amount_due
         ncm_data = {
             'name': customer_name,  # This MUST be the customer's name from order.customer_name
             'phone': order.customer_phone,
@@ -276,7 +259,29 @@ def create_ncm_shipment(request, order_id):
             order.ncm_created_at = timezone.now()
             order.ncm_destination_branch = to_branch_name  # Store the branch name
             order.status = 'processing'
+            # A fresh NCM order restarts the parcel's lifecycle, so any manual
+            # status hold from before it was handed over no longer applies.
+            clear_manual_status_override(order)
             order.save()
+            
+            # Immediately fetch the actual status from NCM so it shows "Pickup Created"
+            status_result = active_service.get_order_status(ncm_order_id)
+            if status_result['success'] and status_result['data']:
+                latest_status_data = status_result['data'][0]
+                latest_status = latest_status_data.get('status') or latest_status_data.get('Status', '')
+                system_status, payment_status = active_service.resolve_delivered_status(latest_status_data)
+                
+                order.ncm_status = latest_status
+                update_fields = active_service.sync_order_status_fields(order, system_status, payment_status)
+                update_fields.extend(['ncm_status', 'updated_at'])
+                
+                if system_status == 'delivered' and not order.delivered_at:
+                    order.delivered_at = (
+                        parse_ncm_datetime(latest_status_data.get('added_time')) or timezone.now()
+                    )
+                    update_fields.append('delivered_at')
+
+                order.save(update_fields=list(dict.fromkeys(update_fields)))
             
             OrderActivityLog.objects.create(
                 order=order,
@@ -288,7 +293,7 @@ def create_ncm_shipment(request, order_id):
             )
             
             logger.info(f"NCM Order created: {order.order_number} -> NCM ID: {ncm_order_id}")
-            messages.success(request, f'✓ Order created in NCM! ID: {ncm_order_id}')
+            messages.success(request, f'[SUCCESS] Order created in NCM! ID: {ncm_order_id}')
         else:
             error_msg = result.get('error', 'Unknown error')
             logger.error(f"Failed to create NCM order: {error_msg}")
@@ -316,15 +321,30 @@ def sync_ncm_status(request, order_id):
     """Manually sync order status from NCM"""
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
-        
+
         if not order.ncm_order_id:
             messages.error(request, 'Order not yet in NCM')
             return redirect('order_detail', order_id=order_id)
-        
+
+        if order.status == 'cancelled':
+            messages.info(request, 'Order is cancelled; status sync skipped to avoid overwriting the cancellation')
+            return redirect('order_detail', order_id=order_id)
+
         logger.info(f"Syncing NCM Order ID: {order.ncm_order_id}")
         
-        result = ncm_service.get_order_status(order.ncm_order_id)
-        
+        # Fetch from the NCM account that owns this order. An order is only
+        # visible to the account that created it, so a missing or stale
+        # api_config_id makes NCM answer 404 - which used to read as "no
+        # status" and leave the order frozen on a status days out of date.
+        result, resolved_config_id = fetch_order_status_raw(
+            order.ncm_order_id, api_config_id=order.api_config_id
+        )
+        if resolved_config_id is not None and resolved_config_id != order.api_config_id:
+            order.api_config_id = resolved_config_id
+            Order.objects.filter(pk=order.pk).update(api_config_id=resolved_config_id)
+
+        svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
+
         if result['success'] and result['data']:
             latest_status_data = result['data'][0]
             latest_status = latest_status_data.get('status') or latest_status_data.get('Status', '')
@@ -333,18 +353,32 @@ def sync_ncm_status(request, order_id):
             old_status = order.status
             old_payment_status = order.payment_status
 
+            # NCM's own timestamp for this status, not the moment we synced.
+            event_at = parse_ncm_datetime(latest_status_data.get('added_time'))
+
+            # A status staff set by hand outranks NCM until the parcel really
+            # moves - the same guard the page-load sync and the webhook apply.
+            if manual_override_holds(order, latest_status, event_at):
+                messages.info(
+                    request,
+                    'Status was set manually and NCM still reports the same status; keeping the manual status.'
+                )
+                return redirect('order_detail', order_id=order_id)
+
             # Use resolve_delivered_status to handle vendor_return flag
-            system_status, payment_status = ncm_service.resolve_delivered_status(latest_status_data)
+            system_status, payment_status = svc.resolve_delivered_status(latest_status_data)
 
             order.ncm_status = latest_status
 
             # Update all status-related fields (status, order_status, status_setup FK, payment fields)
-            update_fields = ncm_service.sync_order_status_fields(order, system_status, payment_status)
+            update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
             update_fields.append('ncm_status')
             update_fields.append('updated_at')
+            # NCM has moved past whatever was set by hand, so retire the hold.
+            update_fields.extend(clear_manual_status_override(order))
 
             if system_status == 'delivered' and not order.delivered_at:
-                order.delivered_at = timezone.now()
+                order.delivered_at = event_at or timezone.now()
                 update_fields.append('delivered_at')
 
             # Deduplicate
@@ -358,12 +392,13 @@ def sync_ncm_status(request, order_id):
                 field_name='ncm_status',
                 old_value=old_ncm_status or 'None',
                 new_value=latest_status,
+                event_at=event_at,
                 description=f'Manual sync: {old_status} → {system_status}'
                             + (f', payment: {old_payment_status} → {payment_status}' if payment_status else '')
             )
 
             logger.info(f"Status synced: {order.order_number} -> {system_status} (NCM: {latest_status})")
-            messages.success(request, f'✓ Synced! NCM: {latest_status} | System: {system_status}'
+            messages.success(request, f'[SUCCESS] Synced! NCM: {latest_status} | System: {system_status}'
                            + (f' | Payment: {payment_status}' if payment_status else ''))
         else:
             error_msg = result.get('error', 'Unable to fetch')
@@ -490,8 +525,21 @@ def track_ncm_order(request, order_id):
             messages.error(request, 'Order not in NCM yet')
             return redirect('order_detail', order_id=order_id)
         
-        details_result = ncm_service.get_order_details(order.ncm_order_id)
-        status_result = ncm_service.get_order_status(order.ncm_order_id)
+        # Resolve the owning NCM account off the status call (see
+        # sync_ncm_status above), then read the details with the same account
+        # so the tracking page can't show a timeline without its order.
+        # Opening this page right after the order page is a common path, so
+        # a status answer fetched seconds ago is reused rather than re-asked.
+        status_result, resolved_config_id = fetch_order_status_raw(
+            order.ncm_order_id, api_config_id=order.api_config_id, use_cache=True
+        )
+        if resolved_config_id is not None and resolved_config_id != order.api_config_id:
+            order.api_config_id = resolved_config_id
+            Order.objects.filter(pk=order.pk).update(api_config_id=resolved_config_id)
+
+        svc = NCMService(api_config_id=order.api_config_id) if order.api_config_id else ncm_service
+
+        details_result = svc.get_order_details(order.ncm_order_id)
         
         context = {
             'order': order,
@@ -518,96 +566,99 @@ def bulk_sync_ncm_orders(request):
         # Check if specific order IDs were provided (selected orders)
         selected_order_ids = request.POST.getlist('order_ids')
 
-        ncm_orders = Order.objects.filter(
-            ncm_order_id__isnull=False,
-            is_deleted=False,
-        )
-
         if selected_order_ids:
-            # Sync only the selected orders
-            ncm_orders = ncm_orders.filter(id__in=selected_order_ids)
+            summary = run_bulk_ncm_status_sync(user=request.user, order_ids=selected_order_ids)
         else:
-            # Sync all active NCM orders (exclude already terminal statuses)
-            ncm_orders = ncm_orders.exclude(status__in=['cancelled'])
+            summary = run_bulk_ncm_status_sync(user=request.user)
 
-        if not ncm_orders.exists():
-            messages.info(request, 'No NCM orders to sync')
+        total_orders = summary['total_orders']
+        updated_count = summary['updated_count']
+        errors = summary['errors']
+
+        if total_orders == 0:
+            messages.info(request, 'No active NCM orders to sync')
             return redirect('orders_list')
-        
-        ncm_order_ids = list(ncm_orders.values_list('ncm_order_id', flat=True))
-        
-        result = ncm_service.get_bulk_order_statuses(ncm_order_ids)
-        
-        if result['success']:
-            status_data = result['data'].get('result', {})
-            updated_count = 0
 
-            for order in ncm_orders:
-                if str(order.ncm_order_id) in status_data:
-                    new_status_raw = status_data[str(order.ncm_order_id)]
-                    old_status = order.ncm_status
-                    old_system_status = order.status
-                    old_payment_status = order.payment_status
+        if updated_count > 0:
+            messages.success(request, f'[SUCCESS] Synced {updated_count} out of {total_orders} active orders')
+        if errors:
+            messages.warning(request, "Some batches failed: " + "; ".join(errors))
+        elif updated_count == 0 and not errors:
+            messages.info(request, f"Checked {total_orders} active orders. No statuses had changed.")
 
-                    # Bulk API returns only status string. For 'Delivered' orders,
-                    # fetch individual status to get the vendor_return flag.
-                    if isinstance(new_status_raw, str) and new_status_raw == 'Delivered':
-                        detail_result = ncm_service.get_order_status(order.ncm_order_id)
-                        if detail_result['success'] and detail_result['data']:
-                            entry = detail_result['data'][0] if isinstance(detail_result['data'], list) else detail_result['data']
-                            system_status, payment_status = ncm_service.resolve_delivered_status(entry)
-                            new_status = entry.get('status') or entry.get('Status', new_status_raw)
-                        else:
-                            system_status = ncm_service.map_ncm_status_to_system(new_status_raw)
-                            payment_status = None
-                            new_status = new_status_raw
-                    elif isinstance(new_status_raw, dict):
-                        system_status, payment_status = ncm_service.resolve_delivered_status(new_status_raw)
-                        new_status = new_status_raw.get('status') or new_status_raw.get('Status', '')
-                    else:
-                        new_status = new_status_raw
-                        system_status = ncm_service.map_ncm_status_to_system(new_status)
-                        payment_status = None
-
-                    order.ncm_status = new_status
-
-                    # Update all status-related fields (status, order_status, status_setup FK, payment fields)
-                    update_fields = ncm_service.sync_order_status_fields(order, system_status, payment_status)
-                    update_fields.append('ncm_status')
-                    update_fields.append('updated_at')
-
-                    if system_status == 'delivered' and not order.delivered_at:
-                        order.delivered_at = timezone.now()
-                        update_fields.append('delivered_at')
-
-                    # Deduplicate
-                    update_fields = list(dict.fromkeys(update_fields))
-                    order.save(update_fields=update_fields)
-
-                    OrderActivityLog.objects.create(
-                        order=order,
-                        action_type='status_changed',
-                        user=request.user,
-                        field_name='ncm_status',
-                        old_value=old_status,
-                        new_value=new_status,
-                        description=f'Bulk sync: {old_system_status} → {system_status}'
-                                    + (f', payment: {old_payment_status} → {payment_status}' if payment_status else '')
-                    )
-                    
-                    updated_count += 1
-            
-            messages.success(request, f'✓ Synced {updated_count} orders')
-            logger.info(f"Bulk sync: {updated_count} orders")
-        else:
-            messages.error(request, f'Failed: {result.get("error")}')
-        
         return redirect('orders_list')
-        
+
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         messages.error(request, f'Error: {str(e)}')
         return redirect('orders_list')
+
+
+def _may_sync_ncm(user):
+    """Permission check for the JSON sync endpoint.
+
+    Deliberately not ncm_permission_required: that answers a refusal with a
+    redirect and a queued Django message, which for an AJAX caller means an
+    unparseable HTML response now and a stray error toast on some later,
+    unrelated page. See accounts.decorators.has_any_permission.
+    """
+    return has_any_permission(user, 'can_sync_ncm_orders')
+
+
+@login_required
+@require_http_methods(["POST"])
+def bulk_sync_ncm_orders_json(request):
+    """Kick off a bulk NCM sync and answer immediately with JSON.
+
+    This is the "Sync Now" button on the Logistics Orders page. It deliberately
+    does NOT wait for the sync: a page of 25 orders can mean fifty sequential
+    NCM requests at up to `ncm_api_timeout` each, which would sit well past any
+    reverse proxy's patience. The sync runs on the scheduler's background
+    thread and the page's status poller picks the results up as they land.
+
+    Passing `order_ids` limits the run to the orders currently on screen;
+    without it, every eligible NCM order is synced.
+    """
+    from ncm.scheduler import maybe_run_bulk_sync
+
+    if not _may_sync_ncm(request.user):
+        logger.warning(
+            'Bulk sync denied for %s - missing can_sync_ncm_orders', request.user.username
+        )
+        return JsonResponse(
+            {'success': False, 'message': 'You do not have permission to sync orders.'},
+            status=403,
+        )
+
+    try:
+        order_ids = [
+            int(oid) for oid in request.POST.getlist('order_ids')
+            if str(oid).strip().isdigit()
+        ]
+
+        started, _ = maybe_run_bulk_sync(
+            force=True, order_ids=order_ids or None, user=request.user
+        )
+
+        if not started:
+            # force=True still respects the running lock, so this means a sync
+            # is already in flight - the results are coming either way.
+            return JsonResponse({
+                'success': True,
+                'started': False,
+                'message': 'A sync is already running - results will appear shortly.',
+            })
+
+        scope = f'{len(order_ids)} order(s) on this page' if order_ids else 'all active NCM orders'
+        return JsonResponse({
+            'success': True,
+            'started': True,
+            'message': f'Syncing {scope} from NCM. Statuses will update automatically.',
+        })
+
+    except Exception as e:
+        logger.exception('Error starting bulk NCM sync')
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
 
 
 def _get_package_description(order):

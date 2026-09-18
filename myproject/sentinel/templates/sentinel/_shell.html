@@ -1,0 +1,795 @@
+{% extends 'base.html' %}
+{% load static sentinel_extras %}
+
+{% comment %}
+Shared chrome for every Sentinel Vault screen: the design tokens, the header,
+the section tabs. Pages extend this and fill {% block vault_body %}.
+
+Design note — a light console that sits comfortably beside the rest of the admin,
+with a single emerald/cyan accent carrying the vault's identity. All tokens live
+in the .sv-scope block below and nothing leaks out of it, so the theme can be
+re-pointed from one place without touching any page.
+{% endcomment %}
+
+{% block title %}{{ vault_title|default:'Sentinel Vault' }} · Sentinel Vault{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   SENTINEL VAULT — design tokens (light)
+
+   Everything below is driven by the custom properties in .sv-scope, so the whole
+   console re-themes from this one block.
+
+   Tones are 700-level, not the 400-level shades a dark UI wants. Each --tone is
+   used THREE ways — as small text (chips, risk labels), as its own pale
+   background via color-mix(), and reversed as white-on-accent for primary
+   buttons and active tabs. Since contrast ratio is symmetric, one value has to
+   clear 4.5:1 against white in both directions. Every tone below does; the
+   600-level shades this started with did not (emerald was 3.77:1, so white
+   button labels on it were unreadable).
+   ═════════════════════════════════════════════════════════════════════════ */
+.sv-scope {
+    --sv-bg: #f4f6fb;
+    --sv-surface: #ffffff;
+    --sv-surface-2: #fcfdff;
+    --sv-surface-3: #f1f5f9;
+    --sv-line: rgba(15, 23, 42, .09);
+    --sv-line-strong: rgba(15, 23, 42, .17);
+
+    --sv-text: #0f172a;        /* 17.85:1 */
+    --sv-text-dim: #475569;    /*  7.58:1 */
+    --sv-text-faint: #64748b;  /*  4.76:1 */
+
+    --sv-accent: #047857;      /*  5.48:1 both directions */
+    --sv-accent-2: #0e7490;    /*  5.36:1 */
+    --sv-on-accent: #ffffff;
+
+    --sv-violet: #7c3aed;      /*  5.70:1 */
+    --sv-sky: #0369a1;
+    --sv-emerald: #047857;
+    --sv-amber: #b45309;       /*  5.02:1 */
+    --sv-rose: #e11d48;        /*  4.70:1 */
+    --sv-cyan: #0e7490;
+    --sv-indigo: #4f46e5;      /*  6.29:1 */
+    --sv-teal: #0f766e;        /*  5.47:1 */
+    --sv-slate: #475569;
+
+    --sv-radius: 16px;
+    --sv-radius-sm: 10px;
+    --sv-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 10px 28px -14px rgba(15, 23, 42, .18);
+
+    color: var(--sv-text);
+    font-feature-settings: "tnum" 1, "cv02" 1;
+}
+
+/* Break out of the dashboard's container so the console fills the frame. */
+.sv-scope {
+    background:
+        radial-gradient(1100px 520px at 12% -8%, rgba(4, 120, 87, .07), transparent 60%),
+        radial-gradient(900px 480px at 92% 4%, rgba(79, 70, 229, .07), transparent 62%),
+        var(--sv-bg);
+    margin: -1.5rem -0.75rem 0;
+    padding: 1.5rem 1.25rem 3rem;
+    min-height: calc(100vh - 70px);
+}
+
+@media (max-width: 768px) {
+    .sv-scope { margin: -1rem -0.75rem 0; padding: 1rem .85rem 2.5rem; }
+}
+
+/* ── Tone helpers ───────────────────────────────────────────────────────── */
+.sv-tone-violet  { --tone: var(--sv-violet); }
+.sv-tone-sky     { --tone: var(--sv-sky); }
+.sv-tone-emerald { --tone: var(--sv-emerald); }
+.sv-tone-amber   { --tone: var(--sv-amber); }
+.sv-tone-rose    { --tone: var(--sv-rose); }
+.sv-tone-cyan    { --tone: var(--sv-cyan); }
+.sv-tone-indigo  { --tone: var(--sv-indigo); }
+.sv-tone-teal    { --tone: var(--sv-teal); }
+.sv-tone-slate   { --tone: var(--sv-slate); }
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.sv-head {
+    display: flex; flex-wrap: wrap; gap: 1rem;
+    align-items: center; justify-content: space-between;
+    margin-bottom: 1.4rem;
+}
+.sv-brand { display: flex; align-items: center; gap: .9rem; min-width: 0; }
+.sv-brand-mark {
+    width: 50px; height: 50px; flex: none;
+    border-radius: 14px;
+    display: grid; place-items: center;
+    font-size: 1.32rem; color: var(--sv-on-accent);
+    background: linear-gradient(135deg, var(--sv-accent), var(--sv-accent-2));
+    box-shadow: 0 10px 26px -12px rgba(4, 120, 87, .8);
+}
+.sv-brand h1 {
+    font-size: 1.42rem; font-weight: 800; margin: 0;
+    letter-spacing: -.02em; line-height: 1.15; color: var(--sv-text);
+}
+.sv-brand p { margin: 2px 0 0; color: var(--sv-text-dim); font-size: .8rem; }
+
+.sv-live {
+    display: inline-flex; align-items: center; gap: .45rem;
+    font-size: .7rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--sv-emerald);
+    background: rgba(4, 120, 87, .09);
+    border: 1px solid rgba(4, 120, 87, .28);
+    padding: .3rem .65rem; border-radius: 999px;
+}
+.sv-live-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--sv-emerald);
+    animation: sv-pulse 2s infinite;
+}
+@keyframes sv-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(4, 120, 87, .55); }
+    70%  { box-shadow: 0 0 0 8px rgba(4, 120, 87, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(4, 120, 87, 0); }
+}
+
+/* ── Tabs ───────────────────────────────────────────────────────────────── */
+.sv-tabs {
+    display: flex; gap: .35rem; margin-bottom: 1.4rem;
+    padding: .35rem; border-radius: 14px;
+    background: var(--sv-surface);
+    border: 1px solid var(--sv-line);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    overflow-x: auto; scrollbar-width: thin;
+}
+.sv-tabs::-webkit-scrollbar { height: 4px; }
+.sv-tabs::-webkit-scrollbar-thumb { background: var(--sv-line-strong); border-radius: 4px; }
+.sv-tab {
+    display: inline-flex; align-items: center; gap: .5rem;
+    padding: .55rem 1rem; border-radius: 10px;
+    font-size: .84rem; font-weight: 600; white-space: nowrap;
+    color: var(--sv-text-dim); text-decoration: none;
+    transition: all .18s ease;
+}
+.sv-tab:hover { color: var(--sv-text); background: rgba(15, 23, 42, .05); }
+.sv-tab.is-active {
+    color: var(--sv-on-accent);
+    background: linear-gradient(135deg, var(--sv-accent), var(--sv-accent-2));
+    box-shadow: 0 8px 20px -12px rgba(4, 120, 87, .9);
+}
+.sv-tab .sv-tab-count {
+    font-size: .68rem; font-weight: 800;
+    background: var(--sv-rose); color: #fff;
+    padding: 1px 6px; border-radius: 999px;
+}
+.sv-tab.is-active .sv-tab-count { background: rgba(255, 255, 255, .28); color: #fff; }
+
+/* ── Panels ─────────────────────────────────────────────────────────────── */
+.sv-panel {
+    background: var(--sv-surface);
+    border: 1px solid var(--sv-line);
+    border-radius: var(--sv-radius);
+    box-shadow: var(--sv-shadow);
+    overflow: hidden;
+}
+.sv-panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: .75rem; padding: 1rem 1.15rem;
+    border-bottom: 1px solid var(--sv-line);
+    background: linear-gradient(180deg, var(--sv-surface-2), var(--sv-surface));
+}
+.sv-panel-head h2 {
+    font-size: .95rem; font-weight: 700; margin: 0; color: var(--sv-text);
+    display: flex; align-items: center; gap: .55rem;
+}
+.sv-panel-head h2 i { color: var(--sv-accent); font-size: .9rem; }
+.sv-panel-head .sv-sub { font-size: .74rem; color: var(--sv-text-faint); margin: 2px 0 0; }
+.sv-panel-body { padding: 1.15rem; }
+.sv-panel-body.is-flush { padding: 0; }
+
+/* ── Stat tiles ─────────────────────────────────────────────────────────── */
+.sv-tiles {
+    display: grid; gap: .9rem; margin-bottom: 1.4rem;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.sv-tile {
+    position: relative; overflow: hidden;
+    background: var(--sv-surface);
+    border: 1px solid var(--sv-line);
+    border-radius: var(--sv-radius);
+    box-shadow: var(--sv-shadow);
+    padding: 1.05rem 1.1rem;
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.sv-tile::before {
+    content: ''; position: absolute; inset: 0 auto 0 0; width: 3px;
+    background: var(--tone, var(--sv-accent));
+}
+.sv-tile::after {
+    content: ''; position: absolute; top: -40px; right: -40px;
+    width: 130px; height: 130px; border-radius: 50%;
+    background: var(--tone, var(--sv-accent)); opacity: .06;
+}
+.sv-tile:hover {
+    transform: translateY(-3px);
+    border-color: var(--sv-line-strong);
+    box-shadow: 0 2px 4px rgba(15, 23, 42, .05), 0 18px 36px -18px rgba(15, 23, 42, .28);
+}
+.sv-tile-label {
+    font-size: .68rem; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--sv-text-faint);
+    display: flex; align-items: center; gap: .4rem;
+}
+.sv-tile-label i { color: var(--tone, var(--sv-accent)); }
+.sv-tile-value {
+    font-size: 1.85rem; font-weight: 800; line-height: 1.1; color: var(--sv-text);
+    margin: .45rem 0 .15rem; letter-spacing: -.03em;
+}
+.sv-tile-meta { font-size: .74rem; color: var(--sv-text-dim); }
+.sv-trend { font-weight: 700; }
+.sv-trend.up { color: var(--sv-emerald); }
+.sv-trend.down { color: var(--sv-rose); }
+
+/* ── Bulk action bar ────────────────────────────────────────────────────── */
+/* Appears only once rows are ticked, so a read-only screen stays read-only
+   until the moment somebody actually selects something. */
+.sv-bulkbar {
+    display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+    padding: .6rem 1.15rem;
+    background: color-mix(in srgb, var(--sv-rose) 8%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--sv-rose) 22%, transparent);
+    font-size: .8rem;
+}
+.sv-bulkbar[hidden] { display: none; }
+
+/* ── Callout ────────────────────────────────────────────────────────────── */
+/* Used where an action is irreversible and the consequence has to be read
+   before the button is pressed, not after. */
+.sv-callout {
+    display: flex; gap: .75rem; align-items: flex-start;
+    padding: .85rem 1rem; border-radius: 12px;
+    font-size: .8rem; line-height: 1.6;
+    background: color-mix(in srgb, var(--tone, var(--sv-slate)) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tone, var(--sv-slate)) 30%, transparent);
+    color: var(--sv-text);
+}
+.sv-callout > i { color: var(--tone, var(--sv-slate)); font-size: 1rem; margin-top: .15rem; flex: none; }
+.sv-callout strong { color: var(--tone, var(--sv-text)); }
+
+/* ── Badges & chips ─────────────────────────────────────────────────────── */
+.sv-chip {
+    display: inline-flex; align-items: center; gap: .35rem;
+    font-size: .7rem; font-weight: 700; letter-spacing: .02em;
+    padding: .22rem .6rem; border-radius: 999px;
+    background: color-mix(in srgb, var(--tone, var(--sv-slate)) 11%, #fff);
+    color: var(--tone, var(--sv-slate));
+    border: 1px solid color-mix(in srgb, var(--tone, var(--sv-slate)) 28%, #fff);
+    white-space: nowrap;
+}
+.sv-risk {
+    display: inline-flex; align-items: center; gap: .4rem;
+    font-size: .72rem; font-weight: 800; white-space: nowrap;
+}
+.sv-risk-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.sv-risk-minimal  { color: var(--sv-slate); }
+.sv-risk-minimal  .sv-risk-dot { background: var(--sv-slate); }
+.sv-risk-low      { color: var(--sv-sky); }
+.sv-risk-low      .sv-risk-dot { background: var(--sv-sky); }
+.sv-risk-elevated { color: var(--sv-amber); }
+.sv-risk-elevated .sv-risk-dot { background: var(--sv-amber); }
+.sv-risk-critical { color: var(--sv-rose); }
+.sv-risk-critical .sv-risk-dot {
+    background: var(--sv-rose);
+    animation: sv-pulse-rose 1.6s infinite;
+}
+@keyframes sv-pulse-rose {
+    0%   { box-shadow: 0 0 0 0 rgba(225, 29, 72, .5); }
+    70%  { box-shadow: 0 0 0 7px rgba(225, 29, 72, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }
+}
+
+/* ── Avatars ────────────────────────────────────────────────────────────── */
+.sv-avatar {
+    width: 34px; height: 34px; flex: none; border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: .74rem; font-weight: 800; letter-spacing: .02em;
+    background: color-mix(in srgb, var(--tone, var(--sv-slate)) 13%, #fff);
+    color: var(--tone, var(--sv-slate));
+    border: 1px solid color-mix(in srgb, var(--tone, var(--sv-slate)) 30%, #fff);
+}
+.sv-avatar-sm { width: 26px; height: 26px; font-size: .62rem; border-radius: 8px; }
+.sv-avatar-lg { width: 62px; height: 62px; font-size: 1.3rem; border-radius: 18px; }
+
+/* ── Event icons ────────────────────────────────────────────────────────── */
+.sv-ev-icon {
+    width: 32px; height: 32px; flex: none; border-radius: 9px;
+    display: grid; place-items: center; font-size: .8rem;
+    background: color-mix(in srgb, var(--tone, var(--sv-slate)) 12%, #fff);
+    color: var(--tone, var(--sv-slate));
+}
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+.sv-table-wrap { overflow-x: auto; }
+.sv-table { width: 100%; border-collapse: collapse; font-size: .84rem; min-width: 720px; }
+.sv-table thead th {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--sv-surface-3);
+    font-size: .67rem; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--sv-text-faint);
+    padding: .72rem 1rem; text-align: left; white-space: nowrap;
+    border-bottom: 1px solid var(--sv-line);
+}
+.sv-table tbody td {
+    padding: .78rem 1rem; border-bottom: 1px solid rgba(15, 23, 42, .06);
+    vertical-align: middle; color: var(--sv-text);
+}
+.sv-table tbody tr { transition: background .15s ease; }
+.sv-table tbody tr:hover { background: rgba(3, 105, 161, .05); }
+.sv-table tbody tr.is-clickable { cursor: pointer; }
+.sv-table tbody tr.is-flagged { background: rgba(225, 29, 72, .045); }
+.sv-table tbody tr.is-flagged:hover { background: rgba(225, 29, 72, .085); }
+.sv-cell-dim { color: var(--sv-text-dim); font-size: .78rem; }
+.sv-cell-mono {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: .76rem; color: var(--sv-text-dim);
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.sv-btn {
+    display: inline-flex; align-items: center; gap: .45rem;
+    padding: .5rem .9rem; border-radius: 10px;
+    font-size: .8rem; font-weight: 600; text-decoration: none;
+    border: 1px solid var(--sv-line-strong);
+    background: var(--sv-surface);
+    color: var(--sv-text); cursor: pointer;
+    transition: all .18s ease; white-space: nowrap;
+}
+.sv-btn:hover {
+    background: var(--sv-surface-3); color: var(--sv-text);
+    transform: translateY(-1px); box-shadow: 0 4px 12px -6px rgba(15, 23, 42, .3);
+}
+.sv-btn-primary {
+    background: linear-gradient(135deg, var(--sv-accent), var(--sv-accent-2));
+    border-color: transparent; color: var(--sv-on-accent); font-weight: 700;
+}
+.sv-btn-primary:hover {
+    color: var(--sv-on-accent); filter: brightness(1.06);
+    background: linear-gradient(135deg, var(--sv-accent), var(--sv-accent-2));
+}
+.sv-btn-danger {
+    background: rgba(225, 29, 72, .07); border-color: rgba(225, 29, 72, .32);
+    color: var(--sv-rose);
+}
+.sv-btn-danger:hover { background: rgba(225, 29, 72, .14); color: #be123c; }
+.sv-btn-sm { padding: .34rem .65rem; font-size: .73rem; border-radius: 8px; }
+.sv-btn-icon { padding: .4rem .55rem; }
+.sv-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* Header buttons sit on the page background, not on a panel. */
+.sv-head .sv-btn { background: var(--sv-surface); }
+
+/* ── Forms ──────────────────────────────────────────────────────────────── */
+.sv-input, .sv-select, .sv-textarea {
+    width: 100%; padding: .55rem .8rem; border-radius: 10px;
+    background: var(--sv-surface);
+    border: 1px solid var(--sv-line-strong);
+    color: var(--sv-text); font-size: .84rem;
+    transition: border-color .18s ease, box-shadow .18s ease;
+}
+.sv-input:focus, .sv-select:focus, .sv-textarea:focus {
+    outline: none; border-color: var(--sv-accent);
+    box-shadow: 0 0 0 3px rgba(4, 120, 87, .14);
+}
+.sv-input::placeholder { color: var(--sv-text-faint); }
+.sv-select option { background: #fff; color: var(--sv-text); }
+.sv-label {
+    display: block; font-size: .68rem; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase;
+    color: var(--sv-text-faint); margin-bottom: .35rem;
+}
+
+/* Switches */
+.sv-switch { display: flex; align-items: flex-start; gap: .8rem; cursor: pointer; }
+.sv-switch input { display: none; }
+.sv-switch-track {
+    width: 42px; height: 24px; flex: none; border-radius: 999px; margin-top: 2px;
+    background: #e2e8f0;
+    border: 1px solid var(--sv-line-strong);
+    position: relative; transition: background .2s ease;
+}
+.sv-switch-track::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, .3);
+    transition: all .2s ease;
+}
+.sv-switch input:checked + .sv-switch-track {
+    background: linear-gradient(135deg, var(--sv-accent), var(--sv-accent-2));
+    border-color: transparent;
+}
+.sv-switch input:checked + .sv-switch-track::after { left: 21px; background: #fff; }
+.sv-switch-text strong { display: block; font-size: .84rem; font-weight: 600; color: var(--sv-text); }
+.sv-switch-text span { font-size: .74rem; color: var(--sv-text-dim); }
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+.sv-empty { text-align: center; padding: 3.5rem 1.5rem; color: var(--sv-text-faint); }
+.sv-empty i { font-size: 2.4rem; opacity: .28; display: block; margin-bottom: .9rem; }
+.sv-empty h3 { font-size: 1rem; color: var(--sv-text-dim); margin-bottom: .35rem; }
+.sv-empty p { font-size: .82rem; margin: 0; }
+
+/* ── Pagination ─────────────────────────────────────────────────────────── */
+.sv-pager {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap; padding: .95rem 1.15rem;
+    border-top: 1px solid var(--sv-line);
+    font-size: .8rem; color: var(--sv-text-dim);
+}
+.sv-pager-links { display: flex; gap: .3rem; flex-wrap: wrap; }
+.sv-pager-links a, .sv-pager-links span {
+    min-width: 34px; padding: .35rem .55rem; border-radius: 8px;
+    text-align: center; text-decoration: none;
+    color: var(--sv-text-dim); border: 1px solid var(--sv-line);
+    font-size: .78rem; font-weight: 600; background: var(--sv-surface);
+}
+.sv-pager-links a:hover { background: var(--sv-surface-3); color: var(--sv-text); }
+.sv-pager-links .is-current {
+    background: linear-gradient(135deg, var(--sv-accent), var(--sv-accent-2));
+    color: var(--sv-on-accent); border-color: transparent;
+}
+.sv-pager-links .is-disabled { opacity: .4; pointer-events: none; }
+
+/* ── Grid helpers ───────────────────────────────────────────────────────── */
+.sv-grid { display: grid; gap: 1.1rem; }
+.sv-grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.sv-grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.sv-split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1.1rem; }
+@media (max-width: 1100px) { .sv-split { grid-template-columns: 1fr; } }
+
+/* ── Bars / meters ──────────────────────────────────────────────────────── */
+.sv-bar-row { display: flex; align-items: center; gap: .8rem; padding: .5rem 0; }
+.sv-bar-label { flex: none; width: 130px; font-size: .8rem; color: var(--sv-text-dim); }
+.sv-bar-track {
+    flex: 1; height: 8px; border-radius: 999px;
+    background: rgba(15, 23, 42, .07); overflow: hidden;
+}
+.sv-bar-fill {
+    height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--tone, var(--sv-accent)),
+                color-mix(in srgb, var(--tone, var(--sv-accent)) 60%, #fff));
+    transition: width .7s cubic-bezier(.22, 1, .36, 1);
+}
+.sv-bar-value { flex: none; width: 52px; text-align: right; font-size: .8rem; font-weight: 700; }
+
+/* ── Scrollable feed ────────────────────────────────────────────────────── */
+.sv-feed { max-height: 460px; overflow-y: auto; }
+.sv-feed::-webkit-scrollbar { width: 6px; }
+.sv-feed::-webkit-scrollbar-track { background: transparent; }
+.sv-feed::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, .18); border-radius: 4px; }
+.sv-feed::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, .3); }
+.sv-feed-item {
+    display: flex; gap: .8rem; padding: .75rem 1.15rem;
+    border-bottom: 1px solid rgba(15, 23, 42, .055);
+    transition: background .15s ease;
+}
+.sv-feed-item:hover { background: rgba(3, 105, 161, .05); }
+.sv-feed-item.is-new { animation: sv-slide-in .5s ease; }
+@keyframes sv-slide-in {
+    from { opacity: 0; transform: translateX(-14px); background: rgba(4, 120, 87, .12); }
+    to   { opacity: 1; transform: none; }
+}
+.sv-feed-body { min-width: 0; flex: 1; }
+.sv-feed-title {
+    font-size: .82rem; font-weight: 600; margin: 0 0 2px; color: var(--sv-text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sv-feed-meta {
+    font-size: .72rem; color: var(--sv-text-faint);
+    display: flex; gap: .5rem; flex-wrap: wrap; align-items: center;
+}
+
+/* ── Detail drawer ──────────────────────────────────────────────────────── */
+.sv-drawer-backdrop {
+    position: fixed; inset: 0; z-index: 1080;
+    background: rgba(15, 23, 42, .38); backdrop-filter: blur(2px);
+    opacity: 0; pointer-events: none; transition: opacity .25s ease;
+}
+.sv-drawer-backdrop.is-open { opacity: 1; pointer-events: auto; }
+.sv-drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 1090;
+    width: min(560px, 100%);
+    background: var(--sv-surface);
+    border-left: 1px solid var(--sv-line-strong);
+    box-shadow: -24px 0 60px -30px rgba(15, 23, 42, .45);
+    transform: translateX(100%); transition: transform .3s cubic-bezier(.22, 1, .36, 1);
+    display: flex; flex-direction: column;
+    color: var(--sv-text);
+}
+.sv-drawer.is-open { transform: none; }
+.sv-drawer-head {
+    display: flex; align-items: flex-start; gap: .9rem;
+    padding: 1.2rem 1.3rem; border-bottom: 1px solid var(--sv-line);
+    background: linear-gradient(180deg, var(--sv-surface-2), var(--sv-surface));
+}
+.sv-drawer-head h3 { font-size: 1rem; font-weight: 700; margin: 0 0 .3rem; color: var(--sv-text); }
+.sv-drawer-close {
+    margin-left: auto; background: none; border: none;
+    color: var(--sv-text-faint); font-size: 1.1rem; cursor: pointer; padding: .2rem;
+}
+.sv-drawer-close:hover { color: var(--sv-text); }
+.sv-drawer-body { flex: 1; overflow-y: auto; padding: 1.2rem 1.3rem 2.5rem; }
+.sv-drawer-body::-webkit-scrollbar { width: 6px; }
+.sv-drawer-body::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, .18); border-radius: 4px; }
+
+.sv-dl { display: grid; grid-template-columns: 130px 1fr; gap: .55rem .9rem; font-size: .82rem; }
+.sv-dl dt { color: var(--sv-text-faint); font-weight: 600; }
+.sv-dl dd { margin: 0; word-break: break-word; color: var(--sv-text); }
+
+.sv-section-title {
+    font-size: .68rem; font-weight: 800; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--sv-text-faint);
+    margin: 1.5rem 0 .7rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--sv-line);
+}
+
+.sv-diff { display: grid; gap: .55rem; }
+.sv-diff-row {
+    background: var(--sv-surface-3); border: 1px solid var(--sv-line);
+    border-radius: 10px; padding: .65rem .8rem;
+}
+.sv-diff-field {
+    font-size: .7rem; font-weight: 700; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--sv-text-faint); margin-bottom: .4rem;
+}
+.sv-diff-values { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; font-size: .8rem; }
+.sv-diff-old {
+    color: var(--sv-rose); background: rgba(225, 29, 72, .09);
+    padding: .18rem .5rem; border-radius: 6px;
+    text-decoration: line-through; text-decoration-color: rgba(225, 29, 72, .5);
+    word-break: break-word; max-width: 100%;
+}
+.sv-diff-new {
+    color: #047857; background: rgba(4, 120, 87, .1);
+    padding: .18rem .5rem; border-radius: 6px; word-break: break-word; max-width: 100%;
+}
+.sv-null { color: var(--sv-text-faint); font-style: italic; }
+.sv-bool { font-weight: 700; }
+.sv-bool-on { color: var(--sv-emerald); }
+.sv-bool-off { color: var(--sv-rose); }
+
+.sv-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .74rem; background: var(--sv-surface-3);
+    border: 1px solid var(--sv-line); border-radius: 10px;
+    padding: .7rem .8rem; color: var(--sv-text-dim);
+    white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow-y: auto;
+}
+
+/* ── Filter bar ─────────────────────────────────────────────────────────── */
+.sv-filters { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.sv-filters .sv-filter-wide { grid-column: span 2; }
+@media (max-width: 640px) { .sv-filters .sv-filter-wide { grid-column: span 1; } }
+.sv-active-filters { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .85rem; }
+.sv-active-filters a {
+    display: inline-flex; align-items: center; gap: .35rem;
+    font-size: .72rem; padding: .22rem .55rem; border-radius: 999px;
+    background: rgba(4, 120, 87, .09); color: var(--sv-emerald);
+    border: 1px solid rgba(4, 120, 87, .28); text-decoration: none;
+}
+.sv-active-filters a:hover {
+    background: rgba(225, 29, 72, .1); color: var(--sv-rose);
+    border-color: rgba(225, 29, 72, .32);
+}
+
+/* ── Misc ───────────────────────────────────────────────────────────────── */
+.sv-hr { height: 1px; background: var(--sv-line); border: none; margin: 1.2rem 0; }
+.sv-muted { color: var(--sv-text-dim); }
+.sv-faint { color: var(--sv-text-faint); }
+.sv-nowrap { white-space: nowrap; }
+.sv-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.sv-scope code { color: var(--sv-accent); background: rgba(4, 120, 87, .08);
+                 padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+.sv-scope a { color: var(--sv-sky); }
+.sv-scope details summary { color: var(--sv-text-faint); }
+
+/* Respect reduced-motion — a security console shouldn't induce motion sickness. */
+@media (prefers-reduced-motion: reduce) {
+    .sv-scope *, .sv-drawer, .sv-bar-fill { animation: none !important; transition: none !important; }
+}
+</style>
+{% block vault_css %}{% endblock %}
+{% endblock %}
+
+{% block content %}
+<div class="sv-scope">
+
+    <header class="sv-head">
+        <div class="sv-brand">
+            <div class="sv-brand-mark"><i class="fas fa-shield-halved"></i></div>
+            <div>
+                <h1>Sentinel Vault</h1>
+                <p>{{ vault_tagline|default:'Every sign-in, every device, every change — permanently recorded.' }}</p>
+            </div>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="sv-live"><span class="sv-live-dot"></span> <span id="svClock">Live</span></span>
+            {% block vault_actions %}{% endblock %}
+        </div>
+    </header>
+
+    <nav class="sv-tabs">
+        <a class="sv-tab {% if vault_tab == 'home' %}is-active{% endif %}" href="{% url 'sentinel:home' %}">
+            <i class="fas fa-gauge-high"></i> Command Centre
+        </a>
+        <a class="sv-tab {% if vault_tab == 'stream' %}is-active{% endif %}" href="{% url 'sentinel:stream' %}">
+            <i class="fas fa-stream"></i> Activity Ledger
+        </a>
+        <a class="sv-tab {% if vault_tab == 'sessions' %}is-active{% endif %}" href="{% url 'sentinel:sessions' %}">
+            <i class="fas fa-tower-broadcast"></i> Sessions &amp; Devices
+        </a>
+        <a class="sv-tab {% if vault_tab == 'alerts' %}is-active{% endif %}" href="{% url 'sentinel:alerts' %}">
+            <i class="fas fa-triangle-exclamation"></i> Threat Console
+            <span class="sv-tab-count" id="svAlertCount" data-empty-hidden hidden></span>
+        </a>
+        <a class="sv-tab {% if vault_tab == 'people' %}is-active{% endif %}" href="{% url 'sentinel:people' %}">
+            <i class="fas fa-user-secret"></i> People Dossiers
+        </a>
+        {% if user.is_superuser or user.role == 'administrator' or user.can_configure_audit %}
+        <a class="sv-tab {% if vault_tab == 'settings' %}is-active{% endif %}" href="{% url 'sentinel:settings' %}">
+            <i class="fas fa-sliders"></i> Vault Settings
+        </a>
+        {% endif %}
+    </nav>
+
+    {% block vault_body %}{% endblock %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* Shared vault helpers. Chart.js 4.4 and Bootstrap 5.3 are already loaded by base.html. */
+/* Merged, not assigned: _drawer.html renders inside the content block, which base.html
+   emits BEFORE the extra_js block — so window.Sentinel already holds openEvent by the
+   time this runs, and a plain assignment here would wipe it. */
+window.Sentinel = Object.assign(window.Sentinel || {}, (function () {
+    /* Read the token lazily — the csrf_token tag is emitted after this script. */
+    function csrf() {
+        const field = document.querySelector('[name=csrfmiddlewaretoken]');
+        return field ? field.value : '';
+    }
+
+    function num(value) {
+        return new Intl.NumberFormat().format(value ?? 0);
+    }
+
+    /* Count-up on the stat tiles — cheap, and makes a refresh feel alive. */
+    function animateValue(el, to, duration) {
+        const from = parseFloat(el.dataset.from || '0');
+        const start = performance.now();
+        duration = duration || 700;
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            el.textContent = num(to);
+            return;
+        }
+        function step(now) {
+            const p = Math.min(1, (now - start) / duration);
+            const eased = 1 - Math.pow(1 - p, 3);
+            el.textContent = num(Math.round(from + (to - from) * eased));
+            if (p < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+    }
+
+    function initCounters(root) {
+        (root || document).querySelectorAll('[data-countup]').forEach(function (el) {
+            const target = parseFloat(el.dataset.countup);
+            el.dataset.from = '0';
+            animateValue(el, target);
+        });
+    }
+
+    /* Shared Chart.js defaults so every chart in the vault reads as one system. */
+    /* Shared Chart.js defaults so every chart in the vault reads as one system.
+       Kept in sync with the CSS tokens above — light surfaces, slate text. */
+    function chartTheme() {
+        if (!window.Chart) return;
+        Chart.defaults.color = '#475569';
+        Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+        Chart.defaults.font.size = 11;
+        Chart.defaults.plugins.legend.labels.usePointStyle = true;
+        Chart.defaults.plugins.legend.labels.boxWidth = 8;
+        Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(255,255,255,.98)';
+        Chart.defaults.plugins.tooltip.borderColor = 'rgba(15,23,42,.14)';
+        Chart.defaults.plugins.tooltip.borderWidth = 1;
+        Chart.defaults.plugins.tooltip.padding = 10;
+        Chart.defaults.plugins.tooltip.cornerRadius = 8;
+        Chart.defaults.plugins.tooltip.titleColor = '#0f172a';
+        Chart.defaults.plugins.tooltip.bodyColor = '#475569';
+        Chart.defaults.plugins.tooltip.displayColors = true;
+    }
+
+    function gridColor() { return 'rgba(15,23,42,.07)'; }
+
+    /* Single source of truth for series colours, matching the CSS tones. */
+    const palette = {
+        sky: '#0369a1', violet: '#7c3aed', emerald: '#047857', amber: '#b45309',
+        rose: '#e11d48', cyan: '#0e7490', indigo: '#4f46e5', teal: '#0f766e',
+        slate: '#64748b', surface: '#ffffff', track: 'rgba(15,23,42,.08)',
+    };
+
+    function post(url, data) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = url;
+        const token = document.createElement('input');
+        token.type = 'hidden'; token.name = 'csrfmiddlewaretoken'; token.value = csrf();
+        form.appendChild(token);
+        Object.entries(data || {}).forEach(function ([k, v]) {
+            const input = document.createElement('input');
+            input.type = 'hidden'; input.name = k; input.value = v;
+            form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    /* Escape anything interpolated into a confirm dialog. alertify renders its
+       message as HTML, and these strings carry usernames and device labels — the
+       one place in the vault where recorded data is re-rendered as markup. */
+    function esc(value) {
+        return String(value === null || value === undefined ? '' : value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function confirmThen(message, fn) {
+        if (window.alertify && alertify.confirm) {
+            alertify.confirm('Sentinel Vault', message, fn, function () {}).set('labels', {
+                ok: 'Confirm', cancel: 'Cancel'
+            });
+        } else if (window.confirm(message)) {
+            fn();
+        }
+    }
+
+    /* Live clock in the header pill. */
+    function startClock() {
+        const el = document.getElementById('svClock');
+        if (!el) return;
+        function tick() {
+            el.textContent = new Date().toLocaleTimeString('en-US', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                timeZone: 'Asia/Kathmandu'
+            });
+        }
+        tick();
+        setInterval(tick, 1000);
+    }
+
+    /* Any form marked data-confirm asks before it submits. Declaring it on the
+       form rather than wiring each button keeps every destructive action in the
+       vault behind the same dialog, including ones added later. */
+    function armConfirmForms(root) {
+        (root || document).querySelectorAll('form[data-confirm]').forEach(function (form) {
+            if (form.dataset.confirmArmed) { return; }
+            form.dataset.confirmArmed = '1';
+            form.addEventListener('submit', function (event) {
+                if (form.dataset.confirmed === '1') { return; }
+                event.preventDefault();
+                confirmThen(form.dataset.message || 'Are you sure?', function () {
+                    form.dataset.confirmed = '1';
+                    form.submit();
+                });
+            });
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        chartTheme();
+        initCounters();
+        startClock();
+        armConfirmForms();
+    });
+
+    return { num, animateValue, initCounters, chartTheme, gridColor, palette,
+             post, confirmThen, csrf, esc, armConfirmForms };
+})());
+</script>
+{% csrf_token %}
+{% block vault_js %}{% endblock %}
+{% endblock %}

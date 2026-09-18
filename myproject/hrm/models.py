@@ -1,4 +1,6 @@
 from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
+from decimal import Decimal
 from django.conf import settings
 
 
@@ -23,6 +25,17 @@ class Branch(models.Model):
     class Meta:
         verbose_name_plural = 'Branches'
         ordering = ['-created_at']
+
+    def clean(self):
+        super().clean()
+        if self.pay_period_start and self.pay_period_end:
+            if self.pay_period_end < self.pay_period_start:
+                from django.core.exceptions import ValidationError
+                raise ValidationError({'pay_period_end': 'End date must be after or equal to start date.'})
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -159,6 +172,14 @@ class Employee(models.Model):
 
     def __str__(self):
         return f"{self.full_name} ({self.employee_id})"
+
+    @property
+    def effective_attendance_policy(self):
+        """The employee's own attendance policy, falling back to the active
+        company-wide policy when none is explicitly assigned."""
+        if self.attendance_policy_id:
+            return self.attendance_policy
+        return AttendancePolicy.objects.filter(is_active=True).order_by('id').first()
 
     @staticmethod
     def generate_employee_id():
@@ -488,7 +509,12 @@ class Shift(models.Model):
     break_end_time = models.TimeField(null=True, blank=True)
     grace_period = models.PositiveIntegerField(default=15, help_text='Grace period in minutes')
     is_night_shift = models.BooleanField(default=False)
-    working_hours = models.DecimalField(max_digits=4, decimal_places=1, default=8.0)
+    working_hours = models.DecimalField(max_digits=4, decimal_places=1, default=8.0, validators=[MinValueValidator(0), MaxValueValidator(24)])
+    half_day_hours = models.DecimalField(
+        max_digits=4, decimal_places=2, default=4.0,
+        help_text='Fallback Half Day threshold for this shift, only used when the employee has '
+                   'no effective Attendance Policy (see Attendance Policies for the primary setting).'
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -513,7 +539,16 @@ class AttendancePolicy(models.Model):
     late_mark_after = models.PositiveIntegerField(default=15, help_text='Minutes after shift start to mark as late')
     early_departure_grace = models.PositiveIntegerField(default=15, help_text='Minutes before shift end allowed to leave early')
     overtime_rate = models.DecimalField(max_digits=8, decimal_places=2, default=0.00, help_text='Overtime rate per hour')
-    half_day_hours = models.DecimalField(max_digits=4, decimal_places=2, default=4.0)
+    absent_threshold_hours = models.DecimalField(
+        max_digits=4, decimal_places=2, default=2.0,
+        help_text='Worked hours at or below this count as Absent, even when both clock in and '
+                   'clock out were recorded.'
+    )
+    half_day_threshold_hours = models.DecimalField(
+        max_digits=4, decimal_places=2, default=4.0,
+        help_text='Worked hours at or below this (and above the Absent threshold) count as Half '
+                   'Day. Anything above it counts as a Full Day.'
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -534,6 +569,7 @@ class AttendanceRecord(models.Model):
         ('late', 'Late'),
         ('half_day', 'Half Day'),
         ('on_leave', 'On Leave'),
+        ('incomplete', 'Incomplete Punch'),
     ]
 
     employee = models.ForeignKey(
@@ -546,12 +582,36 @@ class AttendanceRecord(models.Model):
         'Shift', on_delete=models.SET_NULL, null=True, blank=True, related_name='attendance_records'
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='present')
-    working_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    overtime_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    working_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0), MaxValueValidator(24)])
+    overtime_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0), MaxValueValidator(24)])
     is_holiday = models.BooleanField(default=False)
     notes = models.TextField(blank=True, default='')
     is_early_departure = models.BooleanField(default=False)
     is_late_arrival = models.BooleanField(default=False)
+    is_regularized = models.BooleanField(
+        default=False,
+        help_text='Set when clock in/out was manually corrected (regularization approval or '
+                   'Fix Attendance). The biometric auto-sync will not overwrite these fields.'
+    )
+    # Denormalized "latest fix" snapshot — lets list/table views show who
+    # last touched this record and why without joining fix_logs every row.
+    # Full history still lives in AttendanceFixLog.
+    last_fix_remarks = models.TextField(blank=True, default='')
+    last_fixed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='attendance_last_fixes'
+    )
+    last_fixed_at = models.DateTimeField(null=True, blank=True)
+    # Soft-delete (Attendance Adjustments trash). Kept out of the unique
+    # constraint deliberately — a trashed row still occupies its
+    # (employee, date) slot so a fresh biometric sync for that same day
+    # revives it (see _sync_biometric_to_attendance) instead of colliding.
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='attendance_records_deleted'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -563,6 +623,122 @@ class AttendanceRecord(models.Model):
 
     def __str__(self):
         return f"{self.employee.full_name} - {self.date}"
+
+    @property
+    def is_incomplete_punch(self):
+        """True when clock-in or clock-out is missing but was expected —
+        excludes Absent/On Leave days, where no punch is normal, not an error."""
+        if self.status in ('absent', 'on_leave'):
+            return False
+        return not (self.clock_in and self.clock_out)
+
+    def soft_delete(self, deleted_by_user=None):
+        from django.utils import timezone
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.deleted_by = deleted_by_user
+        self.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by'])
+
+    def restore(self):
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by = None
+        self.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by'])
+
+
+class AttendanceFixLog(models.Model):
+    """Audit trail for manual corrections made via 'Fix Attendance' — one
+    entry per save, so a record fixed multiple times keeps its full history
+    even though AttendanceRecord itself only keeps the latest snapshot."""
+    attendance_record = models.ForeignKey(
+        AttendanceRecord, on_delete=models.CASCADE, related_name='fix_logs'
+    )
+    old_clock_in = models.TimeField(null=True, blank=True)
+    old_clock_out = models.TimeField(null=True, blank=True)
+    new_clock_in = models.TimeField(null=True, blank=True)
+    new_clock_out = models.TimeField(null=True, blank=True)
+    remarks = models.TextField(blank=True, default='')
+    fixed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='attendance_fix_logs'
+    )
+    fixed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-fixed_at']
+        verbose_name = 'Attendance Fix Log'
+        verbose_name_plural = 'Attendance Fix Logs'
+
+    def __str__(self):
+        return f"Fix on {self.attendance_record} by {self.fixed_by} at {self.fixed_at}"
+
+
+class AttendanceAlertSettings(models.Model):
+    """Singleton controlling how often the site-wide Incomplete Attendance
+    alert toast (shown to permitted users on every page) re-appears."""
+
+    MODE_CHOICES = [
+        ('session', 'Once per Browser Session'),
+        ('refresh', 'Every Page Load / Refresh'),
+        ('interval', 'Custom Time Interval'),
+    ]
+
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='refresh')
+    interval_minutes = models.PositiveIntegerField(
+        default=60, help_text='Used only when mode is "Custom Time Interval". Minutes between re-shown alerts.'
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Attendance Alert Settings'
+        verbose_name_plural = 'Attendance Alert Settings'
+
+    def __str__(self):
+        return f'Attendance Alert Settings ({self.get_mode_display()})'
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('ctx_inc_att_alert_settings')
+
+
+class AttendanceSyncSettings(models.Model):
+    """Singleton controlling how often raw biometric punches (BiometricAttendance)
+    are automatically re-aggregated into AttendanceRecord rows — a real data
+    "pull", separate from AttendanceAlertSettings above, which only controls
+    how often the incomplete-attendance toast re-announces an existing backlog.
+    There's no Celery Beat in this project, so this is driven opportunistically:
+    the global 60s incomplete-attendance poll (present on every page) checks
+    this singleton and triggers a sync once the configured interval has
+    elapsed — see _maybe_auto_sync_attendance() in hrm/views.py."""
+
+    interval_minutes = models.PositiveIntegerField(
+        default=720, help_text='How often (in minutes) to automatically re-sync biometric attendance data. Default 720 = 12 hours.'
+    )
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Attendance Sync Settings'
+        verbose_name_plural = 'Attendance Sync Settings'
+
+    def __str__(self):
+        return f'Attendance Sync Settings (every {self.interval_minutes} min)'
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)
 
 
 class AttendanceRegularization(models.Model):
@@ -587,6 +763,11 @@ class AttendanceRegularization(models.Model):
     approved_by = models.ForeignKey(
         Employee, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='approved_regularizations'
+    )
+    pre_regularization_state = models.JSONField(
+        default=dict, blank=True,
+        help_text='Attendance record values captured before this request was '
+                  'applied, so rejecting or deleting it can restore them'
     )
     is_draft = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -655,6 +836,13 @@ class ZKDevice(models.Model):
     transaction_count = models.PositiveIntegerField(default=0)
     user_count = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Set when an admin clicks "Sync Device"; the next ADMS heartbeat from this
+    # serial reads it, pushes a historical DATA QUERY ATTLOG to the device and
+    # clears it. Deliberately a DB column rather than a cache key: the default
+    # cache backend is per-process LocMemCache, so a flag set by the web worker
+    # handling the admin click would be invisible to whichever worker happens
+    # to serve the device's heartbeat.
+    force_resync_requested_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-last_seen']
@@ -693,6 +881,47 @@ class BiometricAttendance(models.Model):
 
     def __str__(self):
         return f"PIN {self.pin} @ {self.timestamp}"
+
+
+# ==================== Holiday Management ====================
+
+class Holiday(models.Model):
+    HOLIDAY_TYPE_CHOICES = [
+        ('public', 'Public Holiday'),
+        ('national', 'National Holiday'),
+        ('religious', 'Religious Holiday'),
+        ('company', 'Company Holiday'),
+        ('other', 'Other'),
+    ]
+
+    name = models.CharField(max_length=200)
+    holiday_type = models.CharField(max_length=20, choices=HOLIDAY_TYPE_CHOICES, default='public')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    description = models.TextField(blank=True, default='')
+    apply_for_all = models.BooleanField(default=True, help_text='Auto-apply this holiday to all active employees')
+    is_paid = models.BooleanField(default=True, help_text='Whether this holiday is a paid day')
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='created_holidays'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-start_date']
+        verbose_name = 'Holiday'
+        verbose_name_plural = 'Holidays'
+
+    def __str__(self):
+        return f"{self.name} ({self.start_date} to {self.end_date})"
+
+    @property
+    def total_days(self):
+        if self.start_date and self.end_date:
+            return (self.end_date - self.start_date).days + 1
+        return 0
 
 
 # ==================== Payroll Models ====================
@@ -789,6 +1018,52 @@ class PayrollRun(models.Model):
         return f"{self.title} - {self.get_status_display()}"
 
 
+class PayrollSetting(models.Model):
+    """
+    Singleton configuration table for payroll calculation behaviour.
+    Access via PayrollSetting.get_settings() — never instantiate directly.
+    """
+    DIVISOR_CHOICES = [
+        ('FIXED_30', 'Fixed 30 days (always divide by 30)'),
+        ('ACTUAL_CYCLE_DAYS', 'Actual cycle days (calendar days in pay period)'),
+    ]
+    salary_divisor_type = models.CharField(
+        max_length=20, choices=DIVISOR_CHOICES, default='FIXED_30',
+        help_text='Denominator used for DailyRate = MonthlySalary / Divisor'
+    )
+    weekend_multiplier = models.DecimalField(
+        max_digits=4, decimal_places=2, default=1.00,
+        help_text='Pay multiplier for days worked on weekends (1=regular, 1.5=time-and-half, 2=double)'
+    )
+    holiday_multiplier = models.DecimalField(
+        max_digits=4, decimal_places=2, default=1.00,
+        help_text='Pay multiplier for days worked on public holidays'
+    )
+    ot_multiplier = models.DecimalField(
+        max_digits=4, decimal_places=2, default=1.50,
+        validators=[MinValueValidator(Decimal('1.50'))],
+        help_text='OT pay multiplier per hour (Nepal Labor Act 2074 default: 1.5x)'
+    )
+    shift_hours_per_day = models.DecimalField(
+        max_digits=4, decimal_places=2, default=8.00,
+        help_text='Standard working hours per day — used to derive HourlyRate from DailyRate'
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Payroll Setting'
+        verbose_name_plural = 'Payroll Settings'
+
+    def __str__(self):
+        return f'Payroll Settings (Divisor: {self.get_salary_divisor_type_display()})'
+
+    @classmethod
+    def get_settings(cls):
+        """Return the singleton settings row, creating it with defaults if absent."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class Payslip(models.Model):
     STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -799,6 +1074,8 @@ class Payslip(models.Model):
     payslip_number = models.CharField(max_length=50, unique=True, blank=True)
     payroll_run = models.ForeignKey(PayrollRun, on_delete=models.CASCADE, related_name='payslips')
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='payslips')
+    basic_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text='Snapshot of basic salary at generation')
+    salary_structure = models.JSONField(default=dict, blank=True, help_text='Snapshot of earnings/deductions used in calculation')
     gross_salary = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_deductions = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     advance_deduction = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text='Advance payment deduction for this pay period')
@@ -807,6 +1084,25 @@ class Payslip(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     paid_date = models.DateField(null=True, blank=True)
     generated_on = models.DateField(null=True, blank=True)
+    # Manual adjustment / finalization
+    notes = models.TextField(blank=True, null=True, help_text='Notes and internal calculation data')
+    is_finalized = models.BooleanField(default=False, help_text='Finalized slips are protected from auto-regeneration')
+    finalized_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='finalized_payslips'
+    )
+    finalized_at = models.DateTimeField(null=True, blank=True)
+    # Soft-delete (Payslip trash). A trashed payslip still occupies its
+    # (payroll_run, employee) slot so "Generate Payslips" won't silently
+    # create a duplicate for someone whose slip is sitting in the trash --
+    # restore or permanently delete it first. Mirrors AttendanceRecord's
+    # soft-delete pattern (see AttendanceRecord.soft_delete/restore).
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='payslips_deleted'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -815,6 +1111,19 @@ class Payslip(models.Model):
         unique_together = ['payroll_run', 'employee']
         verbose_name = 'Payslip'
         verbose_name_plural = 'Payslips'
+
+    def soft_delete(self, deleted_by_user=None):
+        from django.utils import timezone
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.deleted_by = deleted_by_user
+        self.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by', 'updated_at'])
+
+    def restore(self):
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by = None
+        self.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by', 'updated_at'])
 
     def save(self, *args, **kwargs):
         if not self.payslip_number:
@@ -972,7 +1281,7 @@ class AdvancePayment(models.Model):
     employee = models.ForeignKey(
         Employee, on_delete=models.CASCADE, related_name='advance_payments'
     )
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     payment_date = models.DateField(null=True, blank=True)
     reason = models.TextField()
     repayment_mode = models.CharField(
@@ -1021,6 +1330,131 @@ class AdvancePayment(models.Model):
         super().save(*args, **kwargs)
 
 
+# ==================== Bonus Management ====================
+
+class Bonus(models.Model):
+    BONUS_TYPE_CHOICES = [
+        ('performance', 'Performance Bonus'),
+        ('festival', 'Festival Bonus'),
+        ('monthly', 'Monthly Bonus'),
+        ('incentive', 'Incentive'),
+        ('target', 'Target Bonus'),
+        ('other', 'Other'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('paid', 'Paid'),
+    ]
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='bonuses')
+    bonus_type = models.CharField(max_length=20, choices=BONUS_TYPE_CHOICES, default='other')
+    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+    month = models.PositiveSmallIntegerField(help_text='Payroll month (1-12)')
+    year = models.PositiveSmallIntegerField(help_text='Payroll year')
+    remarks = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='pending')
+    apply_for_all = models.BooleanField(default=False, help_text='Apply this bonus to all active employees')
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='approved_bonuses'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='created_bonuses'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-year', '-month', 'employee__full_name']
+        verbose_name = 'Bonus'
+        verbose_name_plural = 'Bonuses'
+
+    def __str__(self):
+        import calendar
+        month_name = calendar.month_name[self.month] if 1 <= self.month <= 12 else str(self.month)
+        return f"{self.employee.full_name} — {self.get_bonus_type_display()} ({month_name} {self.year}) Rs.{self.amount}"
+
+
+# ==================== Payslip Manual Adjustments ====================
+
+class PayslipAdjustment(models.Model):
+    ADJUSTMENT_TYPE_CHOICES = [
+        ('earning', 'Earning'),
+        ('deduction', 'Deduction'),
+    ]
+    CATEGORY_CHOICES = [
+        ('bonus', 'Bonus'),
+        ('incentive', 'Incentive'),
+        ('arrears', 'Arrears'),
+        ('penalty', 'Penalty'),
+        ('adjustment', 'Adjustment'),
+        ('other', 'Other'),
+    ]
+
+    payslip = models.ForeignKey('Payslip', on_delete=models.CASCADE, related_name='adjustments')
+    adjustment_type = models.CharField(max_length=15, choices=ADJUSTMENT_TYPE_CHOICES)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='adjustment')
+    description = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+    reason = models.TextField(blank=True, default='')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='payslip_adjustments'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['adjustment_type', 'created_at']
+        verbose_name = 'Payslip Adjustment'
+        verbose_name_plural = 'Payslip Adjustments'
+
+    def __str__(self):
+        return f"{self.get_adjustment_type_display()} — {self.description} (Rs.{self.amount})"
+
+
+class PayslipAuditLog(models.Model):
+    payslip = models.ForeignKey('Payslip', on_delete=models.CASCADE, related_name='audit_logs')
+    action = models.CharField(max_length=150)
+    detail = models.TextField(blank=True, default='')
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='payslip_audit_logs'
+    )
+    performed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-performed_at']
+        verbose_name = 'Payslip Audit Log'
+        verbose_name_plural = 'Payslip Audit Logs'
+
+    def __str__(self):
+        return f"{self.payslip} — {self.action}"
+
+
+
+class HRMAuditLog(models.Model):
+    model_name = models.CharField(max_length=50)
+    record_id = models.PositiveIntegerField()
+    action = models.CharField(max_length=50)
+    changes = models.JSONField(default=dict, blank=True)
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    performed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-performed_at']
+        verbose_name = 'HRM Audit Log'
+        verbose_name_plural = 'HRM Audit Logs'
+
+    def __str__(self):
+        return f"{self.model_name} {self.record_id} - {self.action}"
+
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db.models import Sum
@@ -1033,21 +1467,46 @@ def update_leave_balance_used_days(sender, instance, **kwargs):
     
     # Also ensure a balance exists for the current request's year and leave type
     if instance.leave_type and instance.start_date:
+        allocated = instance.leave_type.max_days_per_year if instance.leave_type.max_days_per_year and instance.leave_type.max_days_per_year > 0 else 0
         LeaveBalance.objects.get_or_create(
             employee=instance.employee,
             leave_type=instance.leave_type,
-            year=instance.start_date.year
+            year=instance.start_date.year,
+            defaults={'allocated_days': allocated, 'used_days': 0, 'carry_forward_days': 0}
         )
 
     # Recalculate for all balances of this employee to handle changes in year/type
     for balance in LeaveBalance.objects.filter(employee=instance.employee):
+        # No start_date upper bound: leave booked for a future date still
+        # consumes the balance. Stopping the count at "today" meant a booked
+        # future leave looked unused, so an employee could keep booking past
+        # their entitlement and only go negative once the dates arrived.
         used = LeaveRequest.objects.filter(
             employee=balance.employee,
             leave_type=balance.leave_type,
             start_date__year=balance.year,
-            status='approved'
+            status__in=['approved', 'pending']
         ).aggregate(total=Sum('days'))['total'] or 0
         
         if balance.used_days != used:
             balance.used_days = used
             balance.save()
+
+@receiver(post_save, sender=AttendanceRecord)
+@receiver(post_delete, sender=AttendanceRecord)
+@receiver(post_save, sender=EmployeeSalary)
+@receiver(post_delete, sender=EmployeeSalary)
+def log_hrm_changes(sender, instance, created=False, **kwargs):
+    action = 'deleted'
+    changes = {}
+    if kwargs.get('signal') == post_save:
+        action = 'created' if created else 'updated'
+        # Basic serialization of fields could be done here, but we just log the action for now.
+        changes = {'info': f"{sender.__name__} {action}"}
+    
+    HRMAuditLog.objects.create(
+        model_name=sender.__name__,
+        record_id=instance.pk or 0,
+        action=action,
+        changes=changes
+    )

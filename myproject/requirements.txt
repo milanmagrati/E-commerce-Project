@@ -14,13 +14,13 @@ urllib3==2.6.3
 djangorestframework==3.17.1
 mysqlclient==2.2.8
 celery
-
-# Optional: SMS Service Providers (install as needed)
-# For Twilio SMS:
+gspread>=6.0
+google-auth>=2.0
+google-auth-httplib2
+google-api-python-client
 twilio>=9.0.0
 
-# For Sparrow SMS (Nepal):
-# Use requests (already installed)
+# AI Model Routing Engine (Multi-Model: OpenAI GPT-4o + Google Gemini Flash)
+openai>=1.0.0
+google-generativeai>=0.8.0
 
-# For Atuha SMS (Nepal):
-# Use requests (already installed)

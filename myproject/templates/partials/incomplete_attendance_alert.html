@@ -1,0 +1,796 @@
+<!-- ════════════════════════════════════════════════════════════════
+     Global Incomplete Attendance Alert
+     Included from base.html so it appears on every admin page (not just
+     HRM > Attendance Policies). Fully self-contained: its own toast, its
+     own review/fix modal, its own fix-history modal, and (for
+     admins/superusers) an Alert Settings modal to control how often the
+     toast re-appears — once per browser session, on every page
+     load/refresh, or after a custom time interval.
+     ════════════════════════════════════════════════════════════════ -->
+
+<!-- Toast -->
+<div id="iaToast" class="ia-toast" style="display:none;">
+    <div class="ia-toast-inner" id="iaToastInner">
+        <div class="ia-toast-icon"><i class="fas fa-triangle-exclamation"></i></div>
+        <div class="ia-toast-body">
+            <div class="ia-toast-title">Incomplete Attendance</div>
+            <div class="ia-toast-msg" id="iaToastMsg"></div>
+        </div>
+        <button type="button" class="ia-toast-close" id="iaToastCloseBtn">&times;</button>
+        <div class="ia-toast-progress"><div class="ia-toast-progress-bar" id="iaToastProgress"></div></div>
+    </div>
+</div>
+
+<!-- Review & Fix Modal -->
+<div class="modal fade" id="incAttModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="ia-modal-header">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="ia-modal-header-icon"><i class="fas fa-triangle-exclamation"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6">Incomplete Attendance</div>
+                        <div class="text-white-50 small">Records missing a clock-in or clock-out &mdash; fix them here</div>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <a href="{% url 'hrm:attendance_adjustments' %}" class="btn btn-sm ia-settings-btn" title="Open the full Attendance Adjustments page — every incomplete and previously-fixed record, editing, and trash">
+                        <i class="fas fa-up-right-from-square"></i>
+                    </a>
+                    {% if user.is_superuser or user.role == 'administrator' %}
+                    <button type="button" class="btn btn-sm ia-settings-btn" title="Alert Settings" onclick="IncAttAlert.openSettings()">
+                        <i class="fas fa-gear"></i>
+                    </button>
+                    {% endif %}
+                    <button type="button" class="btn-close btn-close-white" onclick="IncAttAlert.getModal('incAttModal').hide()"></button>
+                </div>
+            </div>
+
+            <div class="modal-body p-3">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <span class="text-muted small fw-semibold">Range:</span>
+                    <div class="btn-group btn-group-sm" role="group" id="incAttRangeGroup" aria-label="Date range">
+                        <button type="button" class="btn btn-outline-secondary" data-range="today" onclick="IncAttAlert.selectRange('today')">Today</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="7" onclick="IncAttAlert.selectRange('7')">Last 7 Days</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="15" onclick="IncAttAlert.selectRange('15')">Last 15 Days</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="all" onclick="IncAttAlert.selectRange('all')">All Time</button>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                    <div class="input-group" style="max-width:220px;">
+                        <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-search fa-sm"></i></span>
+                        <input type="text" class="form-control border-start-0 ps-0" id="incAttSearch" placeholder="Search employee..." style="box-shadow:none;" onkeydown="if(event.key==='Enter'){IncAttAlert.applyFilters();}">
+                    </div>
+                    <input type="date" class="form-control" id="incAttDateFrom" style="max-width:158px;" title="From date" onchange="IncAttAlert.setActiveRangeBtn(null)">
+                    <span class="text-muted small">to</span>
+                    <input type="date" class="form-control" id="incAttDateTo" style="max-width:158px;" title="To date" onchange="IncAttAlert.setActiveRangeBtn(null)">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="IncAttAlert.setActiveRangeBtn(null); IncAttAlert.applyFilters();"><i class="fas fa-filter me-1"></i>Apply</button>
+                    <button class="btn btn-outline-secondary btn-sm" title="Reset filters" onclick="IncAttAlert.resetFilters()"><i class="fas fa-rotate-left"></i></button>
+                    <div class="ms-auto text-muted small" id="incAttCountLabel"></div>
+                </div>
+
+                <div id="incAttLoading" class="text-center py-5">
+                    <div class="spinner-border text-warning" role="status"></div>
+                </div>
+                <div id="incAttEmpty" class="text-center py-5 text-muted" style="display:none;">
+                    <i class="fas fa-circle-check fa-3x mb-3 d-block" style="color:#a7f3d0;"></i>
+                    No incomplete attendance records found.
+                </div>
+                <div class="table-responsive" id="incAttTableWrap" style="display:none;">
+                    <table class="table table-hover align-middle mb-0" id="incAttTable">
+                        <thead>
+                            <tr class="text-muted text-uppercase" style="letter-spacing:.03em;">
+                                <th>Employee</th>
+                                <th>Department</th>
+                                <th>Date</th>
+                                <th>Clock In</th>
+                                <th>Clock Out</th>
+                                <th>Flag</th>
+                                <th style="min-width:160px;">Remarks</th>
+                                <th style="min-width:130px;">Modified By</th>
+                                <th style="width:130px;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="incAttTbody"></tbody>
+                    </table>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mt-3" id="incAttPagination" style="display:none;">
+                    <small class="text-muted" id="incAttPageInfo"></small>
+                    <div class="d-flex gap-1">
+                        <button class="btn btn-sm btn-outline-secondary" id="incAttPrevBtn" onclick="IncAttAlert.goPage(-1)"><i class="fas fa-chevron-left"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" id="incAttNextBtn" onclick="IncAttAlert.goPage(1)"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button class="btn btn-outline-secondary px-4" onclick="IncAttAlert.getModal('incAttModal').hide()">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Fix History Modal -->
+<div class="modal fade" id="incAttLogsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="ia-modal-header" style="background:linear-gradient(135deg,#334155,#64748b);">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="ia-modal-header-icon"><i class="fas fa-clock-rotate-left"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6" id="incAttLogsTitle">Fix History</div>
+                        <div class="text-white-50 small" id="incAttLogsSubtitle">All corrections made to this record</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="IncAttAlert.getModal('incAttLogsModal').hide()"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div id="incAttLogsLoading" class="text-center py-5">
+                    <div class="spinner-border text-secondary" role="status"></div>
+                </div>
+                <div id="incAttLogsEmpty" class="text-center py-5 text-muted" style="display:none;">
+                    <i class="fas fa-inbox fa-3x mb-3 d-block" style="color:#cbd5e1;"></i>
+                    No fixes have been logged for this record yet.
+                </div>
+                <div id="incAttLogsError" class="text-center py-5 text-danger" style="display:none;"></div>
+                <div id="incAttLogsList" style="display:none;"></div>
+            </div>
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button class="btn btn-outline-secondary px-4" onclick="IncAttAlert.getModal('incAttLogsModal').hide()">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if user.is_superuser or user.role == 'administrator' %}
+<!-- Alert Settings Modal (admin/superuser only) -->
+<div class="modal fade" id="incAttSettingsModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:460px;">
+        <div class="modal-content border-0 shadow-lg overflow-hidden">
+            <div class="ia-modal-header" style="background:linear-gradient(135deg,#1a7a4a,#28a745);">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="ia-modal-header-icon"><i class="fas fa-gear"></i></div>
+                    <div>
+                        <div class="fw-bold text-white fs-6">Alert Settings</div>
+                        <div class="text-white-50 small">How often should this alert re-appear?</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="IncAttAlert.getModal('incAttSettingsModal').hide()"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="ia-settings-option">
+                    <label class="ia-settings-radio">
+                        <input type="radio" name="iaAlertMode" value="session">
+                        <div>
+                            <div class="fw-semibold">Once per Browser Session</div>
+                            <div class="text-muted small">Show this backlog's toast once per tab, then stay quiet about it. A newly added incomplete record still shows up right away.</div>
+                        </div>
+                    </label>
+                </div>
+                <div class="ia-settings-option">
+                    <label class="ia-settings-radio">
+                        <input type="radio" name="iaAlertMode" value="refresh">
+                        <div>
+                            <div class="fw-semibold">Every Page Load / Refresh</div>
+                            <div class="text-muted small">Show the toast on every page you open or refresh while records are incomplete.</div>
+                        </div>
+                    </label>
+                </div>
+                <div class="ia-settings-option">
+                    <label class="ia-settings-radio">
+                        <input type="radio" name="iaAlertMode" value="interval">
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold">Custom Time Interval</div>
+                            <div class="text-muted small mb-2">Re-show this backlog's toast at most once every</div>
+                            <div class="input-group input-group-sm" style="max-width:160px;" onclick="event.preventDefault()">
+                                <input type="number" class="form-control" id="iaIntervalMinutes" min="1" max="1440" value="60">
+                                <span class="input-group-text">minutes</span>
+                            </div>
+                            <div class="text-muted" style="font-size:.72rem;margin-top:.35rem;">A newly added incomplete record still shows up right away.</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer border-top bg-light px-4 py-3">
+                <button type="button" class="btn btn-outline-secondary px-4" onclick="IncAttAlert.getModal('incAttSettingsModal').hide()">Cancel</button>
+                <button type="button" class="btn btn-success px-4" id="iaSettingsSaveBtn" onclick="IncAttAlert.saveSettings()">
+                    <span id="iaSettingsSaveNormal"><i class="fas fa-save me-1"></i>Save</span>
+                    <span id="iaSettingsSaveLoading" class="d-none"><span class="spinner-border spinner-border-sm me-1"></span>Saving...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Settings save feedback toast (bottom-right) -->
+<div id="iaSettingsToast" class="ia-settings-toast" style="display:none;"></div>
+{% endif %}
+
+<style>
+    /* ── Global Incomplete Attendance: Toast ── */
+    .ia-toast { position:fixed; top:24px; right:24px; z-index:9999; animation:iaToastSlideIn .4s cubic-bezier(.21,1.02,.73,1); cursor:pointer; }
+    .ia-toast-inner {
+        min-width:340px; max-width:420px; background:#fff; border-radius:14px;
+        box-shadow:0 12px 40px rgba(0,0,0,.15),0 4px 12px rgba(0,0,0,.08);
+        overflow:hidden; display:flex; align-items:center; gap:14px;
+        padding:16px 18px 16px 16px; position:relative;
+        border:1.5px solid #fed7aa;
+    }
+    .ia-toast-icon {
+        width:42px; height:42px; border-radius:50%; flex-shrink:0;
+        display:flex; align-items:center; justify-content:center; font-size:1.15rem;
+        background:linear-gradient(135deg,#ffedd5,#fed7aa); color:#c2410c;
+    }
+    .ia-toast-body { flex:1; min-width:0; }
+    .ia-toast-title { font-size:.82rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; color:#9a3412; }
+    .ia-toast-msg { font-size:.85rem; color:#374151; line-height:1.4; }
+    .ia-toast-close { background:none; border:none; font-size:1.4rem; color:#9ca3af; cursor:pointer; line-height:1; padding:0; margin-left:4px; align-self:flex-start; }
+    .ia-toast-close:hover { color:#374151; }
+    .ia-toast-progress { position:absolute; bottom:0; left:0; right:0; height:3px; background:#f3f4f6; border-radius:0 0 14px 14px; overflow:hidden; }
+    .ia-toast-progress-bar { height:100%; width:100%; border-radius:0 0 14px 14px; background:linear-gradient(90deg,#ea580c,#fb923c); animation:iaToastCountdown 6s linear forwards; }
+    @keyframes iaToastSlideIn  { from{opacity:0;transform:translateX(60px) scale(.95)} to{opacity:1;transform:translateX(0) scale(1)} }
+    @keyframes iaToastSlideOut { from{opacity:1;transform:translateX(0) scale(1)} to{opacity:0;transform:translateX(60px) scale(.95)} }
+    @keyframes iaToastCountdown { from{width:100%} to{width:0%} }
+
+    /* ── Alert Settings save feedback toast (bottom-right) ── */
+    .ia-settings-toast {
+        position:fixed; bottom:24px; right:24px; z-index:10000;
+        min-width:260px; max-width:380px; background:#fff; border-radius:12px;
+        box-shadow:0 12px 32px rgba(0,0,0,.18),0 4px 10px rgba(0,0,0,.08);
+        padding:12px 16px; display:flex; align-items:center; gap:10px;
+        font-size:.85rem; font-weight:600;
+        animation:iaSettingsToastSlideIn .3s ease;
+    }
+    .ia-settings-toast.ia-settings-toast-success { border:1.5px solid #a7f3d0; color:#065f46; }
+    .ia-settings-toast.ia-settings-toast-success i { color:#059669; }
+    .ia-settings-toast.ia-settings-toast-danger { border:1.5px solid #fecaca; color:#991b1b; }
+    .ia-settings-toast.ia-settings-toast-danger i { color:#dc2626; }
+    @keyframes iaSettingsToastSlideIn  { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes iaSettingsToastSlideOut { from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(16px)} }
+
+    /* ── Modal chrome ── */
+    .ia-modal-header {
+        background: linear-gradient(135deg,#c2410c,#f97316);
+        padding: 1.2rem 1.5rem;
+        display: flex; align-items: center; justify-content: space-between;
+    }
+    .ia-modal-header-icon {
+        width: 46px; height: 46px; border-radius: 12px;
+        background: rgba(255,255,255,.2);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.2rem; color: #fff; flex-shrink: 0;
+    }
+    .ia-settings-btn { background:rgba(255,255,255,.18); border:none; color:#fff; width:34px; height:34px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+    .ia-settings-btn:hover { background:rgba(255,255,255,.3); color:#fff; }
+
+    /* ── Incomplete Attendance table ── */
+    .ia-tr { box-shadow: inset 3px 0 0 #f97316; background:#fffaf5; }
+    .ia-tr:hover { background:#fff3e6; }
+    .ia-fix-row td { border-top:none; }
+    #incAttTable th { font-size:.7rem; font-weight:700; padding-bottom:.6rem; }
+    #incAttTable td { font-size:.85rem; vertical-align:middle; }
+    .ia-remarks {
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        overflow: hidden; max-width: 220px; font-size: .8rem; color: #44403c; cursor: help;
+    }
+
+    /* ── Fix Logs ── */
+    .ia-log-entry { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: #f8fafc; }
+    .ia-log-entry:last-child { margin-bottom: 0; }
+    .ia-log-diff { font-size: .82rem; color: #334155; line-height: 1.6; }
+    .ia-log-field { color: #64748b; font-weight: 600; }
+    .ia-log-remarks { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0; font-size: .82rem; color: #475569; font-style: italic; }
+
+    /* ── Alert Settings modal ── */
+    .ia-settings-option { border:1.5px solid #e5e7eb; border-radius: 10px; padding: .75rem .9rem; margin-bottom: .6rem; transition: border-color .15s, background .15s; }
+    .ia-settings-option:has(input:checked), .ia-settings-option-active { border-color:#28a745; background:#f0fff4; }
+    .ia-settings-radio { display:flex; align-items:flex-start; gap:.65rem; cursor:pointer; margin:0; }
+    .ia-settings-radio input[type="radio"] { margin-top:.3rem; flex-shrink:0; }
+</style>
+
+<script>
+(function () {
+    var IA_URL = '{% url "hrm:incomplete_attendance_list_ajax" %}';
+    var IA_SETTINGS_URL = '{% url "hrm:incomplete_attendance_alert_settings" %}';
+    var IA_TODAY = '{{ incomplete_attendance_today }}'; // server (Nepal-local) date, avoids browser-tz drift
+    var IA_CAN_FIX = {% if can_fix_incomplete_attendance %}true{% else %}false{% endif %};
+    var IA_MODE = '{{ INC_ATT_ALERT_MODE|default:"refresh" }}';
+    var IA_INTERVAL_MIN = parseInt('{{ INC_ATT_ALERT_INTERVAL_MINUTES|default:60 }}', 10) || 60;
+    var IA_CSRF = '{{ csrf_token }}';
+    var IA_RANGE_KEY = 'incAttRangePref';
+    var IA_SESSION_SHOWN_KEY = 'incAttAlertShownThisSession';
+    var IA_LAST_SHOWN_KEY = 'incAttAlertLastShown';
+
+    var page = 1, totalPages = 1, records = {}, toastTimer = null;
+
+    /* ── Escaping helpers (self-contained, don't assume page-level helpers exist) ── */
+    function esc(str) {
+        var d = document.createElement('div');
+        d.appendChild(document.createTextNode(str == null ? '' : String(str)));
+        return d.innerHTML;
+    }
+    function escAttr(str) {
+        return esc(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    /* ── Modal singleton (prevent backdrop stacking bug) ── */
+    function getModal(elId) {
+        var el = document.getElementById(elId);
+        return bootstrap.Modal.getInstance(el) || new bootstrap.Modal(el);
+    }
+
+    /* ── Toast ── */
+    function showToast(msg) {
+        var toast = document.getElementById('iaToast');
+        document.getElementById('iaToastMsg').textContent = msg;
+        toast.style.display = 'block';
+        toast.style.animation = 'iaToastSlideIn .4s cubic-bezier(.21,1.02,.73,1)';
+        var bar = document.getElementById('iaToastProgress');
+        bar.style.animation = 'none'; void bar.offsetWidth;
+        bar.style.animation = 'iaToastCountdown 6s linear forwards';
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(dismissToast, 6200);
+    }
+    function dismissToast() {
+        var toast = document.getElementById('iaToast');
+        toast.style.animation = 'iaToastSlideOut .3s ease forwards';
+        setTimeout(function () { toast.style.display = 'none'; }, 300);
+        if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    }
+
+    /* ── Range preset helpers (Today / Last 7 Days / Last 15 Days / All Time) ── */
+    function fmtDate(d) {
+        var y = d.getFullYear(), m = ('0' + (d.getMonth() + 1)).slice(-2), day = ('0' + d.getDate()).slice(-2);
+        return y + '-' + m + '-' + day;
+    }
+    /* Every preset except the explicit "Today" button stops at yesterday —
+       a punch still missing its clock-out while the workday is in progress
+       is expected, not a problem, so today's records would just be noise
+       until the user deliberately asks to see them via the "Today" button. */
+    function rangeDates(range) {
+        var today = new Date(IA_TODAY + 'T00:00:00');
+        if (range === 'today') return { from: IA_TODAY, to: IA_TODAY };
+        var yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        var yesterdayStr = fmtDate(yesterday);
+        if (range === '7' || range === '15') {
+            var span = range === '7' ? 6 : 14;
+            var from = new Date(yesterday);
+            from.setDate(from.getDate() - span);
+            return { from: fmtDate(from), to: yesterdayStr };
+        }
+        return { from: '', to: yesterdayStr }; // all time, excluding today
+    }
+    function getSavedRange() {
+        var v = localStorage.getItem(IA_RANGE_KEY);
+        return (v === 'today' || v === '7' || v === '15' || v === 'all') ? v : '7';
+    }
+    /* The automatic background check (badge + popup toast) must never silently
+       scope to "All Time" — a one-off manual browse with "All Time" selected
+       would otherwise persist and make every future auto-alert unbounded again,
+       defeating the point of the range feature. Cap it to 15 days. */
+    function getAutoRange() {
+        var v = getSavedRange();
+        return v === 'all' ? '15' : v;
+    }
+    function setActiveRangeBtn(range) {
+        var group = document.getElementById('incAttRangeGroup');
+        if (!group) return;
+        group.querySelectorAll('[data-range]').forEach(function (btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-range') === range);
+        });
+    }
+    function selectRange(range) {
+        var d = rangeDates(range);
+        document.getElementById('incAttDateFrom').value = d.from;
+        document.getElementById('incAttDateTo').value = d.to;
+        setActiveRangeBtn(range);
+        localStorage.setItem(IA_RANGE_KEY, range);
+        applyFilters();
+    }
+
+    /* ── Badge (updates a #incAttBadge element if the current page has one,
+       e.g. the HRM Attendance Policies page header — harmless no-op elsewhere) ── */
+    function updateBadge(count) {
+        var badge = document.getElementById('incAttBadge');
+        if (!badge) return;
+        if (count > 0) {
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    /* ── Display-interval gating ──
+       The configured mode (session/refresh/interval) throttles how often the
+       *same, still-unresolved* backlog is re-announced. It does not gate
+       genuinely new records: if the count goes up since the last check on
+       this page (a new attendance record was created, or a punch went
+       incomplete), that's surfaced immediately regardless of mode — see
+       lastKnownCount below. */
+    var RANGE_LABELS = { today: 'today', '7': 'in the last 7 days', '15': 'in the last 15 days', all: 'overall' };
+    var lastKnownCount = null;
+    /* isPageLoad distinguishes the once-per-load check from the 60s
+       background poll (see runCheck). Without this, 'session' and 'refresh'
+       modes would re-pop the toast every single poll tick — 'refresh' mode's
+       check always returns true, so on an open page that meant a fresh toast
+       every 60 seconds instead of only on an actual page load/refresh. */
+    function shouldShowToast(isPageLoad) {
+        if (IA_MODE === 'session') {
+            return !!isPageLoad && !sessionStorage.getItem(IA_SESSION_SHOWN_KEY);
+        }
+        if (IA_MODE === 'interval') {
+            var last = parseInt(localStorage.getItem(IA_LAST_SHOWN_KEY) || '0', 10);
+            return (Date.now() - last) >= IA_INTERVAL_MIN * 60 * 1000;
+        }
+        return !!isPageLoad; // 'refresh' — only on an actual page load/refresh
+    }
+    function markShown() {
+        sessionStorage.setItem(IA_SESSION_SHOWN_KEY, '1');
+        localStorage.setItem(IA_LAST_SHOWN_KEY, String(Date.now()));
+    }
+
+    function runCheck(range, isPageLoad) {
+        var d = rangeDates(range);
+        var params = new URLSearchParams({ count_only: '1', date_from: d.from, date_to: d.to });
+        fetch(IA_URL + '?' + params.toString())
+            .then(function (r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function (data) {
+                if (!data.success) return;
+                updateBadge(data.count);
+                /* A genuinely new incomplete record (count went up since the
+                   last check on this page) always cuts through, regardless
+                   of mode — that's a new event, not a repeat of the same
+                   backlog the mode setting is throttling. */
+                var isNewSinceLastCheck = lastKnownCount !== null && data.count > lastKnownCount;
+                lastKnownCount = data.count;
+                if (data.count > 0 && (isNewSinceLastCheck || shouldShowToast(isPageLoad))) {
+                    showToast(data.count + ' attendance record' + (data.count === 1 ? ' has' : 's have')
+                        + ' a missing clock-in or clock-out ' + (RANGE_LABELS[range] || 'in the last 7 days') + '. Click to review and fix.');
+                    markShown();
+                }
+            })
+            .catch(function () {});
+    }
+
+    /* ── Modal: list + filter ── */
+    function openModal() {
+        page = 1;
+        document.getElementById('incAttSearch').value = '';
+        getModal('incAttModal').show();
+        selectRange(getSavedRange());
+    }
+    function applyFilters() { page = 1; fetchList(); }
+    function resetFilters() {
+        document.getElementById('incAttSearch').value = '';
+        page = 1;
+        selectRange(getSavedRange());
+    }
+    function goPage(delta) {
+        var newPage = page + delta;
+        if (newPage < 1 || newPage > totalPages) return;
+        page = newPage;
+        fetchList();
+    }
+    function fetchList() {
+        var searchVal = document.getElementById('incAttSearch').value.trim();
+        var params = new URLSearchParams({
+            page: page, per_page: 15, search: searchVal,
+            date_from: document.getElementById('incAttDateFrom').value,
+            date_to: document.getElementById('incAttDateTo').value
+        });
+        document.getElementById('incAttLoading').style.display = 'block';
+        document.getElementById('incAttTableWrap').style.display = 'none';
+        document.getElementById('incAttEmpty').style.display = 'none';
+        document.getElementById('incAttPagination').style.display = 'none';
+        fetch(IA_URL + '?' + params.toString())
+            .then(function (r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function (data) {
+                document.getElementById('incAttLoading').style.display = 'none';
+                if (!data.success) return;
+                totalPages = data.total_pages || 1;
+                if (!searchVal) updateBadge(data.count);
+                document.getElementById('incAttCountLabel').textContent =
+                    data.count + ' incomplete record' + (data.count === 1 ? '' : 's');
+                renderTable(data.results);
+                if (data.results.length === 0) {
+                    document.getElementById('incAttEmpty').style.display = 'block';
+                    return;
+                }
+                document.getElementById('incAttTableWrap').style.display = 'block';
+                if (data.total_pages > 1) {
+                    document.getElementById('incAttPagination').style.display = 'flex';
+                    document.getElementById('incAttPageInfo').textContent = 'Page ' + data.page + ' of ' + data.total_pages;
+                    document.getElementById('incAttPrevBtn').disabled = !data.has_previous;
+                    document.getElementById('incAttNextBtn').disabled = !data.has_next;
+                }
+            })
+            .catch(function () { document.getElementById('incAttLoading').style.display = 'none'; });
+    }
+    function renderTable(recs) {
+        records = {};
+        var missingLabels = { clock_in: 'Clock In Missing', clock_out: 'Clock Out Missing', both: 'Both Missing' };
+        var missingColors = { clock_in: '#c2410c', clock_out: '#c2410c', both: '#991b1b' };
+        var html = '';
+        recs.forEach(function (r) {
+            records[r.id] = r;
+            var color = missingColors[r.missing] || '#c2410c';
+            html += '<tr class="ia-tr" data-id="' + r.id + '">'
+                + '<td><div class="fw-semibold">' + esc(r.employee_name) + '</div><div class="text-muted" style="font-size:.72rem;">' + esc(r.employee_code) + '</div></td>'
+                + '<td>' + esc(r.department) + '</td>'
+                + '<td>' + esc(r.date_display) + '</td>'
+                + '<td>' + (r.clock_in ? esc(r.clock_in_display) : '<span class="text-danger fw-semibold" style="font-size:.8rem;">Missing</span>') + '</td>'
+                + '<td>' + (r.clock_out ? esc(r.clock_out_display) : '<span class="text-danger fw-semibold" style="font-size:.8rem;">Missing</span>') + '</td>'
+                + '<td><span class="badge" style="background:' + color + '1a;color:' + color + ';font-weight:600;font-size:.7rem;border-radius:20px;padding:3px 10px;">'
+                + '<i class="fas fa-triangle-exclamation me-1"></i>' + missingLabels[r.missing] + '</span></td>'
+                + '<td>' + (r.remarks ? '<span class="ia-remarks" title="' + escAttr(r.remarks) + '">' + esc(r.remarks) + '</span>' : '<span class="text-muted">—</span>') + '</td>'
+                + '<td>' + (r.fixed_by
+                    ? '<div class="fw-semibold" style="font-size:.8rem;">' + esc(r.fixed_by) + '</div><div class="text-muted" style="font-size:.7rem;">' + esc(r.fixed_at) + '</div>'
+                    : '<span class="text-muted">—</span>') + '</td>'
+                + '<td><div class="d-flex gap-1">'
+                + (IA_CAN_FIX
+                    ? '<button class="btn btn-sm btn-outline-warning" onclick="IncAttAlert.toggleFix(' + r.id + ')" title="Fix this record"><i class="fas fa-pen fa-sm"></i></button>'
+                    : '')
+                + '<button class="btn btn-sm btn-outline-secondary position-relative" onclick="IncAttAlert.viewLogs(' + r.id + ')" title="View fix history"><i class="fas fa-clock-rotate-left fa-sm"></i>'
+                + (r.fix_logs_count > 0 ? '<span class="badge rounded-pill bg-secondary" style="font-size:.6rem;position:absolute;top:-6px;right:-6px;">' + r.fix_logs_count + '</span>' : '')
+                + '</button>'
+                + '</div></td>'
+                + '</tr>'
+                + (IA_CAN_FIX
+                    ? '<tr class="ia-fix-row" id="incAttFixRow' + r.id + '" style="display:none;">'
+                        + '<td colspan="9" style="background:#fffbeb;">'
+                        + '<div class="d-flex align-items-end gap-3 flex-wrap p-2">'
+                        + '<div><label class="small text-muted d-block mb-1">Clock In</label>'
+                        + '<input type="time" class="form-control form-control-sm" id="incAttFixIn' + r.id + '" value="' + esc(r.clock_in) + '" style="width:130px;"></div>'
+                        + '<div><label class="small text-muted d-block mb-1">Clock Out</label>'
+                        + '<input type="time" class="form-control form-control-sm" id="incAttFixOut' + r.id + '" value="' + esc(r.clock_out) + '" style="width:130px;"></div>'
+                        + '<div class="flex-grow-1" style="min-width:220px;"><label class="small text-muted d-block mb-1">Remarks <span class="fw-normal">(reason for the fix)</span></label>'
+                        + '<input type="text" class="form-control form-control-sm" id="incAttFixRemarks' + r.id + '" placeholder="e.g. Forgot to punch out, confirmed with manager" maxlength="255" value="' + escAttr(r.remarks || '') + '"></div>'
+                        + '<button class="btn btn-sm btn-success" onclick="IncAttAlert.saveFix(' + r.id + ')" id="incAttFixSaveBtn' + r.id + '"><i class="fas fa-check me-1"></i>Save</button>'
+                        + '<button class="btn btn-sm btn-outline-secondary" onclick="IncAttAlert.toggleFix(' + r.id + ')">Cancel</button>'
+                        + '<div class="small text-danger w-100" id="incAttFixErr' + r.id + '" style="display:none;"></div>'
+                        + '</div></td></tr>'
+                    : '');
+        });
+        document.getElementById('incAttTbody').innerHTML = html;
+    }
+    function toggleFix(id) {
+        var row = document.getElementById('incAttFixRow' + id);
+        if (!row) return;
+        var showing = row.style.display !== 'none';
+        document.querySelectorAll('.ia-fix-row').forEach(function (r) { r.style.display = 'none'; });
+        row.style.display = showing ? 'none' : 'table-row';
+    }
+    function saveFix(id) {
+        if (!IA_CAN_FIX) return;
+        var rec = records[id];
+        if (!rec) return;
+        var clockIn = document.getElementById('incAttFixIn' + id).value;
+        var clockOut = document.getElementById('incAttFixOut' + id).value;
+        var remarks = document.getElementById('incAttFixRemarks' + id).value.trim();
+        var errEl = document.getElementById('incAttFixErr' + id);
+        errEl.style.display = 'none';
+        if (!clockIn && !clockOut) {
+            errEl.textContent = 'Provide at least one time.';
+            errEl.style.display = 'block';
+            return;
+        }
+        var btn = document.getElementById('incAttFixSaveBtn' + id);
+        var originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        fetch('/hrm/attendance/' + id + '/update/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': IA_CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                clock_in: clockIn, clock_out: clockOut, shift: rec.shift_id || '',
+                is_holiday: rec.is_holiday ? 'true' : 'false', notes: rec.notes || '',
+                remarks: remarks, status: rec.status, source: 'incomplete_fix'
+            })
+        })
+        .then(function (r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+        .then(function (data) {
+            if (data.success) {
+                fetchList();
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                errEl.textContent = data.error || 'Failed to save.';
+                errEl.style.display = 'block';
+            }
+        })
+        .catch(function () {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+            errEl.textContent = 'Network error. Please try again.';
+            errEl.style.display = 'block';
+        });
+    }
+
+    /* ── Fix History ── */
+    function viewLogs(id) {
+        document.getElementById('incAttLogsLoading').style.display = 'block';
+        document.getElementById('incAttLogsEmpty').style.display = 'none';
+        document.getElementById('incAttLogsError').style.display = 'none';
+        var listEl = document.getElementById('incAttLogsList');
+        listEl.style.display = 'none';
+        listEl.innerHTML = '';
+        getModal('incAttLogsModal').show();
+
+        fetch('/hrm/attendance/' + id + '/fix-logs/')
+            .then(function (r) { if (!r.ok) throw new Error('Network error'); return r.json(); })
+            .then(function (data) {
+                document.getElementById('incAttLogsLoading').style.display = 'none';
+                if (!data.success) {
+                    document.getElementById('incAttLogsError').textContent = data.error || 'Failed to load history.';
+                    document.getElementById('incAttLogsError').style.display = 'block';
+                    return;
+                }
+                document.getElementById('incAttLogsTitle').textContent = data.employee_name + ' (' + data.employee_code + ')';
+                document.getElementById('incAttLogsSubtitle').textContent = data.department + ' — ' + data.date_display;
+                if (!data.logs.length) {
+                    document.getElementById('incAttLogsEmpty').style.display = 'block';
+                    return;
+                }
+                var html = '';
+                data.logs.forEach(function (log) {
+                    html += '<div class="ia-log-entry">'
+                        + '<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">'
+                        + '<div class="fw-semibold" style="font-size:.85rem;"><i class="fas fa-user-pen me-1 text-secondary"></i>' + esc(log.fixed_by) + '</div>'
+                        + '<div class="text-muted" style="font-size:.75rem;">' + esc(log.fixed_at) + '</div>'
+                        + '</div>'
+                        + '<div class="ia-log-diff">'
+                        + '<span class="ia-log-field">Clock In:</span> ' + (log.old_clock_in ? esc(log.old_clock_in) : '<em>Missing</em>')
+                        + ' <i class="fas fa-arrow-right-long mx-1 text-muted"></i> <strong>' + (log.new_clock_in ? esc(log.new_clock_in) : '<em>Missing</em>') + '</strong><br>'
+                        + '<span class="ia-log-field">Clock Out:</span> ' + (log.old_clock_out ? esc(log.old_clock_out) : '<em>Missing</em>')
+                        + ' <i class="fas fa-arrow-right-long mx-1 text-muted"></i> <strong>' + (log.new_clock_out ? esc(log.new_clock_out) : '<em>Missing</em>') + '</strong>'
+                        + '</div>'
+                        + (log.remarks ? '<div class="ia-log-remarks"><i class="fas fa-comment-dots me-1"></i>' + esc(log.remarks) + '</div>' : '')
+                        + '</div>';
+                });
+                listEl.innerHTML = html;
+                listEl.style.display = 'block';
+            })
+            .catch(function () {
+                document.getElementById('incAttLogsLoading').style.display = 'none';
+                document.getElementById('incAttLogsError').textContent = 'Network error. Please try again.';
+                document.getElementById('incAttLogsError').style.display = 'block';
+            });
+    }
+
+    /* ── Alert Settings (admin/superuser only) ── */
+    var iaSettingsToastTimer = null;
+    function showSettingsToast(type, msg) {
+        var toast = document.getElementById('iaSettingsToast');
+        if (!toast) return;
+        var icon = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
+        toast.className = 'ia-settings-toast ia-settings-toast-' + type;
+        toast.innerHTML = '<i class="fas ' + icon + '"></i><span>' + esc(msg) + '</span>';
+        toast.style.display = 'flex';
+        toast.style.animation = 'iaSettingsToastSlideIn .3s ease';
+        if (iaSettingsToastTimer) clearTimeout(iaSettingsToastTimer);
+        iaSettingsToastTimer = setTimeout(function () {
+            toast.style.animation = 'iaSettingsToastSlideOut .3s ease forwards';
+            setTimeout(function () { toast.style.display = 'none'; }, 300);
+        }, 3500);
+    }
+    function openSettings() {
+        var radio = document.querySelector('input[name="iaAlertMode"][value="' + IA_MODE + '"]');
+        if (radio) radio.checked = true;
+        var intervalInput = document.getElementById('iaIntervalMinutes');
+        if (intervalInput) intervalInput.value = IA_INTERVAL_MIN;
+        refreshSettingsHighlight();
+        getModal('incAttSettingsModal').show();
+    }
+    function saveSettings() {
+        var modeEl = document.querySelector('input[name="iaAlertMode"]:checked');
+        var mode = modeEl ? modeEl.value : 'refresh';
+        var minutes = document.getElementById('iaIntervalMinutes').value;
+        var saveBtn = document.getElementById('iaSettingsSaveBtn');
+        document.getElementById('iaSettingsSaveNormal').classList.add('d-none');
+        document.getElementById('iaSettingsSaveLoading').classList.remove('d-none');
+        saveBtn.disabled = true;
+        fetch(IA_SETTINGS_URL, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': IA_CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ mode: mode, interval_minutes: minutes })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            document.getElementById('iaSettingsSaveNormal').classList.remove('d-none');
+            document.getElementById('iaSettingsSaveLoading').classList.add('d-none');
+            saveBtn.disabled = false;
+            if (data.success) {
+                IA_MODE = data.mode;
+                IA_INTERVAL_MIN = data.interval_minutes;
+                showSettingsToast('success', 'Saved. This applies to all users going forward.');
+            } else {
+                showSettingsToast('danger', data.error || 'Failed to save settings.');
+            }
+        })
+        .catch(function () {
+            document.getElementById('iaSettingsSaveNormal').classList.remove('d-none');
+            document.getElementById('iaSettingsSaveLoading').classList.add('d-none');
+            saveBtn.disabled = false;
+            showSettingsToast('danger', 'Network error. Please try again.');
+        });
+    }
+
+    /* ── Wiring ──
+       This partial is included in base.html BEFORE bootstrap.bundle.min.js
+       loads (that script tag sits further down, after the page content block).
+       Anything here that can call bootstrap.Modal (openModal, and therefore
+       the auto-open-from-query-param check below) must wait for
+       DOMContentLoaded, which only fires once every earlier synchronous
+       <script> — including the bootstrap bundle — has already executed,
+       regardless of this script tag's position in the document. Without
+       this, arriving via the Dashboard's "Review & Fix" link
+       (?open_incomplete=1) throws a ReferenceError on `bootstrap` and aborts
+       this whole script before window.IncAttAlert gets assigned, breaking
+       every button that calls it on that page load. */
+    document.addEventListener('DOMContentLoaded', function () {
+        document.getElementById('iaToastInner').addEventListener('click', function (e) {
+            if (e.target.closest('.ia-toast-close')) return;
+            dismissToast();
+            openModal();
+        });
+        document.getElementById('iaToastCloseBtn').addEventListener('click', function (e) {
+            e.stopPropagation();
+            dismissToast();
+        });
+        document.getElementById('incAttModal').addEventListener('hidden.bs.modal', function () { runCheck(getAutoRange(), false); });
+        document.querySelectorAll('input[name="iaAlertMode"]').forEach(function (radio) {
+            radio.addEventListener('change', refreshSettingsHighlight);
+        });
+
+        /* Auto-open when arriving via a "Review & Fix" shortcut (?open_incomplete=1),
+           e.g. from the Dashboard's Incomplete Attendance card. Works from any page. */
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('open_incomplete') === '1') {
+            openModal();
+            params.delete('open_incomplete');
+            var qs = params.toString();
+            window.history.replaceState({}, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
+        }
+
+        /* Initial check shortly after load, then a lightweight background poll
+           (count_only=1 — a single indexed .count() query) so a newly created
+           incomplete attendance record (a fresh punch, a new attendance row,
+           a biometric sync) shows up on pages that are already open, not just
+           on the next full page load. 60s matches this app's existing
+           near-real-time polling convention (see order status polling).
+           "Custom Time Interval" mode reuses the same cadence to re-announce
+           an unresolved backlog every N minutes; new records are always
+           surfaced immediately regardless of mode (see isNewSinceLastCheck
+           in runCheck above). */
+        setTimeout(function () { runCheck(getAutoRange(), true); }, 900);
+        setInterval(function () { runCheck(getAutoRange(), false); }, 60 * 1000);
+    });
+
+    /* Highlight the selected Alert Settings option via a class instead of
+       relying solely on the :has() CSS selector, which not every browser
+       in staff use supports. */
+    function refreshSettingsHighlight() {
+        document.querySelectorAll('.ia-settings-option').forEach(function (opt) {
+            opt.classList.toggle('ia-settings-option-active', !!opt.querySelector('input:checked'));
+        });
+    }
+
+    window.IncAttAlert = {
+        getModal: getModal,
+        openModal: openModal,
+        applyFilters: applyFilters,
+        resetFilters: resetFilters,
+        goPage: goPage,
+        selectRange: selectRange,
+        setActiveRangeBtn: setActiveRangeBtn,
+        toggleFix: toggleFix,
+        saveFix: saveFix,
+        viewLogs: viewLogs,
+        openSettings: openSettings,
+        saveSettings: saveSettings
+    };
+})();
+</script>

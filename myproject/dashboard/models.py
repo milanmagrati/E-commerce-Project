@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q, Sum
 from django.conf import settings  # ✅ Add this import
 from django.utils import timezone
@@ -102,6 +102,10 @@ class Product(models.Model):
     # ✅ NEW: Custom Product Flag (for quick sales)
     is_custom_product = models.BooleanField(default=False, help_text="Mark as custom/quick sale product")
 
+    # Dates & Expiry
+    manufactured_date = models.DateField(null=True, blank=True, help_text="Date the product was manufactured")
+    expiry_date = models.DateField(null=True, blank=True, help_text="Date the product expires")
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -114,6 +118,52 @@ class Product(models.Model):
     def is_bundle(self):
         """Check if this product is a bundle/combo product."""
         return self.product_type == 'bundle'
+
+    @property
+    def is_variable(self):
+        """Check if this product is a variable product (has variations)."""
+        return self.product_type == 'variable'
+
+    @property
+    def active_variations(self):
+        """Variations a shopper may actually buy: active and not switched off.
+
+        `is_active` is nullable on the model, so `exclude(is_active=False)`
+        keeps both True and NULL rows.
+        """
+        return (self.variations
+                .exclude(is_active=False)
+                .exclude(status='inactive')
+                .order_by('created_at'))
+
+    @property
+    def has_variations(self):
+        """True only for a variable product that has at least one buyable
+        variation — a 'variable' product with none behaves like a simple one."""
+        return self.is_variable and self.active_variations.exists()
+
+    @property
+    def variation_price_range(self):
+        """(min_price, max_price) across buyable variations, or (price, price)
+        when there are none."""
+        prices = [v.price for v in self.active_variations]
+        if not prices:
+            return (self.price, self.price)
+        return (min(prices), max(prices))
+
+    @property
+    def in_stock_variation_exists(self):
+        # Cheap, listing-page check: real units on hand and the row not switched
+        # off. The committed-orders-aware figure is ProductVariation.available_stock,
+        # used on the product page and at add-to-cart / checkout.
+        return any(v.is_in_stock for v in self.active_variations)
+
+    @property
+    def storefront_available(self):
+        """Whether the storefront should let this product be ordered at all."""
+        if self.has_variations:
+            return self.in_stock_variation_exists
+        return self.available_stock > 0 or self.backorders_allowed
 
     @property
     def average_cost(self):
@@ -152,10 +202,93 @@ class Product(models.Model):
             )
         return self.stock - self.reserved_qty
 
+    @property
+    def is_expired(self):
+        """Check if this product has passed its expiry date."""
+        if not self.expiry_date:
+            return False
+        return self.expiry_date <= timezone.now().date()
+
+    @property
+    def days_until_expiry(self):
+        """Return the number of days until this product expires (negative if expired)."""
+        if not self.expiry_date:
+            return None
+        delta = self.expiry_date - timezone.now().date()
+        return delta.days
+
+    @property
+    def expiry_status(self):
+        """Return 'expired', 'critical' (<=7 days), 'warning' (<=30 days), 'ok', or 'no_expiry'."""
+        days = self.days_until_expiry
+        if days is None:
+            return 'no_expiry'
+        if days < 0:
+            return 'expired'
+        if days <= 7:
+            return 'critical'
+        if days <= 30:
+            return 'warning'
+        return 'ok'
+
+    @property
+    def earliest_expiry_batch(self):
+        """Return the batch with the earliest expiry date (FIFO order)."""
+        return self.batches.filter(
+            quantity__gt=0, expiry_date__isnull=False
+        ).order_by('expiry_date').first()
+
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Product'
         verbose_name_plural = 'Products'
+
+
+class ProductBatch(models.Model):
+    """Track individual stock batches for FIFO (First-In First-Out) inventory."""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='batches')
+    batch_number = models.CharField(max_length=50, blank=True)
+    quantity = models.IntegerField(default=0, help_text="Remaining units in this batch")
+    initial_quantity = models.IntegerField(default=0, help_text="Original units when batch was created")
+    manufactured_date = models.DateField(null=True, blank=True)
+    expiry_date = models.DateField(null=True, blank=True)
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    notes = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['expiry_date', 'created_at']  # FIFO: oldest expiry first
+        verbose_name = 'Product Batch'
+        verbose_name_plural = 'Product Batches'
+
+    def __str__(self):
+        return f"{self.product.name} - Batch {self.batch_number or self.pk}"
+
+    @property
+    def is_expired(self):
+        if not self.expiry_date:
+            return False
+        return self.expiry_date <= timezone.now().date()
+
+    @property
+    def days_until_expiry(self):
+        if not self.expiry_date:
+            return None
+        delta = self.expiry_date - timezone.now().date()
+        return delta.days
+
+    @property
+    def expiry_status(self):
+        days = self.days_until_expiry
+        if days is None:
+            return 'no_expiry'
+        if days < 0:
+            return 'expired'
+        if days <= 7:
+            return 'critical'
+        if days <= 30:
+            return 'warning'
+        return 'ok'
 
 
 class BundleComponent(models.Model):
@@ -309,6 +442,11 @@ class Order(models.Model):
 
     shipping_address = models.TextField()
     landmark = models.CharField(max_length=255, blank=True)
+    # The buyer's own tax number, typed on the order form when they ask for a
+    # billable invoice. Printed by the `customer.vat_pan` invoice token; blank
+    # on the overwhelming majority of retail orders, and the invoice line hides
+    # itself when it is.
+    vat_pan = models.CharField('VAT / PAN number', max_length=60, blank=True, default='')
     order_from = models.CharField(max_length=50)
     order_status = models.CharField(max_length=50, default='processing')
 
@@ -391,6 +529,20 @@ class Order(models.Model):
     ncm_status = models.CharField(max_length=100, blank=True)
     ncm_created_at = models.DateTimeField(blank=True, null=True)
 
+    # Manual status override (see services/status_override.py).
+    # Staff can set an order's status by hand while the parcel is still sitting
+    # at some earlier logistics status. These two fields let the sync paths tell
+    # "staff decided this" apart from "stale value nobody touched", so a hand-set
+    # status survives until the parcel actually moves.
+    manual_status_override_at = models.DateTimeField(
+        blank=True, null=True,
+        help_text="When staff last set this order's status by hand"
+    )
+    manual_status_override_ncm_status = models.CharField(
+        max_length=100, blank=True, default='',
+        help_text="Raw logistics status in force at the time of that manual change"
+    )
+
     # NCM Branch details (use these for API calls)
     ncm_from_branch = models.CharField(max_length=100, blank=True, default='TINKUNE')
     ncm_destination_branch = models.CharField(max_length=100, blank=True)
@@ -435,6 +587,31 @@ class Order(models.Model):
     ncm_exchange_ven_order = models.IntegerField(blank=True, null=True, help_text="NCM exchange vendor order ID")
     exchange_status = models.CharField(max_length=20, choices=EXCHANGE_STATUS_CHOICES, blank=True, default='')
 
+    @property
+    def amount_due(self):
+        """Amount still collectible from the customer (the COD figure).
+
+        A partially paid order has already had `partial_amount_paid` collected
+        up front, so what the courier must collect is `remaining_amount`, not
+        `total_amount`. Every place that quotes "what will be collected" — the
+        redirect COD field, the Possible Redirection match list — must use this
+        rather than total_amount, or a partially paid order gets charged twice.
+        """
+        total = self.total_amount or Decimal('0.00')
+        if not self.is_partial_payment:
+            return total
+        # remaining_amount is the field of record, but older rows exist with the
+        # flag set and no figure behind it — derive one rather than quoting the
+        # gross total, which would bill the customer for what they already paid.
+        due = (
+            self.remaining_amount
+            if self.remaining_amount is not None
+            else total - (self.partial_amount_paid or Decimal('0.00'))
+        )
+        # Never quote a negative amount to collect: an overpaid or corrupted row
+        # would otherwise send a negative COD to the courier.
+        return due if due > Decimal('0.00') else Decimal('0.00')
+
     def calculate_totals(self):
         """Calculate order totals based on items, discount, shipping, and tax"""
         from decimal import Decimal
@@ -466,6 +643,10 @@ class OrderItem(models.Model):
     quantity = models.IntegerField(default=1)
     price = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+
+    # Added for inventory reservation and backorder tracking
+    reserved_qty = models.IntegerField(default=0, help_text="Units filled from real stock")
+    backordered_qty = models.IntegerField(default=0, help_text="Units waiting on new stock")
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -546,6 +727,49 @@ class ProductVariation(models.Model):
     def __str__(self):
         return f"{self.product.name} - {self.sku}"
 
+    @property
+    def display_label(self):
+        """Human-readable name for this variation, for the storefront and
+        order lines. Prefers the explicit name, falls back to the SKU."""
+        return self.variation_name or self.sku
+
+    @property
+    def is_in_stock(self):
+        """Cheap on-hand check: units in stock and the row not marked
+        out-of-stock. `available_stock` is the figure that also nets off
+        unshipped orders — use that on the storefront and at checkout."""
+        return self.stock > 0 and self.status != 'out_of_stock'
+
+    # Order statuses at or past the point where dispatch has already
+    # subtracted `stock` (or the order is void) — so their units are no
+    # longer "waiting to ship" and must not be counted again.
+    _SETTLED_ORDER_STATUSES = {
+        'dispatched', 'packed', 'shipped', 'in_transit', 'in transit',
+        'out_for_delivery', 'delivered', 'return', 'returned',
+        'return_processing', 'return_arrived', 'redirected', 'cancelled', 'canceled',
+        'rejected', 'trash', 'pickup_created', 'pickup created', 'inquiry',
+    }
+
+    @property
+    def committed_qty(self):
+        """Units of this variation already promised to orders that have not
+        been dispatched yet (dispatch is the single place `stock` is
+        decremented). Derived from the dashboard OrderItems every storefront
+        order is mirrored into, so there is no reservation counter to drift."""
+        from django.db.models import Sum
+        from django.db.models.functions import Lower
+        rows = (OrderItem.objects
+                .filter(product_variation_id=self.pk)
+                .annotate(_st=Lower('order__order_status'))
+                .exclude(_st__in=self._SETTLED_ORDER_STATUSES)
+                .aggregate(n=Sum('quantity')))
+        return rows['n'] or 0
+
+    @property
+    def available_stock(self):
+        """Units on hand minus what unshipped orders have already claimed."""
+        return max(self.stock - self.committed_qty, 0)
+
     class Meta:
         ordering = ['sku']
 
@@ -569,6 +793,11 @@ class ProductImage(models.Model):
     alt_text = models.CharField(max_length=255, blank=True, null=True)
     is_featured = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)
+    source_asset = models.ForeignKey(
+        'MediaAsset', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='product_uses',
+        help_text='Media Library asset this gallery image was copied from, if any.'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -631,11 +860,33 @@ class OrderActivityLog(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # When the logistics provider says the event actually happened, as opposed
+    # to created_at = when we found out about it. NULL for locally-originated
+    # actions (staff edits, redirections), which is the vast majority of rows.
+    #
+    # Keeping both is the point: NCM webhooks arrive late, and status sync runs
+    # on page load / cron, so "NCM marked this on Jul 20" and "we recorded it
+    # on Jul 30" are different facts and the UI shows both.
+    event_at = models.DateTimeField(
+        null=True, blank=True, db_index=True,
+        help_text="Provider-reported event time (NCM added_time / webhook timestamp). "
+                  "NULL for locally-originated actions.",
+    )
+
+    @property
+    def effective_at(self):
+        """Best known time this event happened — provider time if we have it."""
+        return self.event_at or self.created_at
+
     def __str__(self):
         return f"{self.order.order_number} - {self.get_action_type_display()}"
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            # Every read site filters by order and sorts newest-first.
+            models.Index(fields=['order', '-created_at'], name='oal_order_created_idx'),
+        ]
 
 
 class OrderAdminNote(models.Model):
@@ -1031,25 +1282,136 @@ class Dispatch(models.Model):
         """Return list of all scanned order IDs in this dispatch"""
         return [item.scanned_order_id for item in self.items.all()]
 
+    # ── Outcome counters ─────────────────────────────────────────────────────
+    # These are read once per row on the dispatch list, so they must not fire a
+    # query per call. Resolution order:
+    #   1. an annotation set by the list view (`annot_success_count`, ...)
+    #   2. the prefetch cache (`prefetch_related('items')`)
+    #   3. a single grouped query, cached on the instance
+    def _status_counts(self):
+        annotated = {}
+        for status in ('success', 'failed', 'not_found'):
+            value = getattr(self, f'annot_{status}_count', None)
+            if value is not None:
+                annotated[status] = value
+        if len(annotated) == 3:
+            return annotated
+
+        cached = getattr(self, '_status_counts_cache', None)
+        if cached is not None:
+            return cached
+
+        counts = {'success': 0, 'failed': 0, 'not_found': 0}
+        prefetched = getattr(self, '_prefetched_objects_cache', None) or {}
+        if 'items' in prefetched:
+            for item in prefetched['items']:
+                counts[item.dispatch_status] = counts.get(item.dispatch_status, 0) + 1
+        else:
+            for row in self.items.values('dispatch_status').annotate(c=models.Count('id')):
+                counts[row['dispatch_status']] = row['c']
+
+        self._status_counts_cache = counts
+        return counts
+
     def get_linked_orders_count(self):
-        """Count orders that were successfully linked"""
+        """Count order IDs that resolved to a real Order row"""
         return self.items.filter(order__isnull=False).count()
 
     def get_unlinked_orders_count(self):
-        """Count order IDs that couldn't be found in system"""
+        """Count order IDs that couldn't be matched to an Order row"""
         return self.items.filter(order__isnull=True).count()
 
     def get_success_count(self):
         """Count orders that were successfully dispatched"""
-        return self.items.filter(dispatch_status='success').count()
+        return self._status_counts().get('success', 0)
 
     def get_failed_count(self):
         """Count orders that failed (e.g. already dispatched)"""
-        return self.items.filter(dispatch_status='failed').count()
+        return self._status_counts().get('failed', 0)
 
     def get_not_found_count(self):
-        """Count orders that were not found in system"""
-        return self.items.filter(dispatch_status='not_found').count()
+        """Count scanned IDs that were not found in the system"""
+        return self._status_counts().get('not_found', 0)
+
+    def get_item_count(self):
+        """Number of scanned rows actually recorded for this batch"""
+        value = getattr(self, 'annot_item_count', None)
+        if value is not None:
+            return value
+        counts = self._status_counts()
+        return sum(counts.get(s, 0) for s in ('success', 'failed', 'not_found'))
+
+    def get_issue_count(self):
+        """Every scanned ID that did NOT dispatch — failed + not found.
+
+        This is the number the "Failed" column shows: a scanned ID that was
+        never found in the system is just as much a failure to the packer as
+        one rejected for being already dispatched, and counting only
+        `dispatch_status='failed'` made those rows silently read as 0.
+        """
+        return self.get_failed_count() + self.get_not_found_count()
+
+    def get_unrecorded_count(self):
+        """Scanned IDs claimed by `total_orders` that have no DispatchItem row.
+
+        Legacy batches created before per-item tracking existed have
+        total_orders > 0 with zero items; surface that instead of rendering a
+        misleading 0/0.
+        """
+        return max(0, (self.total_orders or 0) - self.get_item_count())
+
+    def get_outcome(self):
+        """Coarse batch outcome used for badges and row colouring."""
+        if self.get_item_count() == 0:
+            return 'unrecorded' if (self.total_orders or 0) > 0 else 'empty'
+        success = self.get_success_count()
+        issues = self.get_issue_count()
+        if issues and success:
+            return 'partial'
+        if issues:
+            return 'failed'
+        return 'completed'
+
+    def get_success_rate(self):
+        """Percentage of recorded scans that dispatched successfully (0-100)."""
+        total = self.get_item_count()
+        if not total:
+            return 0
+        return round((self.get_success_count() * 100.0) / total)
+
+    def get_failed_items(self):
+        """All problem items (failed + not found), ready for display."""
+        return [
+            item for item in self.items.all()
+            if item.dispatch_status != 'success'
+        ]
+
+    def log(self, event, message, level='info', item=None, order_ref='', user=None):
+        """Append an audit entry for this batch. Never raises.
+
+        The write runs in its own savepoint: these calls happen inside the
+        dispatch's `transaction.atomic()` block, and swallowing a database error
+        without rolling back to a savepoint would poison the outer transaction
+        so every later query in the batch fails too.
+        """
+        try:
+            with transaction.atomic():
+                return DispatchLog.objects.create(
+                    dispatch=self,
+                    item=item,
+                    level=level,
+                    event=event,
+                    message=(message or '')[:1000],
+                    order_ref=(order_ref or (item.scanned_order_id if item else ''))[:100],
+                    user=user if (user is not None and getattr(user, 'is_authenticated', False)) else None,
+                )
+        except Exception:  # logging must never break a dispatch
+            return None
+
+    def refresh_from_db(self, *args, **kwargs):
+        # Drop memoised outcome counts so a reloaded row re-reads them.
+        self._status_counts_cache = None
+        return super().refresh_from_db(*args, **kwargs)
 
     # ✅ SOFT DELETE METHOD
     def soft_delete(self, user):
@@ -1077,6 +1439,25 @@ class DispatchItem(models.Model):
         ('not_found', 'Not Found'),
     ]
 
+    # Machine-readable cause, so the UI can group/colour failures without
+    # string-matching the human sentence in `failure_reason`.
+    FAILURE_CODE_CHOICES = [
+        ('already_dispatched', 'Already dispatched'),
+        ('not_found', 'Order ID not found'),
+        ('status_reverted', 'Status moved away from dispatched'),
+        ('error', 'Processing error'),
+    ]
+
+    FAILURE_CODE_HINTS = {
+        'already_dispatched': 'This order ID was scanned into an earlier batch that is still active. '
+                              'Remove it from this batch, or restore/clear the earlier dispatch first.',
+        'not_found': 'No order matched this ID by order number or barcode. '
+                     'Check for a mis-scan, a trimmed prefix, or an order that was deleted.',
+        'status_reverted': 'The order was dispatched in this batch but its status was later changed '
+                           'away from "dispatched", so the stock deduction was rolled back.',
+        'error': 'The order could not be processed. See the activity log for the underlying error.',
+    }
+
     dispatch = models.ForeignKey(
         Dispatch,
         on_delete=models.CASCADE,
@@ -1097,6 +1478,14 @@ class DispatchItem(models.Model):
         db_index=True
     )
     failure_reason = models.CharField(max_length=255, blank=True, default='')
+    failure_code = models.CharField(
+        max_length=32,
+        choices=FAILURE_CODE_CHOICES,
+        blank=True,
+        default='',
+        db_index=True
+    )
+    failed_at = models.DateTimeField(null=True, blank=True)
     scanned_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1110,6 +1499,119 @@ class DispatchItem(models.Model):
 
     def __str__(self):
         return f"{self.scanned_order_id} in {self.dispatch.batch_number}"
+
+    def mark_failed(self, reason, code='error', save=True):
+        """Flag this scan as failed with a reason + machine code."""
+        self.dispatch_status = 'failed'
+        self.failure_reason = (reason or '')[:255]
+        self.failure_code = code if code in dict(self.FAILURE_CODE_CHOICES) else 'error'
+        self.failed_at = timezone.now()
+        if save:
+            self.save(update_fields=['dispatch_status', 'failure_reason', 'failure_code', 'failed_at'])
+        return self
+
+    def mark_not_found(self, reason='', save=True):
+        """Flag this scan as unmatched — it is a failure, just a different cause."""
+        self.dispatch_status = 'not_found'
+        self.failure_reason = (reason or 'Order ID not found in the system')[:255]
+        self.failure_code = 'not_found'
+        self.failed_at = timezone.now()
+        if save:
+            self.save(update_fields=['dispatch_status', 'failure_reason', 'failure_code', 'failed_at'])
+        return self
+
+    def mark_success(self, save=True):
+        """Flag this scan as dispatched and clear any earlier failure detail."""
+        self.dispatch_status = 'success'
+        self.failure_reason = ''
+        self.failure_code = ''
+        self.failed_at = None
+        if save:
+            self.save(update_fields=['dispatch_status', 'failure_reason', 'failure_code', 'failed_at'])
+        return self
+
+    @property
+    def is_problem(self):
+        return self.dispatch_status != 'success'
+
+    def get_failure_reason_display(self):
+        """Human sentence for the reason column — never blank for a problem row."""
+        if self.dispatch_status == 'success':
+            return ''
+        if self.failure_reason:
+            return self.failure_reason
+        if self.dispatch_status == 'not_found':
+            return 'Order ID not found in the system'
+        return 'Failed — no reason was recorded for this scan'
+
+    def get_failure_hint(self):
+        """Actionable next step for this failure cause, if we know one."""
+        code = self.failure_code
+        if not code and self.dispatch_status == 'not_found':
+            code = 'not_found'
+        return self.FAILURE_CODE_HINTS.get(code, '')
+
+
+class DispatchLog(models.Model):
+    """Append-only audit trail for a dispatch batch.
+
+    Every scan outcome, stock movement and later status change writes a row
+    here so the detail page can explain exactly what happened and when.
+    """
+
+    LEVEL_CHOICES = [
+        ('info', 'Info'),
+        ('success', 'Success'),
+        ('warning', 'Warning'),
+        ('error', 'Error'),
+    ]
+
+    EVENT_CHOICES = [
+        ('batch_created', 'Batch created'),
+        ('order_dispatched', 'Order dispatched'),
+        ('order_failed', 'Order failed'),
+        ('order_not_found', 'Order not found'),
+        ('stock_oversold', 'Stock oversold'),
+        ('status_reverted', 'Status reverted'),
+        ('batch_completed', 'Batch completed'),
+        ('batch_error', 'Batch error'),
+    ]
+
+    dispatch = models.ForeignKey(
+        Dispatch,
+        on_delete=models.CASCADE,
+        related_name='logs'
+    )
+    item = models.ForeignKey(
+        DispatchItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='logs'
+    )
+    level = models.CharField(max_length=10, choices=LEVEL_CHOICES, default='info', db_index=True)
+    event = models.CharField(max_length=32, choices=EVENT_CHOICES, default='batch_created', db_index=True)
+    message = models.TextField()
+    order_ref = models.CharField(max_length=100, blank=True, default='')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='dispatch_logs'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        verbose_name = 'Dispatch Log'
+        verbose_name_plural = 'Dispatch Logs'
+        indexes = [
+            models.Index(fields=['dispatch', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"[{self.level}] {self.event} — {self.dispatch_id}"
 
     def is_linked(self):
         """Check if order was successfully linked"""
@@ -1178,13 +1680,16 @@ class Setup(models.Model):
         ('status', 'Status Setup'),
         ('payment_status', 'Payment Status Setup'),
         ('order_source', 'Order Source'),
+        ('followup_status', 'Follow-up Status'),
     ]
 
     setup_type = models.CharField(max_length=50, choices=SETUP_TYPES)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
+    color = models.CharField(max_length=50, blank=True, null=True, help_text="Hex color code for badges")
     is_active = models.BooleanField(default=True)
     is_default = models.BooleanField(default=False, help_text="Default selection for this setup type in order forms")
+    sort_order = models.IntegerField(default=0, help_text="Manual drag-and-drop display order within a setup type")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1192,7 +1697,7 @@ class Setup(models.Model):
         verbose_name = 'Setup'
         verbose_name_plural = 'Setups'
         unique_together = ('setup_type', 'name')
-        ordering = ['setup_type', 'name']
+        ordering = ['setup_type', 'sort_order', 'name']
 
     def __str__(self):
         return f"{self.get_setup_type_display()} - {self.name}"
@@ -1502,6 +2007,170 @@ class CompanySetup(models.Model):
     def save(self, *args, **kwargs):
         self.pk = 1  # enforce singleton
         super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('ctx_company_setup')
+
+
+class LandingPageSettings(models.Model):
+    """Singleton model holding all editable copy/config for the public marketing
+    landing page (templates/landing.html). Repeatable content (stat rows, brand
+    logos, feature/integration cards) lives in related models below."""
+
+    # Hero
+    hero_pill_text = models.CharField(max_length=100, blank=True, default='The commerce OS for Nepal')
+    hero_headline = models.CharField(max_length=200, blank=True, default='Run your entire shop from one system')
+    hero_subtext = models.TextField(
+        blank=True,
+        default='Online and offline selling, inventory, courier logistics, customer messaging '
+                'and your team — one connected infrastructure instead of six disconnected tools.'
+    )
+    hero_cta_primary_text = models.CharField(max_length=50, blank=True, default='Start selling')
+    hero_cta_primary_link = models.CharField(max_length=200, blank=True, default='')
+    hero_cta_secondary_text = models.CharField(max_length=50, blank=True, default='Explore platform')
+    hero_cta_secondary_link = models.CharField(max_length=200, blank=True, default='#platform')
+    hero_note_text = models.CharField(
+        max_length=200, blank=True,
+        default='Nepali time zone, rupee amounts and local courier networks out of the box'
+    )
+
+    # Trusted-by brands
+    trusted_label = models.CharField(max_length=150, blank=True, default='Trusted by growing Nepali brands')
+
+    # Solutions section (two fixed split cards)
+    solutions_eyebrow = models.CharField(max_length=50, blank=True, default='Solutions')
+    solutions_heading = models.CharField(max_length=200, blank=True, default='Choose how you want to sell')
+    solutions_subtext = models.TextField(
+        blank=True,
+        default='Whether you sell through Instagram DMs, a storefront, or a counter in Kathmandu '
+                '— it runs on the same stock and the same orders.'
+    )
+    solution_card1_title = models.CharField(max_length=100, blank=True, default='Online sellers')
+    solution_card1_text = models.TextField(
+        blank=True,
+        default='Storefront, Instagram and Facebook messaging, two-way Google Sheets sync, '
+                'courier handoff and COD tracking — all against one set of stock.'
+    )
+    solution_card2_title = models.CharField(max_length=100, blank=True, default='Physical stores')
+    solution_card2_text = models.TextField(
+        blank=True,
+        default='POS counter billing, barcode-driven product lookup and per-branch order tracking '
+                '— sharing the same inventory as everything you sell online.'
+    )
+
+    # Platform section header (cards are LandingFeatureCard, section='platform')
+    platform_eyebrow = models.CharField(max_length=50, blank=True, default='Platform')
+    platform_heading = models.CharField(max_length=200, blank=True, default='A full selling infrastructure')
+    platform_subtext = models.CharField(max_length=250, blank=True, default='Every part of the operation — not just a storefront.')
+
+    # Integrations section header (cards are LandingFeatureCard, section='integration')
+    integrations_eyebrow = models.CharField(max_length=50, blank=True, default='Integrations')
+    integrations_heading = models.CharField(max_length=200, blank=True, default='Connected to the tools you already use')
+
+    # CTA band
+    cta_heading = models.CharField(max_length=200, blank=True, default='Ready to run it all from one place?')
+    cta_subtext = models.CharField(max_length=250, blank=True, default='Sign in to your dashboard, or browse the storefront to see it in action.')
+    cta_primary_text = models.CharField(max_length=50, blank=True, default='Get started')
+    cta_secondary_text = models.CharField(max_length=50, blank=True, default='Visit the store')
+
+    # Footer / verified business details
+    business_address = models.CharField(max_length=255, blank=True, default='')
+    business_pan = models.CharField(max_length=100, blank=True, default='')
+    business_contact = models.CharField(max_length=150, blank=True, default='')
+
+    # Footer social links
+    social_instagram = models.URLField(max_length=300, blank=True, default='')
+    social_facebook = models.URLField(max_length=300, blank=True, default='')
+    social_tiktok = models.URLField(max_length=300, blank=True, default='')
+    social_whatsapp = models.URLField(max_length=300, blank=True, default='')
+    social_email = models.EmailField(max_length=150, blank=True, default='')
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Landing Page Setup'
+        verbose_name_plural = 'Landing Page Setup'
+
+    def __str__(self):
+        return 'Landing Page Settings'
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('landing_page_settings')
+
+
+class LandingStatItem(models.Model):
+    """A row in the hero's mock stats panel."""
+
+    GROUP_CHOICES = [
+        ('primary', 'Top row (dot + right-aligned value)'),
+        ('secondary', 'Stock row (below divider)'),
+    ]
+    DOT_CHOICES = [
+        ('amber', 'Amber'),
+        ('green', 'Green'),
+        ('blue', 'Blue'),
+        ('', 'None'),
+    ]
+
+    settings = models.ForeignKey(LandingPageSettings, on_delete=models.CASCADE, related_name='stat_items')
+    label = models.CharField(max_length=100)
+    value = models.CharField(max_length=100, blank=True, default='')
+    dot_color = models.CharField(max_length=10, choices=DOT_CHOICES, blank=True, default='')
+    group = models.CharField(max_length=10, choices=GROUP_CHOICES, default='primary')
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['group', 'order', 'id']
+        verbose_name = 'Landing Stat Item'
+
+    def __str__(self):
+        return self.label
+
+
+class LandingBrandLogo(models.Model):
+    """A logo/name shown in the 'Trusted by growing Nepali brands' row."""
+
+    settings = models.ForeignKey(LandingPageSettings, on_delete=models.CASCADE, related_name='brand_logos')
+    name = models.CharField(max_length=100)
+    logo = models.ImageField(upload_to='landing/brands/', blank=True, null=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order', 'id']
+        verbose_name = 'Landing Brand Logo'
+
+    def __str__(self):
+        return self.name
+
+
+class LandingFeatureCard(models.Model):
+    """A card in either the Platform features grid or the Integrations grid."""
+
+    SECTION_CHOICES = [
+        ('platform', 'Platform feature'),
+        ('integration', 'Integration'),
+    ]
+
+    settings = models.ForeignKey(LandingPageSettings, on_delete=models.CASCADE, related_name='feature_cards')
+    section = models.CharField(max_length=15, choices=SECTION_CHOICES, default='platform')
+    icon = models.CharField(max_length=60, default='fas fa-star', help_text='Font Awesome class, e.g. "fas fa-box"')
+    title = models.CharField(max_length=100)
+    description = models.CharField(max_length=255, blank=True, default='')
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['section', 'order', 'id']
+        verbose_name = 'Landing Feature Card'
+
+    def __str__(self):
+        return self.title
 
 
 # ==================== API Sync Settings ====================
@@ -1509,17 +2178,60 @@ class APISettings(models.Model):
     """Singleton model to store configurable API calling intervals and times."""
 
     order_sync_interval = models.PositiveIntegerField(
-        default=14400,
-        help_text="How often (in seconds) to auto-sync orders from NCM. Default: 14400 (4 hours).",
+        default=900,
+        help_text="How often (in seconds) the SERVER runs the background NCM bulk status "
+                  "sync. This is the real API cadence - it costs NCM requests. Default: 900 (15 min).",
     )
-    webhook_check_interval = models.PositiveIntegerField(
+    page_refresh_interval = models.PositiveIntegerField(
         default=30,
-        help_text="How often (in seconds) to check for pending webhook updates. Default: 30.",
+        help_text="How often (in seconds) an open page re-reads order status from the local "
+                  "database to repaint badges. Costs no NCM requests. Default: 30.",
     )
     ncm_api_timeout = models.PositiveIntegerField(
         default=30,
         help_text="Timeout (in seconds) for each NCM API request. Default: 30.",
     )
+    bulk_sync_included_statuses = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Order statuses eligible for the background NCM bulk status sync. Empty = use default (sync all except cancelled/delivered/return/returned/return_initiated/return_approved).",
+    )
+    bulk_sync_fetch_event_times = models.BooleanField(
+        default=True,
+        help_text="During background sync, fetch NCM's real event time for each order whose "
+                  "status changed (one extra API request per changed order). When off, activity "
+                  "log entries are timestamped with the sync run's own time instead.",
+    )
+
+    # --- Background sync scheduler state (see ncm/scheduler.py) -------------
+    # This project runs on shared hosting with no Celery beat and no crontab,
+    # so the bulk sync is driven by whichever web request first notices it is
+    # due. These three columns are the cross-process lock and clock that makes
+    # that safe: they are written with queryset.update() (never .save()) so the
+    # claim is a single atomic statement and so `updated_at` keeps meaning
+    # "when an admin last edited these settings".
+    last_bulk_sync_started_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the most recent background bulk sync began. The due-check "
+                  "measures from here (start-to-start), so a run that outlasts the "
+                  "interval can't immediately retrigger itself.",
+    )
+    last_bulk_sync_finished_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the most recent background bulk sync finished. Display only.",
+    )
+    bulk_sync_running_since = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Non-null while a bulk sync holds the lock. Bumped periodically by the "
+                  "running sync so a long run isn't mistaken for a crashed one; a value "
+                  "older than the stale window is treated as abandoned and taken over.",
+    )
+    last_bulk_sync_summary = models.JSONField(
+        default=dict, blank=True,
+        help_text="Result of the most recent background bulk sync "
+                  "(total_orders / updated_count / errors).",
+    )
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -1564,6 +2276,44 @@ class RTVStatus(models.Model):
 # ==================== NCM RTV (Return to Vendor) ====================
 class RTVOrder(models.Model):
     """Tracks orders returned to vendor via NCM API"""
+
+    # Where rtv_marked_at came from. Ranked: a lower-ranked source must never
+    # overwrite a higher-ranked one (see apply_rtv_marked_at in
+    # services/ncm_service.py). 'order_created' is the known-wrong legacy
+    # value — the sync used to fall back to NCM's *order creation* date, which
+    # then stuck forever because every repair query filtered on
+    # rtv_marked_at IS NULL. Tracking provenance is what makes those rows
+    # findable and fixable instead of permanent.
+    SOURCE_UNKNOWN = ''
+    SOURCE_ORDER_CREATED = 'order_created'
+    SOURCE_STATUS_TIMELINE = 'status_timeline'
+    SOURCE_NCM_STAFF_COMMENT = 'ncm_staff_comment'
+    SOURCE_COMMENT = 'comment'
+    SOURCE_WEBHOOK = 'webhook'
+    SOURCE_MANUAL = 'manual'
+
+    RTV_MARKED_SOURCES = [
+        (SOURCE_UNKNOWN, 'Unknown'),
+        (SOURCE_ORDER_CREATED, 'NCM order created_date (wrong — legacy)'),
+        (SOURCE_STATUS_TIMELINE, 'NCM status timeline return step (approximate)'),
+        (SOURCE_NCM_STAFF_COMMENT, 'Latest NCM Staff comment (approximate)'),
+        (SOURCE_COMMENT, 'NCM "RTV marked" comment'),
+        (SOURCE_WEBHOOK, 'NCM order_marked_rtv webhook'),
+        (SOURCE_MANUAL, 'Marked locally via this app'),
+    ]
+
+    SOURCE_RANK = {
+        SOURCE_UNKNOWN: 0,
+        SOURCE_ORDER_CREATED: 1,
+        SOURCE_STATUS_TIMELINE: 2,
+        SOURCE_NCM_STAFF_COMMENT: 3,
+        SOURCE_COMMENT: 4,
+        SOURCE_WEBHOOK: 4,
+        SOURCE_MANUAL: 4,
+    }
+
+    TRUSTED_SOURCES = (SOURCE_COMMENT, SOURCE_WEBHOOK, SOURCE_MANUAL)
+
     order_id = models.IntegerField(unique=True, help_text="NCM order ID")
     comment = models.TextField(blank=True, default='')
     vendor_return = models.BooleanField(default=True)
@@ -1571,6 +2321,21 @@ class RTVOrder(models.Model):
     rtv_marked_at = models.DateTimeField(
         null=True, blank=True,
         help_text="When NCM staff marked this order as vendor_return (from RTV comment added_time)",
+    )
+    rtv_marked_at_source = models.CharField(
+        max_length=20, choices=RTV_MARKED_SOURCES, default=SOURCE_UNKNOWN,
+        blank=True, db_index=True,
+        help_text="Where rtv_marked_at came from; drives which rows get re-verified",
+    )
+    rtv_marked_at_checked_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Last time we asked NCM for this order's RTV date. Repair passes take "
+                  "the least-recently-checked rows so a bounded batch size converges.",
+    )
+    ncm_created_date = models.DateTimeField(
+        null=True, blank=True,
+        help_text="NCM's order creation date. Kept for filtering/reference only — "
+                  "this is NOT when the RTV was marked.",
     )
     # NCM order fields (populated from v2 vendor/orders API)
     receiver_name = models.CharField(max_length=255, blank=True, default='')
@@ -1610,6 +2375,15 @@ class RTVOrder(models.Model):
 
     def __str__(self):
         return f"RTV #{self.order_id} by {self.vendor}"
+
+    @property
+    def rtv_marked_at_is_trusted(self):
+        """True when rtv_marked_at came from an authoritative source.
+
+        Untrusted values are still displayed (flagged approximate) rather than
+        hidden, but they stay in the repair queue until NCM confirms them.
+        """
+        return bool(self.rtv_marked_at) and self.rtv_marked_at_source in self.TRUSTED_SOURCES
 
 
 class RTVFollowUp(models.Model):
@@ -1685,6 +2459,8 @@ class MaintenanceMode(models.Model):
     def save(self, *args, **kwargs):
         self.pk = 1  # enforce singleton
         super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('ctx_maintenance_mode')
 
 
 class MaintenanceLog(models.Model):
@@ -1712,3 +2488,487 @@ class MaintenanceLog(models.Model):
 
     def __str__(self):
         return f"Maintenance {self.action} by {self.performed_by} at {self.timestamp}"
+
+class GlobalNotice(models.Model):
+    content = models.TextField(help_text="Rich text content for the notice")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+    display_from = models.DateTimeField(null=True, blank=True, help_text="When to start showing the notice")
+    display_until = models.DateTimeField(null=True, blank=True, help_text="When to stop showing the notice")
+
+    DISPLAY_FREQ_CHOICES = [
+        ('every_refresh', 'Every Refresh'),
+        ('once_per_session', 'Once Per Session'),
+        ('once_per_hour', 'Once Per Hour'),
+        ('once_per_day', 'Once Per Day'),
+        ('once_per_week', 'Once Per Week'),
+        ('once_only', 'Once Only'),
+    ]
+    display_frequency = models.CharField(max_length=20, choices=DISPLAY_FREQ_CHOICES, default='every_refresh', help_text="How often to show the notice to a user")
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Notice {self.id} created at {self.created_at}"
+
+
+class FollowUp(models.Model):
+    """Model to store Follow-ups data"""
+    name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=50)
+    lead_source = models.CharField(max_length=100, blank=True)
+    # Legacy single-product FK (kept for backward compat, use products M2M instead)
+    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name='follow_ups_single')
+    # Multiple products (preferred)
+    products = models.ManyToManyField(Product, blank=True, related_name='follow_ups_multi')
+    product_variations = models.ManyToManyField('ProductVariation', blank=True, related_name='follow_ups_multi')
+    followup_1 = models.CharField(max_length=255, blank=True)
+    followup_2 = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=100, blank=True)
+    remarks = models.TextField(blank=True)
+    is_deleted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    version = models.IntegerField(default=1)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.name} - {self.phone}"
+
+    @property
+    def latest_followup_log(self):
+        # Returns the latest log overall that is a followup note or entry created
+        for log in self.logs.all():
+            if log.field_changed == 'Entry Created' or log.field_changed.startswith('Followup'):
+                return log
+        return None
+
+    @property
+    def all_followup_logs(self):
+        return self.logs.all()
+
+    @property
+    def followup_count(self):
+        return self.logs.filter(field_changed__startswith='Followup').count()
+
+    def get_all_products(self):
+        """Return M2M products if any, else fall back to the legacy FK product."""
+        m2m = list(self.products.all())
+        if m2m:
+            return m2m
+        if self.product:
+            return [self.product]
+        return []
+
+    def get_formatted_products(self):
+        """Return formatted products and variations for frontend rendering."""
+        formatted = []
+        for p in self.products.all():
+            formatted.append({
+                'id': str(p.id),
+                'name': p.name,
+                'price': p.price
+            })
+        for v in self.product_variations.all():
+            formatted.append({
+                'id': f"v_{v.id}",
+                'name': f"{v.product.name} - {v.variation_name or v.sku}",
+                'price': v.price
+            })
+        if not formatted and self.product:
+            formatted.append({
+                'id': str(self.product.id),
+                'name': self.product.name,
+                'price': self.product.price
+            })
+        return formatted
+
+
+class ContentAccount(models.Model):
+    account_id = models.CharField(max_length=100, blank=True, null=True, verbose_name='Id')
+    user_name = models.CharField(max_length=100, blank=True, null=True)
+    gmail = models.CharField(max_length=255, blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    password = models.CharField(max_length=100, blank=True, null=True)
+    managed_by = models.CharField(max_length=100, blank=True, null=True)
+    status = models.CharField(max_length=50, blank=True, null=True)
+    account_type = models.CharField(max_length=100, blank=True, null=True, verbose_name='Type')
+    order = models.IntegerField(default=0)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_deleted = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.account_id} - {self.user_name}"
+
+    class Meta:
+        ordering = ['order', '-created_at']
+        verbose_name_plural = 'Content Accounts'
+class StaffReport(models.Model):
+    staff_name = models.CharField(max_length=255)
+    report_date = models.CharField(max_length=255)
+    platform = models.CharField(max_length=255, blank=True, null=True)
+    no_of_posts = models.TextField(blank=True, null=True)
+    views = models.TextField(blank=True, null=True)
+    likes = models.TextField(blank=True, null=True)
+    comments = models.TextField(blank=True, null=True)
+    follower_growth = models.TextField(blank=True, null=True)
+    punctuality = models.TextField(blank=True, null=True)
+    behaviour = models.TextField(blank=True, null=True)
+    leave_and_wfh = models.TextField(blank=True, null=True)
+    notes_remarks = models.TextField(blank=True, null=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_deleted = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.staff_name} - {self.report_date}"
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name_plural = 'Staff Reports'
+
+class FollowUpLog(models.Model):
+    follow_up = models.ForeignKey(FollowUp, on_delete=models.CASCADE, related_name='logs')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    field_changed = models.CharField(max_length=50)
+    old_value = models.TextField(blank=True, null=True)
+    new_value = models.TextField(blank=True, null=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.follow_up.name} - {self.field_changed} updated"
+
+
+class FollowUpPresence(models.Model):
+    """Temporary storage for presence indicators (typing/viewing) on Follow-ups"""
+    followup = models.ForeignKey(FollowUp, on_delete=models.CASCADE, related_name='presences')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    action = models.CharField(max_length=20, choices=[('viewing', 'Viewing'), ('typing', 'Typing')])
+    last_seen = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('followup', 'user')
+        indexes = [
+            models.Index(fields=['last_seen']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.action} on {self.followup.id}"
+
+
+class MediaCategory(models.Model):
+    """User-defined category for organizing the shared Media Library."""
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(unique=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name_plural = 'Media Categories'
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            from django.utils.text import slugify
+            base_slug = slugify(self.name) or 'category'
+            slug = base_slug
+            i = 1
+            while MediaCategory.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                i += 1
+                slug = f"{base_slug}-{i}"
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+
+class MediaAsset(models.Model):
+    """A reusable image in the shared Media Library, pickable from any product's gallery."""
+    image = models.ImageField(upload_to='media_library/%Y/%m/')
+    title = models.CharField(max_length=255, blank=True)
+    category = models.ForeignKey(MediaCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='assets')
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='media_assets')
+    file_size = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Media Asset'
+        verbose_name_plural = 'Media Assets'
+
+    def __str__(self):
+        return self.title or f"Media {self.pk}"
+
+
+# ============================================================================
+#  INVOICE CUSTOMIZER  (Setup → Invoice Customizer)
+# ============================================================================
+#  The order invoice printed from the orders list is not hardcoded any more.
+#  `InvoiceTemplate` is a singleton holding the paper/style/section switches,
+#  and `InvoiceElement` holds the actual *lines* (label + value) that print in
+#  each region, so staff can add a VAT number, a second phone, a delivery note
+#  — or delete a stock line — without a code change. Defaults are seeded as
+#  real InvoiceElement rows so built-in lines are editable like custom ones.
+#  Rendering helpers live in `dashboard/invoice_config.py`.
+# ============================================================================
+
+
+class InvoiceTemplate(models.Model):
+    """Singleton configuration for the printable order invoice."""
+
+    PAPER_CHOICES = [
+        ('a4', 'A4 (210 x 297 mm)'),
+        ('a5', 'A5 (148 x 210 mm)'),
+        ('letter', 'Letter (8.5 x 11 in)'),
+        ('thermal80', 'Thermal roll (80 mm)'),
+    ]
+    FONT_CHOICES = [
+        ("'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", 'Segoe UI (default)'),
+        ("'Helvetica Neue', Helvetica, Arial, sans-serif", 'Helvetica / Arial'),
+        ("'Inter', 'Segoe UI', sans-serif", 'Inter'),
+        ("Georgia, 'Times New Roman', serif", 'Georgia (serif)'),
+        ("'Courier New', Courier, monospace", 'Courier (monospace)'),
+        ("'Trebuchet MS', 'Segoe UI', sans-serif", 'Trebuchet MS'),
+    ]
+    HEADER_LAYOUT_CHOICES = [
+        ('split', 'Brand left / logo centre / meta right'),
+        ('brand_left', 'Brand + logo left / meta right'),
+        ('centered', 'Everything centred'),
+        ('meta_left', 'Meta left / brand right'),
+    ]
+    TABLE_STYLE_CHOICES = [
+        ('bordered', 'Fully bordered'),
+        ('striped', 'Striped rows'),
+        ('minimal', 'Minimal / lines only'),
+    ]
+    CURRENCY_POSITION_CHOICES = [
+        ('before', 'Before amount'),
+        ('after', 'After amount'),
+    ]
+    ACCENT_MODE_CHOICES = [
+        ('mono', 'Monochrome (ink only)'),
+        ('accent', 'Accent colour'),
+        ('filled', 'Filled accent bands'),
+    ]
+
+    # -- Business identity ------------------------------------------------
+    business_name = models.CharField(
+        max_length=200, blank=True, default='',
+        help_text='Leave blank to use the company name from Company Setup.'
+    )
+    business_tagline = models.CharField(max_length=300, blank=True, default='')
+    vat_number = models.CharField('VAT / PAN number', max_length=60, blank=True, default='')
+    registration_number = models.CharField('Registration number', max_length=60, blank=True, default='')
+    business_phone = models.CharField(max_length=60, blank=True, default='')
+    business_alt_phone = models.CharField(max_length=60, blank=True, default='')
+    business_email = models.CharField(max_length=120, blank=True, default='')
+    business_website = models.CharField(max_length=160, blank=True, default='')
+    business_address = models.TextField(blank=True, default='')
+    logo = models.ImageField(
+        upload_to='invoice/', blank=True, null=True,
+        help_text='Leave blank to use the Company Setup logo.'
+    )
+    show_logo = models.BooleanField(default=True)
+    logo_height = models.PositiveSmallIntegerField(default=50, help_text='Printed logo height in pixels.')
+
+    # -- Document ---------------------------------------------------------
+    document_title = models.CharField(max_length=60, default='INVOICE')
+    invoice_number_prefix = models.CharField(max_length=20, blank=True, default='')
+    header_layout = models.CharField(max_length=20, choices=HEADER_LAYOUT_CHOICES, default='split')
+
+    # -- Section switches -------------------------------------------------
+    show_header = models.BooleanField(default=True)
+    show_meta = models.BooleanField(default=True)
+    show_bill_to = models.BooleanField(default=True)
+    bill_to_title = models.CharField(max_length=60, default='Bill To')
+    show_ship_to = models.BooleanField(default=False)
+    ship_to_title = models.CharField(max_length=60, default='Ship To')
+    show_items = models.BooleanField(default=True)
+    show_totals = models.BooleanField(default=True)
+    show_footer = models.BooleanField(default=True)
+
+    # -- Item table -------------------------------------------------------
+    col_index = models.BooleanField(default=True)
+    col_index_label = models.CharField(max_length=40, default='#')
+    col_product_label = models.CharField(max_length=40, default='Product')
+    col_sku = models.BooleanField(default=True)
+    col_type_tag = models.BooleanField(default=True)
+    col_variant = models.BooleanField(default=True)
+    col_bundle_components = models.BooleanField(default=True)
+    col_qty = models.BooleanField(default=True)
+    col_qty_label = models.CharField(max_length=40, default='Qty')
+    col_price = models.BooleanField(default=True)
+    col_price_label = models.CharField(max_length=40, default='Unit Price')
+    col_total = models.BooleanField(default=True)
+    col_total_label = models.CharField(max_length=40, default='Total')
+    empty_items_text = models.CharField(max_length=120, default='No items found.')
+
+    # -- Totals -----------------------------------------------------------
+    show_subtotal = models.BooleanField(default=True)
+    label_subtotal = models.CharField(max_length=40, default='Subtotal')
+    show_discount = models.BooleanField(default=True)
+    label_discount = models.CharField(max_length=40, default='Discount')
+    show_shipping = models.BooleanField(default=True)
+    label_shipping = models.CharField(max_length=40, default='Shipping')
+    show_delivery = models.BooleanField(default=True)
+    label_delivery = models.CharField(max_length=40, default='Delivery Charge')
+    show_tax = models.BooleanField(default=True)
+    label_tax = models.CharField(max_length=40, default='Tax')
+    label_grand_total = models.CharField(max_length=40, default='Grand Total')
+    hide_zero_totals = models.BooleanField(
+        default=True, help_text='Hide discount / shipping / delivery / tax rows when they are zero.'
+    )
+    show_amount_in_words = models.BooleanField(default=False)
+    label_amount_in_words = models.CharField(max_length=60, default='In words')
+
+    # -- Currency ---------------------------------------------------------
+    currency_symbol = models.CharField(max_length=10, default='रू')
+    currency_position = models.CharField(max_length=10, choices=CURRENCY_POSITION_CHOICES, default='before')
+    thousand_separator = models.BooleanField(default=True)
+
+    # -- Footer -----------------------------------------------------------
+    show_payment_method = models.BooleanField(default=True)
+    show_partial_payment = models.BooleanField(default=True)
+    show_admin_notes = models.BooleanField(default=True)
+    admin_notes_title = models.CharField(max_length=60, default='Admin Notes')
+    show_customer_notes = models.BooleanField(default=False)
+    customer_notes_title = models.CharField(max_length=60, default='Order Notes')
+    show_terms = models.BooleanField(default=False)
+    terms_title = models.CharField(max_length=60, default='Terms & Conditions')
+    terms_text = models.TextField(blank=True, default='', help_text='One condition per line.')
+    thank_you_text = models.CharField(max_length=200, default='Thank you for shopping with {company}!')
+    footer_note = models.CharField(max_length=200, default='Computer-generated invoice - no signature required.')
+    show_printed_by = models.BooleanField(default=False)
+    show_signature = models.BooleanField(default=False)
+    signature_left_label = models.CharField(max_length=60, default='Customer Signature')
+    signature_right_label = models.CharField(max_length=60, default='Authorised Signature')
+
+    # -- Style ------------------------------------------------------------
+    paper_size = models.CharField(max_length=20, choices=PAPER_CHOICES, default='a4')
+    accent_mode = models.CharField(max_length=10, choices=ACCENT_MODE_CHOICES, default='mono')
+    accent_color = models.CharField(max_length=7, default='#111827')
+    text_color = models.CharField(max_length=7, default='#000000')
+    muted_color = models.CharField(max_length=7, default='#4b5563')
+    border_color = models.CharField(max_length=7, default='#000000')
+    page_background = models.CharField(max_length=7, default='#ffffff')
+    font_family = models.CharField(max_length=120, default="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif")
+    base_font_size = models.PositiveSmallIntegerField(default=12, help_text='Base body font size in px (8-18).')
+    table_style = models.CharField(max_length=20, choices=TABLE_STYLE_CHOICES, default='bordered')
+    corner_radius = models.PositiveSmallIntegerField(default=8, help_text='Outer border radius in px.')
+    compact_mode = models.BooleanField(default=False, help_text='Tighter padding - fits more rows per page.')
+    show_outer_border = models.BooleanField(default=True)
+    show_watermark = models.BooleanField(default=False)
+    watermark_text = models.CharField(max_length=60, blank=True, default='PAID')
+    watermark_opacity = models.PositiveSmallIntegerField(default=8, help_text='Watermark opacity, 1-40 (%).')
+    custom_css = models.TextField(
+        blank=True, default='',
+        help_text='Advanced: extra CSS appended to the invoice stylesheet.'
+    )
+
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='invoice_template_edits'
+    )
+
+    class Meta:
+        verbose_name = 'Invoice Template'
+        verbose_name_plural = 'Invoice Template'
+
+    def __str__(self):
+        return self.business_name or 'Invoice Template'
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # enforce singleton
+        # Keep the numeric knobs inside sane print ranges rather than trusting the form.
+        self.base_font_size = min(max(int(self.base_font_size or 12), 8), 18)
+        self.logo_height = min(max(int(self.logo_height or 50), 16), 160)
+        self.corner_radius = min(max(int(self.corner_radius or 0), 0), 24)
+        self.watermark_opacity = min(max(int(self.watermark_opacity or 8), 1), 40)
+        super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('invoice_template_v1')
+
+    @classmethod
+    def get_solo(cls):
+        obj, created = cls.objects.get_or_create(pk=1)
+        if created:
+            InvoiceElement.seed_defaults(obj)
+        return obj
+
+
+class InvoiceElement(models.Model):
+    """One printable line inside an invoice region.
+
+    A line either prints a fixed string (``source='static'``) or a value pulled
+    from the order via a whitelisted token (``source='field'`` - see
+    ``dashboard/invoice_config.TOKENS``). Both stock and custom lines are rows
+    here, so anything on the invoice can be renamed, reordered or removed.
+    """
+
+    SECTION_CHOICES = [
+        ('brand', 'Header - under the business name'),
+        ('meta', 'Header - invoice meta box'),
+        ('bill_to', 'Bill To box'),
+        ('ship_to', 'Ship To box'),
+        ('items_note', 'Between items and totals'),
+        ('totals', 'Totals box (extra rows)'),
+        ('footer', 'Footer'),
+    ]
+    SOURCE_CHOICES = [
+        ('field', 'Order / customer data'),
+        ('static', 'Fixed text'),
+    ]
+
+    template = models.ForeignKey(
+        InvoiceTemplate, on_delete=models.CASCADE, related_name='elements'
+    )
+    section = models.CharField(max_length=20, choices=SECTION_CHOICES, default='bill_to')
+    label = models.CharField(max_length=80, blank=True, default='')
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='field')
+    token = models.CharField(
+        max_length=60, blank=True, default='',
+        help_text="Data token, e.g. 'customer.phone'. Only used when source is 'field'."
+    )
+    static_value = models.CharField(max_length=400, blank=True, default='')
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    hide_if_empty = models.BooleanField(default=True)
+    is_bold = models.BooleanField(default=False)
+    full_width = models.BooleanField(
+        default=True, help_text='Print on its own line instead of sharing the row.'
+    )
+    is_builtin = models.BooleanField(
+        default=False, help_text='Seeded with the default layout; still editable and deletable.'
+    )
+
+    class Meta:
+        ordering = ['section', 'sort_order', 'id']
+        verbose_name = 'Invoice Element'
+        verbose_name_plural = 'Invoice Elements'
+
+    def __str__(self):
+        return f"{self.get_section_display()} - {self.label or self.token or self.static_value}"
+
+    @classmethod
+    def seed_defaults(cls, template=None, wipe=False):
+        """Create (or restore) the stock invoice lines."""
+        from dashboard.invoice_config import DEFAULT_ELEMENTS
+        template = template or InvoiceTemplate.objects.get_or_create(pk=1)[0]
+        if wipe:
+            cls.objects.filter(template=template).delete()
+        elif cls.objects.filter(template=template).exists():
+            return
+        cls.objects.bulk_create([
+            cls(template=template, is_builtin=True, **spec) for spec in DEFAULT_ELEMENTS
+        ])

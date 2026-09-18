@@ -1,0 +1,52 @@
+{% comment %}
+Sentinel Vault device probe.
+
+Writes a small `sv_dev` cookie describing the machine, which sentinel/utils.py
+reads back on the next request. It exists because the user-agent string cannot
+be trusted about hardware: Chrome for Android's "Request desktop site" sends a
+verbatim Linux-desktop UA, and iPadOS Safari has claimed to be a Mac since 13.
+Touch points and the real panel size are not rewritten by either, so they are
+what actually identifies a phone.
+
+Nothing here is a secret — screen size, touch support, time zone — and it is
+deliberately inline so the sign-in page carries it without depending on
+collectstatic having run.
+{% endcomment %}
+<script>
+(function () {
+    try {
+        var nav = window.navigator || {};
+        var scr = window.screen || {};
+        var data = {
+            w: scr.width || 0,
+            h: scr.height || 0,
+            d: Math.round((window.devicePixelRatio || 1) * 100) / 100,
+            t: nav.maxTouchPoints || 0,
+            l: (nav.language || '').slice(0, 16)
+        };
+        try { data.tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || '').slice(0, 48); } catch (e) {}
+
+        function write(payload) {
+            var value = encodeURIComponent(JSON.stringify(payload));
+            if (value.length > 400) { return; }   // server ignores anything longer
+            document.cookie = 'sv_dev=' + value + ';path=/;max-age=2592000;samesite=Lax'
+                + (location.protocol === 'https:' ? ';secure' : '');
+        }
+        write(data);
+
+        /* The high-entropy hints name the actual handset, but only resolve
+           asynchronously — write the cheap facts first so a fast sign-in is
+           never left with nothing. */
+        if (nav.userAgentData && nav.userAgentData.getHighEntropyValues) {
+            data.mb = !!nav.userAgentData.mobile;
+            nav.userAgentData.getHighEntropyValues(['platform', 'model'])
+                .then(function (high) {
+                    if (high.platform) { data.p = String(high.platform).slice(0, 32); }
+                    if (high.model) { data.m = String(high.model).slice(0, 40); }
+                    write(data);
+                })
+                .catch(function () { write(data); });
+        }
+    } catch (e) { /* never let device telemetry break a page */ }
+})();
+</script>

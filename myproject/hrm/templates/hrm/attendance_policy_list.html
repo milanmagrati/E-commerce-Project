@@ -22,10 +22,54 @@
             <h4 class="fw-bold mb-0" style="color:#1a1a2e;">Attendance Policies</h4>
             <small class="text-muted">Manage attendance rules and grace periods</small>
         </div>
-        <button class="btn btn-success px-3" onclick="openAddModal()">
-            <i class="fas fa-plus me-1"></i> Add Attendance Policy
-        </button>
+        <div class="d-flex align-items-center gap-2">
+            {% if can_view_incomplete_attendance_alert %}
+            <button class="btn btn-outline-warning px-3 position-relative" id="incAttBtn" onclick="IncAttAlert.openModal()">
+                <i class="fas fa-triangle-exclamation me-1"></i> Incomplete Attendance
+                <span class="badge rounded-pill bg-danger" id="incAttBadge" style="display:none;position:absolute;top:-8px;right:-8px;font-size:.68rem;">0</span>
+            </button>
+            {% endif %}
+            <button class="btn btn-success px-3" onclick="openAddModal()">
+                <i class="fas fa-plus me-1"></i> Add Attendance Policy
+            </button>
+        </div>
     </div>
+
+    {% if user.is_superuser or user.role == 'administrator' %}
+    <!-- Attendance Data Pull / Refresh Interval -->
+    <div class="card mb-3 shadow-sm border refresh-settings-card">
+        <div class="card-body py-3 px-3">
+            <div class="d-flex flex-wrap align-items-center gap-3">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="refresh-icon-circle"><i class="fas fa-arrows-rotate"></i></div>
+                    <div>
+                        <div class="fw-semibold" style="font-size:.88rem;color:#1a1a2e;">Attendance Data Pull</div>
+                        <div class="text-muted" style="font-size:.75rem;">
+                            How often biometric punches are automatically re-synced into attendance records
+                            <span id="attSyncLastAt"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+                    <select class="form-select form-select-sm" id="attRefreshPreset" style="width:160px;" onchange="onRefreshPresetChange()">
+                        <option value="360">Every 6 Hours</option>
+                        <option value="720">Every 12 Hours</option>
+                        <option value="1440">Every 24 Hours</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                    <div class="input-group input-group-sm" id="attRefreshCustomWrap" style="width:130px;display:none;">
+                        <input type="number" class="form-control" id="attRefreshCustomHours" min="1" max="24" value="12">
+                        <span class="input-group-text">hrs</span>
+                    </div>
+                    <button class="btn btn-success btn-sm px-3" onclick="saveRefreshInterval()" id="attRefreshSaveBtn">
+                        <span id="attRefreshSaveNormal"><i class="fas fa-save me-1"></i>Save</span>
+                        <span id="attRefreshSaveLoading" class="d-none"><span class="spinner-border spinner-border-sm me-1"></span>Saving...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Search & Filters -->
     <div class="card mb-3 shadow-sm border">
@@ -172,6 +216,24 @@
                                 <div>
                                     <div class="fw-semibold" style="font-size:.85rem;">{{ policy.early_departure_grace }} minutes</div>
                                     <div class="text-muted" style="font-size:.72rem;">Early Departure Grace</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="policy-detail-item">
+                                <i class="fas fa-user-slash" style="color:#dc2626;font-size:.8rem;margin-top:2px;flex-shrink:0;"></i>
+                                <div>
+                                    <div class="fw-semibold" style="font-size:.85rem;">&le; {{ policy.absent_threshold_hours }} hrs</div>
+                                    <div class="text-muted" style="font-size:.72rem;">Absent Threshold</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="policy-detail-item">
+                                <i class="fas fa-user-clock" style="color:#d97706;font-size:.8rem;margin-top:2px;flex-shrink:0;"></i>
+                                <div>
+                                    <div class="fw-semibold" style="font-size:.85rem;">&le; {{ policy.half_day_threshold_hours }} hrs</div>
+                                    <div class="text-muted" style="font-size:.72rem;">Half Day Threshold</div>
                                 </div>
                             </div>
                         </div>
@@ -331,6 +393,39 @@
                     </div>
                 </div>
 
+                <!-- Section: Daily Status Thresholds -->
+                <div class="modal-form-section">
+                    <div class="modal-section-label">
+                        <span class="section-dot" style="background:#dc2626;"></span> Daily Status Thresholds
+                    </div>
+                    <div class="text-muted mb-2" style="font-size:.76rem;">
+                        Worked hours (clock out &minus; clock in, minus break) decide the day's status:
+                        at or below the Absent threshold is <strong>Absent</strong>, above that up to the
+                        Half Day threshold is <strong>Half Day</strong>, and anything higher is a
+                        <strong>Full Day</strong>.
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="pro-label">Absent Threshold <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap has-suffix">
+                                <i class="fas fa-user-slash pro-input-icon" style="color:#dc2626;"></i>
+                                <input type="number" class="form-control pro-field" id="policyAbsentThreshold" value="2" min="0.1" step="0.1">
+                                <span class="pro-input-suffix">hrs</span>
+                            </div>
+                            <span class="field-error-text" id="policyAbsentThresholdErr" style="display:none;"></span>
+                        </div>
+                        <div class="col-6">
+                            <label class="pro-label">Half Day Threshold <span class="text-danger">*</span></label>
+                            <div class="pro-input-wrap has-suffix">
+                                <i class="fas fa-user-clock pro-input-icon" style="color:#d97706;"></i>
+                                <input type="number" class="form-control pro-field" id="policyHalfDayThreshold" value="4" min="0.1" step="0.1">
+                                <span class="pro-input-suffix">hrs</span>
+                            </div>
+                            <span class="field-error-text" id="policyHalfDayThresholdErr" style="display:none;"></span>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Section: Status -->
                 <div class="modal-form-section" style="border-bottom:none;">
                     <div class="modal-section-label">
@@ -418,7 +513,23 @@
     </div>
 </div>
 
+{% comment %}
+The Incomplete Attendance review/fix modal and fix-history modal are now
+rendered globally in base.html (see partials/incomplete_attendance_alert.html)
+so the alert works on every page, not just this one. The button above wires
+into that shared instance via IncAttAlert.openModal().
+{% endcomment %}
+
 <style>
+    /* ── Refresh Settings Card ── */
+    .refresh-settings-card { border-left: 4px solid #0ea5e9; border-radius: 12px; }
+    .refresh-icon-circle {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: #e0f2fe; color: #0ea5e9;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1rem; flex-shrink: 0;
+    }
+
     /* ── Stat Cards ── */
     .stat-card {
         border: 1px solid #e9ecef;
@@ -558,11 +669,13 @@
     .page-toast.toast-success .page-toast-icon { background:linear-gradient(135deg,#d1fae5,#a7f3d0); color:#059669; }
     .page-toast.toast-danger  .page-toast-icon { background:linear-gradient(135deg,#fee2e2,#fecaca); color:#dc2626; }
     .page-toast.toast-info    .page-toast-icon { background:linear-gradient(135deg,#dbeafe,#bfdbfe); color:#2563eb; }
+    .page-toast.toast-warning .page-toast-icon { background:linear-gradient(135deg,#ffedd5,#fed7aa); color:#c2410c; }
     .page-toast-body { flex:1; min-width:0; }
     .page-toast-title { font-size:.82rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
     .page-toast.toast-success .page-toast-title { color:#065f46; }
     .page-toast.toast-danger  .page-toast-title { color:#991b1b; }
     .page-toast.toast-info    .page-toast-title { color:#1e40af; }
+    .page-toast.toast-warning .page-toast-title { color:#9a3412; }
     .page-toast-msg { font-size:.85rem; color:#374151; line-height:1.4; }
     .page-toast-close { background:none; border:none; font-size:1.4rem; color:#9ca3af; cursor:pointer; line-height:1; padding:0; margin-left:4px; align-self:flex-start; }
     .page-toast-close:hover { color:#374151; }
@@ -571,6 +684,10 @@
     .page-toast.toast-success .page-toast-progress-bar { background:linear-gradient(90deg,#059669,#34d399); }
     .page-toast.toast-danger  .page-toast-progress-bar { background:linear-gradient(90deg,#dc2626,#f87171); }
     .page-toast.toast-info    .page-toast-progress-bar { background:linear-gradient(90deg,#2563eb,#60a5fa); }
+    .page-toast.toast-warning .page-toast-progress-bar { background:linear-gradient(90deg,#ea580c,#fb923c); }
+    .page-toast.toast-warning { cursor:pointer; }
+    .page-toast.toast-warning .page-toast-inner { border:1.5px solid #fed7aa; }
+
     @keyframes toastSlideIn  { from{opacity:0;transform:translateX(60px) scale(.95)} to{opacity:1;transform:translateX(0) scale(1)} }
     @keyframes toastSlideOut { from{opacity:1;transform:translateX(0) scale(1)} to{opacity:0;transform:translateX(60px) scale(.95)} }
     @keyframes toastCountdown { from{width:100%} to{width:0%} }
@@ -592,13 +709,21 @@
     var editingId = null;
     var deletingId = null;
     var toastTimer = null;
-    var draftFields = ['policyName','policyDescription','policyLateMarkAfter','policyEarlyDeparture','policyOvertimeRate','policyWorkHours','policyStatus'];
+    var draftFields = ['policyName','policyDescription','policyLateMarkAfter','policyEarlyDeparture','policyOvertimeRate','policyWorkHours','policyAbsentThreshold','policyHalfDayThreshold','policyStatus'];
+    var hadPendingPolicyToast = !!sessionStorage.getItem('policyToast');
 
     /* ── HTML escape helper (prevent XSS) ── */
     function esc(str) {
         var d = document.createElement('div');
         d.appendChild(document.createTextNode(str));
         return d.innerHTML;
+    }
+    /* esc() only escapes &, <, > (safe for text content) — it leaves quote
+       characters untouched, which breaks out of a value="..." or title="..."
+       attribute the moment free-text (like Remarks) contains one. Use this
+       wherever escaped text is placed inside a quoted HTML attribute. */
+    function escAttr(str) {
+        return esc(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     /* ── Modal singleton (prevent backdrop stacking bug) ── */
@@ -611,9 +736,11 @@
     function showPageToast(type, title, msg) {
         var toast = document.getElementById('pageToast');
         toast.className = 'page-toast toast-' + type;
+        toast.onclick = null;
+        toast.style.cursor = 'default';
         document.getElementById('pageToastTitle').textContent = title;
         document.getElementById('pageToastMsg').textContent = msg;
-        var icons = { success:'fa-check-circle', danger:'fa-exclamation-circle', info:'fa-info-circle' };
+        var icons = { success:'fa-check-circle', danger:'fa-exclamation-circle', info:'fa-info-circle', warning:'fa-triangle-exclamation' };
         document.getElementById('pageToastIcon').innerHTML = '<i class="fas ' + (icons[type] || 'fa-check-circle') + '"></i>';
         toast.style.display = 'block';
         toast.style.animation = 'toastSlideIn .4s cubic-bezier(.21,1.02,.73,1)';
@@ -680,8 +807,12 @@
         document.getElementById('policyEarlyDeparture').value = '15';
         document.getElementById('policyOvertimeRate').value = '150';
         document.getElementById('policyWorkHours').value = '8';
+        document.getElementById('policyAbsentThreshold').value = '2';
+        document.getElementById('policyHalfDayThreshold').value = '4';
         document.getElementById('policyStatus').value = 'true';
         markField('policyName', false);
+        markField('policyAbsentThreshold', false);
+        markField('policyHalfDayThreshold', false);
         hideFormAlert();
         setSaveLoading(false);
     }
@@ -691,7 +822,8 @@
     var DRAFT_DEFAULTS = {
         policyName: '', policyDescription: '',
         policyLateMarkAfter: '15', policyEarlyDeparture: '15',
-        policyOvertimeRate: '150', policyWorkHours: '8', policyStatus: 'true'
+        policyOvertimeRate: '150', policyWorkHours: '8',
+        policyAbsentThreshold: '2', policyHalfDayThreshold: '4', policyStatus: 'true'
     };
     function saveDraft() {
         if (editingId) return;
@@ -778,8 +910,12 @@
                 document.getElementById('policyEarlyDeparture').value = data.early_departure_grace;
                 document.getElementById('policyOvertimeRate').value = data.overtime_rate;
                 document.getElementById('policyWorkHours').value = data.work_hours_per_day;
+                document.getElementById('policyAbsentThreshold').value = data.absent_threshold_hours;
+                document.getElementById('policyHalfDayThreshold').value = data.half_day_threshold_hours;
                 document.getElementById('policyStatus').value = data.is_active ? 'true' : 'false';
                 markField('policyName', false);
+                markField('policyAbsentThreshold', false);
+                markField('policyHalfDayThreshold', false);
                 hideFormAlert();
                 setSaveLoading(false);
                 getModal('policyModal').show();
@@ -797,6 +933,8 @@
                     + '<dt class="col-6 text-muted small">Early Departure Grace</dt><dd class="col-6 fw-semibold">' + esc(String(data.early_departure_grace)) + ' min</dd>'
                     + '<dt class="col-6 text-muted small">Overtime Rate</dt><dd class="col-6 fw-semibold">Rs. ' + esc(String(data.overtime_rate)) + '/hr</dd>'
                     + '<dt class="col-6 text-muted small">Work Hours/Day</dt><dd class="col-6 fw-semibold">' + esc(String(data.work_hours_per_day)) + ' hrs</dd>'
+                    + '<dt class="col-6 text-muted small">Absent Threshold</dt><dd class="col-6 fw-semibold">&le; ' + esc(String(data.absent_threshold_hours)) + ' hrs</dd>'
+                    + '<dt class="col-6 text-muted small">Half Day Threshold</dt><dd class="col-6 fw-semibold">&le; ' + esc(String(data.half_day_threshold_hours)) + ' hrs</dd>'
                     + '<dt class="col-6 text-muted small">Status</dt><dd class="col-6"><span class="badge ' + (data.is_active ? 'bg-success' : 'bg-danger') + '">' + (data.is_active ? 'Active' : 'Inactive') + '</span></dd>'
                     + (data.description ? '<dt class="col-6 text-muted small">Description</dt><dd class="col-6 small">' + esc(data.description) + '</dd>' : '')
                     + '</dl>';
@@ -815,6 +953,22 @@
             return;
         }
         markField('policyName', false);
+
+        var absentTh = parseFloat(document.getElementById('policyAbsentThreshold').value);
+        var halfDayTh = parseFloat(document.getElementById('policyHalfDayThreshold').value);
+        markField('policyAbsentThreshold', false);
+        markField('policyHalfDayThreshold', false);
+        if (!(absentTh > 0) || !(halfDayTh > 0)) {
+            markField('policyAbsentThreshold', true, 'Required, must be greater than 0.');
+            markField('policyHalfDayThreshold', true, 'Required, must be greater than 0.');
+            showFormAlert('danger', 'Validation Error', 'Absent and Half Day thresholds must be positive numbers.');
+            return;
+        }
+        if (absentTh >= halfDayTh) {
+            markField('policyHalfDayThreshold', true, 'Must be greater than the Absent threshold.');
+            showFormAlert('danger', 'Validation Error', 'The Absent threshold must be lower than the Half Day threshold.');
+            return;
+        }
         setSaveLoading(true);
         var url = editingId
             ? '/hrm/attendance-policies/' + editingId + '/update/'
@@ -829,7 +983,8 @@
                 early_departure_grace: document.getElementById('policyEarlyDeparture').value,
                 overtime_rate: document.getElementById('policyOvertimeRate').value,
                 work_hours_per_day: document.getElementById('policyWorkHours').value,
-                half_day_hours: '4',
+                absent_threshold_hours: document.getElementById('policyAbsentThreshold').value,
+                half_day_threshold_hours: document.getElementById('policyHalfDayThreshold').value,
                 is_active: document.getElementById('policyStatus').value,
             })
         })
@@ -839,10 +994,19 @@
             if (data.success) {
                 clearDraft();
                 getModal('policyModal').hide();
+                // Saving a policy re-labels the attendance days already
+                // recorded under it (Present / Half Day / Absent follow the
+                // thresholds just saved) — say so, otherwise it looks like
+                // the change only applies to future days.
+                var relabelled = data.records_updated || 0;
+                var relabelMsg = relabelled
+                    ? ' ' + relabelled + ' attendance record' + (relabelled === 1 ? '' : 's')
+                      + ' re-checked against the new thresholds.'
+                    : '';
                 sessionStorage.setItem('policyToast', JSON.stringify({
                     type: 'success',
                     title: editingId ? 'Policy Updated' : 'Policy Created',
-                    msg: editingId ? 'Policy updated successfully.' : '"' + name + '" has been created.'
+                    msg: (editingId ? 'Policy updated successfully.' : '"' + name + '" has been created.') + relabelMsg
                 }));
                 location.reload();
             } else {
@@ -910,6 +1074,88 @@
 
     /* Attach draft auto-save listeners */
     attachDraftListeners();
+
+    /* ══════════════════ Attendance Data Pull Interval ══════════════════
+       Controls AttendanceSyncSettings — how often raw biometric punches are
+       automatically re-aggregated into AttendanceRecord rows. This is a real
+       data pull, separate from the gear-icon "Alert Settings" modal (which
+       only controls how often the incomplete-attendance toast re-announces
+       an already-known backlog, not when data itself is refreshed). */
+    var SYNC_SETTINGS_URL = '{% url "hrm:attendance_sync_settings" %}';
+    var REFRESH_PRESET_MINUTES = ['360', '720', '1440'];
+
+    function onRefreshPresetChange() {
+        var preset = document.getElementById('attRefreshPreset');
+        document.getElementById('attRefreshCustomWrap').style.display = preset.value === 'custom' ? 'flex' : 'none';
+    }
+
+    function loadRefreshInterval() {
+        fetch(SYNC_SETTINGS_URL)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data.success) return;
+                var hours = Math.max(1, Math.min(24, Math.round(data.interval_minutes / 60)));
+                var preset = document.getElementById('attRefreshPreset');
+                var snapped = String(hours * 60);
+                if (REFRESH_PRESET_MINUTES.indexOf(snapped) !== -1) {
+                    preset.value = snapped;
+                    document.getElementById('attRefreshCustomWrap').style.display = 'none';
+                } else {
+                    preset.value = 'custom';
+                    document.getElementById('attRefreshCustomWrap').style.display = 'flex';
+                }
+                document.getElementById('attRefreshCustomHours').value = hours;
+                var lastAtEl = document.getElementById('attSyncLastAt');
+                if (lastAtEl) {
+                    lastAtEl.textContent = data.last_synced_at ? ('— last pulled ' + data.last_synced_at) : '— not yet run';
+                }
+            })
+            .catch(function() {});
+    }
+
+    function saveRefreshInterval() {
+        var preset = document.getElementById('attRefreshPreset');
+        var hours;
+        if (preset.value === 'custom') {
+            hours = parseInt(document.getElementById('attRefreshCustomHours').value, 10);
+            if (!hours || hours < 1) hours = 1;
+            if (hours > 24) hours = 24;
+        } else {
+            hours = parseInt(preset.value, 10) / 60;
+        }
+        var minutes = hours * 60;
+        var btn = document.getElementById('attRefreshSaveBtn');
+        document.getElementById('attRefreshSaveNormal').classList.add('d-none');
+        document.getElementById('attRefreshSaveLoading').classList.remove('d-none');
+        btn.disabled = true;
+        fetch(SYNC_SETTINGS_URL, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ interval_minutes: minutes })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('attRefreshSaveNormal').classList.remove('d-none');
+            document.getElementById('attRefreshSaveLoading').classList.add('d-none');
+            btn.disabled = false;
+            if (data.success) {
+                showPageToast('success', 'Pull Interval Saved',
+                    'Attendance data will now be pulled every ' + hours + ' hour' + (hours === 1 ? '' : 's') + '.');
+            } else {
+                showPageToast('danger', 'Error', data.error || 'Failed to save pull interval.');
+            }
+        })
+        .catch(function() {
+            document.getElementById('attRefreshSaveNormal').classList.remove('d-none');
+            document.getElementById('attRefreshSaveLoading').classList.add('d-none');
+            btn.disabled = false;
+            showPageToast('danger', 'Error', 'Network error. Please try again.');
+        });
+    }
+
+    if (document.getElementById('attRefreshPreset')) {
+        loadRefreshInterval();
+    }
 </script>
 {% endblock %}
 {% endblock %}

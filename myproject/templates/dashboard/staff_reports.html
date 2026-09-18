@@ -1,0 +1,330 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Staff Reports{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="mb-0 text-primary"><i class="fas fa-file-excel me-2"></i> Staff Reports</h4>
+        <div class="d-flex gap-2">
+            <a href="{% url 'content_accounts_list' %}" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Content Mgmt
+            </a>
+            <button class="btn btn-sm btn-success shadow-sm" onclick="openCreateModal()">
+                <i class="fas fa-plus"></i> Create Report
+            </button>
+        </div>
+    </div>
+
+    <!-- Excel-like Sheet Container -->
+    <div class="card border-0 shadow-sm" style="border-radius: 4px; overflow: hidden; background: #fff;">
+        <div class="card-body p-0">
+            <div class="table-responsive" style="max-height: 75vh; overflow-y: auto;">
+                <table class="table table-bordered excel-table mb-0">
+                    <colgroup>
+                        <col style="width: 40px; background-color: #f8f9fa;"> <!-- Row numbers -->
+                        <col style="width: 250px;"> <!-- Field names -->
+                        <col style="width: auto;"> <!-- Data -->
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th class="text-center bg-light text-muted border" style="width: 40px;"></th>
+                            <th class="text-center bg-light text-muted border">A</th>
+                            <th class="text-center bg-light text-muted border">B</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if not reports %}
+                        <tr>
+                            <td class="text-center text-muted">1</td>
+                            <td colspan="2" class="text-muted fst-italic p-3">No reports available. Click "Create Report" to add one.</td>
+                        </tr>
+                        {% endif %}
+
+                        {% for report in reports %}
+                        <!-- Staff Name Header Row -->
+                        <tr style="border-top: 4px solid #adb5bd;">
+                            <td class="text-center text-muted row-num"></td>
+                            <td class="fw-bold text-danger fs-6">{{ report.staff_name }}'s Report</td>
+                            <td class="text-end">
+                                <button class="btn btn-xs btn-outline-primary" 
+                                    onclick="openEditModal({{ report.id }}, '{{ report.staff_name|escapejs }}', '{{ report.report_date|escapejs }}', '{{ report.platform|escapejs }}', '{{ report.no_of_posts|escapejs }}', '{{ report.views|escapejs }}', '{{ report.likes|escapejs }}', '{{ report.comments|escapejs }}', '{{ report.follower_growth|escapejs }}', '{{ report.punctuality|escapejs }}', '{{ report.behaviour|escapejs }}', '{{ report.leave_and_wfh|escapejs }}', '{{ report.notes_remarks|escapejs }}')">
+                                    <i class="fas fa-edit"></i> Edit
+                                </button>
+                                <button class="btn btn-xs btn-outline-danger" onclick="deleteReport({{ report.id }})"><i class="fas fa-trash"></i></button>
+                            </td>
+                        </tr>
+                        <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">Date</td><td class="fw-bold text-end">{{ report.report_date }}</td></tr>
+                        <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">Platform</td><td>{{ report.platform }}</td></tr>
+                        <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">No. of Posts</td><td>{{ report.no_of_posts }}</td></tr>
+                        <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">Views</td><td>{{ report.views }}</td></tr>
+                        <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">Likes</td><td>{{ report.likes }}</td></tr>
+                        <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">Comments</td><td>{{ report.comments }}</td></tr>
+                        <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">Follower Growth</td><td>{{ report.follower_growth }}</td></tr>
+                        <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">Punctuality</td><td>{{ report.punctuality }}</td></tr>
+                        <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">Behaviour</td><td>{{ report.behaviour }}</td></tr>
+                        <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">Leave and work from home</td><td>{{ report.leave_and_wfh }}</td></tr>
+                        <tr><td class="text-center text-muted row-num"></td><td class="fw-bold">Notes/Remarks</td><td>{{ report.notes_remarks }}</td></tr>
+                        
+                        <!-- Empty spacer row like excel -->
+                        <tr>
+                            <td class="text-center text-muted row-num" style="background-color: #e9ecef;"></td>
+                            <td colspan="2" style="background-color: #e9ecef; border-bottom: 2px solid #adb5bd !important;"></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create/Edit Modal -->
+<div class="modal fade" id="reportModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">Create Staff Report</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body bg-light">
+                <input type="hidden" id="reportId">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase"><i class="fas fa-user text-primary me-1"></i> Staff Name <span class="text-danger">*</span></label>
+                        <select class="form-select form-select-sm" id="staffName">
+                            <option value="">Select Employee...</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.full_name }}" {% if request.user == emp.user %}selected{% endif %}>{{ emp.full_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase"><i class="fas fa-calendar-alt text-primary me-1"></i> Date <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control form-control-sm" id="reportDate">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase"><i class="fas fa-hashtag text-primary me-1"></i> Platform</label>
+                        <input type="text" class="form-control form-control-sm" id="platform" placeholder="e.g. Tiktok">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase"><i class="fas fa-pen-square text-primary me-1"></i> No. of Posts</label>
+                        <input type="text" class="form-control form-control-sm" id="noOfPosts" placeholder="e.g. on average 22 daily">
+                    </div>
+                    
+                    <div class="col-12 mt-4 mb-2">
+                        <h6 class="border-bottom pb-2 text-primary"><i class="fas fa-chart-line me-2"></i> Performance Metrics</h6>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase">Views</label>
+                        <textarea class="form-control form-control-sm" id="views" rows="2" placeholder="e.g. Highest views was in purely pretty..."></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase">Likes</label>
+                        <textarea class="form-control form-control-sm" id="likes" rows="2"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase">Comments</label>
+                        <textarea class="form-control form-control-sm" id="comments" rows="2"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase">Follower Growth</label>
+                        <textarea class="form-control form-control-sm" id="followerGrowth" rows="2"></textarea>
+                    </div>
+                    
+                    <div class="col-12 mt-4 mb-2">
+                        <h6 class="border-bottom pb-2 text-primary"><i class="fas fa-user-check me-2"></i> Behaviour & Remarks</h6>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase">Punctuality</label>
+                        <textarea class="form-control form-control-sm" id="punctuality" rows="2"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase">Behaviour</label>
+                        <textarea class="form-control form-control-sm" id="behaviour" rows="2"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase">Leave and WFH</label>
+                        <textarea class="form-control form-control-sm" id="leaveAndWfh" rows="2"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-secondary small text-uppercase">Notes/Remarks</label>
+                        <textarea class="form-control form-control-sm" id="notesRemarks" rows="2"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-top-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="saveReport()">
+                    <i class="fas fa-save me-1"></i> Save Report
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .excel-table {
+        border-collapse: collapse;
+        font-family: Arial, sans-serif;
+        font-size: 13px;
+    }
+    
+    .excel-table th, .excel-table td {
+        border: 1px solid #d4d4d4 !important;
+        padding: 4px 8px !important;
+        vertical-align: top;
+    }
+
+    .excel-table thead th {
+        background-color: #f8f9fa;
+        color: #666;
+        font-weight: normal;
+        border-bottom: 2px solid #ccc !important;
+    }
+    
+    .excel-table td.row-num {
+        background-color: #f8f9fa;
+        color: #666;
+        text-align: center;
+    }
+
+    .excel-table tbody tr:hover td:not(.row-num) {
+        background-color: #f0f8ff;
+    }
+
+    .btn-xs {
+        padding: 0.1rem 0.4rem;
+        font-size: 0.75rem;
+    }
+</style>
+
+<script>
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    const csrftoken = getCookie('csrftoken');
+    
+    let modal;
+    
+    // Auto-number the rows to simulate excel
+    document.addEventListener("DOMContentLoaded", function() {
+        modal = new bootstrap.Modal(document.getElementById('reportModal'));
+
+        const rowNums = document.querySelectorAll('.row-num');
+        rowNums.forEach((cell, idx) => {
+            cell.textContent = idx + 1;
+        });
+    });
+
+    function openCreateModal() {
+        document.getElementById('modalTitle').textContent = 'Create Staff Report';
+        document.getElementById('reportId').value = '';
+        document.querySelectorAll('#reportModal input:not([type="hidden"]), #reportModal textarea').forEach(el => el.value = '');
+        modal.show();
+    }
+
+    function openEditModal(id, staff_name, report_date, platform, no_of_posts, views, likes, comments, follower_growth, punctuality, behaviour, leave_and_wfh, notes_remarks) {
+        document.getElementById('modalTitle').textContent = 'Edit Staff Report';
+        document.getElementById('reportId').value = id;
+        document.getElementById('staffName').value = staff_name;
+        document.getElementById('reportDate').value = report_date;
+        document.getElementById('platform').value = platform;
+        document.getElementById('noOfPosts').value = no_of_posts;
+        document.getElementById('views').value = views;
+        document.getElementById('likes').value = likes;
+        document.getElementById('comments').value = comments;
+        document.getElementById('followerGrowth').value = follower_growth;
+        document.getElementById('punctuality').value = punctuality;
+        document.getElementById('behaviour').value = behaviour;
+        document.getElementById('leaveAndWfh').value = leave_and_wfh;
+        document.getElementById('notesRemarks').value = notes_remarks;
+        modal.show();
+    }
+
+    async function saveReport() {
+        const id = document.getElementById('reportId').value;
+        const data = {
+            staff_name: document.getElementById('staffName').value.trim(),
+            report_date: document.getElementById('reportDate').value.trim(),
+            platform: document.getElementById('platform').value.trim(),
+            no_of_posts: document.getElementById('noOfPosts').value.trim(),
+            views: document.getElementById('views').value.trim(),
+            likes: document.getElementById('likes').value.trim(),
+            comments: document.getElementById('comments').value.trim(),
+            follower_growth: document.getElementById('followerGrowth').value.trim(),
+            punctuality: document.getElementById('punctuality').value.trim(),
+            behaviour: document.getElementById('behaviour').value.trim(),
+            leave_and_wfh: document.getElementById('leaveAndWfh').value.trim(),
+            notes_remarks: document.getElementById('notesRemarks').value.trim(),
+        };
+
+        if (!data.staff_name || !data.report_date) {
+            alert('Staff Name and Date are required!');
+            return;
+        }
+
+        const url = id ? `/api/staff-reports/${id}/edit/` : '/api/staff-reports/add/';
+        
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify(data)
+            });
+            const res = await response.json();
+            
+            if (res.success) {
+                alert(id ? 'Report updated successfully!' : 'Report created successfully!');
+                location.reload();
+            } else {
+                alert(res.error || 'Failed to save report');
+            }
+        } catch (error) {
+            alert(error.toString());
+        }
+    }
+
+    async function deleteReport(id) {
+        if (!confirm('Are you sure you want to delete this report?')) return;
+
+        try {
+            const response = await fetch(`/api/staff-reports/${id}/delete/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                }
+            });
+            const res = await response.json();
+            
+            if (res.success) {
+                alert('Report deleted.');
+                location.reload();
+            } else {
+                alert(res.error || 'Failed to delete report');
+            }
+        } catch (error) {
+            alert(error.toString());
+        }
+    }
+</script>
+{% endblock %}

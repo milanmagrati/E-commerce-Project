@@ -1,0 +1,466 @@
+{% extends 'sentinel/_shell.html' %}
+{% load sentinel_extras %}
+
+{% block vault_actions %}
+<a href="{% url 'sentinel:people' %}" class="sv-btn"><i class="fas fa-arrow-left"></i> All people</a>
+{% if can_manage and stats.live_sessions %}
+<button class="sv-btn sv-btn-danger" id="svRevokeAll">
+    <i class="fas fa-power-off"></i> Sign out everywhere
+</button>
+{% endif %}
+{% endblock %}
+
+{% block vault_body %}
+
+<!-- ══ Identity card ═════════════════════════════════════════════════════ -->
+<div class="sv-panel" style="margin-bottom:1.2rem;">
+    <div class="sv-panel-body">
+        <div class="d-flex align-items-start gap-3 flex-wrap">
+            {% if subject.profile_picture %}
+            <img src="{{ subject.profile_picture.url }}" alt=""
+                 style="width:62px;height:62px;border-radius:18px;object-fit:cover;flex:none;">
+            {% else %}
+            <div class="sv-avatar sv-avatar-lg sv-tone-{{ subject.username|avatar_tone }}">
+                {{ subject.username|initials }}
+            </div>
+            {% endif %}
+            <div style="flex:1;min-width:250px;">
+                <h2 style="font-size:1.28rem;font-weight:800;margin:0 0 .3rem;letter-spacing:-.02em;">
+                    {{ subject.get_full_name|default:subject.username }}
+                    {% if subject.is_superuser %}
+                    <i class="fas fa-crown" style="color:var(--sv-amber);font-size:.85rem;" title="Superuser"></i>
+                    {% endif %}
+                    {% if stats.live_sessions %}
+                    <span class="sv-chip sv-tone-emerald"><span class="sv-live-dot"></span> Online now</span>
+                    {% elif not subject.is_active %}
+                    <span class="sv-chip sv-tone-rose">Account disabled</span>
+                    {% endif %}
+                </h2>
+                <div class="d-flex gap-2 flex-wrap" style="font-size:.8rem;color:var(--sv-text-dim);">
+                    <span><i class="fas fa-at"></i> {{ subject.username }}</span>
+                    <span><i class="fas fa-user-tag"></i> {{ subject.get_role_display }}</span>
+                    {% if subject.email %}<span><i class="fas fa-envelope"></i> {{ subject.email }}</span>{% endif %}
+                    {% if subject.phone %}<span><i class="fas fa-phone"></i> {{ subject.phone }}</span>{% endif %}
+                </div>
+                <div class="d-flex gap-2 flex-wrap" style="font-size:.78rem;color:var(--sv-text-faint);margin-top:.5rem;">
+                    <span>First recorded sign-in: <strong>{{ first_seen|sentinel_clock }}</strong></span>
+                    <span>· Last activity: <strong>{{ last_seen|sentinel_ago }}</strong></span>
+                    {% if busiest_hour is not None %}
+                    <span>· Usually active around <strong>{{ busiest_hour }}:00</strong> Nepal time</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══ Behaviour tiles ═══════════════════════════════════════════════════ -->
+<div class="sv-tiles">
+    <div class="sv-tile sv-tone-sky">
+        <div class="sv-tile-label"><i class="fas fa-wave-square"></i> Actions · 30d</div>
+        <div class="sv-tile-value" data-countup="{{ stats.events_30d }}">0</div>
+        <div class="sv-tile-meta">{{ stats.events_7d }} in the last week · {{ stats.total_events }} lifetime</div>
+    </div>
+    <div class="sv-tile sv-tone-violet">
+        <div class="sv-tile-label"><i class="fas fa-pen-to-square"></i> Records changed · 30d</div>
+        <div class="sv-tile-value" data-countup="{{ stats.writes_30d }}">0</div>
+        <div class="sv-tile-meta">{{ stats.deletes_30d }} deletion{{ stats.deletes_30d|pluralize }}</div>
+    </div>
+    <div class="sv-tile sv-tone-emerald">
+        <div class="sv-tile-label"><i class="fas fa-right-to-bracket"></i> Sign-ins</div>
+        <div class="sv-tile-value" data-countup="{{ stats.logins }}">0</div>
+        <div class="sv-tile-meta">{{ stats.devices }} device{{ stats.devices|pluralize }} used</div>
+    </div>
+    <div class="sv-tile sv-tone-amber">
+        <div class="sv-tile-label"><i class="fas fa-user-lock"></i> Failed sign-ins · 30d</div>
+        <div class="sv-tile-value" data-countup="{{ stats.failed_30d }}">0</div>
+        <div class="sv-tile-meta">{{ stats.denials_30d }} permission denial{{ stats.denials_30d|pluralize }}</div>
+    </div>
+    <div class="sv-tile sv-tone-{% if stats.peak_risk >= 70 %}rose{% elif stats.peak_risk >= 40 %}amber{% else %}slate{% endif %}">
+        <div class="sv-tile-label"><i class="fas fa-gauge-high"></i> Risk profile</div>
+        <div class="sv-tile-value" data-countup="{{ stats.avg_risk }}">0</div>
+        <div class="sv-tile-meta">average · peak {{ stats.peak_risk }}</div>
+    </div>
+</div>
+
+<!-- ══ Charts ════════════════════════════════════════════════════════════ -->
+<div class="sv-split" style="margin-bottom:1.2rem;">
+    <div class="sv-panel">
+        <div class="sv-panel-head">
+            <div>
+                <h2><i class="fas fa-chart-area"></i> Their last 14 days</h2>
+                <p class="sv-sub">Actions per day, with data changes and risky actions overlaid</p>
+            </div>
+        </div>
+        <div class="sv-panel-body">
+            <div style="height:250px;"><canvas id="svUserTimeline"></canvas></div>
+        </div>
+    </div>
+    <div class="sv-panel">
+        <div class="sv-panel-head">
+            <div>
+                <h2><i class="fas fa-clock"></i> Working pattern</h2>
+                <p class="sv-sub">Activity by hour of day, last 30 days</p>
+            </div>
+        </div>
+        <div class="sv-panel-body">
+            <div style="height:250px;"><canvas id="svUserHours"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<div class="sv-grid sv-grid-3" style="margin-bottom:1.2rem;">
+    <div class="sv-panel">
+        <div class="sv-panel-head"><h2><i class="fas fa-layer-group"></i> Where they work</h2></div>
+        <div class="sv-panel-body">
+            {% if module_mix %}
+                {% with top=module_mix.0.count %}
+                {% for row in module_mix %}
+                <div class="sv-bar-row sv-tone-{% cycle 'violet' 'sky' 'emerald' 'amber' 'cyan' 'indigo' 'teal' 'rose' %}">
+                    <span class="sv-bar-label sv-truncate" title="{{ row.module }}">{{ row.module }}</span>
+                    <span class="sv-bar-track">
+                        <span class="sv-bar-fill" style="width:0" data-width="{{ row.count|percent_of:top }}%"></span>
+                    </span>
+                    <span class="sv-bar-value">{{ row.count }}</span>
+                </div>
+                {% endfor %}
+                {% endwith %}
+            {% else %}
+            <div class="sv-empty" style="padding:2rem 1rem;"><i class="fas fa-layer-group"></i><p>No activity in 30 days.</p></div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="sv-panel">
+        <div class="sv-panel-head"><h2><i class="fas fa-database"></i> Records they touch</h2></div>
+        <div class="sv-panel-body">
+            {% if touched_objects %}
+                {% with top=touched_objects.0.count %}
+                {% for row in touched_objects %}
+                <div class="sv-bar-row sv-tone-{% cycle 'cyan' 'emerald' 'violet' 'amber' 'sky' 'rose' 'indigo' 'teal' %}">
+                    <span class="sv-bar-label sv-truncate" title="{{ row.object_type }}">{{ row.object_type|strip_app }}</span>
+                    <span class="sv-bar-track">
+                        <span class="sv-bar-fill" style="width:0" data-width="{{ row.count|percent_of:top }}%"></span>
+                    </span>
+                    <span class="sv-bar-value">{{ row.count }}</span>
+                </div>
+                {% endfor %}
+                {% endwith %}
+            {% else %}
+            <div class="sv-empty" style="padding:2rem 1rem;"><i class="fas fa-database"></i><p>No records changed.</p></div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="sv-panel">
+        <div class="sv-panel-head"><h2><i class="fas fa-shapes"></i> How they act</h2></div>
+        <div class="sv-panel-body">
+            {% if event_mix %}
+                {% with top=event_mix.0.count %}
+                {% for row in event_mix %}
+                <div class="sv-bar-row sv-tone-{% cycle 'emerald' 'sky' 'violet' 'rose' 'amber' 'cyan' 'indigo' 'teal' %}">
+                    <span class="sv-bar-label sv-truncate">{{ event_type_labels|get_item:row.event_type|default:row.event_type }}</span>
+                    <span class="sv-bar-track">
+                        <span class="sv-bar-fill" style="width:0" data-width="{{ row.count|percent_of:top }}%"></span>
+                    </span>
+                    <span class="sv-bar-value">{{ row.count }}</span>
+                </div>
+                {% endfor %}
+                {% endwith %}
+            {% else %}
+            <div class="sv-empty" style="padding:2rem 1rem;"><i class="fas fa-shapes"></i><p>Nothing recorded.</p></div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- ══ Devices & sessions ════════════════════════════════════════════════ -->
+<div class="sv-split" style="margin-bottom:1.2rem;">
+    <div class="sv-panel">
+        <div class="sv-panel-head">
+            <h2><i class="fas fa-fingerprint"></i> Devices used ({{ devices|length }})</h2>
+        </div>
+        <div class="sv-panel-body is-flush">
+            {% for device in devices %}
+            <div class="sv-feed-item">
+                <div class="sv-ev-icon sv-tone-{% if device.is_blocked %}rose{% elif device.is_trusted %}emerald{% else %}slate{% endif %}">
+                    <i class="fas {{ device.device_kind|device_icon }}"></i>
+                </div>
+                <div class="sv-feed-body">
+                    <p class="sv-feed-title">
+                        {{ device.label|default:'Unidentified device' }}
+                        {% if device.is_blocked %}<span class="sv-chip sv-tone-rose">Blocked</span>
+                        {% elif device.is_trusted %}<span class="sv-chip sv-tone-emerald">Trusted</span>
+                        {% else %}<span class="sv-chip sv-tone-amber">Unverified</span>{% endif %}
+                    </p>
+                    <div class="sv-feed-meta">
+                        <span>{{ device.login_count }} sign-in{{ device.login_count|pluralize }}</span>
+                        <span>· first {{ device.first_seen|sentinel_clock }}</span>
+                        <span>· last {{ device.last_seen|sentinel_ago }}</span>
+                    </div>
+                </div>
+                {% if can_manage %}
+                <button class="sv-btn sv-btn-sm {% if not device.is_blocked %}sv-btn-danger{% endif %}"
+                        data-device-action="{% if device.is_blocked %}unblock{% else %}block{% endif %}"
+                        data-device="{{ device.id }}" data-name="{{ device.label }}"
+                        style="align-self:center;">
+                    <i class="fas fa-{% if device.is_blocked %}unlock{% else %}ban{% endif %}"></i>
+                </button>
+                {% endif %}
+            </div>
+            {% empty %}
+            <div class="sv-empty" style="padding:2.2rem 1rem;">
+                <i class="fas fa-fingerprint"></i>
+                <p>No devices recorded for this account yet.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="sv-panel">
+        <div class="sv-panel-head"><h2><i class="fas fa-tower-broadcast"></i> Sessions</h2></div>
+        <div class="sv-panel-body is-flush">
+            {% for session in live_sessions %}
+            <a href="{% url 'sentinel:session_detail' session.id %}" class="sv-feed-item"
+               style="text-decoration:none;color:inherit;background:rgba(4, 120, 87,.06);">
+                <div class="sv-ev-icon sv-tone-emerald"><i class="fas fa-circle-nodes"></i></div>
+                <div class="sv-feed-body">
+                    <p class="sv-feed-title">{{ session.device_display }} <span class="sv-chip sv-tone-emerald">live</span></p>
+                    <div class="sv-feed-meta">
+                        <span class="sv-cell-mono">{{ session.ip_address|default:'—' }}</span>
+                        <span>· {{ session.duration_display }}</span>
+                        <span>· {{ session.request_count }} requests</span>
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+            {% for session in recent_sessions %}
+            <a href="{% url 'sentinel:session_detail' session.id %}" class="sv-feed-item"
+               style="text-decoration:none;color:inherit;">
+                <div class="sv-ev-icon sv-tone-slate"><i class="fas {{ session.device_kind|device_icon }}"></i></div>
+                <div class="sv-feed-body">
+                    <p class="sv-feed-title">{{ session.device_display }}</p>
+                    <div class="sv-feed-meta">
+                        <span>{{ session.started_at|sentinel_clock }}</span>
+                        <span>· {{ session.duration_display }}</span>
+                        <span>· {{ session.get_end_reason_display }}</span>
+                    </div>
+                </div>
+            </a>
+            {% empty %}
+            {% if not live_sessions %}
+            <div class="sv-empty" style="padding:2.2rem 1rem;">
+                <i class="fas fa-tower-broadcast"></i>
+                <p>No sessions recorded.</p>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- ══ Their ledger ══════════════════════════════════════════════════════ -->
+<div class="sv-panel">
+    <div class="sv-panel-head" style="flex-wrap:wrap;gap:.75rem;">
+        <div>
+            <h2><i class="fas fa-stream"></i> Complete activity trail</h2>
+            <p class="sv-sub">Click any row for the full record, including what changed</p>
+        </div>
+        <form method="GET" class="d-flex gap-2 flex-wrap">
+            <input class="sv-input" type="search" name="q" value="{{ active.q|default:'' }}"
+                   placeholder="Search their actions…" style="width:220px;">
+            <select class="sv-select" name="event_type" style="width:auto;" onchange="this.form.submit()">
+                <option value="">All actions</option>
+                {% for value, label in choices.event_types %}
+                <option value="{{ value }}" {% if active.event_type == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select class="sv-select" name="range" style="width:auto;" onchange="this.form.submit()">
+                <option value="">All time</option>
+                <option value="24h" {% if active.range == '24h' %}selected{% endif %}>24 hours</option>
+                <option value="7d"  {% if active.range == '7d' %}selected{% endif %}>7 days</option>
+                <option value="30d" {% if active.range == '30d' %}selected{% endif %}>30 days</option>
+            </select>
+            <button class="sv-btn sv-btn-icon" type="submit"><i class="fas fa-magnifying-glass"></i></button>
+        </form>
+    </div>
+    <div class="sv-panel-body is-flush">
+        <div class="sv-table-wrap">
+            <table class="sv-table" style="min-width:620px;">
+                <thead>
+                    <tr>
+                        <th style="width:150px;">When</th>
+                        <th>What happened</th>
+                        <th style="width:130px;">Area</th>
+                        <th style="width:140px;">From</th>
+                        <th style="width:90px;">Risk</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in page_obj %}
+                    <tr class="is-clickable {% if event.risk_score >= 70 %}is-flagged{% endif %}"
+                        data-sv-event="{{ event.id }}" tabindex="0">
+                        <td class="sv-nowrap">
+                            <div style="font-size:.8rem;font-weight:600;">{{ event.created_at|sentinel_ago }}</div>
+                            <div class="sv-cell-dim">{{ event.created_at|sentinel_clock }}</div>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="sv-ev-icon sv-tone-{{ event.tone }}" style="width:26px;height:26px;font-size:.7rem;">
+                                    <i class="fas {{ event.icon }}"></i>
+                                </div>
+                                <div style="min-width:0;">
+                                    <div class="sv-truncate" style="font-size:.83rem;" title="{{ event.action }}">{{ event.action }}</div>
+                                    {% if event.change_count %}
+                                    <div class="sv-cell-dim"><i class="fas fa-code-compare"></i>
+                                        {{ event.change_count }} field{{ event.change_count|pluralize }} changed</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td class="sv-cell-dim">{{ event.module|default:'—' }}</td>
+                        <td class="sv-cell-mono">{{ event.ip_address|default:'—' }}</td>
+                        <td>
+                            <span class="sv-risk sv-risk-{{ event.risk_band }}">
+                                <span class="sv-risk-dot"></span>{{ event.risk_score }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5">
+                        <div class="sv-empty">
+                            <i class="fas fa-ghost"></i>
+                            <h3>Nothing recorded</h3>
+                            <p>No activity matches this view for {{ subject.username }}.</p>
+                        </div>
+                    </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% include 'sentinel/_pager.html' %}
+    </div>
+</div>
+
+{% include 'sentinel/_drawer.html' %}
+{% endblock %}
+
+{% block vault_js %}
+{{ timeline|as_json|json_script:"svUserTimelineData" }}
+{{ hour_counts|as_json|json_script:"svUserHourData" }}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const timeline = JSON.parse(document.getElementById('svUserTimelineData').textContent);
+    const hours = JSON.parse(document.getElementById('svUserHourData').textContent);
+
+    const P = Sentinel.palette;
+    const canvas = document.getElementById('svUserTimeline');
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, 240);
+    grad.addColorStop(0, 'rgba(3, 105, 161,.22)');
+    grad.addColorStop(1, 'rgba(3, 105, 161,.02)');
+
+    new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: timeline.labels,
+            datasets: [
+                { label: 'Actions', data: timeline.totals, borderColor: P.sky,
+                  backgroundColor: grad, fill: true, tension: .35, borderWidth: 2,
+                  pointRadius: 0, pointHoverRadius: 5 },
+                { label: 'Data changes', data: timeline.writes, borderColor: P.violet,
+                  backgroundColor: 'transparent', tension: .35, borderWidth: 2,
+                  pointRadius: 0, pointHoverRadius: 5 },
+                { label: 'Risky', data: timeline.risky, borderColor: P.rose,
+                  backgroundColor: 'transparent', borderDash: [5, 4], tension: .35,
+                  borderWidth: 2, pointRadius: 0, pointHoverRadius: 5 },
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'top', align: 'end' } },
+            scales: {
+                x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 14 } },
+                y: { beginAtZero: true, grid: { color: Sentinel.gridColor() },
+                     ticks: { precision: 0 }, border: { display: false } },
+            }
+        }
+    });
+
+    new Chart(document.getElementById('svUserHours'), {
+        type: 'bar',
+        data: {
+            labels: hours.map(function (_, h) {
+                const ampm = h < 12 ? 'a' : 'p';
+                return (h % 12 === 0 ? 12 : h % 12) + ampm;
+            }),
+            datasets: [{
+                label: 'Actions',
+                data: hours,
+                backgroundColor: hours.map(function (_, h) {
+                    return (h >= 7 && h <= 21) ? 'rgba(124,58,237,.75)' : 'rgba(225,29,72,.62)';
+                }),
+                borderRadius: 4, borderSkipped: false,
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { afterLabel: function (c) {
+                    return (c.dataIndex >= 7 && c.dataIndex <= 21)
+                        ? 'Within office hours' : 'Outside office hours';
+                } } }
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 8 } },
+                y: { beginAtZero: true, grid: { color: Sentinel.gridColor() },
+                     ticks: { precision: 0 }, border: { display: false } },
+            }
+        }
+    });
+
+    requestAnimationFrame(function () {
+        document.querySelectorAll('.sv-bar-fill[data-width]').forEach(function (bar) {
+            bar.style.width = bar.dataset.width;
+        });
+    });
+
+    const revokeAll = document.getElementById('svRevokeAll');
+    if (revokeAll) {
+        revokeAll.addEventListener('click', function () {
+            Sentinel.confirmThen(
+                'Sign <b>{{ subject.username|escapejs }}</b> out of every device?' +
+                '<br><small>All {{ stats.live_sessions }} live session(s) will be terminated immediately.</small>',
+                function () {
+                    Sentinel.post('{% url "sentinel:revoke_all" subject.id %}',
+                        { next: window.location.pathname });
+                });
+        });
+    }
+
+    document.querySelectorAll('[data-device-action]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const action = btn.dataset.deviceAction;
+            Sentinel.confirmThen(
+                (action === 'block' ? 'Block' : 'Unblock') + ' <b>' + Sentinel.esc(btn.dataset.name) + '</b>?',
+                function () {
+                    Sentinel.post('/sentinel/devices/' + btn.dataset.device + '/action/', {
+                        action: action, next: window.location.pathname,
+                    });
+                });
+        });
+    });
+
+    document.querySelectorAll('tr[data-sv-event]').forEach(function (row) {
+        row.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                Sentinel.openEvent(row.dataset.svEvent);
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

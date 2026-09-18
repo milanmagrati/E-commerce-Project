@@ -312,6 +312,8 @@
     background: #eff6ff;
 }
 .ps-act-view:hover { background: #dbeafe; border-color: #93c5fd; }
+.ps-act-delete { color: #ef4444; border-color: #fee2e2; background: #fef2f2; }
+.ps-act-delete:hover { color: #b91c1c; border-color: #fca5a5; background: #fee2e2; }
 
 /* ── Empty state ───────────────────────────────────────── */
 .ps-empty {
@@ -446,7 +448,7 @@
 /* Summary card inside detail modal */
 .ps-detail-summary {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
     gap: 10px;
     margin: 16px 0 8px;
     padding: 16px;
@@ -476,6 +478,9 @@
     font-weight: 700;
 }
 .ps-sum-val.gross { color: #2563eb; }
+.ps-sum-val.bonus { color: #6d28d9; }
+.ps-detail-summary-item.has-bonus-stale { background: #fff7ed; border: 1px solid #fed7aa; }
+.ps-detail-summary-item.has-bonus-stale .ps-sum-val.bonus { color: #c2410c; font-size: 12px; }
 .ps-sum-val.deduction { color: #dc2626; }
 .ps-sum-val.advance { color: #dc2626; }
 .ps-sum-val.net { color: #059669; }
@@ -498,7 +503,24 @@
 .adv-badge-rejected { background: #fafafa; color: #6b7280; border: 1px solid #e5e7eb; }
 .adv-badge-none     { color: #d1d5db; font-size: 16px; }
 
-/* ── Stale Alert Banner ────────────────────────────────── */
+/* ── Bonus cell badges ─────────────────────────────────── */
+.bonus-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 11px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.bonus-badge i { font-size: 10px; }
+.bonus-badge-active { background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; }
+.bonus-badge-stale  { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+.bonus-badge-locked { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
+
+/* ── Attention banners (advance + bonus drift) ─────────── */
+.ps-alerts { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
 .ps-stale-banner {
     display: flex;
     align-items: center;
@@ -507,31 +529,56 @@
     background: linear-gradient(135deg, #fff7ed, #fef3c7);
     border: 1.5px solid #fcd34d;
     border-radius: 12px;
-    margin-bottom: 14px;
 }
-.ps-stale-banner i { color: #d97706; font-size: 16px; flex-shrink: 0; }
-.ps-stale-banner p { margin: 0; font-size: 13px; color: #92400e; flex: 1; }
+.ps-stale-banner > i { color: #d97706; font-size: 16px; flex-shrink: 0; }
+.ps-stale-banner p { margin: 0; font-size: 13px; color: #92400e; flex: 1; min-width: 0; }
 .ps-stale-banner strong { color: #78350f; }
+.ps-stale-banner-bonus {
+    background: linear-gradient(135deg, #faf5ff, #ede9fe);
+    border-color: #c4b5fd;
+}
+.ps-stale-banner-bonus > i { color: #7c3aed; }
+.ps-stale-banner-bonus p { color: #5b21b6; }
+.ps-stale-banner-bonus strong { color: #4c1d95; }
 
-/* ── Sync Button ───────────────────────────────────────── */
-.btn-sync-advances {
+/* ── Sync buttons ──────────────────────────────────────── */
+.ps-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+.btn-sync {
     display: inline-flex;
     align-items: center;
     gap: 7px;
     padding: 9px 18px;
     border: none;
     border-radius: 10px;
-    background: linear-gradient(135deg, #d97706, #f59e0b);
     color: #fff;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     transition: opacity .2s, transform .15s;
-    box-shadow: 0 3px 10px rgba(217,119,6,.3);
     flex-shrink: 0;
+    white-space: nowrap;
 }
-.btn-sync-advances:hover { opacity: .9; transform: translateY(-1px); }
-.btn-sync-advances:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.btn-sync:hover { opacity: .9; transform: translateY(-1px); }
+.btn-sync:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.btn-sync-advance { background: linear-gradient(135deg, #d97706, #f59e0b); box-shadow: 0 3px 10px rgba(217,119,6,.3); }
+.btn-sync-bonus   { background: linear-gradient(135deg, #6d28d9, #8b5cf6); box-shadow: 0 3px 10px rgba(109,40,217,.3); }
+/* Nothing stale: still clickable, but it shouldn't compete with the data. */
+.btn-sync.is-idle { background: #f3f4f6; color: #4b5563; box-shadow: none; border: 1.5px solid #e5e7eb; }
+.btn-sync.is-idle:hover { background: #e5e7eb; }
+.btn-sync-count {
+    background: rgba(255,255,255,.25);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+}
+.btn-sync.is-idle .btn-sync-count { background: #e5e7eb; }
+.btn-sync-sm { padding: 6px 14px; font-size: 12px; }
 /* ── Gross / Net amount cells ──────────────────────────── */
 .ps-cell-gross  { font-weight: 700; color: #1d4ed8; font-size: 13px; }
 .ps-cell-deduct { font-weight: 600; color: #b91c1c; font-size: 13px; }
@@ -610,6 +657,11 @@
         flex-wrap: wrap;
         gap: 8px;
     }
+    .ps-stale-banner p { flex: 1 1 100%; order: 2; }
+    .ps-stale-banner .btn-sync { order: 3; margin-left: auto; }
+    .ps-header-actions { width: 100%; justify-content: flex-start; }
+    .ps-header-actions .btn-sync,
+    .ps-header-actions .btn-trash-toggle { flex: 1 1 auto; justify-content: center; }
 }
 
 @media (max-width: 576px) {
@@ -625,11 +677,138 @@
     .ps-detail-summary {
         grid-template-columns: repeat(2, 1fr);
     }
-    .btn-sync-advances {
+    .btn-sync {
         padding: 7px 12px;
         font-size: 12px;
     }
+    /* Label out, icon and count in: two sync buttons still fit one row. */
+    .ps-header-actions .btn-sync .btn-sync-label { display: none; }
+    .ps-header-actions .btn-sync { flex: 0 1 auto; }
 }
+
+/* ── Trash toggle button ──────────────────────────────────── */
+.btn-trash-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 16px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fff;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: border-color .2s, background .2s, color .2s;
+    flex-shrink: 0;
+}
+.btn-trash-toggle:hover { border-color: #fca5a5; background: #fef2f2; color: #b91c1c; }
+.btn-trash-toggle.active { border-color: #dc2626; background: #fef2f2; color: #b91c1c; }
+.btn-trash-toggle .tt-badge {
+    background: #fee2e2;
+    color: #b91c1c;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.btn-trash-toggle.active .tt-badge { background: #dc2626; color: #fff; }
+
+/* ── Checkbox column ───────────────────────────────────────── */
+.ps-check-col { width: 40px; text-align: center; }
+.ps-row-check, .ps-select-all { width: 16px; height: 16px; cursor: pointer; accent-color: #25a35a; }
+
+/* ── Bulk Action Bar ───────────────────────────────────────── */
+.ps-bulk-bar {
+    display: none;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    background: linear-gradient(135deg, #1a7f4b, #1f9456);
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 14px;
+    margin-bottom: 14px;
+    box-shadow: 0 4px 16px rgba(26,127,75,.25);
+}
+.ps-bulk-bar.show { display: flex; }
+.ps-bulk-count { font-size: 13.5px; font-weight: 700; }
+.ps-bulk-select-all {
+    background: rgba(255,255,255,.15);
+    border: none;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    text-decoration: underline;
+}
+.ps-bulk-select-all:hover { background: rgba(255,255,255,.25); }
+.ps-bulk-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.ps-bulk-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 9px;
+    border: none;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .2s, transform .1s;
+    white-space: nowrap;
+}
+.ps-bulk-btn:hover { opacity: .88; }
+.ps-bulk-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ps-bulk-btn-light { background: #fff; color: #1a7f4b; }
+.ps-bulk-btn-danger { background: #dc2626; color: #fff; }
+.ps-bulk-btn-outline { background: rgba(255,255,255,.12); color: #fff; border: 1.5px solid rgba(255,255,255,.5); }
+.ps-bulk-btn-clear { background: transparent; color: #fff; text-decoration: underline; padding: 8px 6px; }
+
+/* Row highlight when checked */
+.ps-table tbody tr.ps-row-selected { background: #f0fdf4; }
+
+/* ── Trash-mode table bits ─────────────────────────────────── */
+.ps-deleted-meta { font-size: 12px; line-height: 1.5; }
+.ps-deleted-meta .ps-deleted-by { color: #6b7280; font-size: 11px; }
+.ps-act-restore { color: #059669; border-color: #d1fae5; background: #ecfdf5; }
+.ps-act-restore:hover { color: #047857; border-color: #6ee7b7; background: #d1fae5; }
+.ps-act-purge { color: #dc2626; border-color: #fee2e2; background: #fef2f2; }
+.ps-act-purge:hover { color: #991b1b; border-color: #fca5a5; background: #fee2e2; }
+
+/* ── Combined PDF Modal ─────────────────────────────────────── */
+.pdf-modal-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+}
+.pdf-modal-option:hover { border-color: #86efac; background: #f8fdfb; }
+.pdf-modal-option.selected { border-color: #25a35a; background: #f0fdf4; }
+.pdf-modal-option input[type="radio"] { margin-top: 3px; accent-color: #25a35a; }
+.pdf-modal-option-title { font-size: 13px; font-weight: 700; color: #1f2937; }
+.pdf-modal-option-sub { font-size: 12px; color: #6b7280; margin-top: 2px; }
+.pdf-modal-custom-box { margin-top: 8px; }
+.pdf-modal-custom-box textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 9px 12px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 12.5px;
+    resize: vertical;
+    outline: none;
+}
+.pdf-modal-custom-box textarea:focus { border-color: #25a35a; }
+.pdf-modal-checkbox { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #374151; margin-top: 14px; }
+.pdf-modal-checkbox input { accent-color: #25a35a; width: 15px; height: 15px; }
 </style>
 
 <div class="ps-page-container">
@@ -645,45 +824,77 @@
     <!-- Header -->
     <div class="ps-header">
         <div>
-            <h2><i class="fas fa-file-invoice-dollar"></i> Payslips</h2>
-            <p style="margin:4px 0 0;font-size:12.5px;color:#6b7280">Employee salary payslips with earnings, deductions &amp; advance recovery</p>
+            <h2><i class="fas {% if is_trash %}fa-trash-alt{% else %}fa-file-invoice-dollar{% endif %}"></i> {% if is_trash %}Payslips &mdash; Trash{% else %}Payslips{% endif %}</h2>
+            <p style="margin:4px 0 0;font-size:12.5px;color:#6b7280">
+                {% if is_trash %}Deleted payslips &mdash; restore them or remove permanently{% else %}Employee salary payslips with earnings, deductions &amp; advance recovery{% endif %}
+            </p>
         </div>
-        <div style="display:flex;gap:10px;align-items:center">
-            {% if stale_count > 0 %}
-            <button class="btn-sync-advances" id="btnSyncAdvances" onclick="syncAdvances()">
-                <i class="fas fa-sync-alt" id="syncIcon"></i> Sync Advance Data
-                <span style="background:rgba(255,255,255,.25);padding:1px 7px;border-radius:10px;font-size:11px">{{ stale_count }} stale</span>
-            </button>
+        <div class="ps-header-actions">
+            {% if not is_trash %}
+                <button class="btn-sync btn-sync-advance{% if not stale_count %} is-idle{% endif %}"
+                        id="btnSyncAdvances" onclick="syncAdvances()"
+                        title="Recalculate every payslip's advance deduction from the live advance records">
+                    <i class="fas fa-hand-holding-usd"></i>
+                    <span class="btn-sync-label">Sync Advance Data</span>
+                    {% if stale_count %}<span class="btn-sync-count">{{ stale_count }} stale</span>{% endif %}
+                </button>
+                <button class="btn-sync btn-sync-bonus{% if not bonus_stale_count %} is-idle{% endif %}"
+                        id="btnSyncBonuses" onclick="syncBonuses()"
+                        title="Fold approved bonuses into every payslip that does not carry them yet">
+                    <i class="fas fa-gift"></i>
+                    <span class="btn-sync-label">Sync Bonus Data</span>
+                    {% if bonus_stale_count %}<span class="btn-sync-count">{{ bonus_stale_count }} stale</span>{% endif %}
+                </button>
+                <a class="btn-trash-toggle" href="?view=trash">
+                    <i class="fas fa-trash-alt"></i> Trash
+                    {% if trashed_count > 0 %}<span class="tt-badge">{{ trashed_count }}</span>{% endif %}
+                </a>
             {% else %}
-            <button class="btn-sync-advances" id="btnSyncAdvances" onclick="syncAdvances()" style="background:linear-gradient(135deg,#6b7280,#9ca3af);box-shadow:none">
-                <i class="fas fa-sync-alt" id="syncIcon"></i> Sync Advances
-            </button>
+                <a class="btn-trash-toggle active" href="{% url 'hrm:payslip_list' %}">
+                    <i class="fas fa-arrow-left"></i> Back to Payslips
+                </a>
             {% endif %}
         </div>
     </div>
 
-    {% if stale_count > 0 %}
-    <div class="ps-stale-banner" id="staleBanner">
-        <i class="fas fa-exclamation-triangle"></i>
-        <p><strong>{{ stale_count }} payslip(s)</strong> have active advance payments not yet reflected in the stored deduction. Click <strong>”Sync Advance Data”</strong> to recalculate and save the correct values.</p>
-        <button class="btn-sync-advances" onclick="syncAdvances()" style="padding:6px 14px;font-size:12px">
-            <i class="fas fa-sync-alt"></i> Fix Now
-        </button>
+    {% if stale_count > 0 or bonus_stale_count > 0 %}
+    <div class="ps-alerts">
+        {% if stale_count > 0 %}
+        <div class="ps-stale-banner" id="staleBanner">
+            <i class="fas fa-exclamation-triangle"></i>
+            <p><strong>{{ stale_count }} payslip(s)</strong> have active advance payments not yet reflected in the stored deduction. Click <strong>&ldquo;Sync Advance Data&rdquo;</strong> to recalculate and save the correct values.</p>
+            <button class="btn-sync btn-sync-advance btn-sync-sm" onclick="syncAdvances()">
+                <i class="fas fa-sync-alt"></i> Fix Now
+            </button>
+        </div>
+        {% endif %}
+        {% if bonus_stale_count > 0 %}
+        <div class="ps-stale-banner ps-stale-banner-bonus" id="bonusStaleBanner">
+            <i class="fas fa-gift"></i>
+            <p><strong>{{ bonus_stale_count }} payslip(s)</strong> do not carry the bonus approved for their pay period. Click <strong>&ldquo;Sync Bonus Data&rdquo;</strong> to fold it into gross and net pay.</p>
+            <button class="btn-sync btn-sync-bonus btn-sync-sm" onclick="syncBonuses()">
+                <i class="fas fa-sync-alt"></i> Fix Now
+            </button>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 
     <!-- Filter / Search -->
     <div class="ps-filter-card">
         <form method="get" id="psFilterForm">
+            <input type="hidden" name="view" value="{{ view }}">
             <div class="ps-filter-row">
                 <div class="ps-search-wrap">
                     <i class="fas fa-search"></i>
                     <input type="text" name="search" value="{{ search_query }}" placeholder="Search...">
                 </div>
                 <button type="submit" class="ps-search-btn"><i class="fas fa-search"></i> Search</button>
+                {% if not is_trash %}
                 <button type="button" class="ps-filter-btn" id="psToggleFilters">
                     <i class="fas fa-filter"></i> Filters
                 </button>
+                {% endif %}
                 <div class="ps-per-page">
                     <span>Per Page:</span>
                     <select name="per_page" onchange="document.getElementById('psFilterForm').submit();">
@@ -695,6 +906,7 @@
                 </div>
             </div>
             <!-- Collapsible filters -->
+            {% if not is_trash %}
             <div class="ps-filter-panel {% if status_filter %}show{% endif %}" id="psFilterPanel">
                 <select name="status">
                     <option value="">All Statuses</option>
@@ -707,7 +919,31 @@
                 <a href="{% url 'hrm:payslip_list' %}" class="ps-clear-btn"><i class="fas fa-times"></i> Clear All</a>
                 {% endif %}
             </div>
+            {% elif search_query %}
+            <div class="ps-filter-panel show">
+                <a href="?view=trash" class="ps-clear-btn"><i class="fas fa-times"></i> Clear Search</a>
+            </div>
+            {% endif %}
         </form>
+    </div>
+
+    <!-- Bulk Action Bar -->
+    <div class="ps-bulk-bar" id="psBulkBar">
+        <span class="ps-bulk-count" id="psBulkCount">0 selected</span>
+        <button type="button" class="ps-bulk-select-all" id="psSelectAllMatching" onclick="selectAllMatching()" style="display:none"></button>
+        <div class="ps-bulk-actions">
+            {% if not is_trash %}
+            <button type="button" class="ps-bulk-btn ps-bulk-btn-light" onclick="openCombinedPdfModal()"><i class="fas fa-file-pdf"></i> Generate Combined PDF</button>
+            <button type="button" class="ps-bulk-btn ps-bulk-btn-outline" onclick="bulkDownload()"><i class="fas fa-download"></i> Bulk Download</button>
+            <button type="button" class="ps-bulk-btn ps-bulk-btn-danger" onclick="bulkAction('trash')"><i class="fas fa-trash-alt"></i> Move to Trash</button>
+            {% else %}
+            <button type="button" class="ps-bulk-btn ps-bulk-btn-light" onclick="bulkAction('restore')"><i class="fas fa-undo"></i> Restore</button>
+            {% if is_admin_user %}
+            <button type="button" class="ps-bulk-btn ps-bulk-btn-danger" onclick="bulkAction('permanent_delete')"><i class="fas fa-fire-alt"></i> Delete Permanently</button>
+            {% endif %}
+            {% endif %}
+            <button type="button" class="ps-bulk-btn ps-bulk-btn-clear" onclick="clearSelection()">Clear</button>
+        </div>
     </div>
 
     <!-- Table -->
@@ -715,33 +951,51 @@
         <div class="ps-table-scroll">
             <table class="ps-table">
                 <thead>
+                    {% if not is_trash %}
                     <tr>
+                        <th class="ps-check-col"><input type="checkbox" class="ps-select-all" id="psSelectAllHeader" onchange="toggleSelectAll(this)"></th>
                         <th style="width:46px">#</th>
-                        <th>Payslip No.</th>
+                        <th class="d-none d-sm-table-cell">Payslip No.</th>
                         <th>Employee</th>
-                        <th>Pay Period</th>
-                        <th>Pay Date</th>
+                        <th class="d-none d-xl-table-cell">Pay Period</th>
+                        <th class="d-none d-lg-table-cell">Pay Date</th>
                         <th style="color:#1d4ed8">Gross Pay</th>
+                        <th class="d-none d-lg-table-cell" style="color:#6d28d9">Bonus</th>
                         <th style="color:#b91c1c">Deductions</th>
-                        <th style="color:#b45309">Advance Deduction</th>
-                        <th style="color:#dc2626">Absent Deduction</th>
+                        <th class="d-none d-xl-table-cell" style="color:#b45309">Advance Deduction</th>
+                        <th class="d-none d-xl-table-cell" style="color:#dc2626">Absent Deduction</th>
                         <th style="color:#059669">Net Pay</th>
                         <th>Status</th>
-                        <th>Generated</th>
+                        <th class="d-none d-xxl-table-cell">Generated</th>
                         <th class="text-center">Actions</th>
                     </tr>
+                    {% else %}
+                    <tr>
+                        <th class="ps-check-col"><input type="checkbox" class="ps-select-all" id="psSelectAllHeader" onchange="toggleSelectAll(this)"></th>
+                        <th style="width:46px">#</th>
+                        <th class="d-none d-sm-table-cell">Payslip No.</th>
+                        <th>Employee</th>
+                        <th class="d-none d-xl-table-cell">Pay Period</th>
+                        <th style="color:#059669">Net Pay</th>
+                        <th>Status</th>
+                        <th class="d-none d-lg-table-cell">Deleted</th>
+                        <th class="text-center">Actions</th>
+                    </tr>
+                    {% endif %}
                 </thead>
                 <tbody>
                     {% for slip in payslips %}
-                    <tr>
+                    {% if not is_trash %}
+                    <tr data-pk="{{ slip.pk }}">
+                        <td class="ps-check-col"><input type="checkbox" class="ps-row-check" value="{{ slip.pk }}" onchange="onRowCheckChange(this)"></td>
                         <td><span class="ps-row-num">{{ page_obj.start_index|add:forloop.counter0 }}</span></td>
-                        <td>
+                        <td class="d-none d-sm-table-cell">
                             <a class="ps-slip-num" href="javascript:void(0)" onclick="viewPayslipDetail({{ slip.pk }})">
                                 {{ slip.payslip_number|default:"-" }}
                             </a>
                         </td>
                         <td>{{ slip.employee.full_name }}</td>
-                        <td>
+                        <td class="d-none d-xl-table-cell">
                             <div class="ps-pay-period">
                                 {% if slip.payroll_run.pay_period_start and slip.payroll_run.pay_period_end %}
                                     {{ slip.payroll_run.pay_period_start|date:"Y-m-d" }}
@@ -751,36 +1005,51 @@
                                 {% endif %}
                             </div>
                         </td>
-                        <td>{{ slip.payroll_run.pay_date|date:"Y-m-d"|default:"-" }}</td>
+                        <td class="d-none d-lg-table-cell">{{ slip.payroll_run.pay_date|date:"Y-m-d"|default:"-" }}</td>
                         <td><span class="ps-cell-gross">रू {{ slip.gross_salary|floatformat:2 }}</span></td>
+                        <td class="d-none d-lg-table-cell">
+                            {% if slip.bonus_stale and not slip.is_finalized %}
+                                <span class="bonus-badge bonus-badge-stale" title="रू {{ slip.bonus_live|floatformat:2 }} of approved bonus is not in this payslip yet. Click Sync Bonus Data.">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    Needs Sync
+                                </span>
+                            {% elif slip.bonus_stale %}
+                                <span class="bonus-badge bonus-badge-locked" title="Finalized payslip — locked at रू {{ slip.bonus_amount|floatformat:2 }} while the live bonus total is रू {{ slip.bonus_live|floatformat:2 }}. Unlock it to sync.">
+                                    <i class="fas fa-lock"></i>
+                                    रू {{ slip.bonus_amount|floatformat:2 }}
+                                </span>
+                            {% elif slip.bonus_amount > 0 %}
+                                <span class="bonus-badge bonus-badge-active" title="Bonus already included in this payslip&#39;s gross pay">
+                                    <i class="fas fa-gift"></i>
+                                    + रू {{ slip.bonus_amount|floatformat:2 }}
+                                </span>
+                            {% else %}
+                                <span class="adv-badge-none">&mdash;</span>
+                            {% endif %}
+                        </td>
                         <td><span class="ps-cell-deduct">− रू {{ slip.total_deductions|floatformat:2 }}</span></td>
-                        <td>
+                        <td class="d-none d-xl-table-cell">
                             {% if slip.has_rejected_advance %}
-                                {# Advance was rejected — no deduction applied regardless of stored value #}
                                 <span class="adv-badge adv-badge-rejected" title="Advance payment was rejected — no deduction applied">
                                     <i class="fas fa-times-circle" style="font-size:10px"></i>
                                     Rejected
                                 </span>
                             {% elif slip.advance_deduction > 0 %}
-                                {# Stored value is non-zero — show it in red #}
                                 <span class="adv-badge adv-badge-active">
                                     <i class="fas fa-hand-holding-usd" style="font-size:10px"></i>
                                     − रू {{ slip.advance_deduction|floatformat:2 }}
                                 </span>
                             {% elif slip.live_advance_deduction > 0 %}
-                                {# Live advances exist but payslip hasn't been synced yet #}
                                 <span class="adv-badge adv-badge-stale" title="Active advance exists but payslip not synced. Click Sync Advance Data.">
                                     <i class="fas fa-exclamation-circle" style="font-size:10px"></i>
                                     Needs Sync
                                 </span>
                             {% elif slip.has_cleared_advance %}
-                                {# Advance is fully repaid / cleared #}
                                 <span class="adv-badge adv-badge-cleared" title="Advance fully repaid">
                                     <i class="fas fa-check-circle" style="font-size:10px"></i>
                                     Repaid
                                 </span>
                             {% elif slip.has_pending_advance %}
-                                {# Advance is pending/approved but not yet disbursed #}
                                 <span class="adv-badge adv-badge-pending" title="Advance pending — {{ slip.advance_status }}">
                                     <i class="fas fa-clock" style="font-size:10px"></i>
                                     {% if slip.advance_status == 'approved' %}Approved{% else %}Pending{% endif %}
@@ -789,7 +1058,7 @@
                                 <span class="adv-badge-none">&mdash;</span>
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="d-none d-xl-table-cell">
                             {% if slip.absent_deduction > 0 %}
                                 <span class="ps-cell-deduct">- रू {{ slip.absent_deduction|floatformat:2 }}</span>
                             {% else %}
@@ -797,22 +1066,74 @@
                             {% endif %}
                         </td>
                         <td><span class="ps-cell-net">रू {{ slip.net_salary|floatformat:2 }}</span></td>
-                        <td><span class="ps-badge ps-badge-{{ slip.status }}">{{ slip.get_status_display }}</span></td>
-                        <td>{{ slip.generated_on|date:"Y-m-d"|default:"-" }}</td>
+                        <td>
+                            <span class="ps-badge ps-badge-{{ slip.status }}">{{ slip.get_status_display }}</span>
+                            {% if slip.is_finalized %}
+                            <span class="ps-badge" style="background:#d1fae5;color:#065f46;margin-left:4px;" title="Finalized — protected from auto-regeneration"><i class="fas fa-lock" style="font-size:9px"></i> Locked</span>
+                            {% endif %}
+                        </td>
+                        <td class="d-none d-xxl-table-cell">{{ slip.generated_on|date:"Y-m-d"|default:"-" }}</td>
                         <td>
                             <div class="ps-actions">
+                                <a class="ps-act" href="{% url 'hrm:payslip_adjust' slip.pk %}" title="Adjust Payslip"
+                                   style="color:#7c3aed;border-color:#ede9fe;background:#f5f3ff;" >
+                                    <i class="fas fa-sliders-h"></i>
+                                </a>
                                 <a class="ps-act ps-act-download" href="{% url 'hrm:payslip_download' slip.pk %}" target="_blank" title="Download Payslip" onclick="setTimeout(()=>location.reload(),1500)">
                                     <i class="fas fa-download"></i>
                                 </a>
+                                <button type="button" class="ps-act ps-act-delete" onclick="deletePayslip({{ slip.pk }})" title="Move to Trash" {% if slip.is_finalized %}disabled style="opacity:0.5;cursor:not-allowed;" title="Unlock first to delete"{% endif %}>
+                                    <i class="fas fa-trash"></i>
+                                </button>
                             </div>
                         </td>
                     </tr>
+                    {% else %}
+                    <tr data-pk="{{ slip.pk }}">
+                        <td class="ps-check-col"><input type="checkbox" class="ps-row-check" value="{{ slip.pk }}" onchange="onRowCheckChange(this)"></td>
+                        <td><span class="ps-row-num">{{ page_obj.start_index|add:forloop.counter0 }}</span></td>
+                        <td class="d-none d-sm-table-cell">
+                            <span class="ps-slip-num" style="cursor:default">{{ slip.payslip_number|default:"-" }}</span>
+                        </td>
+                        <td>{{ slip.employee.full_name }}</td>
+                        <td class="d-none d-xl-table-cell">
+                            <div class="ps-pay-period">
+                                {% if slip.payroll_run.pay_period_start and slip.payroll_run.pay_period_end %}
+                                    {{ slip.payroll_run.pay_period_start|date:"Y-m-d" }}
+                                    <br><span class="ps-period-end">to {{ slip.payroll_run.pay_period_end|date:"Y-m-d" }}</span>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td><span class="ps-cell-net">{{ slip.net_salary|floatformat:2 }}</span></td>
+                        <td><span class="ps-badge ps-badge-{{ slip.status }}">{{ slip.get_status_display }}</span></td>
+                        <td class="d-none d-lg-table-cell">
+                            <div class="ps-deleted-meta">
+                                {{ slip.deleted_at|date:"Y-m-d H:i"|default:"-" }}
+                                <br><span class="ps-deleted-by">by {{ slip.deleted_by.get_full_name|default:slip.deleted_by.username|default:"—" }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="ps-actions">
+                                <button type="button" class="ps-act ps-act-restore" onclick="restorePayslip({{ slip.pk }})" title="Restore Payslip">
+                                    <i class="fas fa-undo"></i>
+                                </button>
+                                {% if is_admin_user %}
+                                <button type="button" class="ps-act ps-act-purge" onclick="permanentDeletePayslip({{ slip.pk }})" title="Delete Permanently">
+                                    <i class="fas fa-fire-alt"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
                     {% empty %}
                     <tr>
-                        <td colspan="13">
+                        <td colspan="14">
                             <div class="ps-empty">
-                                <i class="fas fa-file-invoice-dollar"></i>
-                                <p>No payslips found.</p>
+                                <i class="fas {% if is_trash %}fa-trash-alt{% else %}fa-file-invoice-dollar{% endif %}"></i>
+                                <p>{% if is_trash %}Trash is empty.{% else %}No payslips found.{% endif %}</p>
                             </div>
                         </td>
                     </tr>
@@ -829,7 +1150,7 @@
             </div>
             <div class="ps-page-btns">
                 {% if page_obj.has_previous %}
-                <a class="ps-page-btn" href="?page={{ page_obj.previous_page_number }}&search={{ search_query|urlencode }}&status={{ status_filter }}&per_page={{ per_page }}">Previous</a>
+                <a class="ps-page-btn" href="?page={{ page_obj.previous_page_number }}&search={{ search_query|urlencode }}&status={{ status_filter }}&per_page={{ per_page }}&view={{ view }}">Previous</a>
                 {% else %}
                 <span class="ps-page-btn disabled">Previous</span>
                 {% endif %}
@@ -838,12 +1159,12 @@
                     {% if page_obj.number == num %}
                     <span class="ps-page-btn active">{{ num }}</span>
                     {% elif num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}
-                    <a class="ps-page-btn" href="?page={{ num }}&search={{ search_query|urlencode }}&status={{ status_filter }}&per_page={{ per_page }}">{{ num }}</a>
+                    <a class="ps-page-btn" href="?page={{ num }}&search={{ search_query|urlencode }}&status={{ status_filter }}&per_page={{ per_page }}&view={{ view }}">{{ num }}</a>
                     {% endif %}
                 {% endfor %}
 
                 {% if page_obj.has_next %}
-                <a class="ps-page-btn" href="?page={{ page_obj.next_page_number }}&search={{ search_query|urlencode }}&status={{ status_filter }}&per_page={{ per_page }}">Next</a>
+                <a class="ps-page-btn" href="?page={{ page_obj.next_page_number }}&search={{ search_query|urlencode }}&status={{ status_filter }}&per_page={{ per_page }}&view={{ view }}">Next</a>
                 {% else %}
                 <span class="ps-page-btn disabled">Next</span>
                 {% endif %}
@@ -879,6 +1200,64 @@
     </div>
 </div>
 
+<!-- ═══════════════════════ COMBINED PDF MODAL ═══════════════════════ -->
+<div class="modal fade ps-modal" id="combinedPdfModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-pdf"></i> Generate Combined PDF</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="pdf-modal-option selected" id="pdfOptSelectedWrap">
+                    <input type="radio" name="pdfMode" value="ids" id="pdfOptSelected" checked>
+                    <div>
+                        <div class="pdf-modal-option-title">Currently selected payslips</div>
+                        <div class="pdf-modal-option-sub" id="pdfOptSelectedCount">0 payslip(s) selected</div>
+                    </div>
+                </label>
+                <label class="pdf-modal-option" id="pdfOptAllWrap">
+                    <input type="radio" name="pdfMode" value="all" id="pdfOptAll">
+                    <div>
+                        <div class="pdf-modal-option-title">All payslips matching current filters</div>
+                        <div class="pdf-modal-option-sub">{{ page_obj.paginator.count }} payslip(s) total{% if search_query or status_filter %} (search/status filters applied){% endif %}</div>
+                    </div>
+                </label>
+                <label class="pdf-modal-option" id="pdfOptCustomWrap">
+                    <input type="radio" name="pdfMode" value="custom" id="pdfOptCustom">
+                    <div style="width:100%">
+                        <div class="pdf-modal-option-title">Custom selection</div>
+                        <div class="pdf-modal-option-sub">Type payslip numbers, employee names, or employee IDs</div>
+                        <div class="pdf-modal-custom-box">
+                            <textarea id="pdfCustomText" placeholder="e.g. PS-202608-0026, Karuna Magar, EMP-0012 — comma or newline separated"></textarea>
+                        </div>
+                    </div>
+                </label>
+                <label class="pdf-modal-checkbox">
+                    <input type="checkbox" id="pdfMarkDownloaded">
+                    Also mark these payslips as Downloaded
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="ps-modal-cancel" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="ps-modal-download" onclick="generateCombinedPdf()"><i class="fas fa-file-pdf"></i> Generate PDF</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden form used to POST the combined-print request into a new tab -->
+<form id="psBulkPrintForm" method="post" action="{% url 'hrm:payslip_bulk_print' %}" target="_blank" style="display:none">
+    {% csrf_token %}
+    <input type="hidden" name="mode" id="bppMode">
+    <input type="hidden" name="ids" id="bppIds">
+    <input type="hidden" name="search" id="bppSearch">
+    <input type="hidden" name="status" id="bppStatus">
+    <input type="hidden" name="custom_text" id="bppCustom">
+    <input type="hidden" name="mark_downloaded" id="bppMarkDownloaded">
+    <input type="hidden" name="auto_print" id="bppAutoPrint">
+</form>
+
 <script>
 // Helper: trigger browser download then reload page to reflect updated status
 function downloadAndReload(url) {
@@ -890,6 +1269,7 @@ function downloadAndReload(url) {
 (function() {
     const panel = document.getElementById('psFilterPanel');
     const btn = document.getElementById('psToggleFilters');
+    if (!panel || !btn) return;
     if (panel.classList.contains('show')) btn.classList.add('active');
     btn.addEventListener('click', function() {
         panel.classList.toggle('show');
@@ -897,43 +1277,78 @@ function downloadAndReload(url) {
     });
 })();
 
-// Sync all advance deductions
-function syncAdvances() {
-    const btn = document.getElementById('btnSyncAdvances');
-    const icon = document.getElementById('syncIcon');
-    if (!btn) return;
-    btn.disabled = true;
-    icon.className = 'fas fa-spinner fa-spin';
-    btn.childNodes[2] && (btn.childNodes[2].textContent = ' Syncing...');
+// ── Sync runners ────────────────────────────────────────────────────────
+// Advances and bonuses drift for the same reason (records changed after the
+// payroll run was generated) and are fixed the same way, so one runner drives
+// both buttons: disable it, spin its own icon, report into its own banner.
+function runSync(opts) {
+    const btn = document.getElementById(opts.buttonId);
+    if (!btn || btn.disabled) return;
+    const icon = btn.querySelector('i');
+    const label = btn.querySelector('.btn-sync-label');
+    const iconClass = icon ? icon.className : '';
+    const labelText = label ? label.textContent : '';
 
-    fetch('{% url "hrm:payslip_sync_advances" %}', {
+    // Both syncs walk every payslip -- never let a second run start on top.
+    document.querySelectorAll('.btn-sync').forEach(b => { b.disabled = true; });
+    if (icon) icon.className = 'fas fa-spinner fa-spin';
+    if (label) label.textContent = 'Syncing...';
+
+    fetch(opts.url, {
         method: 'POST',
         headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/json' },
     })
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            // Show success banner then reload
-            const banner = document.getElementById('staleBanner');
+            const banner = document.getElementById(opts.bannerId);
             if (banner) {
                 banner.style.background = 'linear-gradient(135deg,#f0fdf4,#dcfce7)';
                 banner.style.borderColor = '#86efac';
-                banner.querySelector('i').className = 'fas fa-check-circle';
-                banner.querySelector('i').style.color = '#16a34a';
-                banner.querySelector('p').innerHTML = '<strong>Done!</strong> ' + data.message;
+                const bi = banner.querySelector('i');
+                if (bi) { bi.className = 'fas fa-check-circle'; bi.style.color = '#16a34a'; }
+                const bp = banner.querySelector('p');
+                if (bp) {
+                    bp.style.color = '#166534';
+                    bp.innerHTML = '<strong>Done!</strong> ' + data.message;
+                }
                 banner.querySelectorAll('button').forEach(b => b.remove());
+            } else if (typeof alertify !== 'undefined') {
+                alertify.success(data.message);
             }
             setTimeout(() => location.reload(), 1200);
         } else {
             alert('Error: ' + (data.error || 'Sync failed'));
-            btn.disabled = false;
-            icon.className = 'fas fa-sync-alt';
+            resetSyncButtons(btn, icon, label, iconClass, labelText);
         }
     })
     .catch(() => {
         alert('Network error. Please try again.');
-        btn.disabled = false;
-        icon.className = 'fas fa-sync-alt';
+        resetSyncButtons(btn, icon, label, iconClass, labelText);
+    });
+}
+
+function resetSyncButtons(btn, icon, label, iconClass, labelText) {
+    document.querySelectorAll('.btn-sync').forEach(b => { b.disabled = false; });
+    if (icon) icon.className = iconClass;
+    if (label) label.textContent = labelText;
+}
+
+// Recalculate every payslip's advance deduction from the live advances
+function syncAdvances() {
+    runSync({
+        url: '{% url "hrm:payslip_sync_advances" %}',
+        buttonId: 'btnSyncAdvances',
+        bannerId: 'staleBanner',
+    });
+}
+
+// Fold approved/paid bonuses into the payslips that don't carry them yet
+function syncBonuses() {
+    runSync({
+        url: '{% url "hrm:payslip_sync_bonuses" %}',
+        buttonId: 'btnSyncBonuses',
+        bannerId: 'bonusStaleBanner',
     });
 }
 
@@ -946,7 +1361,10 @@ function viewPayslipDetail(pk) {
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('viewSlipModal'));
     modal.show();
 
-    fetch("{% url 'hrm:payslip_list' %}" + pk + "/")
+    // This endpoint renders a full payslip page for browsers; the modal has to
+    // say it wants the JSON payload.
+    fetch("{% url 'hrm:payslip_list' %}" + pk + "/?format=json",
+          { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(r => r.json())
         .then(data => {
             if (data.success) {
@@ -962,6 +1380,14 @@ function viewPayslipDetail(pk) {
                         <div class="ps-detail-summary-item">
                             <div class="ps-sum-label">Gross Salary</div>
                             <div class="ps-sum-val gross">रू${parseFloat(s.gross_salary).toLocaleString('en-IN', {minimumFractionDigits:2})}</div>
+                        </div>
+                        <div class="ps-detail-summary-item ${s.bonus_stale ? 'has-bonus-stale' : ''}">
+                            <div class="ps-sum-label">Bonus</div>
+                            <div class="ps-sum-val bonus">${s.bonus_stale
+                                ? '\u26a0 \u0930\u0942' + parseFloat(s.bonus_live).toLocaleString('en-IN', {minimumFractionDigits:2}) + ' unsynced'
+                                : (parseFloat(s.bonus) > 0
+                                    ? '+ \u0930\u0942' + parseFloat(s.bonus).toLocaleString('en-IN', {minimumFractionDigits:2})
+                                    : '\u2014')}</div>
                         </div>
                         <div class="ps-detail-summary-item">
                             <div class="ps-sum-label">Deductions</div>
@@ -995,6 +1421,234 @@ function viewPayslipDetail(pk) {
         .catch(() => {
             body.innerHTML = '<div style="text-align:center;padding:20px;color:#dc2626;"><i class="fas fa-exclamation-circle"></i> Network error.</div>';
         });
+}
+
+function deletePayslip(id) {
+    if (!confirm('Move this payslip to the trash? You can restore it later from the Trash view.')) return;
+    fetch(`{% url 'hrm:payslip_list' %}${id}/delete/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.error || 'Error deleting payslip.');
+        }
+    })
+    .catch(err => alert('Network error while deleting payslip.'));
+}
+
+function restorePayslip(id) {
+    if (!confirm('Restore this payslip back to the active list?')) return;
+    fetch(`{% url 'hrm:payslip_list' %}${id}/restore/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) location.reload();
+        else alert(data.error || 'Error restoring payslip.');
+    })
+    .catch(() => alert('Network error while restoring payslip.'));
+}
+
+function permanentDeletePayslip(id) {
+    if (!confirm('Permanently delete this payslip? This CANNOT be undone.')) return;
+    fetch(`{% url 'hrm:payslip_list' %}${id}/permanent-delete/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) location.reload();
+        else alert(data.error || 'Error permanently deleting payslip.');
+    })
+    .catch(() => alert('Network error while permanently deleting payslip.'));
+}
+
+// ═══════════════════════ BULK SELECTION ═══════════════════════
+const CURRENT_VIEW = '{{ view }}';
+const CURRENT_SEARCH = '{{ search_query|escapejs }}';
+const CURRENT_STATUS = '{{ status_filter|escapejs }}';
+const TOTAL_MATCHING = {{ page_obj.paginator.count|default:0 }};
+let selectedIds = new Set();
+let selectAllMatchingActive = false;
+
+function onRowCheckChange(checkbox) {
+    const id = checkbox.value;
+    if (checkbox.checked) {
+        selectedIds.add(id);
+    } else {
+        selectedIds.delete(id);
+        selectAllMatchingActive = false;
+    }
+    checkbox.closest('tr').classList.toggle('ps-row-selected', checkbox.checked);
+    syncSelectAllHeader();
+    updateBulkBar();
+}
+
+function toggleSelectAll(headerCheckbox) {
+    const boxes = document.querySelectorAll('.ps-row-check');
+    boxes.forEach(cb => {
+        cb.checked = headerCheckbox.checked;
+        if (headerCheckbox.checked) selectedIds.add(cb.value);
+        else selectedIds.delete(cb.value);
+        cb.closest('tr').classList.toggle('ps-row-selected', headerCheckbox.checked);
+    });
+    if (!headerCheckbox.checked) selectAllMatchingActive = false;
+    updateBulkBar();
+}
+
+function syncSelectAllHeader() {
+    const boxes = document.querySelectorAll('.ps-row-check');
+    const header = document.getElementById('psSelectAllHeader');
+    if (!header || boxes.length === 0) return;
+    header.checked = Array.from(boxes).every(cb => cb.checked);
+}
+
+function clearSelection() {
+    selectedIds.clear();
+    selectAllMatchingActive = false;
+    document.querySelectorAll('.ps-row-check').forEach(cb => {
+        cb.checked = false;
+        cb.closest('tr').classList.remove('ps-row-selected');
+    });
+    const header = document.getElementById('psSelectAllHeader');
+    if (header) header.checked = false;
+    updateBulkBar();
+}
+
+function updateBulkBar() {
+    const bar = document.getElementById('psBulkBar');
+    const countEl = document.getElementById('psBulkCount');
+    const matchBtn = document.getElementById('psSelectAllMatching');
+    const n = selectedIds.size;
+    bar.classList.toggle('show', n > 0);
+    countEl.textContent = selectAllMatchingActive
+        ? `All ${TOTAL_MATCHING} matching payslip(s) selected`
+        : `${n} selected`;
+
+    const boxes = document.querySelectorAll('.ps-row-check');
+    const allOnPageChecked = boxes.length > 0 && Array.from(boxes).every(cb => cb.checked);
+    if (allOnPageChecked && !selectAllMatchingActive && TOTAL_MATCHING > boxes.length) {
+        matchBtn.style.display = '';
+        matchBtn.textContent = `Select all ${TOTAL_MATCHING} matching payslips`;
+    } else if (selectAllMatchingActive) {
+        matchBtn.style.display = '';
+        matchBtn.textContent = 'Clear "select all matching"';
+    } else {
+        matchBtn.style.display = 'none';
+    }
+}
+
+function selectAllMatching() {
+    if (selectAllMatchingActive) {
+        clearSelection();
+        return;
+    }
+    fetch(`{% url 'hrm:payslip_filtered_ids' %}?view=${encodeURIComponent(CURRENT_VIEW)}&search=${encodeURIComponent(CURRENT_SEARCH)}&status=${encodeURIComponent(CURRENT_STATUS)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { alert(data.error || 'Could not load matching payslips.'); return; }
+            selectedIds = new Set(data.ids.map(String));
+            selectAllMatchingActive = true;
+            document.querySelectorAll('.ps-row-check').forEach(cb => {
+                cb.checked = selectedIds.has(cb.value);
+                cb.closest('tr').classList.toggle('ps-row-selected', cb.checked);
+            });
+            syncSelectAllHeader();
+            updateBulkBar();
+        })
+        .catch(() => alert('Network error while selecting all matching payslips.'));
+}
+
+// ═══════════════════════ BULK TRASH / RESTORE / PURGE ═══════════════════════
+function bulkAction(action) {
+    if (selectedIds.size === 0) return;
+    const labels = {
+        trash: `Move ${selectedIds.size} payslip(s) to the trash?`,
+        restore: `Restore ${selectedIds.size} payslip(s)?`,
+        permanent_delete: `Permanently delete ${selectedIds.size} payslip(s)? This CANNOT be undone.`,
+    };
+    if (!confirm(labels[action] || 'Proceed?')) return;
+
+    const body = new URLSearchParams();
+    body.set('action', action);
+    body.set('ids', Array.from(selectedIds).join(','));
+
+    fetch('{% url "hrm:payslip_bulk_action" %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert(data.error || 'Bulk action failed.');
+        }
+    })
+    .catch(() => alert('Network error during bulk action.'));
+}
+
+// ═══════════════════════ BULK DOWNLOAD / COMBINED PDF ═══════════════════════
+function submitBulkPrint(opts) {
+    document.getElementById('bppMode').value = opts.mode || 'ids';
+    document.getElementById('bppIds').value = opts.ids || '';
+    document.getElementById('bppSearch').value = opts.search || '';
+    document.getElementById('bppStatus').value = opts.status || '';
+    document.getElementById('bppCustom').value = opts.custom || '';
+    document.getElementById('bppMarkDownloaded').value = opts.markDownloaded ? '1' : '0';
+    document.getElementById('bppAutoPrint').value = opts.autoPrint ? '1' : '0';
+    document.getElementById('psBulkPrintForm').submit();
+}
+
+function bulkDownload() {
+    if (selectedIds.size === 0) return;
+    if (selectAllMatchingActive) {
+        submitBulkPrint({ mode: 'all', search: CURRENT_SEARCH, status: CURRENT_STATUS, markDownloaded: true, autoPrint: true });
+    } else {
+        submitBulkPrint({ mode: 'ids', ids: Array.from(selectedIds).join(','), markDownloaded: true, autoPrint: true });
+    }
+    setTimeout(() => location.reload(), 1800);
+}
+
+function openCombinedPdfModal() {
+    document.getElementById('pdfOptSelectedCount').textContent = `${selectedIds.size} payslip(s) selected`;
+    document.getElementById('pdfOptSelected').checked = selectedIds.size > 0;
+    document.getElementById('pdfOptAll').checked = selectedIds.size === 0;
+    document.getElementById('pdfCustomText').value = '';
+    document.getElementById('pdfMarkDownloaded').checked = false;
+    document.querySelectorAll('input[name="pdfMode"]').forEach(r => {
+        r.closest('.pdf-modal-option').classList.toggle('selected', r.checked);
+        r.addEventListener('change', () => {
+            document.querySelectorAll('.pdf-modal-option').forEach(el => el.classList.remove('selected'));
+            r.closest('.pdf-modal-option').classList.add('selected');
+        });
+    });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('combinedPdfModal')).show();
+}
+
+function generateCombinedPdf() {
+    const mode = document.querySelector('input[name="pdfMode"]:checked').value;
+    const markDownloaded = document.getElementById('pdfMarkDownloaded').checked;
+
+    if (mode === 'ids') {
+        if (selectedIds.size === 0) { alert('No payslips are currently selected.'); return; }
+        submitBulkPrint({ mode: 'ids', ids: Array.from(selectedIds).join(','), markDownloaded });
+    } else if (mode === 'all') {
+        submitBulkPrint({ mode: 'all', search: CURRENT_SEARCH, status: CURRENT_STATUS, markDownloaded });
+    } else {
+        const text = document.getElementById('pdfCustomText').value.trim();
+        if (!text) { alert('Enter at least one payslip number or employee name.'); return; }
+        submitBulkPrint({ mode: 'custom', custom: text, markDownloaded });
+    }
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('combinedPdfModal')).hide();
+    if (markDownloaded) setTimeout(() => location.reload(), 1800);
 }
 </script>
 {% endblock %}

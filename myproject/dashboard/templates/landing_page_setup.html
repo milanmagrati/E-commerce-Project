@@ -1,0 +1,594 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Landing Page Setup — {{ COMPANY_NAME|default:'Admin' }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ===================== PAGE SHELL (borrowed from Company Setup) ===================== */
+  .cs-page { padding-bottom: 3rem; }
+
+  .cs-hero {
+    background: linear-gradient(135deg, var(--primary-color, #5e72e4) 0%, var(--secondary-color, #825ee4) 60%, #b721ff 100%);
+    border-radius: 20px;
+    padding: 2.5rem 2rem 2rem;
+    margin-bottom: 2rem;
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+  }
+  .cs-hero::before { content:''; position:absolute; top:-60px; right:-60px; width:220px; height:220px; background:rgba(255,255,255,.06); border-radius:50%; }
+  .cs-hero::after  { content:''; position:absolute; bottom:-40px; left:-40px; width:160px; height:160px; background:rgba(255,255,255,.04); border-radius:50%; }
+  .cs-hero h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: .3rem; }
+  .cs-hero p  { opacity: .85; margin: 0; font-size: .95rem; }
+  .cs-hero .hero-icon { font-size: 3rem; opacity: .2; position: absolute; right: 2rem; top: 50%; transform: translateY(-50%); }
+  .cs-hero .hero-preview-link {
+    display: inline-flex; align-items: center; gap: .4rem;
+    background: rgba(255,255,255,.18); color: #fff; text-decoration: none;
+    padding: .45rem 1rem; border-radius: 10px; font-size: .85rem; font-weight: 600;
+    margin-top: 1rem; transition: background .2s;
+  }
+  .cs-hero .hero-preview-link:hover { background: rgba(255,255,255,.3); color:#fff; }
+
+  .cs-card {
+    background: #fff; border: none; border-radius: 18px;
+    box-shadow: 0 4px 24px rgba(94,114,228,.08);
+    padding: 2rem; margin-bottom: 1.5rem; transition: box-shadow .25s;
+  }
+  .cs-card:hover { box-shadow: 0 8px 32px rgba(94,114,228,.14); }
+  .cs-card-title {
+    font-size: 1rem; font-weight: 700; color: #32325d;
+    display: flex; align-items: center; gap: .6rem;
+    margin-bottom: 1.5rem; padding-bottom: .75rem; border-bottom: 2px solid #f0f0f0;
+  }
+  .cs-card-title .icon-wrap { width: 34px; height: 34px; border-radius: 10px; display:flex; align-items:center; justify-content:center; font-size:.95rem; flex-shrink:0; }
+  .cs-card-sub { font-size: .82rem; color: #8898aa; margin: -1rem 0 1.25rem; }
+
+  .cs-label { font-size: .82rem; font-weight: 600; color: #525f7f; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .4rem; }
+  .cs-input, textarea.cs-input, select.cs-input {
+    border: 2px solid #e9ecef; border-radius: 10px; padding: .6rem 1rem;
+    font-size: .92rem; transition: border-color .2s, box-shadow .2s; width: 100%;
+  }
+  .cs-input:focus { outline: none; border-color: var(--primary-color, #5e72e4); box-shadow: 0 0 0 3px rgba(0,0,0,.08); }
+  .cs-save-btn {
+    background: linear-gradient(135deg, var(--primary-color, #5e72e4) 0%, var(--secondary-color, #825ee4) 100%);
+    border: none; border-radius: 10px; color: #fff; padding: .65rem 2rem; font-size: .95rem;
+    font-weight: 700; letter-spacing: .02em; transition: all .2s; cursor: pointer;
+  }
+  .cs-save-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+
+  /* ===================== REPEATABLE ROWS ===================== */
+  .lp-rows { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1rem; }
+  .lp-row {
+    display: grid; grid-template-columns: 130px 1fr 1fr 110px 40px;
+    gap: .6rem; align-items: center;
+    background: #f8f9fb; border: 1px solid #eef0f5; border-radius: 12px; padding: .6rem;
+  }
+  .lp-row.lp-card-row { grid-template-columns: 140px 1fr 1.6fr 40px; }
+  .lp-row-remove {
+    border: none; background: #fdeaea; color: #dc3545; width: 34px; height: 34px;
+    border-radius: 9px; cursor: pointer; transition: all .2s;
+  }
+  .lp-row-remove:hover { background: #f5c2c7; }
+  .lp-add-btn {
+    border: 2px dashed #c8d3ff; background: #f8f9ff; color: var(--primary-color, #5e72e4);
+    border-radius: 10px; padding: .55rem 1rem; font-size: .85rem; font-weight: 600;
+    cursor: pointer; transition: all .2s; display: inline-flex; align-items:center; gap:.4rem;
+  }
+  .lp-add-btn:hover { background: #eef0ff; border-color: var(--primary-color, #5e72e4); }
+
+  .lp-brand-row {
+    display: flex; align-items: center; gap: .9rem;
+    background: #f8f9fb; border: 1px solid #eef0f5; border-radius: 12px; padding: .75rem;
+    transition: opacity .2s;
+  }
+  .lp-brand-row.lp-marked-delete { opacity: .4; }
+  .lp-brand-preview {
+    width: 76px; height: 56px; border-radius: 9px; border: 2px dashed #c8d3ff;
+    background: #f8f9ff; display: flex; align-items: center; justify-content: center;
+    position: relative; flex-shrink: 0; overflow: hidden;
+  }
+  .lp-brand-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .lp-brand-placeholder { color: #b0bec5; font-size: 1.2rem; }
+  .lp-file-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .lp-brand-row .cs-input { flex: 1; }
+
+  /* ===================== QUICK NAV ===================== */
+  .lp-quicknav {
+    display: flex; gap: .5rem; overflow-x: auto; white-space: nowrap;
+    background: #fff; border-radius: 14px; box-shadow: 0 4px 24px rgba(94,114,228,.08);
+    padding: .6rem; margin-bottom: 1.5rem; position: sticky; top: 12px; z-index: 20;
+    scrollbar-width: thin;
+  }
+  .lp-quicknav a {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .5rem .9rem; border-radius: 9px; font-size: .82rem; font-weight: 600;
+    color: #525f7f; text-decoration: none; transition: all .18s; flex-shrink: 0;
+  }
+  .lp-quicknav a:hover { background: #f0f2f8; color: #32325d; }
+  .lp-quicknav a:active, .lp-quicknav a.lp-nav-active {
+    background: linear-gradient(135deg, var(--primary-color, #5e72e4) 0%, var(--secondary-color, #825ee4) 100%);
+    color: #fff;
+  }
+  .cs-card { scroll-margin-top: 90px; }
+
+  /* Unsaved-changes indicator on the sticky save bar */
+  .lp-dirty-dot {
+    display: none; width: 9px; height: 9px; border-radius: 50%;
+    background: #f9a825; margin-right: .4rem; animation: lpPulse 1.4s infinite;
+  }
+  .lp-dirty-dot.show { display: inline-block; }
+  @keyframes lpPulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+  /* Empty-state hint inside a rows list with nothing in it yet */
+  .lp-empty-hint {
+    font-size: .82rem; color: #b0bec5; padding: .5rem .25rem; font-style: italic;
+  }
+
+  @media (max-width: 820px) {
+    .lp-row { grid-template-columns: 1fr; }
+    .lp-row.lp-card-row { grid-template-columns: 1fr; }
+    .lp-row-remove { width: 100%; height: 38px; }
+    .lp-brand-row { flex-wrap: wrap; }
+    .lp-brand-row .cs-input { min-width: 140px; }
+    .cs-hero { padding: 1.75rem 1.25rem 1.5rem; }
+    .cs-hero .hero-icon { display: none; }
+    .cs-card { padding: 1.25rem; }
+  }
+
+  @media (max-width: 480px) {
+    .lp-quicknav a span { display: none; }
+    .lp-quicknav a { padding: .5rem .65rem; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cs-page">
+
+  <!-- ==================== HERO ==================== -->
+  <div class="cs-hero">
+    <h1><i class="fas fa-globe me-2"></i>Landing Page Setup</h1>
+    <p>Edit every section of the public marketing homepage — hero copy, the mock stats panel, trusted brands, feature cards, and footer business details.</p>
+    <a href="{% url 'landing' %}" target="_blank" class="hero-preview-link"><i class="fas fa-arrow-up-right-from-square"></i> Preview live page</a>
+    <i class="fas fa-laptop-code hero-icon"></i>
+  </div>
+
+  <!-- ==================== QUICK NAV ==================== -->
+  <nav class="lp-quicknav" id="lpQuickNav">
+    <a href="#hero-section"><i class="fas fa-star"></i><span> Hero</span></a>
+    <a href="#stats-section"><i class="fas fa-chart-simple"></i><span> Stats</span></a>
+    <a href="#brands-section"><i class="fas fa-award"></i><span> Brands</span></a>
+    <a href="#solutions-section"><i class="fas fa-layer-group"></i><span> Solutions</span></a>
+    <a href="#platform-section"><i class="fas fa-cubes"></i><span> Platform</span></a>
+    <a href="#integrations-section"><i class="fas fa-plug"></i><span> Integrations</span></a>
+    <a href="#cta-section"><i class="fas fa-bullhorn"></i><span> CTA</span></a>
+    <a href="#footer-section"><i class="fas fa-shield-halved"></i><span> Footer</span></a>
+  </nav>
+
+  <form method="post" enctype="multipart/form-data" id="landingSetupForm">
+    {% csrf_token %}
+
+    <!-- ==================== HERO SECTION ==================== -->
+    <div class="cs-card" id="hero-section">
+      <div class="cs-card-title">
+        <span class="icon-wrap" style="background:#eef0ff;color:#5e72e4;"><i class="fas fa-star"></i></span>
+        Hero Section
+      </div>
+
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="cs-label">Pill text</div>
+          <input type="text" name="hero_pill_text" value="{{ landing.hero_pill_text }}" class="cs-input" maxlength="100" placeholder="The commerce OS for Nepal">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">Hero note (bottom, with location icon)</div>
+          <input type="text" name="hero_note_text" value="{{ landing.hero_note_text }}" class="cs-input" maxlength="200">
+        </div>
+        <div class="col-12">
+          <div class="cs-label">Headline</div>
+          <input type="text" name="hero_headline" value="{{ landing.hero_headline }}" class="cs-input" maxlength="200" required>
+        </div>
+        <div class="col-12">
+          <div class="cs-label">Subtext</div>
+          <textarea name="hero_subtext" class="cs-input" rows="3" maxlength="500">{{ landing.hero_subtext }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">Primary button text</div>
+          <input type="text" name="hero_cta_primary_text" value="{{ landing.hero_cta_primary_text }}" class="cs-input" maxlength="50">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">Primary button link <span class="text-muted fw-normal text-lowercase">(blank = login page)</span></div>
+          <input type="text" name="hero_cta_primary_link" value="{{ landing.hero_cta_primary_link }}" class="cs-input" maxlength="200" placeholder="/login/ or https://...">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">Secondary button text</div>
+          <input type="text" name="hero_cta_secondary_text" value="{{ landing.hero_cta_secondary_text }}" class="cs-input" maxlength="50">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">Secondary button link</div>
+          <input type="text" name="hero_cta_secondary_link" value="{{ landing.hero_cta_secondary_link }}" class="cs-input" maxlength="200" placeholder="#platform">
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== STATS PANEL ==================== -->
+    <div class="cs-card" id="stats-section">
+      <div class="cs-card-title">
+        <span class="icon-wrap" style="background:#fff3e0;color:#fb8c00;"><i class="fas fa-chart-simple"></i></span>
+        Hero Stats Panel
+      </div>
+      <p class="cs-card-sub">The mock device panel next to the hero text. "Top" rows show a colored dot + right-aligned value; "Stock" rows render as plain two-column rows below a divider.</p>
+
+      <div class="lp-rows" id="statRows">
+        {% for stat in primary_stats %}
+        <div class="lp-row" data-row>
+          <select name="stat_group[]" class="cs-input">
+            <option value="primary" selected>Top row</option>
+            <option value="secondary">Stock row</option>
+          </select>
+          <input type="text" name="stat_label[]" value="{{ stat.label }}" class="cs-input" placeholder="Label">
+          <input type="text" name="stat_value[]" value="{{ stat.value }}" class="cs-input" placeholder="Value">
+          <select name="stat_color[]" class="cs-input">
+            <option value="" {% if not stat.dot_color %}selected{% endif %}>No dot</option>
+            <option value="amber" {% if stat.dot_color == 'amber' %}selected{% endif %}>Amber</option>
+            <option value="green" {% if stat.dot_color == 'green' %}selected{% endif %}>Green</option>
+            <option value="blue" {% if stat.dot_color == 'blue' %}selected{% endif %}>Blue</option>
+          </select>
+          <button type="button" class="lp-row-remove" onclick="this.closest('[data-row]').remove()"><i class="fas fa-trash"></i></button>
+        </div>
+        {% endfor %}
+        {% for stat in secondary_stats %}
+        <div class="lp-row" data-row>
+          <select name="stat_group[]" class="cs-input">
+            <option value="primary">Top row</option>
+            <option value="secondary" selected>Stock row</option>
+          </select>
+          <input type="text" name="stat_label[]" value="{{ stat.label }}" class="cs-input" placeholder="Label">
+          <input type="text" name="stat_value[]" value="{{ stat.value }}" class="cs-input" placeholder="Value">
+          <select name="stat_color[]" class="cs-input">
+            <option value="" selected>No dot</option>
+            <option value="amber">Amber</option>
+            <option value="green">Green</option>
+            <option value="blue">Blue</option>
+          </select>
+          <button type="button" class="lp-row-remove" onclick="this.closest('[data-row]').remove()"><i class="fas fa-trash"></i></button>
+        </div>
+        {% endfor %}
+        {% if not primary_stats and not secondary_stats %}<p class="lp-empty-hint">No stat rows yet — click "Add row" below.</p>{% endif %}
+      </div>
+      <button type="button" class="lp-add-btn" onclick="addStatRow()"><i class="fas fa-plus"></i> Add row</button>
+    </div>
+
+    <!-- ==================== TRUSTED BRANDS ==================== -->
+    <div class="cs-card" id="brands-section">
+      <div class="cs-card-title">
+        <span class="icon-wrap" style="background:#e8f5e9;color:#43a047;"><i class="fas fa-award"></i></span>
+        Trusted-By Brands
+      </div>
+
+      <div class="mb-3" style="max-width:420px;">
+        <div class="cs-label">Section label</div>
+        <input type="text" name="trusted_label" value="{{ landing.trusted_label }}" class="cs-input" maxlength="150">
+      </div>
+
+      <div class="lp-rows" id="brandRows">
+        {% for brand in brand_logos %}
+        <div class="lp-brand-row" data-brand-row>
+          <div class="lp-brand-preview">
+            {% if brand.logo %}
+              <img src="{{ brand.logo.url }}" alt="{{ brand.name }}">
+            {% else %}
+              <div class="lp-brand-placeholder"><i class="fas fa-image"></i></div>
+            {% endif %}
+            <input type="file" name="brand_logo_{{ brand.pk }}" accept="image/*" class="lp-file-input" title="Replace logo">
+          </div>
+          <input type="text" name="brand_name_{{ brand.pk }}" value="{{ brand.name }}" class="cs-input" placeholder="Brand name">
+          <input type="hidden" name="brand_order_{{ brand.pk }}" value="{{ forloop.counter0 }}">
+          <input type="checkbox" name="brand_delete_{{ brand.pk }}" value="1" id="brandDel{{ brand.pk }}" style="display:none;"
+                 onchange="this.closest('[data-brand-row]').classList.toggle('lp-marked-delete', this.checked)">
+          <button type="button" class="lp-row-remove" title="Delete brand" onclick="toggleBrandDelete('{{ brand.pk }}', this)"><i class="fas fa-trash"></i></button>
+        </div>
+        {% endfor %}
+        {% if not brand_logos %}<p class="lp-empty-hint">No brands yet — click "Add brand" below.</p>{% endif %}
+      </div>
+      <button type="button" class="lp-add-btn" onclick="addBrandRow()"><i class="fas fa-plus"></i> Add brand</button>
+      <p class="cs-card-sub mt-3 mb-0">Leave the logo blank to show the brand name as styled text instead (matches the original design). Click the trash icon to mark a brand for removal (undo by clicking again) — it's only deleted once you save.</p>
+    </div>
+
+    <!-- ==================== SOLUTIONS ==================== -->
+    <div class="cs-card" id="solutions-section">
+      <div class="cs-card-title">
+        <span class="icon-wrap" style="background:#f3e8ff;color:#8e24aa;"><i class="fas fa-layer-group"></i></span>
+        Solutions Section
+      </div>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="cs-label">Eyebrow</div>
+          <input type="text" name="solutions_eyebrow" value="{{ landing.solutions_eyebrow }}" class="cs-input" maxlength="50">
+        </div>
+        <div class="col-md-8">
+          <div class="cs-label">Heading</div>
+          <input type="text" name="solutions_heading" value="{{ landing.solutions_heading }}" class="cs-input" maxlength="200">
+        </div>
+        <div class="col-12">
+          <div class="cs-label">Subtext</div>
+          <textarea name="solutions_subtext" class="cs-input" rows="2" maxlength="500">{{ landing.solutions_subtext }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">Card 1 — title</div>
+          <input type="text" name="solution_card1_title" value="{{ landing.solution_card1_title }}" class="cs-input" maxlength="100">
+          <div class="cs-label mt-2">Card 1 — text</div>
+          <textarea name="solution_card1_text" class="cs-input" rows="3" maxlength="500">{{ landing.solution_card1_text }}</textarea>
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">Card 2 — title</div>
+          <input type="text" name="solution_card2_title" value="{{ landing.solution_card2_title }}" class="cs-input" maxlength="100">
+          <div class="cs-label mt-2">Card 2 — text</div>
+          <textarea name="solution_card2_text" class="cs-input" rows="3" maxlength="500">{{ landing.solution_card2_text }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== PLATFORM FEATURES ==================== -->
+    <div class="cs-card" id="platform-section">
+      <div class="cs-card-title">
+        <span class="icon-wrap" style="background:#e3f2fd;color:#1e88e5;"><i class="fas fa-cubes"></i></span>
+        Platform Features
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <div class="cs-label">Eyebrow</div>
+          <input type="text" name="platform_eyebrow" value="{{ landing.platform_eyebrow }}" class="cs-input" maxlength="50">
+        </div>
+        <div class="col-md-8">
+          <div class="cs-label">Heading</div>
+          <input type="text" name="platform_heading" value="{{ landing.platform_heading }}" class="cs-input" maxlength="200">
+        </div>
+        <div class="col-12">
+          <div class="cs-label">Subtext</div>
+          <input type="text" name="platform_subtext" value="{{ landing.platform_subtext }}" class="cs-input" maxlength="250">
+        </div>
+      </div>
+
+      <div class="cs-label mb-2">Feature cards</div>
+      <div class="lp-rows" id="platformCardRows">
+        {% for card in platform_cards %}
+        <div class="lp-row lp-card-row" data-row>
+          <input type="hidden" name="card_section[]" value="platform">
+          <input type="text" name="card_icon[]" value="{{ card.icon }}" class="cs-input" placeholder="fas fa-box">
+          <input type="text" name="card_title[]" value="{{ card.title }}" class="cs-input" placeholder="Title">
+          <input type="text" name="card_description[]" value="{{ card.description }}" class="cs-input" placeholder="Description">
+          <button type="button" class="lp-row-remove" onclick="this.closest('[data-row]').remove()"><i class="fas fa-trash"></i></button>
+        </div>
+        {% endfor %}
+        {% if not platform_cards %}<p class="lp-empty-hint">No feature cards yet — click "Add feature card" below.</p>{% endif %}
+      </div>
+      <button type="button" class="lp-add-btn" onclick="addCardRow('platformCardRows', 'platform')"><i class="fas fa-plus"></i> Add feature card</button>
+      <p class="cs-card-sub mt-3 mb-0">Icon accepts any <a href="https://fontawesome.com/search?ic=free" target="_blank" rel="noopener">Font Awesome</a> class, e.g. <code>fas fa-box</code> or <code>fab fa-facebook</code>.</p>
+    </div>
+
+    <!-- ==================== INTEGRATIONS ==================== -->
+    <div class="cs-card" id="integrations-section">
+      <div class="cs-card-title">
+        <span class="icon-wrap" style="background:#e0f2f1;color:#00897b;"><i class="fas fa-plug"></i></span>
+        Integrations
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <div class="cs-label">Eyebrow</div>
+          <input type="text" name="integrations_eyebrow" value="{{ landing.integrations_eyebrow }}" class="cs-input" maxlength="50">
+        </div>
+        <div class="col-md-8">
+          <div class="cs-label">Heading</div>
+          <input type="text" name="integrations_heading" value="{{ landing.integrations_heading }}" class="cs-input" maxlength="200">
+        </div>
+      </div>
+
+      <div class="cs-label mb-2">Integration cards</div>
+      <div class="lp-rows" id="integrationCardRows">
+        {% for card in integration_cards %}
+        <div class="lp-row lp-card-row" data-row>
+          <input type="hidden" name="card_section[]" value="integration">
+          <input type="text" name="card_icon[]" value="{{ card.icon }}" class="cs-input" placeholder="fas fa-truck">
+          <input type="text" name="card_title[]" value="{{ card.title }}" class="cs-input" placeholder="Title">
+          <input type="text" name="card_description[]" value="{{ card.description }}" class="cs-input" placeholder="Short subtitle">
+          <button type="button" class="lp-row-remove" onclick="this.closest('[data-row]').remove()"><i class="fas fa-trash"></i></button>
+        </div>
+        {% endfor %}
+        {% if not integration_cards %}<p class="lp-empty-hint">No integration cards yet — click "Add integration card" below.</p>{% endif %}
+      </div>
+      <button type="button" class="lp-add-btn" onclick="addCardRow('integrationCardRows', 'integration')"><i class="fas fa-plus"></i> Add integration card</button>
+    </div>
+
+    <!-- ==================== CTA BAND ==================== -->
+    <div class="cs-card" id="cta-section">
+      <div class="cs-card-title">
+        <span class="icon-wrap" style="background:#fff8e1;color:#f9a825;"><i class="fas fa-bullhorn"></i></span>
+        Closing CTA Band
+      </div>
+      <div class="row g-3">
+        <div class="col-12">
+          <div class="cs-label">Heading</div>
+          <input type="text" name="cta_heading" value="{{ landing.cta_heading }}" class="cs-input" maxlength="200">
+        </div>
+        <div class="col-12">
+          <div class="cs-label">Subtext</div>
+          <input type="text" name="cta_subtext" value="{{ landing.cta_subtext }}" class="cs-input" maxlength="250">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">Primary button text</div>
+          <input type="text" name="cta_primary_text" value="{{ landing.cta_primary_text }}" class="cs-input" maxlength="50">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">Secondary button text</div>
+          <input type="text" name="cta_secondary_text" value="{{ landing.cta_secondary_text }}" class="cs-input" maxlength="50">
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== FOOTER / BUSINESS DETAILS ==================== -->
+    <div class="cs-card" id="footer-section">
+      <div class="cs-card-title">
+        <span class="icon-wrap" style="background:#eceff1;color:#546e7a;"><i class="fas fa-shield-halved"></i></span>
+        Footer — Verified Business Details &amp; Social Links
+      </div>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="cs-label">Company address</div>
+          <input type="text" name="business_address" value="{{ landing.business_address }}" class="cs-input" maxlength="255">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">PAN / VAT</div>
+          <input type="text" name="business_pan" value="{{ landing.business_pan }}" class="cs-input" maxlength="100">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">Contact (phone / email shown in footer)</div>
+          <input type="text" name="business_contact" value="{{ landing.business_contact }}" class="cs-input" maxlength="150">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label">Contact email (mailto link)</div>
+          <input type="email" name="social_email" value="{{ landing.social_email }}" class="cs-input" maxlength="150">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label"><i class="fab fa-instagram me-1"></i>Instagram URL</div>
+          <input type="url" name="social_instagram" value="{{ landing.social_instagram }}" class="cs-input" maxlength="300" placeholder="https://instagram.com/...">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label"><i class="fab fa-facebook me-1"></i>Facebook URL</div>
+          <input type="url" name="social_facebook" value="{{ landing.social_facebook }}" class="cs-input" maxlength="300" placeholder="https://facebook.com/...">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label"><i class="fab fa-tiktok me-1"></i>TikTok URL</div>
+          <input type="url" name="social_tiktok" value="{{ landing.social_tiktok }}" class="cs-input" maxlength="300" placeholder="https://tiktok.com/@...">
+        </div>
+        <div class="col-md-6">
+          <div class="cs-label"><i class="fab fa-whatsapp me-1"></i>WhatsApp URL</div>
+          <input type="url" name="social_whatsapp" value="{{ landing.social_whatsapp }}" class="cs-input" maxlength="300" placeholder="https://wa.me/977...">
+        </div>
+      </div>
+      <p class="cs-card-sub mt-3 mb-0">Any social field left blank hides that icon in the footer instead of showing a dead link.</p>
+    </div>
+
+    <!-- ==================== SAVE BAR ==================== -->
+    <div class="cs-card d-flex align-items-center justify-content-between flex-wrap gap-3">
+      <div>
+        <div class="fw-bold text-dark" style="font-size:.95rem;">
+          <span class="lp-dirty-dot" id="lpDirtyDot"></span>Save Landing Page
+        </div>
+        <div class="text-muted" style="font-size:.8rem;" id="lpSaveHint">Changes go live immediately on the public homepage.</div>
+      </div>
+      <button type="submit" class="cs-save-btn"><i class="fas fa-save me-2"></i>Save Changes</button>
+    </div>
+
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function addStatRow() {
+  const container = document.getElementById('statRows');
+  const row = document.createElement('div');
+  row.className = 'lp-row';
+  row.setAttribute('data-row', '');
+  row.innerHTML = `
+    <select name="stat_group[]" class="cs-input">
+      <option value="primary">Top row</option>
+      <option value="secondary">Stock row</option>
+    </select>
+    <input type="text" name="stat_label[]" class="cs-input" placeholder="Label">
+    <input type="text" name="stat_value[]" class="cs-input" placeholder="Value">
+    <select name="stat_color[]" class="cs-input">
+      <option value="">No dot</option>
+      <option value="amber">Amber</option>
+      <option value="green">Green</option>
+      <option value="blue">Blue</option>
+    </select>
+    <button type="button" class="lp-row-remove" onclick="this.closest('[data-row]').remove()"><i class="fas fa-trash"></i></button>
+  `;
+  container.appendChild(row);
+}
+
+function addCardRow(containerId, section) {
+  const container = document.getElementById(containerId);
+  const row = document.createElement('div');
+  row.className = 'lp-row lp-card-row';
+  row.setAttribute('data-row', '');
+  row.innerHTML = `
+    <input type="hidden" name="card_section[]" value="${section}">
+    <input type="text" name="card_icon[]" class="cs-input" placeholder="fas fa-star">
+    <input type="text" name="card_title[]" class="cs-input" placeholder="Title">
+    <input type="text" name="card_description[]" class="cs-input" placeholder="Description">
+    <button type="button" class="lp-row-remove" onclick="this.closest('[data-row]').remove()"><i class="fas fa-trash"></i></button>
+  `;
+  container.appendChild(row);
+}
+
+let lpBrandCounter = 0;
+function addBrandRow() {
+  lpBrandCounter += 1;
+  const tempId = 'n' + Date.now() + lpBrandCounter;
+  const container = document.getElementById('brandRows');
+  document.querySelector('#brandRows .lp-empty-hint')?.remove();
+  const row = document.createElement('div');
+  row.className = 'lp-brand-row';
+  row.setAttribute('data-brand-row', '');
+  row.innerHTML = `
+    <div class="lp-brand-preview">
+      <div class="lp-brand-placeholder"><i class="fas fa-image"></i></div>
+      <input type="file" name="brand_logo_new_${tempId}" accept="image/*" class="lp-file-input" title="Upload logo">
+    </div>
+    <input type="text" name="brand_name_new_${tempId}" class="cs-input" placeholder="Brand name">
+    <input type="hidden" name="brand_order_new_${tempId}" value="${container.children.length}">
+    <button type="button" class="lp-row-remove" title="Remove brand" onclick="this.closest('[data-brand-row]').remove()"><i class="fas fa-trash"></i></button>
+  `;
+  container.appendChild(row);
+}
+
+function toggleBrandDelete(pk, btn) {
+  const cb = document.getElementById('brandDel' + pk);
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new Event('change'));
+  btn.innerHTML = cb.checked ? '<i class="fas fa-rotate-left"></i>' : '<i class="fas fa-trash"></i>';
+  btn.title = cb.checked ? 'Undo delete' : 'Delete brand';
+}
+
+/* ---- Unsaved-changes indicator ---- */
+(function () {
+  const form = document.getElementById('landingSetupForm');
+  const dot = document.getElementById('lpDirtyDot');
+  const hint = document.getElementById('lpSaveHint');
+  let dirty = false;
+  form.addEventListener('input', function () {
+    if (!dirty) {
+      dirty = true;
+      dot.classList.add('show');
+      hint.textContent = 'You have unsaved changes.';
+    }
+  });
+  form.addEventListener('submit', function () { dirty = false; });
+  window.addEventListener('beforeunload', function (e) {
+    if (dirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+})();
+
+/* ---- Highlight the active section in the quick nav while scrolling ---- */
+(function () {
+  const navLinks = document.querySelectorAll('#lpQuickNav a');
+  const sections = Array.from(navLinks).map(a => document.querySelector(a.getAttribute('href')));
+  const observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      const id = '#' + entry.target.id;
+      const link = document.querySelector('#lpQuickNav a[href="' + id + '"]');
+      if (!link) return;
+      if (entry.isIntersecting) {
+        navLinks.forEach(a => a.classList.remove('lp-nav-active'));
+        link.classList.add('lp-nav-active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(function (el) { if (el) observer.observe(el); });
+})();
+</script>
+{% endblock %}

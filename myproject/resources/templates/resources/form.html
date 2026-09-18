@@ -1,0 +1,431 @@
+{% extends 'base.html' %}
+{% block title %}{% if resource %}Edit Article{% else %}New Article{% endif %} - Resources{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css" rel="stylesheet">
+<style>
+    .form-header {
+        background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 55%, #8b5cf6 100%);
+        border-radius: 16px; padding: 1.5rem 2rem; color: #fff;
+        margin-bottom: 1.5rem; position: relative; overflow: hidden;
+    }
+    .form-header h4 { font-weight: 700; margin: 0; position: relative; z-index: 1; }
+    .form-header-back {
+        background: rgba(255,255,255,.2); backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,.3); color: #fff;
+        width: 40px; height: 40px; border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        text-decoration: none; transition: all .3s;
+        flex-shrink: 0; position: relative; z-index: 1;
+    }
+    .form-header-back:hover { background: rgba(255,255,255,.35); color: #fff; transform: translateY(-2px); }
+
+    .form-card {
+        background: #fff; border-radius: 16px;
+        border: 1px solid #f1f5f9; box-shadow: 0 2px 8px rgba(0,0,0,.04);
+        padding: 2rem;
+    }
+    .form-group-label {
+        font-size: .8rem; font-weight: 700; color: #475569;
+        text-transform: uppercase; letter-spacing: .5px; margin-bottom: .45rem;
+    }
+    .form-group-label .required { color: #dc2626; }
+    .styled-input {
+        border: 1.5px solid #e2e8f0; border-radius: 10px;
+        padding: .6rem .9rem; font-size: .95rem; color: #1e293b;
+        transition: border-color .2s, box-shadow .2s; width: 100%;
+    }
+    .styled-input:focus {
+        border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.12); outline: none;
+    }
+
+    /* Quill editor */
+    .editor-shell {
+        border-radius: 12px; transition: box-shadow .2s, border-color .2s;
+        border: 1.5px solid #e2e8f0; overflow: hidden;
+    }
+    .editor-shell.is-focused { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.12); }
+    #editor-container { min-height: 220px; background: #fff; }
+    #notes-editor-container { min-height: 100px; background: #fff; }
+    .ql-toolbar.ql-snow {
+        border: none !important; border-bottom: 1px solid #e2e8f0 !important;
+        background: #f8fafc; padding: .5rem .6rem;
+        display: flex; flex-wrap: wrap; align-items: center;
+    }
+    .ql-toolbar.ql-snow .ql-formats {
+        margin-right: .5rem !important; padding-right: .5rem;
+        border-right: 1px solid #e2e8f0;
+    }
+    .ql-toolbar.ql-snow .ql-formats:last-child { border-right: none; margin-right: 0 !important; }
+    .ql-toolbar.ql-snow button { width: 30px; height: 30px; border-radius: 7px; }
+    .ql-toolbar.ql-snow button:hover,
+    .ql-toolbar.ql-snow button:focus,
+    .ql-toolbar.ql-snow .ql-picker-label:hover {
+        background: #e0e7ff; color: #4338ca;
+    }
+    .ql-toolbar.ql-snow button:hover .ql-stroke,
+    .ql-toolbar.ql-snow button:focus .ql-stroke { stroke: #4338ca; }
+    .ql-toolbar.ql-snow button:hover .ql-fill,
+    .ql-toolbar.ql-snow button:focus .ql-fill { fill: #4338ca; }
+    .ql-toolbar.ql-snow button.ql-active { background: #6366f1; }
+    .ql-toolbar.ql-snow button.ql-active .ql-stroke { stroke: #fff; }
+    .ql-toolbar.ql-snow button.ql-active .ql-fill { fill: #fff; }
+    .ql-toolbar.ql-snow .ql-picker-label { border-radius: 7px; border-color: transparent !important; }
+    .ql-toolbar.ql-snow .ql-picker-options {
+        border-radius: 10px !important; border-color: #e2e8f0 !important;
+        box-shadow: 0 10px 28px rgba(15,23,42,.12); padding: .35rem;
+    }
+    .ql-container.ql-snow { border: none !important; font-size: .95rem; font-family: inherit; position: relative; }
+    .ql-editor { min-height: 220px; padding: 1rem 1.15rem; line-height: 1.65; color: #1e293b; }
+    .ql-editor.ql-blank::before { color: #94a3b8; font-style: normal; left: 1.15rem; right: 1.15rem; }
+    #notes-editor-container .ql-editor { min-height: 100px; }
+
+    /* Link-edit tooltip — pinned inside the editor so it can never be
+       clipped by the page's ancestor `overflow-x:hidden` wrappers, which
+       was cutting off its left edge (showing "ink:" instead of "Link:"). */
+    .ql-snow .ql-tooltip {
+        z-index: 20; position: absolute !important;
+        left: 10px !important; top: 10px !important; transform: none !important;
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+        box-shadow: 0 10px 28px rgba(15,23,42,.16);
+        padding: .5rem .65rem; white-space: nowrap;
+    }
+    .ql-snow .ql-tooltip::before { color: #64748b; font-size: .82rem; }
+    .ql-snow .ql-tooltip input[type=text] {
+        border: 1.5px solid #e2e8f0; border-radius: 8px;
+        padding: .35rem .65rem; font-size: .85rem; outline: none; margin: 0 .4rem;
+    }
+    .ql-snow .ql-tooltip input[type=text]:focus {
+        border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+    }
+    .ql-snow .ql-tooltip a.ql-action, .ql-snow .ql-tooltip a.ql-remove {
+        color: #6366f1; font-weight: 600;
+    }
+    .ql-snow .ql-tooltip a.ql-remove { color: #dc2626; margin-left: .5rem; }
+    .styled-select {
+        border: 1.5px solid #e2e8f0; border-radius: 10px;
+        padding: .6rem .9rem; font-size: .95rem; color: #1e293b;
+        transition: border-color .2s, box-shadow .2s; width: 100%;
+    }
+    .styled-select:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.12); outline: none; }
+
+    /* Dropzone */
+    .dropzone {
+        border: 2px dashed #cbd5e1; border-radius: 14px;
+        padding: 2rem; text-align: center; cursor: pointer;
+        transition: all .25s; background: #f8fafc;
+    }
+    .dropzone:hover, .dropzone.dragover {
+        border-color: #6366f1; background: #eef2ff;
+    }
+    .dropzone i { font-size: 2rem; color: #94a3b8; margin-bottom: .5rem; display: block; }
+    .dropzone.dragover i { color: #6366f1; }
+    .dropzone p { margin: 0; color: #64748b; font-size: .88rem; }
+    .dropzone .dz-hint { font-size: .75rem; color: #94a3b8; margin-top: .25rem; }
+
+    .file-chip-list { display: flex; flex-direction: column; gap: .6rem; margin-top: 1rem; }
+    .file-chip {
+        display: flex; align-items: center; gap: .75rem;
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
+        padding: .6rem .85rem;
+    }
+    .file-chip-icon {
+        width: 36px; height: 36px; border-radius: 9px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: .95rem; flex-shrink: 0;
+    }
+    .fci-audio { background: #ecfeff; color: #0891b2; }
+    .fci-video { background: #fdf4ff; color: #a21caf; }
+    .fci-pdf   { background: #fef2f2; color: #dc2626; }
+    .fci-other { background: #f1f5f9; color: #64748b; }
+    .file-chip-info { flex: 1; min-width: 0; }
+    .file-chip-name { font-size: .85rem; font-weight: 600; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-chip-size { font-size: .72rem; color: #94a3b8; }
+    .file-chip-remove {
+        border: none; background: #fee2e2; color: #dc2626;
+        width: 28px; height: 28px; border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; transition: all .2s; flex-shrink: 0;
+    }
+    .file-chip-remove:hover { background: #fecaca; }
+
+    .submit-btn {
+        background: linear-gradient(135deg, #0ea5e9, #6366f1);
+        border: none; color: #fff; padding: .65rem 2rem;
+        border-radius: 12px; font-weight: 600; font-size: .95rem;
+        transition: all .25s; cursor: pointer;
+    }
+    .submit-btn:hover { opacity: .9; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(99,102,241,.3); }
+    .submit-btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+    .cancel-btn {
+        background: #f1f5f9; border: none; color: #64748b;
+        padding: .65rem 1.5rem; border-radius: 12px; font-weight: 600; font-size: .95rem;
+        text-decoration: none; transition: all .25s; display: inline-block;
+    }
+    .cancel-btn:hover { background: #e2e8f0; color: #334155; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-header">
+    <div class="d-flex align-items-center gap-3">
+        <a href="{% if resource %}{% url 'resources:detail' resource.pk %}{% else %}{% url 'resources:list' %}{% endif %}" class="form-header-back">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <h4>
+            {% if resource %}<i class="fas fa-pen me-2"></i> Edit Article
+            {% else %}<i class="fas fa-plus-circle me-2"></i> New Article{% endif %}
+        </h4>
+    </div>
+</div>
+
+{% if messages %}
+<div class="mb-3">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show border-0" style="border-radius:12px;">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="form-card">
+    <form method="POST" enctype="multipart/form-data" id="resourceForm">
+        {% csrf_token %}
+        <div class="row g-4">
+            <div class="col-md-8">
+                <div class="form-group-label">Title <span class="required">*</span></div>
+                <input type="text" name="title" class="styled-input" value="{{ resource.title|default:'' }}" placeholder="Give this article a clear title…" required>
+            </div>
+
+            <div class="col-md-4">
+                <div class="form-group-label">Topic</div>
+                <select name="topic" class="styled-select">
+                    <option value="">-- Uncategorized --</option>
+                    {% for t in topics %}
+                    <option value="{{ t.id }}" {% if t.id == selected_topic_id %}selected{% endif %}>{{ t.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-12">
+                <div class="form-group-label">Subtitle</div>
+                <input type="text" name="subtitle" class="styled-input" value="{{ resource.subtitle|default:'' }}" placeholder="A short one-line summary shown in the collapsed list…">
+            </div>
+
+            <div class="col-md-4">
+                <div class="form-group-label">Version</div>
+                <input type="text" name="version" class="styled-input" value="{{ resource.version|default:'v1.0' }}" placeholder="v1.0">
+            </div>
+
+            <div class="col-12">
+                <div class="form-group-label">Content <span class="text-muted" style="text-transform:none;font-weight:500;">— use the numbered-list button for step-by-step instructions</span></div>
+                <div class="editor-shell" id="editorShell">
+                    <div id="editor-container">{{ resource.content|default:''|safe }}</div>
+                </div>
+                <textarea name="content" id="content-input" style="display:none;"></textarea>
+            </div>
+
+            <div class="col-12">
+                <div class="form-group-label">Notes <span class="text-muted" style="text-transform:none;font-weight:500;">— shown in a highlighted callout box</span></div>
+                <div class="editor-shell" id="notesEditorShell">
+                    <div id="notes-editor-container">{{ resource.notes|default:''|safe }}</div>
+                </div>
+                <textarea name="notes" id="notes-input" style="display:none;"></textarea>
+            </div>
+
+            {% if resource and resource.files.all %}
+            <div class="col-12">
+                <div class="form-group-label">Existing Attachments</div>
+                <div class="file-chip-list" id="existingFiles">
+                    {% for f in resource.files.all %}
+                    <div class="file-chip" data-file-id="{{ f.id }}">
+                        <div class="file-chip-icon fci-{{ f.file_type }}">
+                            {% if f.file_type == 'audio' %}<i class="fas fa-headphones"></i>
+                            {% elif f.file_type == 'video' %}<i class="fas fa-film"></i>
+                            {% elif f.file_type == 'pdf' %}<i class="fas fa-file-pdf"></i>
+                            {% else %}<i class="fas fa-file"></i>{% endif %}
+                        </div>
+                        <div class="file-chip-info">
+                            <div class="file-chip-name">{{ f.original_name }}</div>
+                            <div class="file-chip-size">{{ f.display_size }}</div>
+                        </div>
+                        <button type="button" class="file-chip-remove" title="Delete this file"
+                            onclick="deleteExistingFile({{ resource.pk }}, {{ f.id }}, this)">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="col-12">
+                <div class="form-group-label">{% if resource %}Add More Files{% else %}Attach Files{% endif %}</div>
+                <div class="dropzone" id="dropzone">
+                    <i class="fas fa-cloud-arrow-up"></i>
+                    <p><strong>Click to browse</strong> or drag &amp; drop files here</p>
+                    <div class="dz-hint">Audio (mp3, wav, ogg, m4a…) · Video (mp4, webm, mov…) · PDF — up to 500MB each</div>
+                    <input type="file" id="fileInput" name="files" multiple hidden
+                        accept=".mp3,.wav,.ogg,.m4a,.aac,.flac,.weba,.mp4,.webm,.mov,.avi,.mkv,.m4v,.pdf">
+                </div>
+                <div class="file-chip-list" id="newFileList"></div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mt-4 pt-3" style="border-top:1px solid #f1f5f9;">
+            <a href="{% if resource %}{% url 'resources:detail' resource.pk %}{% else %}{% url 'resources:list' %}{% endif %}" class="cancel-btn">
+                <i class="fas fa-times me-1"></i> Cancel
+            </a>
+            <button type="submit" class="submit-btn" id="submitBtn">
+                <i class="fas fa-save me-1"></i>
+                {% if resource %}Save Changes{% else %}Publish Resource{% endif %}
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
+<script>
+    const quill = new Quill('#editor-container', {
+        theme: 'snow',
+        placeholder: 'Write the details or step-by-step instructions for this article…',
+        modules: {
+            toolbar: [
+                [{ header: [2, 3, false] }],
+                ['bold', 'italic', 'underline', 'strike'],
+                [{ list: 'ordered' }, { list: 'bullet' }],
+                ['blockquote', 'link'],
+                ['clean'],
+            ],
+        },
+    });
+
+    const notesQuill = new Quill('#notes-editor-container', {
+        theme: 'snow',
+        placeholder: 'Optional tip or warning to highlight, e.g. "A wrong invoice cannot be edited after printing…"',
+        modules: {
+            toolbar: [['bold', 'italic'], ['link'], ['clean']],
+        },
+    });
+
+    document.getElementById('editorShell').classList.remove('is-focused');
+    quill.on('selection-change', range => {
+        document.getElementById('editorShell').classList.toggle('is-focused', !!range);
+    });
+    notesQuill.on('selection-change', range => {
+        document.getElementById('notesEditorShell').classList.toggle('is-focused', !!range);
+    });
+
+    const form = document.getElementById('resourceForm');
+    const contentInput = document.getElementById('content-input');
+    const notesInput = document.getElementById('notes-input');
+    form.addEventListener('submit', function () {
+        contentInput.value = quill.root.innerHTML === '<p><br></p>' ? '' : quill.root.innerHTML;
+        notesInput.value = notesQuill.root.innerHTML === '<p><br></p>' ? '' : notesQuill.root.innerHTML;
+    });
+
+    /* ── Drag & drop file picker ── */
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const newFileList = document.getElementById('newFileList');
+    let selectedFiles = [];
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    ['dragenter', 'dragover'].forEach(evt => dropzone.addEventListener(evt, e => {
+        e.preventDefault(); dropzone.classList.add('dragover');
+    }));
+    ['dragleave', 'drop'].forEach(evt => dropzone.addEventListener(evt, e => {
+        e.preventDefault(); dropzone.classList.remove('dragover');
+    }));
+    dropzone.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+    fileInput.addEventListener('change', () => addFiles(fileInput.files));
+
+    function addFiles(fileListObj) {
+        selectedFiles = selectedFiles.concat(Array.from(fileListObj));
+        renderFileList();
+        syncInputFiles();
+    }
+
+    function removeFile(index) {
+        selectedFiles.splice(index, 1);
+        renderFileList();
+        syncInputFiles();
+    }
+
+    function syncInputFiles() {
+        const dt = new DataTransfer();
+        selectedFiles.forEach(f => dt.items.add(f));
+        fileInput.files = dt.files;
+    }
+
+    function fileTypeOf(name) {
+        const ext = name.split('.').pop().toLowerCase();
+        if (['mp3','wav','ogg','m4a','aac','flac','weba'].includes(ext)) return 'audio';
+        if (['mp4','webm','mov','avi','mkv','m4v'].includes(ext)) return 'video';
+        if (ext === 'pdf') return 'pdf';
+        return 'other';
+    }
+
+    function iconFor(type) {
+        return { audio: 'fa-headphones', video: 'fa-film', pdf: 'fa-file-pdf' }[type] || 'fa-file';
+    }
+
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    }
+
+    function renderFileList() {
+        newFileList.innerHTML = '';
+        selectedFiles.forEach((f, idx) => {
+            const type = fileTypeOf(f.name);
+            const chip = document.createElement('div');
+            chip.className = 'file-chip';
+            chip.innerHTML = `
+                <div class="file-chip-icon fci-${type}"><i class="fas ${iconFor(type)}"></i></div>
+                <div class="file-chip-info">
+                    <div class="file-chip-name">${f.name}</div>
+                    <div class="file-chip-size">${formatSize(f.size)}</div>
+                </div>
+                <button type="button" class="file-chip-remove" title="Remove"><i class="fas fa-times"></i></button>
+            `;
+            chip.querySelector('.file-chip-remove').addEventListener('click', () => removeFile(idx));
+            newFileList.appendChild(chip);
+        });
+    }
+
+    function getCookie(name) {
+        let v = null;
+        document.cookie.split(';').forEach(c => {
+            c = c.trim();
+            if (c.startsWith(name + '=')) v = decodeURIComponent(c.slice(name.length + 1));
+        });
+        return v;
+    }
+
+    function deleteExistingFile(resourceId, fileId, btn) {
+        if (!confirm('Delete this attachment permanently?')) return;
+        btn.disabled = true;
+        fetch(`/resources/${resourceId}/file/${fileId}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                btn.closest('.file-chip').remove();
+            } else {
+                alert(data.message || 'Failed to delete file.');
+                btn.disabled = false;
+            }
+        })
+        .catch(() => { alert('Network error.'); btn.disabled = false; });
+    }
+</script>
+{% endblock %}

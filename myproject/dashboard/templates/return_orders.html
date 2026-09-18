@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load dashboard_extras %}
-{% block title %}Return Orders - Admin Panel{% endblock %}
+{% block title %}Return Orders - {{ COMPANY_NAME }}{% endblock %}
 
 {% block content %}
 <div class="row mb-4">
@@ -89,7 +89,7 @@
         <form method="get" class="row g-3" id="filterForm">
             <input type="hidden" name="per_page" value="{{ per_page }}" id="perPageHidden">
             
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <div class="input-group">
                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                     <input type="text" class="form-control" name="search" 
@@ -98,6 +98,22 @@
                 </div>
             </div>
             
+            <!-- Return Stage Filter -->
+            <div class="col-md-2">
+                <select name="stage" class="form-select" title="Return stage">
+                    <option value="">All Return Stages</option>
+                    <option value="processing" {% if stage_filter == 'processing' %}selected{% endif %}>
+                        Return Processing ({{ stage_counts.processing }})
+                    </option>
+                    <option value="arrived" {% if stage_filter == 'arrived' %}selected{% endif %}>
+                        Return Arrived ({{ stage_counts.arrived }})
+                    </option>
+                    <option value="completed" {% if stage_filter == 'completed' %}selected{% endif %}>
+                        Returned ({{ stage_counts.completed }})
+                    </option>
+                </select>
+            </div>
+
             <!-- Payment Status Filter -->
             <div class="col-md-2">
                 <select name="payment" class="form-select">
@@ -174,6 +190,7 @@
                         <input type="checkbox" id="selectAllCheckbox" onchange="selectAllOrders()">
                     </th>
                     <th>Order #</th>
+                    <th>Return Stage</th>
                     <th>Customer</th>
                     <th>Items</th>
                     <th>Amount</th>
@@ -193,6 +210,21 @@
                             <a href="{% url 'order_detail' order.id %}" class="fw-bold text-primary">
                                 {{ order.order_number }}
                             </a>
+                        </td>
+                        <td>
+                            {% if order.order_status|lower == 'return_processing' %}
+                                <span class="badge bg-warning text-dark" title="Marked for return by the courier and still on its way back - not yet received">
+                                    <i class="fas fa-truck"></i> Return Processing
+                                </span>
+                            {% elif order.order_status|lower == 'return_arrived' %}
+                                <span class="badge" style="background-color:#c2410c" title="Arrived at the courier's return branch - too late to redirect, not yet received by us">
+                                    <i class="fas fa-warehouse"></i> Return Arrived
+                                </span>
+                            {% else %}
+                                <span class="badge bg-danger" title="Confirmed back with us - ready to inspect, restock or refund">
+                                    <i class="fas fa-box-open"></i> Returned
+                                </span>
+                            {% endif %}
                         </td>
                         <td>
                             <div class="small">
@@ -239,7 +271,7 @@
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="8" class="text-center py-5">
+                        <td colspan="9" class="text-center py-5">
                             <div class="empty-state">
                                 <i class="fas fa-inbox fa-3x text-muted mb-3" style="display: block;"></i>
                                 <h5 class="text-muted">No Return Orders Found</h5>
@@ -262,12 +294,12 @@
     <ul class="pagination justify-content-center">
         {% if orders.has_previous %}
             <li class="page-item">
-                <a class="page-link" href="?page=1&search={{ search_query }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
+                <a class="page-link" href="?page=1&search={{ search_query }}&stage={{ stage_filter }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
                     <i class="fas fa-step-backward"></i> First
                 </a>
             </li>
             <li class="page-item">
-                <a class="page-link" href="?page={{ orders.previous_page_number }}&search={{ search_query }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
+                <a class="page-link" href="?page={{ orders.previous_page_number }}&search={{ search_query }}&stage={{ stage_filter }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
                     <i class="fas fa-chevron-left"></i> Previous
                 </a>
             </li>
@@ -280,19 +312,19 @@
                 </li>
             {% elif num > orders.number|add:'-3' and num < orders.number|add:'3' %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ num }}&search={{ search_query }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a>
+                    <a class="page-link" href="?page={{ num }}&search={{ search_query }}&stage={{ stage_filter }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">{{ num }}</a>
                 </li>
             {% endif %}
         {% endfor %}
 
         {% if orders.has_next %}
             <li class="page-item">
-                <a class="page-link" href="?page={{ orders.next_page_number }}&search={{ search_query }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
+                <a class="page-link" href="?page={{ orders.next_page_number }}&search={{ search_query }}&stage={{ stage_filter }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
                     Next <i class="fas fa-chevron-right"></i>
                 </a>
             </li>
             <li class="page-item">
-                <a class="page-link" href="?page={{ orders.paginator.num_pages }}&search={{ search_query }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
+                <a class="page-link" href="?page={{ orders.paginator.num_pages }}&search={{ search_query }}&stage={{ stage_filter }}&payment={{ payment_filter }}&start_date={{ start_date }}&end_date={{ end_date }}&per_page={{ per_page }}">
                     Last <i class="fas fa-step-forward"></i>
                 </a>
             </li>

@@ -1,0 +1,29 @@
+{% comment %}
+"Item added to your cart" — the small card the reference storefront shows
+instead of navigating away, offering View cart / Check out / Continue shopping.
+
+Rendered empty on every page and filled in by product.js when an add-to-cart
+POST comes back. With scripting off it is never shown and add-to-cart falls
+back to its ordinary redirect to the cart page.
+{% endcomment %}
+<div class="cart-note" data-cart-note role="status" aria-live="polite">
+    <div class="cart-note-head">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        Item added to your cart
+        <button type="button" class="cart-note-close" data-cart-note-close aria-label="Close">&times;</button>
+    </div>
+
+    <div class="cart-note-item">
+        <img data-cart-note-img src="" alt="" hidden>
+        <div>
+            <div class="name" data-cart-note-name></div>
+            <div class="meta" data-cart-note-meta></div>
+        </div>
+    </div>
+
+    <div class="cart-note-actions">
+        <a href="{% url 'store:cart' %}" class="secondary">View cart</a>
+        <a href="{% url 'store:checkout' %}" class="primary">Check out</a>
+        <button type="button" class="tertiary" data-cart-note-close>Continue shopping</button>
+    </div>
+</div>

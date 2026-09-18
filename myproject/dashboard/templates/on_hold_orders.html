@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load dashboard_extras %}
-{% block title %}On Hold Orders - Admin Panel{% endblock %}
+{% block title %}On Hold Orders - {{ COMPANY_NAME }}{% endblock %}
 
 {% block content %}
 <div class="row mb-4">
@@ -90,8 +90,6 @@
 <div class="card shadow-sm mb-4">
     <div class="card-body">
         <form method="get" class="row g-3" id="filterForm">
-            <input type="hidden" name="per_page" value="{{ per_page }}" id="perPageHidden">
-
             <div class="col-md-3">
                 <div class="input-group">
                     <span class="input-group-text"><i class="fas fa-search"></i></span>
@@ -117,6 +115,15 @@
             <div class="col-md-2">
                 <input type="date" class="form-control" name="end_date"
                        placeholder="End Date" value="{{ end_date }}">
+            </div>
+
+            <div class="col-md-1">
+                <select name="per_page" class="form-select" onchange="this.form.submit()" title="Rows per page">
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == '100' %}selected{% endif %}>100</option>
+                    <option value="200" {% if per_page == '200' %}selected{% endif %}>200</option>
+                    <option value="500" {% if per_page == '500' %}selected{% endif %}>500</option>
+                </select>
             </div>
 
             <div class="col-md-1">

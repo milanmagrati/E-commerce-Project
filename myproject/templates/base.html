@@ -200,8 +200,261 @@
                 opacity: 1
             }
         }
+
+        /* ==================== EXPIRY NOTIFICATIONS ==================== */
+        .expiry-alert-bar {
+            background: linear-gradient(135deg, #fef3c7 0%, #ffedd5 100%);
+            border-left: 4px solid #f59e0b;
+            border-bottom: 1px solid #fed7aa;
+            padding: 0.6rem 1rem;
+            position: relative;
+            z-index: 900;
+            display: flex;
+            justify-content: center;
+        }
+
+        .expiry-content {
+            display: flex;
+            align-items: center;
+            max-width: 1200px;
+            width: 100%;
+            gap: 1rem;
+        }
+
+        .expiry-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .expiry-details {
+            flex-grow: 1;
+            min-width: 0; /* for truncation */
+        }
+
+        .expiry-title {
+            margin: 0 0 0.2rem 0;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+            color: #b45309;
+            display: flex;
+            align-items: center;
+        }
+
+        .expiry-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+        }
+
+        .expiry-item {
+            background: rgba(255, 255, 255, 0.7);
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #78350f;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            white-space: nowrap;
+        }
+
+        .expiry-item.expired-text {
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #991b1b;
+        }
+
+        .expiry-badge {
+            font-size: 0.65rem;
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+            font-weight: 700;
+        }
+
+        .expiry-more {
+            font-weight: 600;
+            color: #b45309;
+            align-self: center;
+            padding-left: 0.25rem;
+        }
+
+        .expiry-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .expiry-view-btn {
+            background: #f59e0b;
+            color: #fff;
+            border: none;
+            padding: 0.3rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .expiry-view-btn:hover {
+            background: #d97706;
+            color: #fff;
+        }
+
+        .expiry-close {
+            background: none;
+            border: none;
+            color: #9ca3af;
+            font-size: 1.1rem;
+            padding: 0;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .expiry-close:hover {
+            color: #4b5563;
+        }
+
+        .pulse-alert i {
+            animation: pulse-danger 2s infinite;
+        }
+
+        @keyframes pulse-danger {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.15); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Expiry Modal Premium Styling */
+        .expiry-modal-content {
+            border: none;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }
+        .expiry-modal-header {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            border-bottom: none;
+            padding: 1.5rem;
+        }
+        .expiry-modal-title {
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin: 0;
+            font-size: 1.25rem;
+        }
+        .expiry-modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .expiry-modal-header .btn-close:hover {
+            opacity: 1;
+        }
+        .expiry-modal-body {
+            padding: 0;
+            background: #fafafa;
+        }
+        .expiry-table {
+            margin: 0;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        .expiry-table th {
+            background: #f1f5f9;
+            color: #475569;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.5px;
+            padding: 1rem 1.25rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .expiry-table td {
+            padding: 1rem 1.25rem;
+            vertical-align: middle;
+            border-bottom: 1px solid #e2e8f0;
+            background: white;
+            transition: background 0.2s;
+        }
+        .expiry-table tr:last-child td {
+            border-bottom: none;
+        }
+        .expiry-table tr:hover td {
+            background: #f8fafc;
+        }
+        .expiry-status-badge {
+            padding: 0.4rem 0.8rem;
+            border-radius: 50rem;
+            font-weight: 700;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .status-expired {
+            background: #fee2e2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+        }
+        .status-critical {
+            background: #ffedd5;
+            color: #c2410c;
+            border: 1px solid #fed7aa;
+        }
+        .status-warning {
+            background: #fef3c7;
+            color: #b45309;
+            border: 1px solid #fde68a;
+        }
+        .expiry-action-btn {
+            background: white;
+            color: #4f46e5;
+            border: 1px solid #e0e7ff;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            display: inline-block;
+        }
+        .expiry-action-btn:hover {
+            background: #4f46e5;
+            color: white;
+            box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);
+        }
+        .expiry-modal-footer {
+            background: white;
+            border-top: 1px solid #e2e8f0;
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .view-all-link {
+            color: #64748b;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: color 0.2s;
+        }
+        .view-all-link:hover {
+            color: #3b82f6;
+        }
     </style>
-    <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+    <link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=1.1">
     <style>
         /* Dynamic theme overrides from Company Setup */
         :root {
@@ -220,8 +473,8 @@
         }
 
         .sidebar {
-            min-width: 250px;
-            max-width: 250px;
+            min-width: 260px;
+            max-width: 260px;
             position: fixed;
             top: 0;
             left: 0;
@@ -280,16 +533,16 @@
 
         /* Content area adjustment */
         #content {
-            width: calc(100% - 250px);
+            width: calc(100% - 260px);
             min-height: 100vh;
             transition: all 0.3s;
-            margin-left: 250px;
+            margin-left: 260px;
             overflow-x: hidden;
         }
 
         /* Sidebar collapsed state */
         .sidebar.active {
-            margin-left: -250px;
+            margin-left: -260px;
         }
 
         #content.active {
@@ -300,7 +553,7 @@
         /* Mobile responsive */
         @media (max-width: 768px) {
             .sidebar {
-                margin-left: -250px;
+                margin-left: -260px;
             }
 
             .sidebar.active {
@@ -439,6 +692,47 @@
             color: #ffc107;
         }
 
+        /* ==================== SIDEBAR DROPDOWN CHEVRONS ==================== */
+        /* Every collapsible sidebar item (Team Members, Setup, Sentinel Vault,
+           the nested HRM/payroll submenus, etc.) uses the same
+           data-bs-toggle="collapse" + fa-chevron-down pattern. Bootstrap keeps
+           aria-expanded in sync with the collapse state on its own, so a single
+           attribute-selector rule rotates every one of these chevrons — no JS
+           needed, and every dropdown in the sidebar gets the same open/closed
+           affordance instead of a caret that never visibly moves. */
+        .sidebar [data-bs-toggle="collapse"] .fa-chevron-down {
+            opacity: 0.6;
+            transition: transform 0.25s ease, opacity 0.25s ease;
+        }
+
+        .sidebar [data-bs-toggle="collapse"]:hover .fa-chevron-down {
+            opacity: 0.9;
+        }
+
+        .sidebar [data-bs-toggle="collapse"][aria-expanded="true"] .fa-chevron-down {
+            opacity: 1;
+            transform: rotate(180deg);
+        }
+
+        /* Clicking a "#" toggle link (no real navigation) leaves the browser's
+           default focus ring sitting on the link — most visible as a stray blue
+           outline hugging whichever child (often the floated chevron) ends up at
+           the edge of the anchor's focus rect. Swap it for one deliberate ring
+           that matches the sidebar instead of the browser default. */
+        .sidebar ul li a:focus {
+            outline: none;
+        }
+
+        .sidebar ul li a:focus-visible {
+            outline: none;
+            box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+            border-radius: 6px;
+        }
+
+        .sidebar li.sentinel-menu>a:focus-visible {
+            box-shadow: inset 0 0 0 2px rgba(16, 185, 129, 0.55);
+        }
+
         /* ==================== NCM BADGE STYLING ==================== */
         .ncm-badge {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -501,6 +795,43 @@
             font-weight: 700;
             margin-left: 5px;
             display: inline-block;
+        }
+
+        /* Sentinel Vault — security tooling reads as distinct from business menus */
+        .sidebar li.sentinel-menu>a {
+            border-left: 3px solid transparent;
+            transition: all .25s ease;
+        }
+
+        .sidebar li.sentinel-menu>a i.fa-shield-halved {
+            color: #34d399;
+        }
+
+        /* The chevron otherwise inherits the plain white sidebar-icon colour,
+           which reads oddly next to the shield icon's green and the AUDIT
+           badge's gradient. Tint it the same emerald so the whole row feels
+           like one deliberate accent instead of one green icon plus a
+           leftover white caret. */
+        .sidebar li.sentinel-menu>a .fa-chevron-down {
+            color: #34d399;
+        }
+
+        .sidebar li.sentinel-menu:hover>a,
+        .sidebar li.sentinel-menu.active>a {
+            background: linear-gradient(135deg, rgba(16, 185, 129, .16), rgba(6, 182, 212, .12));
+            border-left-color: #10b981;
+        }
+
+        .sentinel-badge {
+            background: linear-gradient(135deg, #10b981, #06b6d4);
+            color: #04231c;
+            font-size: .58rem;
+            font-weight: 800;
+            letter-spacing: .06em;
+            padding: 2px 7px;
+            border-radius: 10px;
+            margin-left: 6px;
+            vertical-align: middle;
         }
 
         .sidebar li.staff-performance-menu:hover>a {
@@ -707,6 +1038,7 @@
         }
     </style>
     {% block extra_css %}{% endblock %}
+    {% include 'partials/sentinel_device_probe.html' %}
 </head>
 
 <body>
@@ -727,12 +1059,14 @@
             <!-- Scrollable Menu Area -->
             <ul class="list-unstyled components">
 
-                <!-- ==================== DASHBOARD (Everyone) ==================== -->
+                <!-- ==================== DASHBOARD (Permission-based) ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_dashboard %}
                 <li class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
                     <a href="{% url 'dashboard' %}">
                         <i class="fas fa-tachometer-alt"></i> Dashboard
                     </a>
                 </li>
+                {% endif %}
 
                 <!-- ==================== PRODUCTS ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_products %}
@@ -784,6 +1118,11 @@
                             <a href="{% url 'orders_list' %}">All Orders</a>
                         </li>
                         {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_access_follow_ups %}
+                        <li class="{% if request.resolver_match.url_name == 'follow_ups_list' %}active{% endif %}">
+                            <a href="{% url 'follow_ups_list' %}">Follow-ups</a>
+                        </li>
+                        {% endif %}
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_on_hold_orders %}
                         <li class="{% if request.resolver_match.url_name == 'on_hold_orders_list' %}active{% endif %}">
                             <a href="{% url 'on_hold_orders_list' %}">On Hold Orders</a>
@@ -807,6 +1146,14 @@
                         <li class="{% if request.resolver_match.url_name == 'ncm_rtvs_list' %}active{% endif %}">
                             <a href="{% url 'ncm_rtvs_list' %}">
                                 RTVs <span class="badge bg-danger ms-1" style="font-size: 0.6rem;">NCM</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' %}
+                        <li class="{% if request.resolver_match.url_name == 'woocommerce_orders' %}active{% endif %}">
+                            <a href="{% url 'woocommerce_orders' %}">
+                                <i class="fab fa-wordpress me-1"></i> WooCommerce 
+                                <span class="badge bg-info ms-1" style="font-size: 0.6rem;">SYNC</span>
                             </a>
                         </li>
                         {% endif %}
@@ -999,14 +1346,32 @@
                 </li>
                 {% endif %}
 
+                <!-- ==================== CONTENT HUB ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_content_management %}
+                <li class="content-menu {% if request.resolver_match.url_name == 'content_accounts_list' or request.resolver_match.url_name == 'staff_reports_list' or request.resolver_match.url_name == 'content_accounts_trash' %}active{% endif %}">
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#contentMenu" aria-expanded="false">
+                        <i class="fas fa-file-alt"></i> Content Hub
+                        <i class="fas fa-chevron-down float-end mt-1"></i>
+                    </a>
+                    <ul class="collapse list-unstyled {% if request.resolver_match.url_name == 'content_accounts_list' or request.resolver_match.url_name == 'staff_reports_list' or request.resolver_match.url_name == 'content_accounts_trash' %}show{% endif %}" id="contentMenu">
+                        <li class="{% if request.resolver_match.url_name == 'content_accounts_list' or request.resolver_match.url_name == 'content_accounts_trash' %}active{% endif %}">
+                            <a href="{% url 'content_accounts_list' %}">Content Management</a>
+                        </li>
+                        <li class="{% if request.resolver_match.url_name == 'staff_reports_list' %}active{% endif %}">
+                            <a href="{% url 'staff_reports_list' %}">Staff Report</a>
+                        </li>
+                    </ul>
+                </li>
+                {% endif %}
+
                 <!-- ==================== HRM ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm %}
                 <li class="hrm-menu {% if '/hrm/' in request.path %}active{% endif %}">
-                    <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmMenu" aria-expanded="false">
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmMenu" aria-expanded="{% if '/hrm/' in request.path %}true{% else %}false{% endif %}">
                         <i class="fas fa-users-cog"></i> HRM
                         <i class="fas fa-chevron-down float-end mt-1"></i>
                     </a>
-                    <ul class="collapse list-unstyled" id="hrmMenu">
+                    <ul class="collapse list-unstyled {% if '/hrm/' in request.path %}show{% endif %}" id="hrmMenu">
                         <!-- Dashboard -->
                         <li
                             class="{% if request.resolver_match.url_name == 'dashboard' and '/hrm/' in request.path %}active{% endif %}">
@@ -1116,7 +1481,7 @@
                             </a>
                             <ul class="collapse list-unstyled ps-3" id="hrmAttendance">
                                 <li class="{% if request.resolver_match.url_name == 'shift_list' %}active{% endif %}">
-                                    <a href="{% url 'hrm:shift_list' %}">Shifts</a>
+                                    <a href="{% url 'hrm:shift_list' %}">Shifts and Weekends</a>
                                 </li>
                                 <li
                                     class="{% if request.resolver_match.url_name == 'attendance_policy_list' %}active{% endif %}">
@@ -1126,6 +1491,12 @@
                                     class="{% if request.resolver_match.url_name == 'attendance_list' %}active{% endif %}">
                                     <a href="{% url 'hrm:attendance_list' %}">Attendance Records</a>
                                 </li>
+                                {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_incomplete_attendance or user.can_view_dashboard_incomplete_attendance or user.can_view_hrm_attendance %}
+                                <li
+                                    class="{% if request.resolver_match.url_name == 'attendance_adjustments' %}active{% endif %}">
+                                    <a href="{% url 'hrm:attendance_adjustments' %}">Attendance Adjustments</a>
+                                </li>
+                                {% endif %}
                                 <!-- Report nested submenu -->
                                 <li>
                                     <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmAttendanceReport"
@@ -1165,11 +1536,11 @@
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_payroll %}
                         <li>
                             <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmPayroll"
-                                aria-expanded="{% if request.resolver_match.url_name in 'salary_component_list,employee_salary_list,payroll_run_list,payslip_list,payroll_management,advance_payment_list' %}true{% else %}false{% endif %}"
+                                aria-expanded="{% if request.resolver_match.url_name in 'salary_component_list,employee_salary_list,payroll_run_list,payslip_list,payroll_management,advance_payment_list,holiday_list,bonus_list' %}true{% else %}false{% endif %}"
                                 class="d-flex justify-content-between align-items-center">
                                 Payroll Management <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
                             </a>
-                            <ul class="collapse list-unstyled ps-3 {% if request.resolver_match.url_name in 'salary_component_list,employee_salary_list,payroll_run_list,payslip_list,payroll_management,advance_payment_list' %}show{% endif %}"
+                            <ul class="collapse list-unstyled ps-3 {% if request.resolver_match.url_name in 'salary_component_list,employee_salary_list,payroll_run_list,payslip_list,payroll_management,advance_payment_list,holiday_list,bonus_list' %}show{% endif %}"
                                 id="hrmPayroll">
                                 <li
                                     class="{% if request.resolver_match.url_name == 'salary_component_list' %}active{% endif %}">
@@ -1186,6 +1557,12 @@
                                 <li
                                     class="{% if request.resolver_match.url_name == 'advance_payment_list' %}active{% endif %}">
                                     <a href="{% url 'hrm:advance_payment_list' %}">Advance Payments</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'holiday_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:holiday_list' %}">Holiday Setup</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'bonus_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:bonus_list' %}">Bonus Management</a>
                                 </li>
                                 <li class="{% if request.resolver_match.url_name == 'payslip_list' %}active{% endif %}">
                                     <a href="{% url 'hrm:payslip_list' %}">Payslips</a>
@@ -1227,32 +1604,6 @@
                 </li>
                 {% endif %}
 
-                <!-- ==================== STAFF PERFORMANCE ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' or user.can_view_staff_performance %}
-                <li
-                    class="staff-performance-menu {% if request.resolver_match.url_name == 'staff_performance_analytics' %}active{% endif %}">
-                    <a href="{% url 'staff_performance_analytics' %}">
-                        <i class="fas fa-chart-bar"></i> Staff Performance<span
-                            class="performance-badge">ANALYTICS</span>
-                    </a>
-                </li>
-                {% endif %}
-
-                <!-- ==================== STAFF TARGETS ==================== -->
-                {% if user.is_superuser or user.role == 'administrator' or user.can_view_targets %}
-                <li class="{% if request.resolver_match.url_name == 'manage_targets' %}active{% endif %}">
-                    <a href="{% url 'manage_targets' %}">
-                        <i class="fas fa-bullseye"></i> Staff Targets<span class="performance-badge">TARGETS</span>
-                    </a>
-                </li>
-                {% elif user.can_view_own_targets %}
-                <li class="{% if request.resolver_match.url_name == 'my_targets' %}active{% endif %}">
-                    <a href="{% url 'my_targets' %}">
-                        <i class="fas fa-bullseye"></i> My Targets
-                    </a>
-                </li>
-                {% endif %}
-
                 <!-- ==================== REPORTS ==================== -->
                 {% if user.is_superuser or user.role == 'administrator' or user.can_view_reports %}
                 <li>
@@ -1281,7 +1632,51 @@
                             <a href="{% url 'financial_report' %}">Financial Report</a>
                         </li>
                         {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_orders_by_source_report %}
+                        <li class="{% if request.resolver_match.url_name == 'orders_by_source_report' %}active{% endif %}">
+                            <a href="{% url 'orders_by_source_report' %}"><i class="fas fa-code-branch me-1"></i>Orders by Source Report</a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_follow_up_report %}
+                        <li class="{% if request.resolver_match.url_name == 'follow_up_report' %}active{% endif %}">
+                            <a href="{% url 'follow_up_report' %}"><i class="fas fa-phone-alt me-1"></i>Follow-ups Report</a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_rtv_report %}
+                        <li class="{% if request.resolver_match.url_name == 'rtv_report' %}active{% endif %}">
+                            <a href="{% url 'rtv_report' %}"><i class="fas fa-undo-alt me-1"></i>RTV Report</a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_payroll %}
+                        <li class="{% if request.resolver_match.url_name == 'salary_report' %}active{% endif %}">
+                            <a href="{% url 'hrm:salary_report' %}"><i class="fas fa-wallet me-1"></i>Salary Report</a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_staff_performance %}
+                        <li class="staff-performance-menu {% if request.resolver_match.url_name == 'staff_performance_analytics' %}active{% endif %}">
+                            <a href="{% url 'staff_performance_analytics' %}"><i class="fas fa-chart-bar me-1"></i> Staff Performance<span class="performance-badge">ANALYTICS</span></a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_targets %}
+                        <li class="{% if request.resolver_match.url_name == 'manage_targets' %}active{% endif %}">
+                            <a href="{% url 'manage_targets' %}"><i class="fas fa-bullseye me-1"></i> Staff Targets<span class="performance-badge">TARGETS</span></a>
+                        </li>
+                        {% elif user.can_view_own_targets %}
+                        <li class="{% if request.resolver_match.url_name == 'my_targets' %}active{% endif %}">
+                            <a href="{% url 'my_targets' %}"><i class="fas fa-bullseye me-1"></i> My Targets</a>
+                        </li>
+                        {% endif %}
                     </ul>
+                </li>
+                {% endif %}
+
+                <!-- ==================== IMPORTS (Google Sheets Sync) ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' %}
+                <li class="{% if '/imports/' in request.path %}active{% endif %}">
+                    <a href="/imports/">
+                        <i class="fas fa-file-import"></i> Imports
+                        <span class="ncm-badge" style="background:linear-gradient(135deg,#1a9c3e,#0f7030);">SHEETS</span>
+                    </a>
                 </li>
                 {% endif %}
 
@@ -1294,7 +1689,17 @@
                 </li>
                 {% endif %}
 
-                <!-- ==================== TEAM MEMBERS (Admin Only) ==================== -->
+                <!-- ==================== TRENDY CRM ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' %}
+                <li class="{% if '/trendy-crm/' in request.path %}active{% endif %}" style="position:relative;">
+                    <a href="{% url 'trendycrm:home' %}" style="{% if '/trendy-crm/' in request.path %}background:linear-gradient(135deg,rgba(124,58,237,0.15),rgba(139,92,246,0.15));border-left:3px solid #7c3aed;{% endif %}">
+                        <i class="fas fa-bolt" style="color:#7c3aed;"></i> Trendy CRM
+                        <span style="background:linear-gradient(135deg,#7c3aed,#a78bfa);color:white;font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:5px;">CRM</span>
+                    </a>
+                </li>
+                {% endif %}
+
+
                 {% if user.is_superuser or user.role == 'administrator' %}
                 <li
                     class="{% if 'user' in request.resolver_match.url_name or 'role' in request.resolver_match.url_name %}active{% endif %}">
@@ -1322,20 +1727,56 @@
                 <!-- ==================== CHAT / MESSAGES ==================== -->
                 <li class="{% if request.path|slice:':6' == '/chat/' %}active{% endif %}">
                     <a href="{% url 'chat:inbox' %}">
-                        <i class="fas fa-comments"></i> Messages
+                        <i class="fas fa-comments"></i> Messages and Notice
                         {% if unread_chat_count > 0 %}
                         <span class="badge bg-danger float-end">{{ unread_chat_count }}</span>
                         {% endif %}
                     </a>
                 </li>
 
+                <!-- ==================== SENTINEL VAULT ==================== -->
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_audit_trail %}
+                <li class="sentinel-menu {% if '/sentinel/' in request.path %}active{% endif %}">
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#sentinelMenu"
+                        aria-expanded="{% if '/sentinel/' in request.path %}true{% else %}false{% endif %}">
+                        <i class="fas fa-shield-halved"></i> Sentinel Vault
+                        <span class="sentinel-badge">AUDIT</span>
+                        <i class="fas fa-chevron-down float-end mt-1"></i>
+                    </a>
+                    <ul class="collapse list-unstyled {% if '/sentinel/' in request.path %}show{% endif %}"
+                        id="sentinelMenu">
+                        <li class="{% if request.resolver_match.url_name == 'home' and '/sentinel/' in request.path %}active{% endif %}">
+                            <a href="{% url 'sentinel:home' %}">Command Centre</a>
+                        </li>
+                        <li class="{% if request.resolver_match.url_name == 'stream' %}active{% endif %}">
+                            <a href="{% url 'sentinel:stream' %}">Activity Ledger</a>
+                        </li>
+                        <li class="{% if 'session' in request.resolver_match.url_name|default:'' and '/sentinel/' in request.path %}active{% endif %}">
+                            <a href="{% url 'sentinel:sessions' %}">Live Sessions &amp; Devices</a>
+                        </li>
+                        <li class="{% if 'alert' in request.resolver_match.url_name|default:'' %}active{% endif %}">
+                            <a href="{% url 'sentinel:alerts' %}">Threat Console</a>
+                        </li>
+                        <li class="{% if request.resolver_match.url_name == 'people' or request.resolver_match.url_name == 'dossier' %}active{% endif %}">
+                            <a href="{% url 'sentinel:people' %}">People Dossiers</a>
+                        </li>
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_configure_audit %}
+                        <li class="{% if request.resolver_match.url_name == 'settings' and '/sentinel/' in request.path %}active{% endif %}">
+                            <a href="{% url 'sentinel:settings' %}">Vault Settings</a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </li>
+                {% endif %}
+
                 <!-- ==================== SETUP ==================== -->
                 <li>
-                    <a href="#" data-bs-toggle="collapse" data-bs-target="#setupMenu" aria-expanded="false">
+                    <a href="#" data-bs-toggle="collapse" data-bs-target="#setupMenu"
+                        aria-expanded="{% if '/setup/' in request.path %}true{% else %}false{% endif %}">
                         <i class="fas fa-cog"></i> Setup
                         <i class="fas fa-chevron-down float-end mt-1"></i>
                     </a>
-                    <ul class="collapse list-unstyled" id="setupMenu">
+                    <ul class="collapse list-unstyled {% if '/setup/' in request.path %}show{% endif %}" id="setupMenu">
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_cities %}
                         <li class="{% if request.resolver_match.url_name == 'city_management' %}active{% endif %}">
                             <a href="{% url 'city_management' %}">City Setup</a>
@@ -1348,9 +1789,35 @@
                         <li class="{% if request.resolver_match.url_name == 'rtv_status_list' %}active{% endif %}">
                             <a href="{% url 'rtv_status_list' %}"><i class="fas fa-tags me-1"></i> RTV Status</a>
                         </li>
+                        <li class="{% if 'delivery-charges' in request.path %}active{% endif %}">
+                            <a href="{% url 'delivery_charge_setup' %}"><i class="fas fa-truck-fast me-1"></i> Delivery Charge Setup</a>
+                        </li>
+                        <li class="{% if 'bulk-discounts' in request.path %}active{% endif %}">
+                            <a href="{% url 'bulk_discount_setup' %}"><i class="fas fa-layer-group me-1"></i> Bulk Discount Setup</a>
+                        </li>
+                        <li class="{% if 'product-theme' in request.path %}active{% endif %}">
+                            <a href="{% url 'product_theme_setup' %}"><i class="fas fa-palette me-1"></i> Product Page Theme</a>
+                        </li>
+                        <li class="{% if 'store-labels' in request.path %}active{% endif %}">
+                            <a href="{% url 'store_label_setup' %}"><i class="fas fa-font me-1"></i> Store Button Labels</a>
+                        </li>
+                        <li class="{% if 'setup/invoice' in request.path %}active{% endif %}">
+                            <a href="{% url 'invoice_customizer' %}"><i class="fas fa-file-invoice me-1"></i> Invoice Customizer</a>
+                        </li>
                         <li class="{% if request.resolver_match.url_name == 'api_integration_list' %}active{% endif %}">
                             <a href="{% url 'api_integration_list' %}"><i class="fas fa-plug me-1"></i> API
                                 Integration</a>
+                        </li>
+                        <li class="{% if request.resolver_match.url_name == 'landing_page_setup' %}active{% endif %}">
+                            <a href="{% url 'landing_page_setup' %}"><i class="fas fa-globe me-1"></i> Landing Page Setup</a>
+                        </li>
+                        <li class="{% if 'pages' in request.path %}active{% endif %}">
+                            <a href="{% url 'page_list' %}"><i class="fas fa-file-alt me-1"></i> Page Setup</a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_edit_products or user.can_create_products %}
+                        <li class="{% if request.resolver_match.url_name == 'media_library' %}active{% endif %}">
+                            <a href="{% url 'media_library' %}"><i class="fas fa-photo-video me-1"></i> Media</a>
                         </li>
                         {% endif %}
                     </ul>
@@ -1371,6 +1838,15 @@
                         <i class="fas fa-user-circle"></i> My Profile
                     </a>
                 </li>
+
+                {% if user.is_superuser or user.role == 'administrator' or user.can_view_resources or user.can_create_resources %}
+                <!-- ==================== RESOURCES ==================== -->
+                <li class="{% if 'resources' in request.path %}active{% endif %}">
+                    <a href="{% url 'resources:list' %}">
+                        <i class="fas fa-book-open"></i> Resources
+                    </a>
+                </li>
+                {% endif %}
 
                 <!-- ==================== LOGOUT ==================== -->
                 <li>
@@ -1407,10 +1883,12 @@
                     <!-- Quick Access Shortcuts (Left Side - Desktop) -->
                     <div class="nav-quick-access d-none d-xl-flex align-items-center ms-3">
                         <!-- Dashboard Home -->
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_dashboard %}
                         <a href="{% url 'dashboard' %}" class="nav-box nav-box-indigo" title="Dashboard">
                             <div class="nav-box-icon"><i class="fas fa-tachometer-alt"></i></div>
                             <span>Dashboard</span>
                         </a>
+                        {% endif %}
 
                         <div class="nav-shortcut-divider"></div>
 
@@ -1619,6 +2097,7 @@
 
             <!-- Main Content -->
             <div class="container-fluid mt-4">
+                {% block messages %}
                 {% if messages %}
                 <div class="messages-container">
                     {% for message in messages %}
@@ -1641,6 +2120,7 @@
                     {% endfor %}
                 </div>
                 {% endif %}
+                {% endblock %}
 
                 {% if low_stock_notification_count > 0 %}
                 <div class="low-stock-notification" id="lowStockNotification">
@@ -1671,6 +2151,108 @@
                         </div>
                     </div>
                 </div>
+                {% endif %}
+
+                <!-- Expiry Date Notification Banner -->
+                {% if expiry_notification_count > 0 %}
+                <div id="expiryNotification" class="expiry-alert-bar">
+                    <div class="expiry-content">
+                        <div class="expiry-icon {% if has_expired_items %}pulse-alert{% endif %}">
+                            <i class="fas {% if has_expired_items %}fa-exclamation-triangle text-danger{% else %}fa-exclamation-circle text-warning{% endif %}"></i>
+                        </div>
+                        <div class="expiry-details">
+                            <h6 class="expiry-title">
+                                {% if has_expired_items %}
+                                <span class="text-danger fw-bold">EXPIRED PRODUCTS ALERT</span>
+                                {% else %}
+                                <span>EXPIRING PRODUCTS WARNING</span>
+                                {% endif %}
+                                <span class="badge bg-light text-dark ms-2">{{ expiry_notification_count }}</span>
+                            </h6>
+                            <div class="expiry-list">
+                                {% for item in expiry_notification_items|slice:":5" %}
+                                <span class="expiry-item {% if item.status == 'expired' %}expired-text{% endif %}">
+                                    {{ item.name|truncatechars:25 }} 
+                                    <span class="expiry-badge {% if item.status == 'expired' %}bg-danger{% elif item.status == 'critical' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                        {% if item.status == 'expired' %}EXPIRED{% else %}{{ item.days }}d left{% endif %}
+                                    </span>
+                                </span>
+                                {% endfor %}
+                                {% if expiry_notification_count > 5 %}
+                                <span class="expiry-more">+{{ expiry_notification_count|add:"-5" }} more</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="expiry-actions">
+                            <button type="button" class="expiry-view-btn" data-bs-toggle="modal" data-bs-target="#expiryReviewModal">Review Stock</button>
+                            <button class="expiry-close" onclick="dismissExpiryNotification()" title="Dismiss">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Expiry Review Modal -->
+                {% if expiry_notification_items %}
+                <div class="modal fade" id="expiryReviewModal" tabindex="-1" aria-labelledby="expiryReviewModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered modal-lg">
+                        <div class="modal-content expiry-modal-content">
+                            <div class="modal-header expiry-modal-header">
+                                <h5 class="modal-title expiry-modal-title" id="expiryReviewModalLabel">
+                                    <i class="fas fa-exclamation-triangle"></i> Expiry Review & Action Needed
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body expiry-modal-body">
+                                <div class="table-responsive">
+                                    <table class="table expiry-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Product Name</th>
+                                                <th>Expiry Date</th>
+                                                <th>Status</th>
+                                                <th class="text-end">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for item in expiry_notification_items %}
+                                            <tr>
+                                                <td class="fw-bold text-dark">
+                                                    {{ item.name|truncatechars:40 }}
+                                                </td>
+                                                <td class="text-secondary fw-semibold">
+                                                    {{ item.date|date:"M d, Y" }}
+                                                </td>
+                                                <td>
+                                                    {% if item.status == 'expired' %}
+                                                        <span class="expiry-status-badge status-expired"><i class="fas fa-times-circle"></i> Expired {{ item.days|stringformat:"d"|slice:"1:" }} days ago</span>
+                                                    {% elif item.status == 'critical' %}
+                                                        <span class="expiry-status-badge status-critical"><i class="fas fa-exclamation-circle"></i> {{ item.days }} days left</span>
+                                                    {% else %}
+                                                        <span class="expiry-status-badge status-warning"><i class="fas fa-exclamation-circle"></i> {{ item.days }} days left</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="text-end">
+                                                    <a href="{% url 'product_edit' item.id %}" class="expiry-action-btn">Manage <i class="fas fa-arrow-right ms-1"></i></a>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="modal-footer expiry-modal-footer">
+                                <span class="text-muted small"><i class="fas fa-info-circle me-1"></i> Displaying top {{ expiry_notification_count }} urgent items.</span>
+                                <a href="{% url 'products' %}?filter=expiring" class="view-all-link">View all in inventory <i class="fas fa-external-link-alt"></i></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if can_view_incomplete_attendance_alert %}
+                {% include 'partials/incomplete_attendance_alert.html' %}
                 {% endif %}
 
                 {% block content %}{% endblock %}
@@ -1933,6 +2515,17 @@
             }
         }
 
+        function dismissExpiryNotification() {
+            var el = document.getElementById('expiryNotification');
+            if (el) {
+                el.style.opacity = '0';
+                el.style.transform = 'translateY(-10px)';
+                el.style.transition = 'all 0.3s ease';
+                setTimeout(function () { el.remove(); }, 300);
+                sessionStorage.setItem('expiry_dismissed', '1');
+            }
+        }
+
         function playLowStockSound() {
             try {
                 var ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1967,29 +2560,175 @@
             } catch (e) { }
         }
 
+        function playExpirySound() {
+            try {
+                var ctx = new (window.AudioContext || window.webkitAudioContext)();
+                var t = ctx.currentTime;
+
+                // Warning/Alert pattern (Beep-Beep-BEEEEEP)
+                var pattern = [
+                    { freq: 600, start: 0, dur: 0.15 },
+                    { freq: 600, start: 0.3, dur: 0.15 },
+                    { freq: 800, start: 0.6, dur: 0.5 },
+                ];
+
+                pattern.forEach(function (note) {
+                    var osc = ctx.createOscillator();
+                    var gain = ctx.createGain();
+                    osc.type = 'square'; // harsher sound for expiry alert
+                    osc.frequency.value = note.freq;
+                    // Smooth fade in and out
+                    gain.gain.setValueAtTime(0, t + note.start);
+                    gain.gain.linearRampToValueAtTime(0.08, t + note.start + 0.03);
+                    gain.gain.setValueAtTime(0.08, t + note.start + note.dur - 0.05);
+                    gain.gain.linearRampToValueAtTime(0, t + note.start + note.dur);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(t + note.start);
+                    osc.stop(t + note.start + note.dur + 0.05);
+                });
+            } catch (e) { }
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
+            // Low Stock
             if (sessionStorage.getItem('lsn_dismissed') === '1') {
                 var el = document.getElementById('lowStockNotification');
                 if (el) el.remove();
             } else if (document.getElementById('lowStockNotification')) {
                 setTimeout(playLowStockSound, 500);
             }
+
+            // Expiry
+            if (sessionStorage.getItem('expiry_dismissed') === '1') {
+                var el = document.getElementById('expiryNotification');
+                if (el) el.remove();
+            } else if (document.getElementById('expiryNotification')) {
+                setTimeout(playExpirySound, 1000); // Wait 1s so it doesn't overlap with low stock
+            }
         });
     </script>
+
+    <!-- Global Notice Modal (For displaying notices to all users) -->
+    <style>
+        /* Notices are authored in Quill, so the saved HTML carries Quill's own
+           classes (ql-align-*, ql-size-*, ql-indent-*). Quill's stylesheet is only
+           loaded on the chat page, so the display side needs its own rules here or
+           the notice renders unformatted. */
+        #globalNoticeDisplayModal .modal-body { max-height: 72vh; }
+        .global-notice-body { word-wrap: break-word; overflow-wrap: break-word; }
+        .global-notice-body > *:first-child { margin-top: 0; }
+        .global-notice-body > *:last-child { margin-bottom: 0; }
+        .global-notice-body p { margin-bottom: .75rem; }
+        .global-notice-body h1, .global-notice-body h2, .global-notice-body h3,
+        .global-notice-body h4, .global-notice-body h5, .global-notice-body h6 {
+            font-weight: 700; line-height: 1.3; margin: 1rem 0 .5rem;
+        }
+        .global-notice-body h1 { font-size: 1.8rem; }
+        .global-notice-body h2 { font-size: 1.55rem; }
+        .global-notice-body h3 { font-size: 1.35rem; }
+        .global-notice-body ul, .global-notice-body ol { padding-left: 1.6rem; margin-bottom: .75rem; }
+        .global-notice-body a { color: #b91c1c; text-decoration: underline; }
+        .global-notice-body blockquote {
+            border-left: 4px solid #ef4444; padding: .25rem 0 .25rem 1rem;
+            margin: .75rem 0; color: #475569; font-style: italic;
+        }
+        .global-notice-body pre, .global-notice-body .ql-code-block-container {
+            background: #0f172a; color: #e2e8f0; padding: .75rem 1rem;
+            border-radius: 10px; white-space: pre-wrap; font-size: .9rem; margin-bottom: .75rem;
+        }
+        .global-notice-body table { max-width: 100%; }
+
+        /* Framed, size-capped images — the raw <img> renders at its natural pixel
+           size otherwise and blows the modal past the bottom of the screen. */
+        .global-notice-body img {
+            display: block;
+            max-width: 100%;
+            max-height: 55vh;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            margin: 1rem auto;
+            padding: 6px;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            box-shadow: 0 6px 18px rgba(15, 23, 42, .12);
+        }
+
+        /* Quill formatting classes */
+        .global-notice-body .ql-align-center { text-align: center; }
+        .global-notice-body .ql-align-right { text-align: right; }
+        .global-notice-body .ql-align-justify { text-align: justify; }
+        .global-notice-body .ql-align-center img { margin-left: auto; margin-right: auto; }
+        .global-notice-body .ql-align-right img { margin-left: auto; margin-right: 0; }
+        .global-notice-body .ql-align-left img { margin-left: 0; margin-right: auto; }
+        .global-notice-body .ql-size-small { font-size: .8em; }
+        .global-notice-body .ql-size-large { font-size: 1.5em; }
+        .global-notice-body .ql-size-huge { font-size: 2.2em; }
+        .global-notice-body .ql-direction-rtl { direction: rtl; text-align: inherit; }
+        .global-notice-body .ql-indent-1 { padding-left: 3em; }
+        .global-notice-body .ql-indent-2 { padding-left: 6em; }
+        .global-notice-body .ql-indent-3 { padding-left: 9em; }
+        .global-notice-body .ql-indent-4 { padding-left: 12em; }
+        .global-notice-body .ql-indent-5 { padding-left: 15em; }
+        .global-notice-body .ql-indent-6 { padding-left: 18em; }
+        .global-notice-body .ql-indent-7 { padding-left: 21em; }
+        .global-notice-body .ql-indent-8 { padding-left: 24em; }
+
+        @media (max-width: 576px) {
+            #globalNoticeDisplayModal .modal-body { max-height: 68vh; }
+            .global-notice-body img { max-height: 45vh; margin: .75rem auto; }
+        }
+    </style>
+    <div class="modal fade" id="globalNoticeDisplayModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
+                <div class="modal-header border-0 py-3" style="background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%); color: #fff;">
+                    <h5 class="modal-title fw-bold"><i class="fas fa-bullhorn me-2"></i> Important Notice</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" id="closeGlobalNoticeBtn"></button>
+                </div>
+                <div class="modal-body p-4" style="font-size: 1.1rem; line-height: 1.6;">
+                    <div id="globalNoticeContent" class="global-notice-body"></div>
+                </div>
+                <div class="modal-footer border-0 bg-light d-flex justify-content-between align-items-center">
+                    <small class="text-muted" id="globalNoticeSender"></small>
+                    <button type="button" class="btn btn-secondary rounded-pill px-4 fw-bold" data-bs-dismiss="modal" id="closeGlobalNoticeBtnFooter">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- ✅ Alertify.js for Real-time Notifications -->
     <script src="https://cdn.jsdelivr.net/npm/alertifyjs@1.13.1/build/alertify.min.js"></script>
     <script>
         // Configure alertify notifications
-        alertify.set('notifier', 'position', 'top-right');
+        alertify.set('notifier', 'position', 'bottom-right');
         alertify.set('notifier', 'closeButton', true);
     </script>
+    
+    {% if messages %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            {% for message in messages %}
+                {% if message.tags == 'error' %}
+                    alertify.error("{{ message|escapejs }}");
+                {% elif message.tags == 'success' %}
+                    alertify.success("{{ message|escapejs }}");
+                {% else %}
+                    alertify.message("{{ message|escapejs }}");
+                {% endif %}
+            {% endfor %}
+        });
+    </script>
+    {% endif %}
 
     {% block extra_js %}{% endblock %}
 
-    <!-- Chat Instant Notification via SSE -->
+    <!-- Chat Instant Notification & Global Notice Poller via JS -->
     {% if user.is_authenticated %}
     <script>
+        // --- CHAT UNREAD POLLER ---
         var _prevUnreadCount = {{ unread_chat_count|default:"0" }};
 
         function playChatNotifSound() {
@@ -2029,16 +2768,204 @@
             _prevUnreadCount = newCount;
         }
 
-        // Poll for unread count updates every 3 seconds
+        var chatPollInterval;
         function pollUnreadCount() {
-            fetch('{% url "chat:api_unread_count" %}')
-                .then(function (r) { return r.json(); })
+            fetch('{% url "chat:api_unread_count" %}', {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest' // Helps middleware identify AJAX
+                }
+            })
+                .then(function (r) {
+                    // Stop polling if the session expired or user logged out
+                    if (r.status === 401 || r.status === 403 || r.redirected) {
+                        clearInterval(chatPollInterval);
+                        return null;
+                    }
+                    return r.json();
+                })
                 .then(function (data) {
-                    if (data.success) handleUnreadUpdate(data.unread_count);
+                    if (data && data.success) handleUnreadUpdate(data.unread_count);
                 })
                 .catch(function () { });
         }
-        setInterval(pollUnreadCount, 3000);
+        chatPollInterval = setInterval(pollUnreadCount, 3000);
+
+
+        // --- NCM BACKGROUND SYNC HEARTBEAT ---
+        // This project has no Celery beat and no crontab, so nothing was ever
+        // refreshing NCM order status in the background - statuses only moved
+        // when someone opened an order and clicked "Sync Status". The heartbeat
+        // gives the server a regular chance to notice the sync is due and run
+        // it (see ncm/scheduler.py); the interval itself lives in
+        // Settings -> API Sync Settings, not here.
+        //
+        // Three cheap guards keep this from being a load problem, because it
+        // fires on every page for every logged-in user:
+        //   * one tab per browser does the polling (localStorage lease), so ten
+        //     open tabs cost the same as one;
+        //   * hidden tabs don't poll at all;
+        //   * a random offset stops several staff aligning on the same second.
+        // The server is the real authority regardless: an early ping just runs
+        // one indexed UPDATE that matches no rows.
+        (function () {
+            var HEARTBEAT_MS = 90000;
+            var LEASE_KEY = 'ncmHeartbeatLease';
+            var LEASE_TTL = HEARTBEAT_MS * 3;
+            var MIN_GAP_MS = 30000;
+            var tabId = String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+            var heartbeatTimer = null;
+            var lastBeatAt = 0;
+
+            function claimLease() {
+                // Best-effort leader election. localStorage is synchronous and
+                // same-origin, so the worst case for a race is two tabs pinging
+                // - which the server already handles.
+                try {
+                    var raw = localStorage.getItem(LEASE_KEY);
+                    var now = Date.now();
+                    if (raw) {
+                        var lease = JSON.parse(raw);
+                        if (lease.owner !== tabId && (now - lease.at) < LEASE_TTL) return false;
+                    }
+                    localStorage.setItem(LEASE_KEY, JSON.stringify({ owner: tabId, at: now }));
+                    return true;
+                } catch (e) {
+                    // Private mode / storage disabled: just poll.
+                    return true;
+                }
+            }
+
+            function beat() {
+                if (document.visibilityState !== 'visible') return;
+                // Alt-tabbing repeatedly shouldn't turn into a request storm.
+                if (Date.now() - lastBeatAt < MIN_GAP_MS) return;
+                if (!claimLease()) return;
+                lastBeatAt = Date.now();
+
+                fetch('/ncm/api/heartbeat/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(function (r) {
+                        if (r.status === 401 || r.status === 403 || r.redirected) {
+                            clearInterval(heartbeatTimer);
+                            return null;
+                        }
+                        return r.json();
+                    })
+                    .then(function (data) {
+                        if (!data || !data.success) return;
+                        // Let any page-level poller re-arm itself, so an admin
+                        // changing the interval in Settings takes effect in
+                        // tabs that are already open - no reload needed.
+                        window.dispatchEvent(new CustomEvent('ncm-sync-intervals', { detail: data }));
+                    })
+                    .catch(function () { });
+            }
+
+            // Stagger the first beat so freshly opened tabs don't all fire at once.
+            setTimeout(function () {
+                beat();
+                heartbeatTimer = setInterval(beat, HEARTBEAT_MS);
+            }, 2000 + Math.floor(Math.random() * 5000));
+
+            // A tab coming back to the foreground is a good moment to check in.
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') beat();
+            });
+        })();
+
+
+        // --- GLOBAL NOTICE POLLER ---
+        // Notice will show exactly once per page load/refresh
+        var _lastShownNoticeId = null;
+        var globalNoticeModalInstance = null;
+
+        function checkGlobalNotice() {
+            fetch('/api/active-notice/?_t=' + new Date().getTime(), { cache: 'no-store' })
+            .then(res => {
+                if (!res.ok) throw new Error('Network error');
+                const contentType = res.headers.get("content-type");
+                if (contentType && contentType.indexOf("application/json") !== -1) {
+                    return res.json();
+                } else {
+                    throw new Error('Not JSON (probably logged out)');
+                }
+            })
+            .then(data => {
+                if (data.status === 'success' && data.notice) {
+                    const notice = data.notice;
+                    const freq = notice.display_frequency || 'every_refresh';
+                    const noticeIdStr = notice.id.toString();
+                    
+                    let shouldShow = false;
+
+                    // Never show the same notice twice on the SAME page load
+                    if (noticeIdStr !== _lastShownNoticeId) {
+                        if (freq === 'once_only') {
+                            if (!localStorage.getItem('notice_seen_' + noticeIdStr)) {
+                                shouldShow = true;
+                            }
+                        } else if (freq === 'once_per_session') {
+                            if (!sessionStorage.getItem('notice_seen_' + noticeIdStr)) {
+                                shouldShow = true;
+                            }
+                        } else if (freq === 'once_per_hour' || freq === 'once_per_day' || freq === 'once_per_week') {
+                            const lastSeenStr = localStorage.getItem('notice_seen_time_' + noticeIdStr);
+                            if (!lastSeenStr) {
+                                shouldShow = true;
+                            } else {
+                                const lastSeen = parseInt(lastSeenStr, 10);
+                                const now = Date.now();
+                                if (freq === 'once_per_hour' && (now - lastSeen > 60 * 60 * 1000)) {
+                                    shouldShow = true;
+                                } else if (freq === 'once_per_day' && (now - lastSeen > 24 * 60 * 60 * 1000)) {
+                                    shouldShow = true;
+                                } else if (freq === 'once_per_week' && (now - lastSeen > 7 * 24 * 60 * 60 * 1000)) {
+                                    shouldShow = true;
+                                }
+                            }
+                        } else {
+                            // every_refresh
+                            shouldShow = true;
+                        }
+                    }
+
+                    if (shouldShow) {
+                        document.getElementById('globalNoticeContent').innerHTML = notice.content;
+                        document.getElementById('globalNoticeSender').innerHTML = 'Sent by: <strong>' + notice.created_by + '</strong>';
+                        
+                        if (!globalNoticeModalInstance) {
+                            globalNoticeModalInstance = new bootstrap.Modal(document.getElementById('globalNoticeDisplayModal'), {
+                                backdrop: 'static',
+                                keyboard: false
+                            });
+                        }
+                        
+                        // Set tracking ID so we don't show it repeatedly on this view
+                        _lastShownNoticeId = noticeIdStr;
+                        if (freq === 'once_only') localStorage.setItem('notice_seen_' + noticeIdStr, '1');
+                        if (freq === 'once_per_session') sessionStorage.setItem('notice_seen_' + noticeIdStr, '1');
+                        if (['once_per_hour', 'once_per_day', 'once_per_week'].includes(freq)) {
+                            localStorage.setItem('notice_seen_time_' + noticeIdStr, Date.now().toString());
+                        }
+                        
+                        // Play sound if available
+                        try {
+                            if (typeof playChatNotifSound === 'function') {
+                                playChatNotifSound();
+                            }
+                        } catch(e) {}
+                        
+                        globalNoticeModalInstance.show();
+                    }
+                }
+            })
+            .catch(err => {
+                console.warn('Notice check failed', err);
+            });
+        }
+        
+        // Check on load, then every 10 seconds
+        setTimeout(checkGlobalNotice, 1500);
+        setInterval(checkGlobalNotice, 10000);
     </script>
     {% endif %}
 </body>

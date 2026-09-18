@@ -1,0 +1,682 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Content Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <h4 class="mb-0"><i class="fas fa-file-alt text-primary me-2"></i> Content Management</h4>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <div class="content-search-wrap">
+                <i class="fas fa-search content-search-icon"></i>
+                <input type="text" id="contentSearchInput" class="form-control content-search-input" placeholder="Search by account ID, name, email, phone, managed by, type or status...">
+                <button type="button" id="contentSearchClear" class="content-search-clear" title="Clear search" style="display:none;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <a href="{% url 'content_accounts_trash' %}" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-trash"></i> Trash
+            </a>
+        </div>
+    </div>
+
+    <div id="contentSearchStatus" class="text-muted small mb-2" style="display:none;"></div>
+
+    <!-- Table -->
+    <div class="card border-0 shadow-lg" style="border-radius: 12px; overflow: hidden;">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered align-middle content-table mb-0" id="contentTable">
+                    <thead class="bg-light">
+                        <tr>
+                            <th style="width: 50px;" class="text-center">S.N.</th>
+                            <th>ACCOUNT ID</th>
+                            <th>USER NAME</th>
+                            <th>GMAIL</th>
+                            <th>PHONE</th>
+                            <th>PASSWORD</th>
+                            <th>MANAGED BY</th>
+                            <th>ACCOUNT TYPE</th>
+                            <th>STATUS</th>
+                            <th class="text-center" style="width: 80px;">ACTION</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accountsTableBody">
+                        <!-- Data Entry Row (Always at the top) -->
+                        <tr class="content-entry-bg" id="entryRow">
+                            <td class="text-center fw-bold text-primary" style="font-size: 1.2rem;">+</td>
+                            <td><input type="text" class="form-control form-control-sm" id="newAccountId" placeholder="Account ID"></td>
+                            <td><input type="text" class="form-control form-control-sm" id="newUserName" placeholder="User Name"></td>
+                            <td><input type="email" class="form-control form-control-sm" id="newGmail" placeholder="Gmail"></td>
+                            <td><input type="text" class="form-control form-control-sm" id="newPhone" placeholder="Phone"></td>
+                            <td><input type="text" class="form-control form-control-sm" id="newPassword" placeholder="Password"></td>
+                            <td>
+                                <select class="form-select form-select-sm" id="newManagedBy">
+                                    <option value="">Select Employee...</option>
+                                    {% for emp in employees %}
+                                    <option value="{{ emp.full_name }}" {% if request.user == emp.user %}selected{% endif %}>{{ emp.full_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="text" class="form-control form-control-sm" id="newAccountType" placeholder="Account Type"></td>
+                            <td>
+                                <select class="form-select form-select-sm" id="newStatus">
+                                    <option value="new">new</option>
+                                    <option value="Active">Active</option>
+                                    <option value="inactive">inactive</option>
+                                    <option value="Blocked">Blocked</option>
+                                    <option value="deleted">deleted</option>
+                                </select>
+                            </td>
+                            <td class="text-center" style="white-space: nowrap;">
+                                <button class="btn btn-sm btn-primary" style="padding: 0.25rem 0.5rem;" onclick="addAccount()" title="Save Entry">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </td>
+                        </tr>
+
+                        {% for account in accounts %}
+                        <tr id="account-row-{{ account.id }}" class="draggable-row" data-search="{{ account.account_id|lower }} {{ account.user_name|lower }} {{ account.gmail|lower }} {{ account.phone|lower }} {{ account.managed_by|lower }} {{ account.account_type|lower }} {{ account.status|lower }}">
+                            <td class="text-center sn-column" style="cursor: grab;"><i class="fas fa-grip-vertical text-muted me-2" style="cursor: grab;"></i>{{ forloop.counter }}</td>
+                            <td class="searchable-cell">{{ account.account_id }}</td>
+                            <td class="searchable-cell">{{ account.user_name }}</td>
+                            <td class="searchable-cell">{{ account.gmail }}</td>
+                            <td class="searchable-cell">{{ account.phone }}</td>
+                            <td>{{ account.password }}</td>
+                            <td class="searchable-cell">{{ account.managed_by }}</td>
+                            <td class="searchable-cell">{{ account.account_type }}</td>
+                            <td>
+                                <span class="badge {% if account.status == 'Active' %}bg-success{% elif account.status == 'new' %}bg-info{% elif account.status == 'Blocked' %}bg-danger{% else %}bg-secondary{% endif %} rounded-pill px-2 py-1">
+                                    {{ account.status }}
+                                </span>
+                            </td>
+                            <td class="text-center" style="white-space: nowrap;">
+                                <button class="action-btn border text-primary me-1" onclick="openEditModal({{ account.id }}, '{{ account.account_id|escapejs }}', '{{ account.user_name|escapejs }}', '{{ account.gmail|escapejs }}', '{{ account.phone|escapejs }}', '{{ account.password|escapejs }}', '{{ account.managed_by|escapejs }}', '{{ account.account_type|escapejs }}', '{{ account.status|escapejs }}')" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="action-btn border text-danger" onclick="deleteAccount({{ account.id }})" title="Move to Trash">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        <tr id="noSearchResultsRow" style="display:none;">
+                            <td colspan="10" class="text-center text-muted py-4">
+                                <i class="fas fa-search me-2"></i>No accounts match your search.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editId">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Account ID</label>
+                        <input type="text" class="form-control" id="editAccountId">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">User Name</label>
+                        <input type="text" class="form-control" id="editUserName">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Gmail</label>
+                        <input type="email" class="form-control" id="editGmail">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Phone</label>
+                        <input type="text" class="form-control" id="editPhone">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Password</label>
+                        <input type="text" class="form-control" id="editPassword">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Managed By</label>
+                        <select class="form-select" id="editManagedBy">
+                            <option value="">Select Employee...</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.full_name }}">{{ emp.full_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Account Type</label>
+                        <input type="text" class="form-control" id="editAccountType">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="editStatus">
+                            <option value="new">new</option>
+                            <option value="Active">Active</option>
+                            <option value="inactive">inactive</option>
+                            <option value="Blocked">Blocked</option>
+                            <option value="deleted">deleted</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveEdit()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .content-table {
+        min-width: 1200px;
+        font-size: 0.9rem;
+        border-collapse: collapse;
+    }
+    
+    .content-table thead th {
+        white-space: nowrap;
+        background: #f8fafc !important;
+        color: #475569;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid #cbd5e1;
+    }
+    
+    .content-table tbody tr {
+        transition: background-color 0.15s ease;
+    }
+    
+    .content-table tbody tr:hover:not(.content-entry-bg) {
+        background-color: #f1f5f9;
+    }
+
+    .content-table td {
+        padding: 0.5rem 1rem;
+        vertical-align: middle;
+        color: #334155;
+        font-weight: 400;
+        border: 1px solid #e2e8f0;
+    }
+    
+    .content-entry-bg > td {
+        background: linear-gradient(to right, #eef2ff, #f5f3ff) !important;
+        border-bottom: 3px solid #c7d2fe;
+        padding-top: 1.2rem;
+        padding-bottom: 1.2rem;
+        position: relative;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+    }
+    
+    /* Modern form inputs within the entry row */
+    .content-entry-bg .form-control, .content-entry-bg .form-select {
+        border-radius: 8px;
+        border: 1px solid #c7d2fe;
+        background-color: #ffffff;
+        box-shadow: 0 2px 4px rgba(79, 70, 229, 0.05);
+        transition: all 0.2s;
+    }
+    .content-entry-bg .form-control:focus, .content-entry-bg .form-select:focus {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+    
+    .action-btn {
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+        background: white;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .action-btn:hover {
+        background-color: #f8fafc;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    .sortable-ghost {
+        opacity: 0.4;
+        background-color: #f8fafc;
+    }
+
+    /* Search bar */
+    .content-search-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+        width: 340px;
+        max-width: 60vw;
+    }
+    .content-search-icon {
+        position: absolute;
+        left: 12px;
+        color: #94a3b8;
+        font-size: 0.85rem;
+        pointer-events: none;
+    }
+    .content-search-input {
+        padding-left: 34px;
+        padding-right: 30px;
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+        font-size: 0.875rem;
+        height: 34px;
+        transition: all 0.2s;
+    }
+    .content-search-input:focus {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+    .content-search-clear {
+        position: absolute;
+        right: 8px;
+        background: none;
+        border: none;
+        color: #94a3b8;
+        font-size: 0.8rem;
+        padding: 4px;
+        line-height: 1;
+        cursor: pointer;
+    }
+    .content-search-clear:hover {
+        color: #475569;
+    }
+    mark.content-highlight {
+        background-color: #fde68a;
+        color: inherit;
+        padding: 0 1px;
+        border-radius: 2px;
+    }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script>
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    const csrftoken = getCookie('csrftoken');
+
+    function escapeJsString(str) {
+        if (!str) return '';
+        return str.toString().replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+    }
+
+    function escapeHTML(str) {
+        if (!str) return '';
+        return str.toString()
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function getStatusBadge(status) {
+        let badgeClass = 'bg-secondary';
+        if (status === 'Active') badgeClass = 'bg-success';
+        else if (status === 'new') badgeClass = 'bg-info';
+        else if (status === 'Blocked') badgeClass = 'bg-danger';
+        return `<span class="badge ${badgeClass} rounded-pill px-2 py-1">${status}</span>`;
+    }
+    
+    // Auto-update S.N. column (only counts currently visible rows, so numbering stays correct while a search filter is active)
+    function updateSerialNumbers() {
+        const rows = document.querySelectorAll('#accountsTableBody tr.draggable-row');
+        let visibleIndex = 0;
+        rows.forEach((row) => {
+            const snCell = row.querySelector('.sn-column');
+            if (!snCell || row.style.display === 'none') return;
+            visibleIndex++;
+            snCell.innerHTML = `<i class="fas fa-grip-vertical text-muted me-2" style="cursor: grab;"></i>${visibleIndex}`;
+        });
+    }
+
+    // ---- Smart search ----
+    function buildSearchIndex(...parts) {
+        return parts.join(' ').toLowerCase();
+    }
+
+    function captureOriginalText(row) {
+        row.querySelectorAll('.searchable-cell').forEach(cell => {
+            if (cell.dataset.original === undefined) {
+                cell.dataset.original = cell.textContent;
+            }
+        });
+    }
+
+    function highlightMatch(text, query) {
+        if (!text) return '';
+        const escapedText = escapeHTML(text);
+        if (!query) return escapedText;
+        const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp('(' + escapedQuery + ')', 'ig');
+        return escapedText.replace(regex, '<mark class="content-highlight">$1</mark>');
+    }
+
+    let searchDebounceTimer = null;
+    function applySearchFilter() {
+        const input = document.getElementById('contentSearchInput');
+        const clearBtn = document.getElementById('contentSearchClear');
+        const statusEl = document.getElementById('contentSearchStatus');
+        const noResultsRow = document.getElementById('noSearchResultsRow');
+        const query = input.value.trim().toLowerCase();
+
+        clearBtn.style.display = query ? 'inline-flex' : 'none';
+
+        const rows = Array.from(document.querySelectorAll('#accountsTableBody tr.draggable-row'));
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            captureOriginalText(row);
+            const haystack = row.dataset.search || '';
+            const isMatch = !query || haystack.includes(query);
+            row.style.display = isMatch ? '' : 'none';
+            if (isMatch) visibleCount++;
+
+            row.querySelectorAll('.searchable-cell').forEach(cell => {
+                const original = cell.dataset.original || '';
+                cell.innerHTML = (query && isMatch) ? highlightMatch(original, query) : escapeHTML(original);
+            });
+        });
+
+        if (query) {
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = `<i class="fas fa-filter me-1"></i>${visibleCount} of ${rows.length} account${rows.length !== 1 ? 's' : ''} found`;
+            noResultsRow.style.display = visibleCount === 0 ? '' : 'none';
+        } else {
+            statusEl.style.display = 'none';
+            noResultsRow.style.display = 'none';
+        }
+
+        updateSerialNumbers();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('contentSearchInput');
+        const clearBtn = document.getElementById('contentSearchClear');
+
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(applySearchFilter, 150);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                searchInput.value = '';
+                applySearchFilter();
+                searchInput.blur();
+            }
+        });
+
+        clearBtn.addEventListener('click', function() {
+            searchInput.value = '';
+            applySearchFilter();
+            searchInput.focus();
+        });
+    });
+
+    // Initialize SortableJS
+    document.addEventListener('DOMContentLoaded', function() {
+        const tbody = document.getElementById('accountsTableBody');
+        new Sortable(tbody, {
+            animation: 150,
+            handle: '.sn-column', // Use the S.N. column as the drag handle
+            filter: '.content-entry-bg',
+            preventOnFilter: false, // Don't prevent clicking/typing in inputs on the filtered row
+            ghostClass: 'sortable-ghost',
+            onMove: function (evt) {
+                // Prevent moving the entry row or moving items above the entry row
+                if (evt.related.classList.contains('content-entry-bg')) {
+                    return false;
+                }
+            },
+            onEnd: function (evt) {
+                updateSerialNumbers();
+                saveNewOrder();
+            }
+        });
+    });
+
+    async function saveNewOrder() {
+        const rows = document.querySelectorAll('#accountsTableBody tr:not(.content-entry-bg)');
+        const orderData = [];
+        rows.forEach((row, index) => {
+            const idStr = row.id.replace('account-row-', '');
+            if (idStr) {
+                orderData.push({
+                    id: parseInt(idStr),
+                    order: index
+                });
+            }
+        });
+
+        try {
+            const response = await fetch('{% url "update_content_account_order" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify({ order_data: orderData })
+            });
+            const result = await response.json();
+            if (!result.success) {
+                console.error('Failed to update order:', result.error);
+                alertify.error('Failed to save new order. Please refresh the page.');
+            }
+        } catch (error) {
+            console.error('Error updating order:', error);
+            alertify.error('An error occurred while saving the new order.');
+        }
+    }
+
+    async function addAccount() {
+        const data = {
+            account_id: document.getElementById('newAccountId').value.trim(),
+            user_name: document.getElementById('newUserName').value.trim(),
+            gmail: document.getElementById('newGmail').value.trim(),
+            phone: document.getElementById('newPhone').value.trim(),
+            password: document.getElementById('newPassword').value.trim(),
+            managed_by: document.getElementById('newManagedBy').value,
+            account_type: document.getElementById('newAccountType').value,
+            status: document.getElementById('newStatus').value,
+        };
+
+        if (!data.account_id || !data.user_name || !data.gmail || !data.phone || !data.password || !data.account_type) {
+            alertify.error('Please fill in all the required fields before saving.');
+            return;
+        }
+
+        try {
+            const response = await fetch('{% url "add_content_account" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+            
+            if (result.success) {
+                // Insert directly after the entryRow
+                const searchIndex = buildSearchIndex(result.data.account_id, result.data.user_name, result.data.gmail, result.data.phone, result.data.managed_by, result.data.account_type, result.data.status);
+                const newRow = `
+                    <tr id="account-row-${result.data.id}" class="draggable-row" data-search="${escapeHTML(searchIndex)}">
+                        <td class="text-center sn-column" style="cursor: grab;"><i class="fas fa-grip-vertical text-muted me-2" style="cursor: grab;"></i>1</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.account_id)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.user_name)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.gmail)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.phone)}</td>
+                        <td>${escapeHTML(result.data.password)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.managed_by)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.account_type)}</td>
+                        <td>${getStatusBadge(result.data.status)}</td>
+                        <td class="text-center" style="white-space: nowrap;">
+                            <button class="action-btn border text-primary me-1" onclick="openEditModal(${result.data.id}, '${escapeJsString(result.data.account_id)}', '${escapeJsString(result.data.user_name)}', '${escapeJsString(result.data.gmail)}', '${escapeJsString(result.data.phone)}', '${escapeJsString(result.data.password)}', '${escapeJsString(result.data.managed_by)}', '${escapeJsString(result.data.account_type)}', '${escapeJsString(result.data.status)}')" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="action-btn border text-danger" onclick="deleteAccount(${result.data.id})" title="Delete">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('entryRow').insertAdjacentHTML('afterend', newRow);
+                applySearchFilter();
+
+                // Clear inputs
+                document.getElementById('newAccountId').value = '';
+                document.getElementById('newUserName').value = '';
+                document.getElementById('newGmail').value = '';
+                document.getElementById('newPhone').value = '';
+                document.getElementById('newPassword').value = '';
+                document.getElementById('newAccountType').value = '';
+                // managed_by and status keep defaults
+                
+                alertify.success('Account added successfully');
+            } else {
+                alertify.error(result.error || 'Failed to add account');
+            }
+        } catch (error) {
+            alertify.error(error.toString());
+        }
+    }
+
+    let editModalInstance = null;
+    document.addEventListener("DOMContentLoaded", function() {
+        editModalInstance = new bootstrap.Modal(document.getElementById('editModal'));
+    });
+
+    function openEditModal(id, account_id, user_name, gmail, phone, password, managed_by, account_type, status) {
+        document.getElementById('editId').value = id;
+        document.getElementById('editAccountId').value = account_id;
+        document.getElementById('editUserName').value = user_name;
+        document.getElementById('editGmail').value = gmail;
+        document.getElementById('editPhone').value = phone;
+        document.getElementById('editPassword').value = password;
+        document.getElementById('editManagedBy').value = managed_by;
+        document.getElementById('editAccountType').value = account_type;
+        document.getElementById('editStatus').value = status;
+        
+        editModalInstance.show();
+    }
+
+    async function saveEdit() {
+        const id = document.getElementById('editId').value;
+        const data = {
+            account_id: document.getElementById('editAccountId').value,
+            user_name: document.getElementById('editUserName').value,
+            gmail: document.getElementById('editGmail').value,
+            phone: document.getElementById('editPhone').value,
+            password: document.getElementById('editPassword').value,
+            managed_by: document.getElementById('editManagedBy').value,
+            account_type: document.getElementById('editAccountType').value,
+            status: document.getElementById('editStatus').value,
+        };
+
+        try {
+            const response = await fetch(`/api/content-management/${id}/edit/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+            
+            if (result.success) {
+                // Update row
+                const row = document.getElementById(`account-row-${id}`);
+                if (row) {
+                    const sn = row.querySelector('.sn-column').innerHTML; // Keep SN
+                    const searchIndex = buildSearchIndex(result.data.account_id, result.data.user_name, result.data.gmail, result.data.phone, result.data.managed_by, result.data.account_type, result.data.status);
+                    row.dataset.search = searchIndex;
+                    row.innerHTML = `
+                        <td class="text-center sn-column" style="cursor: grab;">${sn}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.account_id)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.user_name)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.gmail)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.phone)}</td>
+                        <td>${escapeHTML(result.data.password)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.managed_by)}</td>
+                        <td class="searchable-cell">${escapeHTML(result.data.account_type)}</td>
+                        <td>${getStatusBadge(result.data.status)}</td>
+                        <td class="text-center" style="white-space: nowrap;">
+                            <button class="action-btn border text-primary me-1" onclick="openEditModal(${result.data.id}, '${escapeJsString(result.data.account_id)}', '${escapeJsString(result.data.user_name)}', '${escapeJsString(result.data.gmail)}', '${escapeJsString(result.data.phone)}', '${escapeJsString(result.data.password)}', '${escapeJsString(result.data.managed_by)}', '${escapeJsString(result.data.account_type)}', '${escapeJsString(result.data.status)}')" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="action-btn border text-danger" onclick="deleteAccount(${result.data.id})" title="Delete">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </td>
+                    `;
+                    applySearchFilter();
+                }
+                editModalInstance.hide();
+                alertify.success('Account updated successfully');
+            } else {
+                alertify.error(result.error || 'Failed to update account');
+            }
+        } catch (error) {
+            alertify.error(error.toString());
+        }
+    }
+
+    async function deleteAccount(id) {
+        if (!confirm('Are you sure you want to move this account to the trash?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/content-management/${id}/delete/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                }
+            });
+            const res = await response.json();
+            
+            if (res.success) {
+                document.getElementById(`account-row-${id}`).remove();
+                applySearchFilter();
+                alertify.success('Account moved to trash successfully');
+            } else {
+                alertify.error(res.error || 'Failed to move account to trash');
+            }
+        } catch (error) {
+            alertify.error(error.toString());
+        }
+    }
+</script>
+{% endblock %}

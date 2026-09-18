@@ -64,6 +64,34 @@ class SMSService:
             logger.warning(f"Unknown SMS provider: {self.provider}")
             return {'success': False, 'message': 'Unknown SMS provider', 'sent': False}
     
+    def send_text(self, phone_number: str, message: str, ref: str = 'notify') -> Dict:
+        """Send an arbitrary short message through the configured provider.
+
+        For non-order notifications (e.g. back-in-stock alerts) that don't fit
+        the fixed order-status templates.
+        """
+        if not self.enabled:
+            logger.info(f"SMS disabled. Skipping message to {phone_number}")
+            return {'success': True, 'message': 'SMS disabled', 'sent': False}
+
+        phone_number = self._clean_phone(phone_number)
+        if not phone_number:
+            return {'success': False, 'message': 'Invalid phone number', 'sent': False}
+
+        if not (message or '').strip():
+            return {'success': False, 'message': 'Empty message', 'sent': False}
+
+        if self.provider == 'twilio':
+            return self._send_twilio_sms(phone_number, message, ref)
+        elif self.provider == 'sparrow':
+            return self._send_sparrow_sms(phone_number, message, ref)
+        elif self.provider == 'atuha':
+            return self._send_atuha_sms(phone_number, message, ref)
+        elif self.provider == 'console':
+            return self._send_console_sms(phone_number, message, ref)
+        logger.warning(f"Unknown SMS provider: {self.provider}")
+        return {'success': False, 'message': 'Unknown SMS provider', 'sent': False}
+
     def _prepare_message(self, order_number: str, status: str, additional_info: str = None) -> Optional[str]:
         """Prepare SMS message for status"""
         status_lower = status.lower()
@@ -72,7 +100,8 @@ class SMSService:
             message = f"Your order {order_number} has been delivered. Thank you for your purchase! 🎉"
         elif status_lower in ['in_transit', 'out_for_delivery', 'shipped']:
             message = f"Your order {order_number} is out for delivery. 📦 Track it in the system for real-time updates."
-        elif status_lower in ['returned', 'return_initiated']:
+        elif status_lower in ['returned', 'return', 'return_processing', 'return_arrived',
+                              'return_initiated']:
             message = f"Your order {order_number} has been marked for return. Please contact support for details."
         elif status_lower in ['cod_collected', 'payment_collected']:
             amount = additional_info or ""
@@ -102,7 +131,7 @@ class SMSService:
                 to=phone_number
             )
             
-            logger.info(f"✓ SMS sent via Twilio: {call.sid} to {phone_number} for order {order_number}")
+            logger.info(f"[SUCCESS] SMS sent via Twilio: {call.sid} to {phone_number} for order {order_number}")
             return {
                 'success': True,
                 'message': 'SMS sent successfully',
@@ -132,7 +161,7 @@ class SMSService:
             result = response.json()
             
             if result.get('status_code') == 200:
-                logger.info(f"✓ SMS sent via Sparrow: {order_number} to {phone_number}")
+                logger.info(f"[SUCCESS] SMS sent via Sparrow: {order_number} to {phone_number}")
                 return {
                     'success': True,
                     'message': 'SMS sent successfully',
@@ -165,7 +194,7 @@ class SMSService:
             response = requests.get(atuha_url, params=params, timeout=10)
             
             if response.status_code == 200:
-                logger.info(f"✓ SMS sent via Atuha: {order_number} to {phone_number}")
+                logger.info(f"[SUCCESS] SMS sent via Atuha: {order_number} to {phone_number}")
                 return {
                     'success': True,
                     'message': 'SMS sent successfully',

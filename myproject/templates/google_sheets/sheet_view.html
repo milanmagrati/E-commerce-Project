@@ -1,0 +1,752 @@
+{% extends 'base.html' %}
+{% block title %}{{ conn.name }} - Spreadsheet{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div class="dropdown">
+      <div class="d-inline-flex align-items-center bg-white border rounded px-3 py-2 shadow-sm dropdown-toggle" type="button" id="connectionDropdown" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer; transition: all 0.2s;">
+        <i class="fas fa-table text-success me-2 fs-5"></i> 
+        <h5 class="text-dark fw-bold mb-0 me-2">{{ conn.name }}</h5>
+        <span class="badge {% if conn.connection_type == 'apps_script' %}bg-success{% else %}bg-secondary{% endif %} bg-opacity-10 text-dark border ms-1">{{ conn.get_connection_type_display|default:conn.connection_type|upper }}</span>
+      </div>
+      <ul class="dropdown-menu shadow-lg border-0 mt-1" aria-labelledby="connectionDropdown" style="border-radius: 10px; min-width: 250px;">
+        <li class="dropdown-header text-uppercase fw-bold text-muted small px-3 py-2">Switch Connection</li>
+        {% for c in all_connections %}
+        <li>
+          <a class="dropdown-item d-flex align-items-center py-2 px-3 {% if c.id == conn.id %}bg-success bg-opacity-10 text-success fw-bold{% endif %}" href="{% url 'google_sheets:view_connection_sheet' c.id %}" style="transition: all 0.2s;">
+            <i class="fas fa-{% if c.connection_type == 'csv' %}file-csv{% else %}code{% endif %} me-3 fs-6 {% if c.id == conn.id %}text-success{% else %}text-muted{% endif %}"></i>
+            <span class="flex-grow-1">{{ c.name }}</span>
+            {% if c.id == conn.id %}<i class="fas fa-check text-success ms-2"></i>{% endif %}
+          </a>
+        </li>
+        {% endfor %}
+        <li><hr class="dropdown-divider my-1"></li>
+        <li>
+          <a class="dropdown-item py-2 px-3 text-primary" href="{% url 'google_sheets:google_imports_page' %}">
+            <i class="fas fa-cog me-3"></i> Manage Connections
+          </a>
+        </li>
+      </ul>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <button onclick="addColumn()" class="btn btn-outline-success">
+        <i class="fas fa-columns me-1"></i> Add Column
+      </button>
+      <button onclick="addRow()" class="btn btn-outline-success">
+        <i class="fas fa-list me-1"></i> Add Row
+      </button>
+      <button onclick="loadSheetData(currentSheetName)" class="btn btn-outline-primary">
+        <i class="fas fa-sync-alt me-1"></i> Reload
+      </button>
+      <a href="{% url 'google_sheets:google_imports_page' %}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-1"></i> Back
+      </a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+      <div id="syncStatus" class="text-muted small">
+        <i class="fas fa-cloud me-1"></i> Data loaded. Ready.
+      </div>
+    </div>
+    <div class="card-body p-0 position-relative">
+      <div id="loadingOverlay" class="position-absolute w-100 h-100 d-flex flex-column justify-content-center align-items-center" style="background:rgba(255,255,255,0.9); z-index:10; top:0; left:0; min-height: 400px;">
+        <div class="spinner-border text-success mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+        <h5 class="text-muted">Loading sheet data...</h5>
+      </div>
+      <div id="spreadsheet-container" class="w-100"></div>
+      <div id="sheet-tabs" class="d-flex overflow-auto border-top bg-white px-2 py-1 gap-1" style="white-space: nowrap; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+        <!-- Sheet tabs will be rendered here -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .sheet-tab {
+    border: 1px solid #dee2e6;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    padding: 6px 16px;
+    background: #f8f9fa;
+    color: #6c757d;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+    user-select: none;
+  }
+  .sheet-tab:hover {
+    background: #e9ecef;
+    color: #495057;
+  }
+  .sheet-tab.active {
+    background: #fff;
+    color: #198754;
+    border-color: #dee2e6;
+    border-top: 3px solid #198754;
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 2px 0 #fff; /* Blend with content */
+  }
+</style>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsuites@4/dist/jsuites.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4/dist/jspreadsheet.css" />
+<script src="https://cdn.jsdelivr.net/npm/jsuites@4/dist/jsuites.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4/dist/index.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+
+<script>
+  let sheetInstance = null;
+  const isEditable = "{{ conn.connection_type }}" === "apps_script";
+  const connId = {{ conn.id }};
+  const CSRF = "{{ csrf_token }}";
+
+  let currentSheetName = "";
+
+  // Feature 4 History variables
+  let historyStack = [];
+  let redoStack = [];
+  let isProgrammaticEdit = false;
+
+  let globalFreezeRows = 0;
+  let globalFreezeCols = 0;
+  window.currentSelection = null;
+  let globalJexcelOptions = null;
+
+  // Feature 7 Validation config
+  const validationConfig = {
+    dropdowns: {},
+    calendars: []
+  };
+
+  // Utility to prevent XSS
+  function escapeHtml(unsafe) {
+    if (unsafe === null || unsafe === undefined) return '';
+    return unsafe.toString()
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+  }
+
+  function escapeJsString(unsafe) {
+    if (unsafe === null || unsafe === undefined) return '';
+    return unsafe.toString().replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+  }
+
+  window.getCellName = function(col, row) {
+      let letter = ''; let c = parseInt(col);
+      while (c >= 0) { letter = String.fromCharCode(c % 26 + 65) + letter; c = Math.floor(c / 26) - 1; }
+      return letter + (parseInt(row) + 1);
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadSheetData();
+  });
+
+  async function loadSheetData(sheetName = null) {
+    document.getElementById('loadingOverlay').classList.remove('d-none');
+    try {
+      let url = `/imports/connections/${connId}/data/?per_page=1000`;
+      if (sheetName) {
+        url += `&sheet=${encodeURIComponent(sheetName)}`;
+      }
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (!data.success) {
+        showStatus(`<span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Error: ${escapeHtml(data.error)}</span>`);
+        document.getElementById('loadingOverlay').classList.add('d-none');
+        return;
+      }
+
+      const headers = data.headers || [];
+      const rows = data.rows || [];
+      const colWidths = data.col_widths || [];
+      const rowHeights = data.row_heights || [];
+      const sheetNames = data.sheet_names || [];
+      
+      currentSheetName = data.current_sheet || "";
+      renderSheetTabs(sheetNames, currentSheetName);
+
+      let data2D = rows.map(row => headers.map(h => row[h] || ''));
+      if (headers.length > 0) data2D.unshift(headers);
+
+      let finalCols = headers.map((_, idx) => {
+        let temp = idx;
+        let letter = '';
+        while (temp >= 0) {
+            letter = String.fromCharCode((temp % 26) + 65) + letter;
+            temp = Math.floor(temp / 26) - 1;
+        }
+        return { title: letter, type: 'text', width: colWidths[idx] || 150 };
+      });
+
+      finalCols = applyValidationConfig(finalCols);
+
+      let finalRows = {};
+      rowHeights.forEach((height, idx) => {
+          if (height) finalRows[idx] = { height: height + 'px' };
+      });
+
+      if (data2D.length === 0) data2D.push(['']);
+      if (finalCols.length === 0) finalCols = [{ title: 'A', width: 150 }];
+
+      if (sheetInstance) {
+        try { jspreadsheet.destroy(document.getElementById('spreadsheet-container'), false); } catch(e){}
+        document.getElementById('spreadsheet-container').innerHTML = '';
+        sheetInstance = null;
+      }
+
+      globalJexcelOptions = {
+        data: data2D,
+        columns: finalCols,
+        rows: finalRows,
+        style: data.styles || {},
+        freezeRows: globalFreezeRows,
+        freezeColumns: globalFreezeCols,
+        search: true, // Feature 3
+        filters: true, // Feature 3
+        columnSorting: true, // Feature 3
+        pagination: 50,
+        editable: isEditable,
+        defaultColWidth: 150,
+        tableOverflow: true,
+        tableHeight: "calc(100vh - 250px)",
+        tableWidth: "100%",
+        onchange: function(instance, cell, c, r, value) {
+          if (!isEditable) return;
+          const sheetCol = parseInt(c) + 1;
+          const sheetRow = parseInt(r) + 1; 
+          const oldValue = cell.getAttribute('data-old-value') || '';
+          
+          if (!enforceValidation(instance, c, r, oldValue, value)) return;
+          onCellChangeHistory(c, r, oldValue, value);
+          
+          saveCell(sheetRow, sheetCol, value);
+        },
+        onresizecolumn: function(el, column, width) {
+          if (!isEditable) return;
+          const sheetCol = parseInt(column) + 1;
+          saveDimension('column', sheetCol, width);
+        },
+        onresizerow: function(el, row, height) {
+          if (!isEditable) return;
+          const sheetRow = parseInt(row) + 1;
+          saveDimension('row', sheetRow, height);
+        },
+        oninsertrow: function(instance, rowNumber, numOfRows, rowRecords, insertBefore) {
+          if (!isEditable) return;
+          let sheetRow = parseInt(rowNumber) + 1 + (insertBefore ? 0 : 1);
+          if (isNaN(sheetRow)) sheetRow = sheetInstance.getData().length;
+          for (let i = 0; i < numOfRows; i++) {
+            saveStructure('insert_row', sheetRow);
+          }
+        },
+        ondeleterow: function(instance, rowNumber, numOfRows) {
+          if (!isEditable) return;
+          const sheetRow = parseInt(rowNumber) + 1;
+          if (isNaN(sheetRow)) return;
+          for (let i = 0; i < numOfRows; i++) {
+            saveStructure('delete_row', sheetRow);
+          }
+        },
+        oninsertcolumn: function(instance, columnNumber, numOfColumns, insertBefore) {
+          if (!isEditable) return;
+          let sheetCol = parseInt(columnNumber) + 1 + (insertBefore ? 0 : 1);
+          if (isNaN(sheetCol)) sheetCol = sheetInstance.getHeaders().split(',').length;
+          for (let i = 0; i < numOfColumns; i++) {
+            saveStructure('insert_column', sheetCol);
+          }
+        },
+        ondeletecolumn: function(instance, columnNumber, numOfColumns) {
+          if (!isEditable) return;
+          let sheetCol = parseInt(columnNumber) + 1;
+          if (isNaN(sheetCol)) return;
+          for (let i = 0; i < numOfColumns; i++) {
+            saveStructure('delete_column', sheetCol);
+          }
+        },
+        onselection: function(instance, x1, y1, x2, y2) {
+          try {
+              const cellName = window.getCellName(x1, y1);
+              const cell = sheetInstance.getCell(cellName);
+              if (cell) cell.setAttribute('data-old-value', cell.innerHTML || '');
+          } catch(e) {}
+          window.currentSelection = [x1, y1, x2, y2];
+        }
+      };
+
+      sheetInstance = jspreadsheet(document.getElementById('spreadsheet-container'), globalJexcelOptions);
+      
+      document.getElementById('loadingOverlay').classList.add('d-none');
+      if(isEditable) {
+        showStatus(`<i class="fas fa-cloud text-success"></i> Connected to Google Sheets.`);
+      } else {
+        showStatus(`<i class="fas fa-eye text-secondary"></i> Read-only mode.`);
+      };
+
+      initFormattingToolbar(sheetInstance, connId, currentSheetName, CSRF);
+      initDataTools(sheetInstance.getConfig(), sheetInstance);
+      initHistoryTracking(sheetInstance, connId, currentSheetName, CSRF);
+      initExportMenu(sheetInstance, currentSheetName);
+      initFullScreen();
+      attachTabManagement(connId, CSRF);
+
+    } catch (err) {
+      showStatus(`<span class="text-danger"><i class="fas fa-times"></i> Failed to load data: ${escapeHtml(err.message)}</span>`);
+      document.getElementById('loadingOverlay').classList.add('d-none');
+    }
+  }
+
+  let cachedSelection = null;
+  window.cacheSelection = function() {
+    if(sheetInstance) cachedSelection = sheetInstance.getSelected();
+  };
+
+  // --- Feature 1: Formatting Toolbar ---
+  function initFormattingToolbar(instance, connId, currentSheetName, CSRF) {
+    if (document.getElementById('custom-toolbar')) return; 
+    const toolbarHtml = `
+      <div id="custom-toolbar" class="d-flex flex-wrap align-items-center mb-2 p-1 border rounded bg-white shadow-sm gap-1" style="border-radius: 8px;">
+        <button class="btn btn-light btn-sm" onmousedown="event.preventDefault(); applyStyle('font-weight', 'bold')" title="Bold" style="width:32px; height:32px; display:flex; justify-content:center; align-items:center;"><i class="fas fa-bold"></i></button>
+        <button class="btn btn-light btn-sm" onmousedown="event.preventDefault(); applyStyle('font-style', 'italic')" title="Italic" style="width:32px; height:32px; display:flex; justify-content:center; align-items:center;"><i class="fas fa-italic"></i></button>
+        <button class="btn btn-light btn-sm" onmousedown="event.preventDefault(); applyStyle('text-decoration', 'underline')" title="Underline" style="width:32px; height:32px; display:flex; justify-content:center; align-items:center;"><i class="fas fa-underline"></i></button>
+        <div class="vr mx-1"></div>
+        <label class="d-flex align-items-center justify-content-center mb-0 btn btn-light btn-sm" title="Text Color" onmousedown="cacheSelection()" style="cursor:pointer; width:32px; height:32px; padding:0; position:relative; overflow:hidden;">
+          <i class="fas fa-font"></i>
+          <input type="color" class="position-absolute opacity-0" id="textColorPicker" onchange="applyStyle('color', this.value)" style="width:200%; height:200%; top:-50%; left:-50%; cursor:pointer;">
+        </label>
+        <label class="d-flex align-items-center justify-content-center mb-0 btn btn-light btn-sm" title="Background Color" onmousedown="cacheSelection()" style="cursor:pointer; width:32px; height:32px; padding:0; position:relative; overflow:hidden;">
+          <i class="fas fa-fill-drip"></i>
+          <input type="color" class="position-absolute opacity-0" id="bgColorPicker" onchange="applyStyle('background-color', this.value)" style="width:200%; height:200%; top:-50%; left:-50%; cursor:pointer;">
+        </label>
+        <div class="vr mx-1"></div>
+        <button class="btn btn-light btn-sm" onmousedown="event.preventDefault(); applyStyle('text-align', 'left')" title="Align Left" style="width:32px; height:32px; display:flex; justify-content:center; align-items:center;"><i class="fas fa-align-left"></i></button>
+        <button class="btn btn-light btn-sm" onmousedown="event.preventDefault(); applyStyle('text-align', 'center')" title="Align Center" style="width:32px; height:32px; display:flex; justify-content:center; align-items:center;"><i class="fas fa-align-center"></i></button>
+        <button class="btn btn-light btn-sm" onmousedown="event.preventDefault(); applyStyle('text-align', 'right')" title="Align Right" style="width:32px; height:32px; display:flex; justify-content:center; align-items:center;"><i class="fas fa-align-right"></i></button>
+      </div>
+    `;
+    document.getElementById('spreadsheet-container').insertAdjacentHTML('beforebegin', toolbarHtml);
+  }
+
+  window.applyStyle = async function(styleKey, styleValue) {
+    if (!sheetInstance || !isEditable) return;
+    const selected = cachedSelection || window.currentSelection || sheetInstance.getSelected(); 
+    if (!selected || selected.length === 0) {
+      showToast("Please select cells first.");
+      return;
+    }
+    cachedSelection = null;
+    
+    showStatus(`<span class="text-primary"><i class="fas fa-spinner fa-spin"></i> Syncing styles...</span>`);
+    
+    try {
+      const cellIds = [];
+      let x1 = parseInt(selected[0]);
+      let y1 = parseInt(selected[1]);
+      let x2 = selected.length > 2 && selected[2] !== undefined && selected[2] !== null ? parseInt(selected[2]) : x1;
+      let y2 = selected.length > 3 && selected[3] !== undefined && selected[3] !== null ? parseInt(selected[3]) : y1;
+      
+      let finalValue = styleValue;
+      if (['font-weight', 'font-style', 'text-decoration'].includes(styleKey)) {
+          const firstCellName = window.getCellName(x1, y1);
+          const rawStyle = sheetInstance.getStyle(firstCellName);
+          const currentStyleString = typeof rawStyle === 'string' ? rawStyle : (rawStyle ? JSON.stringify(rawStyle) : "");
+          if (currentStyleString.includes(`${styleKey}: ${styleValue}`) || currentStyleString.includes(`${styleKey}:${styleValue}`) || currentStyleString.includes(`"${styleKey}":"${styleValue}"`)) {
+              finalValue = (styleKey === 'text-decoration') ? 'none' : 'normal';
+          }
+      }
+
+      for (let col = x1; col <= x2; col++) {
+        for (let row = y1; row <= y2; row++) {
+          const cellName = window.getCellName(col, row);
+          sheetInstance.setStyle(cellName, styleKey, finalValue);
+          cellIds.push({row: row + 1, col: col + 1});
+        }
+      }
+
+      const payload = {
+        action: 'update_style',
+        sheet: currentSheetName,
+        cells: cellIds,
+        style: { [styleKey]: finalValue }
+      };
+      
+      const resp = await fetch(`/imports/connections/${connId}/update-cell/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      if (data.success) {
+        showStatus(`<span class="text-success"><i class="fas fa-check-circle"></i> Style Saved</span>`);
+      } else {
+        showStatus(`<span class="text-danger"><i class="fas fa-exclamation-circle"></i> Style Sync Failed: ${escapeHtml(data.error || 'Unknown Backend Error')}</span>`);
+      }
+    } catch(e) {
+      console.error("Style sync error:", e);
+      showStatus(`<span class="text-danger"><i class="fas fa-times"></i> ${escapeHtml(e.message)}</span>`);
+    }
+  };
+
+  // --- Feature 2: Sheet Tab Management ---
+  window.createNewSheet = async function() {
+    const name = prompt("Enter new sheet name:");
+    if (!name) return;
+    await sendTabRequest('create_sheet', { newName: name });
+    window.location.reload(); 
+  };
+
+  window.renameCurrentSheet = async function(oldName) {
+    const newName = prompt("Rename sheet to:", oldName);
+    if (!newName || newName === oldName) return;
+    await sendTabRequest('rename_sheet', { oldName: oldName, newName: newName });
+    window.location.reload();
+  };
+
+  window.deleteCurrentSheet = async function(sheetName) {
+    if (!confirm(`Are you sure you want to delete sheet "${sheetName}"? This cannot be undone.`)) return;
+    await sendTabRequest('delete_sheet', { sheetName: sheetName });
+    window.location.reload();
+  };
+
+  async function sendTabRequest(action, data) {
+    showStatus(`<span class="text-primary"><i class="fas fa-spinner fa-spin"></i> Updating sheet...</span>`);
+    try {
+      await fetch(`/imports/connections/${connId}/update-structure/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({ action: action, sheet: currentSheetName, ...data })
+      });
+    } catch(e) {
+      showStatus(`<span class="text-danger"><i class="fas fa-times"></i> Error: ${escapeHtml(e.message)}</span>`);
+    }
+  }
+
+  function attachTabManagement(connId, CSRF) {
+    if (document.getElementById('addSheetBtn')) return;
+
+    const tabsContainer = document.getElementById('sheet-tabs');
+    tabsContainer.insertAdjacentHTML('beforeend', `
+      <div id="addSheetBtn" class="sheet-tab text-success fw-bold" onclick="createNewSheet()" style="padding: 6px 12px;" title="Create New Sheet">
+        <i class="fas fa-plus"></i>
+      </div>
+    `);
+    
+    document.querySelectorAll('.sheet-tab:not(.text-success)').forEach(tab => {
+      const sheetName = tab.getAttribute('data-sheet-name');
+      if (sheetName) {
+        tab.ondblclick = () => { if(isEditable) renameCurrentSheet(sheetName); };
+        if (isEditable) {
+          tab.insertAdjacentHTML('beforeend', `<i class="fas fa-times ms-2 text-danger hover-delete" style="font-size:10px; opacity:0.5;" onclick="event.stopPropagation(); deleteCurrentSheet('${escapeJsString(sheetName)}')"></i>`);
+        }
+      }
+    });
+  }
+
+  // --- Feature 3: Freeze Panes (Sort/Filter in config) ---
+  function initDataTools(instanceConfig, instance) {
+    if (document.getElementById('freezeRowBtn')) return;
+    window.toggleFreeze = function(type) {
+      if (!sheetInstance) return;
+      if (type === 'row') {
+        globalFreezeRows = globalFreezeRows ? 0 : 1;
+      } else if (type === 'col') {
+        globalFreezeCols = globalFreezeCols ? 0 : 1;
+      }
+      
+      if (!globalJexcelOptions) return;
+      
+      globalJexcelOptions.freezeRows = globalFreezeRows;
+      globalJexcelOptions.freezeColumns = globalFreezeCols;
+      globalJexcelOptions.data = sheetInstance.getData();
+      globalJexcelOptions.style = sheetInstance.getStyle();
+      
+      const container = document.getElementById('spreadsheet-container');
+      try { jspreadsheet.destroy(container, false); } catch(e){}
+      container.innerHTML = '';
+      
+      sheetInstance = jspreadsheet(container, globalJexcelOptions);
+    };
+
+    const toolbar = document.getElementById('custom-toolbar');
+    if (toolbar) {
+      toolbar.insertAdjacentHTML('beforeend', `
+        <div class="vr mx-1"></div>
+        <button id="freezeRowBtn" class="btn btn-light btn-sm" onmousedown="event.preventDefault(); toggleFreeze('row')" title="Freeze Top Row" style="height:32px; font-size:13px; font-weight:500; display:flex; align-items:center;"><i class="fas fa-snowflake text-primary me-1"></i> Row</button>
+        <button id="freezeColBtn" class="btn btn-light btn-sm" onmousedown="event.preventDefault(); toggleFreeze('col')" title="Freeze First Column" style="height:32px; font-size:13px; font-weight:500; display:flex; align-items:center;"><i class="fas fa-snowflake text-primary me-1"></i> Col</button>
+      `);
+    }
+  }
+
+  // --- Feature 4: Undo / Redo Custom History ---
+  function initHistoryTracking(instance, connId, currentSheetName, CSRF) {
+    if (document.getElementById('undoBtn')) return;
+    const toolbar = document.getElementById('custom-toolbar');
+    if (!toolbar) return;
+    toolbar.insertAdjacentHTML('afterbegin', `
+      <button id="undoBtn" class="btn btn-light btn-sm" onmousedown="event.preventDefault(); customUndo()" title="Undo (Ctrl+Z)" style="width:32px; height:32px; display:flex; justify-content:center; align-items:center;"><i class="fas fa-undo"></i></button>
+      <button id="redoBtn" class="btn btn-light btn-sm" onmousedown="event.preventDefault(); customRedo()" title="Redo (Ctrl+Y)" style="width:32px; height:32px; display:flex; justify-content:center; align-items:center;"><i class="fas fa-redo"></i></button>
+      <div class="vr mx-1"></div>
+    `);
+
+    window.customUndo = async function() {
+      if (historyStack.length === 0 || !isEditable || !sheetInstance) return;
+      const action = historyStack.pop();
+      redoStack.push(action);
+      
+      isProgrammaticEdit = true;
+      sheetInstance.setValueFromCoords(action.col, action.row, action.oldValue);
+      isProgrammaticEdit = false;
+
+      await saveCell(action.row + 1, action.col + 1, action.oldValue);
+    };
+
+    window.customRedo = async function() {
+      if (redoStack.length === 0 || !isEditable || !sheetInstance) return;
+      const action = redoStack.pop();
+      historyStack.push(action);
+      
+      isProgrammaticEdit = true;
+      sheetInstance.setValueFromCoords(action.col, action.row, action.newValue);
+      isProgrammaticEdit = false;
+
+      await saveCell(action.row + 1, action.col + 1, action.newValue);
+    };
+
+    document.addEventListener('keydown', function(e) {
+      // Don't intercept if user is typing in an input or textarea
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+        return;
+      }
+      if (e.ctrlKey && e.key === 'z') { e.preventDefault(); customUndo(); }
+      if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); customRedo(); }
+    });
+  }
+
+  function onCellChangeHistory(c, r, oldValue, newValue) {
+    if (isProgrammaticEdit || oldValue === newValue) return;
+    historyStack.push({ col: parseInt(c), row: parseInt(r), oldValue: oldValue, newValue: newValue });
+    redoStack = []; 
+  }
+
+  // --- Feature 5: Export Data ---
+  function initExportMenu(instance, currentSheetName) {
+    if (document.getElementById('exportMenuBtn')) return;
+    const exportHtml = `
+      <div class="dropdown d-inline-block ms-2">
+        <button id="exportMenuBtn" class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+          <i class="fas fa-download me-1"></i> Export
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="#" onclick="exportCSV()"><i class="fas fa-file-csv me-2 text-success"></i>Download CSV</a></li>
+          <li><a class="dropdown-item" href="#" onclick="exportExcel()"><i class="fas fa-file-excel me-2 text-success"></i>Download Excel (.xlsx)</a></li>
+        </ul>
+      </div>
+    `;
+    document.querySelector('.d-flex.flex-wrap.gap-2').insertAdjacentHTML('beforeend', exportHtml);
+
+    window.exportCSV = function() {
+      if (sheetInstance) sheetInstance.download(true);
+    };
+
+    window.exportExcel = function() {
+      if (!sheetInstance || typeof XLSX === 'undefined') {
+        alert("SheetJS library is not loaded.");
+        return;
+      }
+      const headers = sheetInstance.getHeaders().split(',');
+      const data = sheetInstance.getData();
+      const worksheetData = [headers, ...data];
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, currentSheetName || "Sheet1");
+      XLSX.writeFile(workbook, `${currentSheetName || 'Export'}.xlsx`);
+    };
+  }
+
+  // --- Feature 6: Full-Screen Mode ---
+  function initFullScreen() {
+    if (document.getElementById('fsToggleBtn')) return;
+    const fsBtn = `
+      <button id="fsToggleBtn" class="btn btn-outline-dark ms-2" onclick="toggleFullScreen()">
+        <i class="fas fa-expand me-1"></i> Full Screen
+      </button>
+    `;
+    document.querySelector('.d-flex.flex-wrap.gap-2').insertAdjacentHTML('beforeend', fsBtn);
+
+    const container = document.querySelector('.card-body'); 
+
+    window.toggleFullScreen = function() {
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => {
+          console.error(`Error attempting to enable fullscreen: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    };
+
+    document.addEventListener('fullscreenchange', (event) => {
+      const btn = document.getElementById('fsToggleBtn');
+      if (document.fullscreenElement) {
+        btn.innerHTML = '<i class="fas fa-compress me-1"></i> Exit Full Screen';
+        btn.classList.add('position-absolute', 'top-0', 'end-0', 'm-3');
+        btn.style.zIndex = '9999';
+        container.appendChild(btn);
+        container.style.background = '#fff';
+        container.style.overflow = 'auto';
+      } else {
+        btn.innerHTML = '<i class="fas fa-expand me-1"></i> Full Screen';
+        btn.classList.remove('position-absolute', 'top-0', 'end-0', 'm-3');
+        document.querySelector('.d-flex.flex-wrap.gap-2').appendChild(btn);
+        container.style.background = '';
+        container.style.overflow = '';
+      }
+    });
+  }
+
+  // --- Feature 7: Validation Enforcement ---
+  function applyValidationConfig(jexcelColumnsConfig) {
+    jexcelColumnsConfig.forEach((col, index) => {
+      if (validationConfig.dropdowns[index]) {
+        col.type = 'dropdown';
+        col.source = validationConfig.dropdowns[index];
+      } else if (validationConfig.calendars.includes(index)) {
+        col.type = 'calendar';
+        col.options = { format: 'YYYY-MM-DD' };
+      }
+    });
+    return jexcelColumnsConfig;
+  }
+
+  function enforceValidation(instance, colIndex, rowIndex, oldValue, newValue) {
+    colIndex = parseInt(colIndex);
+    const allowedOptions = validationConfig.dropdowns[colIndex];
+    if (allowedOptions && newValue !== '' && !allowedOptions.includes(newValue)) {
+      isProgrammaticEdit = true;
+      instance.setValueFromCoords(colIndex, rowIndex, oldValue);
+      isProgrammaticEdit = false;
+      showToast(`Invalid value. Allowed: ${escapeHtml(allowedOptions.join(', '))}`);
+      return false; 
+    }
+    return true; 
+  }
+
+  function showToast(message) {
+    const toastId = 'toast' + Date.now();
+    const toastHtml = `
+      <div id="${toastId}" class="toast show align-items-center text-white bg-danger border-0 position-fixed bottom-0 end-0 p-2 m-3 shadow" role="alert" style="z-index: 11000;">
+        <div class="d-flex">
+          <div class="toast-body"><i class="fas fa-exclamation-triangle me-2"></i> ${message}</div>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', toastHtml);
+    setTimeout(() => {
+      const el = document.getElementById(toastId);
+      if (el) el.remove();
+    }, 3000);
+  }
+
+  // --- Backend Sync Functions (Existing) ---
+  function renderSheetTabs(sheetNames, currentSheet) {
+    const tabsContainer = document.getElementById('sheet-tabs');
+    if (!sheetNames || sheetNames.length === 0) {
+      tabsContainer.innerHTML = '';
+      return;
+    }
+    let tabsHtml = '';
+    sheetNames.forEach(name => {
+      const isActive = name === currentSheet ? 'active' : '';
+      const safeName = escapeHtml(name);
+      const safeJsName = escapeJsString(name);
+      tabsHtml += `<div class="sheet-tab ${isActive}" data-sheet-name="${safeName}" onclick="loadSheetData('${safeJsName}')">
+        <i class="fas fa-layer-group me-1" style="font-size: 0.85em;"></i> ${safeName}
+      </div>`;
+    });
+    tabsContainer.innerHTML = tabsHtml;
+  }
+
+  function addRow() {
+    if (sheetInstance && isEditable) {
+      const lastRowIndex = sheetInstance.getData().length - 1;
+      sheetInstance.insertRow(1, lastRowIndex, false);
+    }
+  }
+
+  function addColumn() {
+    if (sheetInstance && isEditable) {
+      const lastColIndex = sheetInstance.getHeaders().split(',').length - 1;
+      sheetInstance.insertColumn(1, lastColIndex, false);
+    }
+  }
+
+  let backendQueue = [];
+  let isBackendProcessing = false;
+
+  async function processBackendQueue() {
+    if (isBackendProcessing || backendQueue.length === 0) return;
+    isBackendProcessing = true;
+    const task = backendQueue.shift();
+    
+    showStatus(`<span class="text-primary"><i class="fas fa-spinner fa-spin"></i> ${task.message}...</span>`);
+    try {
+      const resp = await fetch(task.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify(task.payload)
+      });
+      const data = await resp.json();
+      if (data.success) {
+        showStatus(`<span class="text-success"><i class="fas fa-check-circle"></i> Success</span>`);
+        setTimeout(() => showStatus(`<i class="fas fa-cloud text-success"></i> Connected`), 2000);
+      } else {
+        showStatus(`<span class="text-danger"><i class="fas fa-exclamation-circle"></i> Failed</span>`);
+      }
+    } catch (err) {
+      showStatus(`<span class="text-danger"><i class="fas fa-times"></i> ${escapeHtml(err.message)}</span>`);
+    }
+    
+    isBackendProcessing = false;
+    processBackendQueue();
+  }
+
+  function saveCell(row, col, value) {
+    backendQueue.push({
+      url: `/imports/connections/${connId}/update-cell/`,
+      payload: { row, col, value, sheet: currentSheetName },
+      message: 'Saving cell'
+    });
+    processBackendQueue();
+  }
+
+  function saveDimension(dimension, index, size) {
+    backendQueue.push({
+      url: `/imports/connections/${connId}/update-dimension/`,
+      payload: { dimension, index, size, sheet: currentSheetName },
+      message: 'Saving dimension'
+    });
+    processBackendQueue();
+  }
+
+  function saveStructure(action, index) {
+    backendQueue.push({
+      url: `/imports/connections/${connId}/update-structure/`,
+      payload: { action, index, sheet: currentSheetName },
+      message: 'Updating structure'
+    });
+    processBackendQueue();
+  }
+
+  function showStatus(html) {
+    document.getElementById('syncStatus').innerHTML = html;
+  }
+</script>
+{% endblock %}

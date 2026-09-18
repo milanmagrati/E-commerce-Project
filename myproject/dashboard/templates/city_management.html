@@ -94,6 +94,70 @@
         color: #6c757d;
         margin-top: 5px;
     }
+
+    /* City Search Bar */
+    .city-search-bar {
+        padding: 14px 16px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #e9ecef;
+    }
+    .city-search-wrapper {
+        position: relative;
+        max-width: 420px;
+    }
+    .city-search-wrapper .fa-search {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #adb5bd;
+        pointer-events: none;
+        transition: color 0.2s ease;
+    }
+    .city-search-wrapper.is-active .fa-search {
+        color: #0d6efd;
+    }
+    #citySearchInput {
+        padding-left: 38px;
+        padding-right: 34px;
+        border-radius: 20px;
+        border: 1px solid #dee2e6;
+        transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    #citySearchInput:focus {
+        border-color: #86b7fe;
+        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+    }
+    #citySearchClear {
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #adb5bd;
+        display: none;
+        padding: 4px 6px;
+        line-height: 1;
+        cursor: pointer;
+    }
+    #citySearchClear:hover {
+        color: #495057;
+    }
+    #citySearchResultInfo {
+        margin-top: 6px;
+        font-size: 12.5px;
+        color: #6c757d;
+    }
+    mark.city-search-highlight {
+        background: #fff3a3;
+        padding: 0;
+        color: inherit;
+        border-radius: 2px;
+    }
+    #noCityResultsRow td {
+        padding: 30px 0;
+    }
 </style>
 {% endblock %}
 
@@ -299,6 +363,20 @@
                 </button>
             </div>
         </div>
+        {% if cities %}
+        <div class="city-search-bar">
+            <div class="city-search-wrapper" id="citySearchWrapper">
+                <i class="fas fa-search"></i>
+                <input type="text" id="citySearchInput" class="form-control form-control-sm"
+                       placeholder="Search cities by name..." autocomplete="off"
+                       aria-label="Search cities">
+                <button type="button" id="citySearchClear" title="Clear search" aria-label="Clear search">
+                    <i class="fas fa-times-circle"></i>
+                </button>
+            </div>
+            <div id="citySearchResultInfo"></div>
+        </div>
+        {% endif %}
         <div class="card-body p-0">
             <form method="post" id="citiesForm">
                 {% csrf_token %}
@@ -316,15 +394,15 @@
                                 <th width="120">Actions</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="citiesTableBody">
                             {% for city in cities %}
-                            <tr class="city-card {% if city.valley_status == 'valley' %}valley-city{% else %}out-valley-city{% endif %}">
+                            <tr class="city-card {% if city.valley_status == 'valley' %}valley-city{% else %}out-valley-city{% endif %}" data-city-name="{{ city.name|lower }}">
                                 <td>
                                     <input type="checkbox" name="city_ids" value="{{ city.id }}" class="city-checkbox">
                                 </td>
                                 <td>{{ forloop.counter }}</td>
                                 <td>
-                                    <strong>{{ city.name }}</strong>
+                                    <strong class="city-name-text">{{ city.name }}</strong>
                                 </td>
                                 <td>
                                     <span class="city-badge badge {% if city.valley_status == 'valley' %}valley{% else %}out-valley{% endif %}">
@@ -360,6 +438,12 @@
                                 </td>
                             </tr>
                             {% endfor %}
+                            <tr id="noCityResultsRow" style="display: none;">
+                                <td colspan="6" class="text-center text-muted">
+                                    <i class="fas fa-search fa-2x mb-2 d-block"></i>
+                                    No cities match "<span id="noCityResultsQuery"></span>".
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -476,30 +560,42 @@
 
 <script>
 // City selection functions
+function getVisibleCityRows() {
+    return Array.from(document.querySelectorAll('#citiesTableBody tr.city-card'))
+        .filter(row => row.style.display !== 'none');
+}
+
 function toggleAllCities() {
     const selectAll = document.getElementById('selectAllCheckbox');
-    const checkboxes = document.querySelectorAll('.city-checkbox');
-    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    // Only toggle checkboxes for rows currently visible (i.e. matching the active search)
+    getVisibleCityRows().forEach(row => {
+        const cb = row.querySelector('.city-checkbox');
+        if (cb) cb.checked = selectAll.checked;
+    });
     updateSelectedCount();
 }
 
 function selectAllCities() {
-    const checkboxes = document.querySelectorAll('.city-checkbox');
-    checkboxes.forEach(cb => cb.checked = true);
-    document.getElementById('selectAllCheckbox').checked = true;
+    getVisibleCityRows().forEach(row => {
+        const cb = row.querySelector('.city-checkbox');
+        if (cb) cb.checked = true;
+    });
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    if (selectAllCheckbox) selectAllCheckbox.checked = true;
     updateSelectedCount();
 }
 
 function deselectAllCities() {
-    const checkboxes = document.querySelectorAll('.city-checkbox');
-    checkboxes.forEach(cb => cb.checked = false);
-    document.getElementById('selectAllCheckbox').checked = false;
+    document.querySelectorAll('.city-checkbox').forEach(cb => cb.checked = false);
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    if (selectAllCheckbox) selectAllCheckbox.checked = false;
     updateSelectedCount();
 }
 
 function updateSelectedCount() {
     const selected = document.querySelectorAll('.city-checkbox:checked').length;
-    document.getElementById('selectedCount').textContent = selected;
+    const el = document.getElementById('selectedCount');
+    if (el) el.textContent = selected;
 }
 
 // Quick add city via AJAX
@@ -764,5 +860,104 @@ async function processBulkCities() {
 
 // Initialize selected count
 updateSelectedCount();
+
+// ============ CITY SEARCH ============
+(function initCitySearch() {
+    const searchInput = document.getElementById('citySearchInput');
+    if (!searchInput) return; // No cities to search
+
+    const searchWrapper = document.getElementById('citySearchWrapper');
+    const clearBtn = document.getElementById('citySearchClear');
+    const resultInfo = document.getElementById('citySearchResultInfo');
+    const noResultsRow = document.getElementById('noCityResultsRow');
+    const noResultsQuery = document.getElementById('noCityResultsQuery');
+    const allRows = Array.from(document.querySelectorAll('#citiesTableBody tr.city-card'));
+    const totalCount = allRows.length;
+    let debounceTimer = null;
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function escapeRegex(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function highlightMatch(nameEl, originalName, query) {
+        if (!query) {
+            nameEl.textContent = originalName;
+            return;
+        }
+        const regex = new RegExp('(' + escapeRegex(query) + ')', 'ig');
+        nameEl.innerHTML = escapeHtml(originalName).replace(regex, '<mark class="city-search-highlight">$1</mark>');
+    }
+
+    function runFilter() {
+        const rawQuery = searchInput.value;
+        const query = rawQuery.trim().toLowerCase();
+
+        searchWrapper.classList.toggle('is-active', query.length > 0);
+        clearBtn.style.display = rawQuery.length > 0 ? 'block' : 'none';
+
+        let visibleCount = 0;
+        allRows.forEach(row => {
+            const cityName = row.dataset.cityName || '';
+            const nameEl = row.querySelector('.city-name-text');
+            const originalName = nameEl ? (nameEl.textContent || '').trim() : '';
+            const matches = query === '' || cityName.includes(query);
+
+            row.style.display = matches ? '' : 'none';
+            if (matches) {
+                visibleCount++;
+                if (nameEl) highlightMatch(nameEl, originalName, query);
+            }
+        });
+
+        // Show/hide "no results" placeholder row
+        if (noResultsRow) {
+            noResultsRow.style.display = (query !== '' && visibleCount === 0) ? '' : 'none';
+            if (noResultsQuery) noResultsQuery.textContent = rawQuery.trim();
+        }
+
+        // Update result summary text
+        if (query === '') {
+            resultInfo.textContent = '';
+        } else {
+            const noun = totalCount === 1 ? 'city' : 'cities';
+            resultInfo.textContent = `Showing ${visibleCount} of ${totalCount} ${noun}`;
+        }
+
+        // Keep bulk-select state consistent with what's actually visible
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        if (selectAllCheckbox) {
+            const visibleRows = getVisibleCityRows();
+            const allVisibleChecked = visibleRows.length > 0 && visibleRows.every(r => r.querySelector('.city-checkbox').checked);
+            selectAllCheckbox.checked = allVisibleChecked;
+        }
+        updateSelectedCount();
+    }
+
+    searchInput.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(runFilter, 120);
+    });
+
+    // Instant clear + focus back on the field
+    clearBtn.addEventListener('click', function() {
+        searchInput.value = '';
+        runFilter();
+        searchInput.focus();
+    });
+
+    // Esc clears the search when the field is focused
+    searchInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && searchInput.value !== '') {
+            searchInput.value = '';
+            runFilter();
+        }
+    });
+})();
 </script>
 {% endblock %}

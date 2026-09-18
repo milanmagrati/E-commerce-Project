@@ -105,6 +105,9 @@
                                         <small>{{ role.created_at|date:"M d, Y" }}</small>
                                     </td>
                                     <td class="text-end">
+                                        <a href="{% url 'role_permissions' role.id %}" class="btn btn-sm btn-outline-primary" title="Accessibility Management">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
                                         {% if role.user_count > 0 %}
                                         <button class="btn btn-sm btn-outline-secondary" disabled
                                                 title="Cannot delete: {{ role.user_count }} user(s) assigned">

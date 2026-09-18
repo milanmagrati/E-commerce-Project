@@ -1,0 +1,2273 @@
+/* ============================================================================
+   product.css — the product page, the account pages and the header/cart
+   chrome that goes with them.
+
+   Modelled on the reference storefront's layout: a two-column product block
+   with the media on the left and a sticky buy column on the right, quiet
+   typography on white, one solid dark primary button, and everything below
+   the fold folded into accordions.
+
+   Namespaced under .pdp / .acct / .announce / .cart-note so none of it can
+   collide with the older rules in store.css, which still own the landing,
+   category and cart pages.
+   ========================================================================= */
+
+.pdp,
+.acct {
+    /* Ink and paper. Kept deliberately close to black rather than pure, so
+       large blocks of copy do not vibrate against the white. */
+    --pdp-ink: #121212;
+    --pdp-ink-soft: rgba(18, 18, 18, 0.75);
+    --pdp-ink-faint: rgba(18, 18, 18, 0.55);
+    --pdp-line: rgba(18, 18, 18, 0.12);
+    --pdp-line-strong: rgba(18, 18, 18, 0.28);
+    --pdp-paper: #ffffff;
+    --pdp-paper-2: #f7f7f7;
+
+    /* The one accent, kept for prices, sale flags and the brand mark. */
+    --pdp-accent: #F85606;
+    --pdp-accent-ink: #d94800;
+
+    --pdp-ok: #1a7f4b;
+    --pdp-warn: #b3261e;
+
+    --pdp-radius: 4px;
+    --pdp-radius-lg: 10px;
+    --pdp-gap: clamp(16px, 3vw, 32px);
+    --pdp-font: 'Assistant', 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+    font-family: var(--pdp-font);
+    color: var(--pdp-ink);
+}
+
+.pdp *,
+.pdp *::before,
+.pdp *::after,
+.acct *,
+.acct *::before,
+.acct *::after {
+    box-sizing: border-box;
+}
+
+/* `hidden` has to win over a class that sets `display`.
+   The browser's own `[hidden] { display: none }` is a single attribute
+   selector, so any class rule here outranks it and the element stays on
+   screen with the attribute set — which is how the variation alert came to
+   render as a bare red "!" bubble with nothing to say, and how the gallery
+   and variation arrows show on a page that has nothing to scroll to.
+   product.js hides all three by setting `.hidden`, so this is what makes
+   that work. */
+.pdp [hidden],
+.pdp-sticky [hidden],
+.pdp-modal [hidden] {
+    display: none !important;
+}
+
+/* ==========================================================================
+   1. Announcement bar
+   ========================================================================== */
+
+.announce {
+    background: #121212;
+    color: #fff;
+    font-family: 'Assistant', 'Roboto', sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+}
+
+.announce-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 9px 20px;
+}
+
+.announce-msg {
+    flex: 1 1 auto;
+    text-align: center;
+    margin: 0;
+}
+
+.announce-social {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: 0 0 auto;
+}
+
+.announce-social a {
+    color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    transition: color 0.16s ease;
+}
+
+.announce-social a:hover {
+    color: #fff;
+}
+
+/* The bar is decoration; on a phone the message alone earns its height. */
+@media (max-width: 749px) {
+    .announce-social,
+    .announce-spacer {
+        display: none;
+    }
+
+    .announce-inner {
+        padding: 8px 14px;
+    }
+
+    .announce-msg {
+        font-size: 12px;
+    }
+}
+
+/* ==========================================================================
+   2. Account control in the header
+   ========================================================================== */
+
+.nav-account {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.nav-account-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: 0;
+    padding: 6px 8px;
+    font: inherit;
+    font-size: 13px;
+    color: inherit;
+    cursor: pointer;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: background 0.16s ease;
+}
+
+.nav-account-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.nav-account-name {
+    font-weight: 600;
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nav-account-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--pdp-accent, #F85606);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex: 0 0 auto;
+}
+
+.nav-account-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 208px;
+    background: #fff;
+    border: 1px solid rgba(18, 18, 18, 0.12);
+    border-radius: 10px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.14);
+    padding: 6px;
+    z-index: 120;
+    /* Hidden by default; toggled by product.js and never by :hover, so a tap
+       on a touch screen cannot leave it stuck open. */
+    display: none;
+}
+
+.nav-account.is-open .nav-account-menu {
+    display: block;
+}
+
+.nav-account-menu-head {
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid rgba(18, 18, 18, 0.08);
+    margin-bottom: 6px;
+}
+
+.nav-account-menu-head strong {
+    display: block;
+    font-size: 14px;
+}
+
+.nav-account-menu-head span {
+    display: block;
+    font-size: 12px;
+    color: rgba(18, 18, 18, 0.55);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.nav-account-menu a,
+.nav-account-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 9px 12px;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 14px;
+    color: var(--pdp-ink, #121212);
+    text-decoration: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.nav-account-menu a:hover,
+.nav-account-menu button:hover {
+    background: #f4f4f4;
+}
+
+/* ==========================================================================
+   3. Product page — shell and media
+   ========================================================================== */
+
+.pdp {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 20px 48px;
+}
+
+.pdp-crumbs {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 13px 0;
+    font-size: 12.5px;
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-crumbs a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.pdp-crumbs a:hover {
+    color: var(--pdp-ink);
+    text-decoration: underline;
+}
+
+.pdp-grid {
+    display: grid;
+    /* A hard cap on the media column, not a fraction of the row — on a wide
+       desktop a 1fr/1fr split let the photo balloon well past a normal
+       product-photo size. */
+    grid-template-columns: minmax(0, 520px) minmax(0, 1fr);
+    gap: var(--pdp-gap);
+    align-items: start;
+}
+
+/* ── media ── */
+
+.pdp-media {
+    position: relative;
+    min-width: 0;
+}
+
+.pdp-media-main {
+    position: relative;
+    background: var(--pdp-paper-2);
+    border-radius: var(--pdp-radius-lg);
+    overflow: hidden;
+    /* A fixed square keeps the buy column from jumping as the shopper pages
+       through photos of different shapes. */
+    aspect-ratio: 4 / 3;
+    cursor: zoom-in;
+}
+
+.pdp-media-track {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    /* Horizontal swipe on touch, snapped to one slide at a time. On desktop
+       the thumbnails drive it via scrollTo(). */
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+.pdp-media-track::-webkit-scrollbar {
+    display: none;
+}
+
+.pdp-slide {
+    flex: 0 0 100%;
+    width: 100%;
+    height: 100%;
+    scroll-snap-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pdp-slide img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.pdp-media-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: rgba(18, 18, 18, 0.2);
+}
+
+.pdp-media-counter {
+    position: absolute;
+    left: 50%;
+    bottom: 10px;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid var(--pdp-line);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+}
+
+.pdp-media-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid var(--pdp-line);
+    background: rgba(255, 255, 255, 0.94);
+    color: var(--pdp-ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.18s ease, background 0.18s ease;
+    z-index: 2;
+}
+
+.pdp-media:hover .pdp-media-nav {
+    opacity: 1;
+}
+
+.pdp-media-nav:hover {
+    background: #fff;
+}
+
+.pdp-media-nav[disabled] {
+    opacity: 0 !important;
+    pointer-events: none;
+}
+
+.pdp-media-nav.prev { left: 12px; }
+.pdp-media-nav.next { right: 12px; }
+
+.pdp-media-flags {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.pdp-flag {
+    background: var(--pdp-ink);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    border-radius: 999px;
+}
+
+.pdp-flag.is-out {
+    background: #fff;
+    color: var(--pdp-ink);
+    border: 1px solid var(--pdp-line-strong);
+}
+
+.pdp-thumbs {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+}
+
+.pdp-thumb {
+    flex: 0 0 60px;
+    width: 60px;
+    height: 60px;
+    border: 1px solid var(--pdp-line);
+    border-radius: var(--pdp-radius);
+    background: var(--pdp-paper-2);
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.16s ease;
+}
+
+.pdp-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.pdp-thumb:hover {
+    border-color: var(--pdp-line-strong);
+}
+
+.pdp-thumb.is-active {
+    border-color: var(--pdp-ink);
+    box-shadow: 0 0 0 1px var(--pdp-ink);
+}
+
+/* ==========================================================================
+   4. Product page — buy column
+   ========================================================================== */
+
+.pdp-info {
+    min-width: 0;
+    /* Follows the shopper down the long media column on desktop. */
+    position: sticky;
+    top: 20px;
+}
+
+.pdp-title {
+    font-size: clamp(21px, 2.3vw, 28px);
+    line-height: 1.22;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    margin: 0 0 12px;
+}
+
+/* Price on the left, availability pinned to the right of the same row: one
+   line answers "how much" and "can I have it" together. `align-items:
+   baseline` would drop the pill's box below the big figure, so the row aligns
+   on centres and the price carries its own line-height. */
+.pdp-price-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin-bottom: 14px;
+}
+
+.pdp-price-label {
+    /* Present for screen readers the way the reference marks its price, and
+       visible only as the small caption above wide layouts. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.pdp-price {
+    font-size: 23px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+}
+
+.pdp-price-was {
+    /* The list price, kept beside the rate actually being paid so the shopper
+       can see the break is real rather than being told about it. */
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--pdp-ink-faint);
+    text-decoration: line-through;
+    font-variant-numeric: tabular-nums;
+}
+
+.pdp-price-unit {
+    font-size: 13px;
+    color: var(--pdp-ink-faint);
+}
+
+/* The availability pill. It sits last in `.pdp-price-row`, and
+   `margin-left: auto` is what pushes it to the right-hand edge — with the row
+   wrapping on a narrow phone it simply drops onto its own line rather than
+   squeezing the price.
+
+   Everything here is reachable from `.pdp-stock` plus one state class and
+   nothing else: product.js rewrites this element's whole class list to
+   `pdp-stock in` when an option is picked, so any extra class the template
+   added would survive exactly until the first click. */
+.pdp-stock {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 0 auto;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.5;
+    white-space: nowrap;
+    background: #f4f4f5;
+    border: 1px solid transparent;
+}
+
+.pdp-stock::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+}
+
+.pdp-stock.in {
+    color: var(--pdp-ok);
+    background: rgba(26, 127, 75, 0.09);
+    border-color: rgba(26, 127, 75, 0.22);
+}
+
+.pdp-stock.out {
+    color: var(--pdp-warn);
+    background: rgba(179, 38, 30, 0.08);
+    border-color: rgba(179, 38, 30, 0.22);
+}
+
+/* Before an option is picked there is no availability to report yet, so the
+   pill carries no status dot and no status colour. */
+.pdp-stock.is-pending {
+    color: var(--pdp-ink-faint);
+    background: #f4f4f5;
+    font-weight: 500;
+}
+.pdp-stock.is-pending::before { display: none; }
+
+.pdp-divider {
+    border: 0;
+    border-top: 1px solid var(--pdp-line);
+    margin: 16px 0;
+}
+
+/* ── variation picker ──────────────────────────────────────────────────────
+   One card per real ProductVariation, laid out in a horizontal rail the
+   shopper scrolls — a variation is a small record (photo, name, SKU, price,
+   stock) and deserves the room, but a variable product can carry a dozen, so
+   the rail keeps the buy column from growing unbounded. Prev / next buttons
+   appear only when the rail actually overflows. The chosen card is marked by
+   an accent ring and a tick rather than by inverting to solid ink, which
+   would bury the very price and stock line the card exists to show.
+   ------------------------------------------------------------------------ */
+
+.pdp-variants {
+    margin-bottom: 18px;
+}
+
+.pdp-variants-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 9px;
+}
+
+.pdp-variants-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-variants-count {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-variants-chosen {
+    margin-left: auto;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--pdp-ink-faint);
+    text-align: right;
+    max-width: 55%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pdp-variants-chosen.is-set { color: var(--pdp-ink); }
+
+/* Text button, revealed only once an option is active — the storefront lets a
+   shopper back out of a choice as well as into one. */
+.pdp-variants-clear {
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pdp-ink-faint);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.pdp-variants-clear:hover { color: var(--pdp-accent-ink); }
+
+.pdp-variants-clear:focus-visible {
+    outline: 2px solid var(--pdp-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+/* The rail: track flanked by two nav buttons. Overflow is horizontal only;
+   the buttons sit just outside the track and are revealed by JS when there is
+   somewhere to scroll. */
+.pdp-variants-carousel {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pdp-variants-track {
+    display: flex;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scroll-behavior: smooth;
+    padding: 4px 2px 10px;
+    /* thin, unobtrusive scrollbar — the nav buttons are the primary control */
+    scrollbar-width: thin;
+    scrollbar-color: var(--pdp-line-strong) transparent;
+    -webkit-overflow-scrolling: touch;
+}
+
+.pdp-variants-track::-webkit-scrollbar { height: 5px; }
+.pdp-variants-track::-webkit-scrollbar-track { background: transparent; }
+.pdp-variants-track::-webkit-scrollbar-thumb {
+    background: var(--pdp-line-strong);
+    border-radius: 4px;
+}
+
+/* One card per variation. Fixed width so the rail scrolls a predictable step
+   and the cards read as a row of equals. */
+.pdp-variant-card {
+    flex: 0 0 clamp(140px, 44%, 168px);
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px;
+    border: 1px solid var(--pdp-line);
+    border-radius: 10px;
+    background: var(--pdp-paper);
+    font: inherit;
+    color: var(--pdp-ink);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background 0.16s ease,
+                box-shadow 0.16s ease;
+}
+
+.pdp-variant-card:hover {
+    border-color: var(--pdp-line-strong);
+    background: var(--pdp-paper-2);
+}
+
+.pdp-variant-card:focus-visible {
+    outline: 2px solid var(--pdp-accent);
+    outline-offset: 2px;
+}
+
+.pdp-variant-card-media {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 7px;
+    overflow: hidden;
+    background: var(--pdp-paper-2);
+    margin-bottom: 3px;
+}
+
+.pdp-variant-card-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.pdp-variant-card-noimg {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--pdp-ink-faint);
+}
+
+/* Selection tick, tucked into the media corner. Hidden until chosen. */
+.pdp-variant-card-check {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--pdp-accent);
+    color: #fff;
+    transform: scale(0);
+    transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.pdp-variant-card-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.pdp-variant-card-sku {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--pdp-ink-faint);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pdp-variant-card-price {
+    font-size: 14.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    margin-top: auto;
+}
+
+.pdp-variant-card-stock {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--pdp-ok);
+}
+
+.pdp-variant-card-stock.is-low { color: #b26a00; }
+.pdp-variant-card-stock.is-out { color: var(--pdp-ink-faint); }
+
+/* A flag that this option has a quantity break, and how deep it goes. The
+   rungs themselves are drawn once, in the ladder below, for whichever option
+   is chosen — repeating them here made the same numbers appear twice. */
+.pdp-variant-card-bulk {
+    align-self: flex-start;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(26, 127, 75, 0.1);
+    color: var(--pdp-ok);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Chosen. Ring via box-shadow so nothing reflows as the selection moves. */
+.pdp-variant-card.is-selected {
+    border-color: var(--pdp-accent);
+    background: rgba(248, 86, 6, 0.04);
+    box-shadow: 0 0 0 1px var(--pdp-accent);
+}
+
+.pdp-variant-card.is-selected .pdp-variant-card-check { transform: scale(1); }
+
+/* Sold out: dimmed and inert, but still readable — a shopper is entitled to
+   see what the option was and what it cost. */
+.pdp-variant-card.is-out,
+.pdp-variant-card[disabled] {
+    cursor: not-allowed;
+    background: var(--pdp-paper-2);
+    border-color: var(--pdp-line);
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-variant-card.is-out:hover {
+    border-color: var(--pdp-line);
+    background: var(--pdp-paper-2);
+}
+
+.pdp-variant-card.is-out .pdp-variant-card-name { text-decoration: line-through; }
+.pdp-variant-card.is-out .pdp-variant-card-media { opacity: 0.5; }
+
+/* Prev / next. Shown by JS (removing [hidden]) only when the rail overflows;
+   disabled at whichever end the track is resting against. */
+.pdp-variants-nav {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid var(--pdp-line-strong);
+    background: var(--pdp-paper);
+    color: var(--pdp-ink);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    transition: background 0.14s ease, color 0.14s ease, opacity 0.14s ease;
+}
+
+.pdp-variants-nav:hover { background: var(--pdp-paper-2); }
+
+.pdp-variants-nav:focus-visible {
+    outline: 2px solid var(--pdp-accent);
+    outline-offset: 2px;
+}
+
+.pdp-variants-nav[disabled] {
+    opacity: 0.3;
+    cursor: default;
+    box-shadow: none;
+}
+
+/* Only raised once a buy action is attempted with nothing chosen. */
+.pdp-variant-alert {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 10px 0 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--pdp-warn);
+}
+
+.pdp-variant-alert::before {
+    content: '!';
+    display: grid;
+    place-items: center;
+    width: 15px;
+    height: 15px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--pdp-warn);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+/* The stepper stays inert until there is a variation to count units of. */
+.pdp-qty-block[data-locked] .pdp-stepper {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pdp-variant-card,
+    .pdp-variant-card-check,
+    .pdp-variants-nav,
+    .pdp-variants-track,
+    .pdp-variants-clear,
+    .pdp-bulk-tier { transition: none; }
+    .pdp-variants-track { scroll-behavior: auto; }
+}
+
+/* ── quantity breaks ──
+   A row of rungs, each one a shortcut: pressing it sets the stepper to that
+   quantity. The rung the current quantity earns is marked, the price row
+   above re-prices, and the nudge underneath says how close the next one is. */
+
+.pdp-bulk {
+    margin: 16px 0 4px;
+}
+
+.pdp-bulk-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.pdp-bulk-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--pdp-ink-soft);
+}
+
+/* Which option the rungs below price. Ties the ladder to the card the shopper
+   just pressed, instead of leaving two offer blocks competing on screen. */
+.pdp-bulk-for {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pdp-ink-soft);
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pdp-bulk-for::before {
+    content: '· ';
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-bulk-saved {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--pdp-ok);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Held open on a variable product until an option is picked, so the ladder
+   does not pop into existence out of nowhere. */
+.pdp-bulk-await {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-bulk-tiers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.pdp-bulk-tier {
+    flex: 1 1 96px;
+    min-width: 92px;
+    max-width: 160px;
+    padding: 7px 8px;
+    border: 1px solid var(--pdp-line);
+    border-radius: 8px;
+    background: var(--pdp-paper);
+    font: inherit;
+    color: var(--pdp-ink);
+    text-align: center;
+    line-height: 1.35;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.pdp-bulk-tier:hover {
+    border-color: var(--pdp-line-strong);
+    background: var(--pdp-paper-2);
+}
+
+.pdp-bulk-tier:focus-visible {
+    outline: 2px solid var(--pdp-accent);
+    outline-offset: 2px;
+}
+
+.pdp-bulk-tier-qty {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.pdp-bulk-tier-save {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--pdp-ok);
+}
+
+.pdp-bulk-tier-each {
+    display: block;
+    font-size: 10.5px;
+    color: var(--pdp-ink-faint);
+    font-variant-numeric: tabular-nums;
+}
+
+/* The rung the quantity in the stepper currently earns. */
+.pdp-bulk-tier.is-active {
+    border-color: var(--pdp-ok);
+    background: rgba(26, 127, 75, 0.06);
+    box-shadow: 0 0 0 1px var(--pdp-ok);
+}
+
+.pdp-bulk-nudge {
+    margin: 8px 0 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pdp-accent-ink);
+}
+
+/* ── bundle contents ── */
+
+.pdp-bundle {
+    border: 1px solid var(--pdp-line);
+    border-radius: var(--pdp-radius-lg);
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    background: var(--pdp-paper-2);
+}
+
+.pdp-bundle h3 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-bundle ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 5px;
+}
+
+.pdp-bundle li {
+    font-size: 14px;
+    display: flex;
+    gap: 8px;
+}
+
+.pdp-bundle .qty {
+    font-weight: 700;
+    color: var(--pdp-accent-ink);
+    flex: 0 0 auto;
+}
+
+/* ── quantity ── */
+
+.pdp-qty-block {
+    margin-bottom: 14px;
+}
+
+.pdp-qty-label {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-bottom: 7px;
+}
+
+.pdp-qty-incart {
+    font-weight: 400;
+    color: var(--pdp-ink-faint);
+}
+
+.pdp-stepper {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--pdp-line-strong);
+    border-radius: var(--pdp-radius);
+    overflow: hidden;
+    background: #fff;
+}
+
+.pdp-stepper button {
+    width: 38px;
+    height: 40px;
+    border: 0;
+    background: none;
+    font-size: 17px;
+    line-height: 1;
+    color: var(--pdp-ink);
+    cursor: pointer;
+    transition: background 0.14s ease;
+}
+
+.pdp-stepper button:hover:not([disabled]) {
+    background: var(--pdp-paper-2);
+}
+
+.pdp-stepper button[disabled] {
+    color: rgba(18, 18, 18, 0.25);
+    cursor: not-allowed;
+}
+
+.pdp-stepper input {
+    width: 44px;
+    height: 40px;
+    border: 0;
+    border-left: 1px solid var(--pdp-line);
+    border-right: 1px solid var(--pdp-line);
+    text-align: center;
+    font: inherit;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    color: var(--pdp-ink);
+    background: none;
+    -moz-appearance: textfield;
+}
+
+.pdp-stepper input::-webkit-outer-spin-button,
+.pdp-stepper input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.pdp-stepper input:focus-visible {
+    outline: 2px solid var(--pdp-ink);
+    outline-offset: -2px;
+}
+
+/* ── buttons ── */
+
+.pdp-buttons {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.pdp-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    padding: 11px 18px;
+    border-radius: var(--pdp-radius);
+    border: 1px solid var(--pdp-ink);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease,
+        transform 0.12s ease, opacity 0.18s ease;
+}
+
+.pdp-btn:active {
+    transform: scale(0.99);
+}
+
+.pdp-btn-outline {
+    background: #fff;
+    color: var(--pdp-ink);
+}
+
+.pdp-btn-outline:hover {
+    box-shadow: inset 0 0 0 1px var(--pdp-ink);
+}
+
+.pdp-btn-solid {
+    background: var(--pdp-ink);
+    color: #fff;
+}
+
+.pdp-btn-solid:hover {
+    background: #000;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+}
+
+.pdp-btn-accent {
+    background: var(--pdp-accent);
+    border-color: var(--pdp-accent);
+    color: #fff;
+}
+
+.pdp-btn-accent:hover {
+    background: var(--pdp-accent-ink);
+    border-color: var(--pdp-accent-ink);
+    box-shadow: 0 6px 20px rgba(248, 86, 6, 0.3);
+}
+
+.pdp-btn[disabled],
+.pdp-btn.is-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* Waiting on a variation. Muted to neutral rather than left as a faded accent,
+   which reads as a broken button — and deliberately still clickable, because
+   pressing it is how a shopper finds out what is missing: the click raises the
+   hint under the buttons instead of doing nothing. */
+.pdp-btn.is-awaiting {
+    background: var(--pdp-paper-2);
+    border-color: var(--pdp-line);
+    color: var(--pdp-ink-faint);
+    box-shadow: none;
+}
+
+.pdp-btn.is-awaiting:hover {
+    background: var(--pdp-paper-2);
+    border-color: var(--pdp-line-strong);
+    box-shadow: none;
+}
+
+.pdp-btn .sub {
+    font-size: 11px;
+    font-weight: 400;
+    opacity: 0.75;
+}
+
+.pdp-btn-icon {
+    display: flex;
+    flex: 0 0 auto;
+}
+
+/* Wishlist button reads as a quiet link under the two real actions. */
+.pdp-save {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: none;
+    border: 0;
+    padding: 6px 2px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--pdp-ink-soft);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.pdp-save:hover {
+    color: var(--pdp-ink);
+}
+
+.pdp-save.is-active {
+    color: var(--pdp-accent-ink);
+}
+
+/* ── back-in-stock capture on a sold-out product ── */
+
+.pdp-restock {
+    margin: 14px 0 4px;
+    padding: 14px;
+    border: 1px solid var(--pdp-line);
+    border-radius: var(--pdp-radius-lg);
+    background: var(--pdp-paper-2);
+}
+
+.pdp-restock-lead {
+    margin: 0 0 9px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--pdp-ink);
+}
+
+.pdp-restock-row {
+    display: flex;
+    gap: 8px;
+}
+
+.pdp-restock-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 12px;
+    height: 40px;
+    border: 1px solid var(--pdp-line-strong);
+    border-radius: var(--pdp-radius);
+    background: var(--pdp-paper);
+    font: inherit;
+    font-size: 14px;
+    color: var(--pdp-ink);
+}
+
+.pdp-restock-row input:focus-visible {
+    outline: 2px solid var(--pdp-accent);
+    outline-offset: 1px;
+}
+
+.pdp-restock-row input:disabled {
+    color: var(--pdp-ink-faint);
+    background: var(--pdp-paper-2);
+}
+
+.pdp-restock-row .pdp-btn {
+    flex: none;
+    width: auto;
+    padding: 0 16px;
+    height: 40px;
+}
+
+.pdp-restock-msg {
+    margin: 9px 0 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--pdp-warn);
+}
+
+.pdp-restock.is-done .pdp-restock-msg {
+    color: var(--pdp-ok);
+}
+
+/* ── the inline order form slot ── */
+
+.pdp-order-slot {
+    display: grid;
+    grid-template-rows: 0fr;
+    /* Collapsed height animates; overflow only unlocks once the panel is
+       fully open, or the district dropdown would be clipped at the edge. */
+    overflow: hidden;
+    transition: grid-template-rows 0.42s cubic-bezier(0.22, 0.61, 0.36, 1);
+    margin-bottom: 14px;
+}
+
+.pdp-order-slot > div {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.pdp-order-slot.is-open {
+    grid-template-rows: 1fr;
+}
+
+.pdp-order-slot.is-expanded,
+.pdp-order-slot.is-expanded > div {
+    overflow: visible;
+}
+
+/* ── trust strip ── */
+
+.pdp-trust {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    padding: 13px 0;
+    border-top: 1px solid var(--pdp-line);
+    border-bottom: 1px solid var(--pdp-line);
+    margin-bottom: 14px;
+}
+
+.pdp-trust-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--pdp-ink-soft);
+}
+
+.pdp-trust-item svg {
+    flex: 0 0 auto;
+    margin-top: 1px;
+    color: var(--pdp-ink);
+}
+
+.pdp-trust-item strong {
+    display: block;
+    color: var(--pdp-ink);
+    font-size: 12.5px;
+}
+
+/* ── share ── */
+
+.pdp-share {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.pdp-share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: 0;
+    padding: 5px 0;
+    font: inherit;
+    font-size: 13px;
+    color: var(--pdp-ink-soft);
+    cursor: pointer;
+}
+
+.pdp-share-btn:hover {
+    color: var(--pdp-ink);
+}
+
+.pdp-share-copy {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--pdp-line-strong);
+    border-radius: var(--pdp-radius);
+    padding: 6px 6px 6px 12px;
+    background: #fff;
+    max-width: 100%;
+}
+
+.pdp-share.is-open .pdp-share-copy {
+    display: flex;
+}
+
+.pdp-share-copy input {
+    border: 0;
+    font: inherit;
+    font-size: 13px;
+    color: var(--pdp-ink-soft);
+    background: none;
+    min-width: 0;
+    flex: 1 1 190px;
+}
+
+.pdp-share-copy input:focus {
+    outline: none;
+}
+
+.pdp-share-copy button {
+    flex: 0 0 auto;
+    border: 0;
+    background: var(--pdp-ink);
+    color: #fff;
+    border-radius: 3px;
+    padding: 7px 12px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+/* ==========================================================================
+   5. Accordions (description, specs, shipping)
+   ========================================================================== */
+
+.pdp-accordion {
+    border-top: 1px solid var(--pdp-line);
+    margin-top: 4px;
+}
+
+.pdp-acc {
+    border-bottom: 1px solid var(--pdp-line);
+}
+
+.pdp-acc-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    padding: 14px 2px;
+    background: none;
+    border: 0;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--pdp-ink);
+    text-align: left;
+    cursor: pointer;
+}
+
+.pdp-acc-head svg {
+    flex: 0 0 auto;
+    transition: transform 0.24s ease;
+}
+
+.pdp-acc.is-open .pdp-acc-head svg {
+    transform: rotate(180deg);
+}
+
+.pdp-acc-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.3s ease;
+}
+
+.pdp-acc.is-open .pdp-acc-body {
+    grid-template-rows: 1fr;
+}
+
+.pdp-acc-body > div {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.pdp-acc-inner {
+    padding: 0 2px 18px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--pdp-ink-soft);
+}
+
+.pdp-acc-inner p:first-child { margin-top: 0; }
+.pdp-acc-inner p:last-child { margin-bottom: 0; }
+
+.pdp-spec {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+}
+
+.pdp-spec td {
+    padding: 7px 0;
+    border-bottom: 1px solid var(--pdp-line);
+    vertical-align: top;
+}
+
+.pdp-spec tr:last-child td {
+    border-bottom: 0;
+}
+
+.pdp-spec td:first-child {
+    width: 42%;
+    color: var(--pdp-ink-faint);
+    padding-right: 16px;
+}
+
+/* ==========================================================================
+   6. Page sections below the fold
+   ========================================================================== */
+
+.pdp-section {
+    margin-top: 40px;
+}
+
+.pdp-section-title {
+    font-size: clamp(18px, 1.8vw, 22px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 16px;
+    text-align: center;
+}
+
+/* ==========================================================================
+   7. Related products
+   ========================================================================== */
+
+.pdp-related {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+    gap: 14px;
+}
+
+/* ==========================================================================
+   8. Lightbox
+   ========================================================================== */
+
+.pdp-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(18, 18, 18, 0.88);
+}
+
+.pdp-modal.is-open {
+    display: flex;
+}
+
+.pdp-modal img {
+    max-width: min(94vw, 1100px);
+    max-height: 88vh;
+    object-fit: contain;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.pdp-modal-close,
+.pdp-modal-nav {
+    position: absolute;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    border: 0;
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    font-size: 24px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.16s ease;
+}
+
+.pdp-modal-close:hover,
+.pdp-modal-nav:hover {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.pdp-modal-close { top: 18px; right: 18px; }
+.pdp-modal-nav.prev { left: 18px; top: 50%; transform: translateY(-50%); }
+.pdp-modal-nav.next { right: 18px; top: 50%; transform: translateY(-50%); }
+
+.pdp-modal-count {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   9. "Item added to your cart" notification
+   ========================================================================== */
+
+.cart-note {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    width: min(360px, calc(100vw - 32px));
+    background: #fff;
+    border: 1px solid rgba(18, 18, 18, 0.14);
+    border-radius: 12px;
+    box-shadow: 0 22px 50px rgba(0, 0, 0, 0.18);
+    padding: 16px;
+    z-index: 900;
+    font-family: 'Assistant', 'Roboto', sans-serif;
+    /* Off-canvas until product.js shows it. */
+    opacity: 0;
+    transform: translateY(-12px);
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.cart-note.is-open {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.cart-note-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a7f4b;
+    margin-bottom: 12px;
+}
+
+.cart-note-close {
+    margin-left: auto;
+    border: 0;
+    background: none;
+    font-size: 20px;
+    line-height: 1;
+    color: rgba(18, 18, 18, 0.45);
+    cursor: pointer;
+    padding: 0 2px;
+}
+
+.cart-note-item {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.cart-note-item img {
+    width: 54px;
+    height: 54px;
+    object-fit: cover;
+    border-radius: 6px;
+    background: #f4f4f4;
+    flex: 0 0 auto;
+}
+
+.cart-note-item .name {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: #121212;
+}
+
+.cart-note-item .meta {
+    font-size: 12.5px;
+    color: rgba(18, 18, 18, 0.55);
+}
+
+.cart-note-actions {
+    display: grid;
+    gap: 8px;
+}
+
+.cart-note-actions a,
+.cart-note-actions button {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 11px 14px;
+    border-radius: 4px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    border: 1px solid #121212;
+}
+
+.cart-note-actions .primary {
+    background: #121212;
+    color: #fff;
+}
+
+.cart-note-actions .secondary {
+    background: #fff;
+    color: #121212;
+}
+
+.cart-note-actions .tertiary {
+    border: 0;
+    background: none;
+    color: rgba(18, 18, 18, 0.6);
+    text-decoration: underline;
+    font-weight: 400;
+    padding: 4px;
+}
+
+/* ==========================================================================
+   10. Sticky buy bar (small screens only)
+   ========================================================================== */
+
+.pdp-sticky {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 500;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: rgba(255, 255, 255, 0.97);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid rgba(18, 18, 18, 0.12);
+    transform: translateY(105%);
+    transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.pdp-sticky.is-visible {
+    transform: translateY(0);
+}
+
+.pdp-sticky-info {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.pdp-sticky-name {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pdp-sticky-price {
+    font-size: 13px;
+    color: rgba(18, 18, 18, 0.6);
+}
+
+.pdp-sticky .pdp-btn {
+    width: auto;
+    flex: 0 0 auto;
+    min-height: 46px;
+    padding: 12px 22px;
+    margin: 0;
+}
+
+/* ==========================================================================
+   11. Account pages
+   ========================================================================== */
+
+.acct {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 20px 72px;
+}
+
+.acct-narrow {
+    max-width: 460px;
+}
+
+.acct-head {
+    text-align: center;
+    margin-bottom: 26px;
+}
+
+.acct-head h1 {
+    font-size: clamp(24px, 3.4vw, 32px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+}
+
+.acct-head p {
+    margin: 0;
+    color: var(--pdp-ink-faint);
+    font-size: 14.5px;
+}
+
+.acct-card {
+    border: 1px solid var(--pdp-line);
+    border-radius: var(--pdp-radius-lg);
+    padding: 24px;
+    background: #fff;
+}
+
+.acct-card + .acct-card {
+    margin-top: 18px;
+}
+
+.acct-card h2 {
+    margin: 0 0 4px;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.acct-card .sub {
+    margin: 0 0 18px;
+    font-size: 13.5px;
+    color: var(--pdp-ink-faint);
+}
+
+.acct-field {
+    margin-bottom: 14px;
+}
+
+.acct-field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.acct-field .of-input,
+.acct-field input,
+.acct-field select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--pdp-line-strong);
+    border-radius: var(--pdp-radius);
+    font: inherit;
+    font-size: 15px;
+    color: var(--pdp-ink);
+    background: #fff;
+}
+
+.acct-field .of-input:focus,
+.acct-field input:focus,
+.acct-field select:focus {
+    outline: none;
+    border-color: var(--pdp-ink);
+    box-shadow: 0 0 0 1px var(--pdp-ink);
+}
+
+.acct-field.has-error .of-input,
+.acct-field.has-error input {
+    border-color: var(--pdp-warn);
+}
+
+.acct-error {
+    display: block;
+    margin-top: 5px;
+    font-size: 12.5px;
+    color: var(--pdp-warn);
+}
+
+.acct-formwide-error {
+    border: 1px solid rgba(179, 38, 30, 0.4);
+    background: rgba(179, 38, 30, 0.06);
+    color: var(--pdp-warn);
+    border-radius: var(--pdp-radius);
+    padding: 11px 14px;
+    font-size: 13.5px;
+    margin-bottom: 16px;
+}
+
+.acct-submit {
+    width: 100%;
+    min-height: 50px;
+    border: 1px solid var(--pdp-ink);
+    background: var(--pdp-ink);
+    color: #fff;
+    border-radius: var(--pdp-radius);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.18s ease;
+}
+
+.acct-submit:hover {
+    background: #000;
+}
+
+.acct-alt {
+    text-align: center;
+    margin-top: 18px;
+    font-size: 14px;
+    color: var(--pdp-ink-faint);
+}
+
+.acct-alt a {
+    color: var(--pdp-ink);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.acct-guest {
+    margin-top: 22px;
+    padding-top: 20px;
+    border-top: 1px solid var(--pdp-line);
+    text-align: center;
+    font-size: 13.5px;
+    color: var(--pdp-ink-faint);
+    line-height: 1.6;
+}
+
+.acct-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+}
+
+.acct-side {
+    border: 1px solid var(--pdp-line);
+    border-radius: var(--pdp-radius-lg);
+    padding: 20px;
+    position: sticky;
+    top: 20px;
+}
+
+.acct-side-who {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--pdp-line);
+    margin-bottom: 12px;
+}
+
+.acct-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--pdp-ink);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+    flex: 0 0 auto;
+}
+
+.acct-side-who strong {
+    display: block;
+    font-size: 15px;
+    line-height: 1.3;
+}
+
+.acct-side-who span {
+    display: block;
+    font-size: 12.5px;
+    color: var(--pdp-ink-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.acct-side nav {
+    display: grid;
+    gap: 2px;
+}
+
+.acct-side nav a,
+.acct-side nav button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    border: 0;
+    background: none;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 14.5px;
+    color: var(--pdp-ink);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.acct-side nav a:hover,
+.acct-side nav button:hover {
+    background: var(--pdp-paper-2);
+}
+
+.acct-order {
+    border: 1px solid var(--pdp-line);
+    border-radius: var(--pdp-radius-lg);
+    padding: 16px 18px;
+    margin-bottom: 12px;
+}
+
+.acct-order-top {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.acct-order-num {
+    font-family: 'Roboto Mono', ui-monospace, monospace;
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+}
+
+.acct-chip {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--pdp-paper-2);
+    color: var(--pdp-ink-soft);
+    border: 1px solid var(--pdp-line);
+}
+
+.acct-chip.ok { background: rgba(26, 127, 75, 0.1); color: var(--pdp-ok); border-color: rgba(26, 127, 75, 0.28); }
+.acct-chip.bad { background: rgba(179, 38, 30, 0.08); color: var(--pdp-warn); border-color: rgba(179, 38, 30, 0.28); }
+
+.acct-order-when {
+    margin-left: auto;
+    font-size: 12.5px;
+    color: var(--pdp-ink-faint);
+}
+
+.acct-order-lines {
+    font-size: 13.5px;
+    color: var(--pdp-ink-soft);
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+
+.acct-order-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-top: 10px;
+    border-top: 1px solid var(--pdp-line);
+}
+
+.acct-order-total {
+    font-weight: 700;
+    font-size: 15px;
+}
+
+.acct-order-foot a {
+    margin-left: auto;
+    font-size: 13.5px;
+    color: var(--pdp-ink);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.acct-empty {
+    text-align: center;
+    padding: 34px 20px;
+    border: 1px dashed var(--pdp-line-strong);
+    border-radius: var(--pdp-radius-lg);
+    color: var(--pdp-ink-faint);
+}
+
+.acct-saved {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+}
+
+.acct-saved a {
+    text-decoration: none;
+    color: inherit;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.acct-saved img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: var(--pdp-radius);
+    background: var(--pdp-paper-2);
+    margin-bottom: 6px;
+}
+
+/* ==========================================================================
+   12. Responsive
+   ========================================================================== */
+
+@media (max-width: 989px) {
+    .pdp-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 24px;
+    }
+
+    .pdp-info {
+        position: static;
+    }
+
+    .acct-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .acct-side {
+        position: static;
+    }
+}
+
+@media (max-width: 749px) {
+    .pdp {
+        padding: 0 14px 40px;
+    }
+
+    /* The sticky bar takes over once the real buttons scroll away. */
+    .pdp-sticky {
+        display: flex;
+    }
+
+    .pdp-crumbs {
+        padding: 12px 0;
+        font-size: 12px;
+    }
+
+    .pdp-media-main {
+        border-radius: 0;
+        /* Full-bleed photo, as on the reference storefront's phone layout. */
+        margin: 0 -14px;
+        width: calc(100% + 28px);
+        aspect-ratio: 1 / 1;
+    }
+
+    .pdp-media-nav {
+        display: none;
+    }
+
+    .pdp-thumb {
+        flex-basis: 64px;
+        width: 64px;
+        height: 64px;
+    }
+
+    .pdp-section {
+        margin-top: 40px;
+    }
+
+    /* 16px stops iOS zooming the page in when a field takes focus. */
+    .pdp-stepper input,
+    .acct-field .of-input,
+    .acct-field input,
+    .acct-field select {
+        font-size: 16px;
+    }
+
+    .pdp-related {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 12px;
+    }
+
+    .cart-note {
+        top: auto;
+        bottom: 12px;
+        right: 12px;
+        left: 12px;
+        width: auto;
+        transform: translateY(16px);
+    }
+}
+
+@media (max-width: 419px) {
+    .pdp-buttons .pdp-btn {
+        font-size: 14px;
+        padding: 13px 14px;
+    }
+
+    .pdp-trust {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .pdp-sticky-info {
+        display: none;
+    }
+
+    .pdp-sticky .pdp-btn {
+        flex: 1 1 auto;
+    }
+}
+
+/* On touch screens :hover sticks after a tap, so the hover-only affordances
+   are dropped rather than left latched on. */
+@media (hover: none) {
+    .pdp-btn-solid:hover,
+    .pdp-btn-accent:hover {
+        box-shadow: none;
+    }
+
+    .pdp-media-nav {
+        opacity: 0;
+    }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pdp *,
+    .acct *,
+    .cart-note,
+    .pdp-sticky {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+
+    .pdp-media-track {
+        scroll-behavior: auto;
+    }
+}
+
+@media print {
+    .pdp-buttons,
+    .pdp-sticky,
+    .pdp-share,
+    .cart-note,
+    .announce {
+        display: none !important;
+    }
+
+    .pdp-acc-body {
+        grid-template-rows: 1fr !important;
+    }
+}

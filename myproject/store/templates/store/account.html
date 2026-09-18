@@ -1,0 +1,148 @@
+{% extends "store/base.html" %}
+{% load store_tags %}
+
+{% block title %}My account — Store{% endblock %}
+
+{% block content %}
+<div class="acct">
+    <div class="acct-head" style="text-align:left;">
+        <h1>My account</h1>
+        <p>Your orders, delivery details and saved products.</p>
+    </div>
+
+    <div class="acct-layout">
+        <aside class="acct-side">
+            <div class="acct-side-who">
+                <span class="acct-avatar" aria-hidden="true">{{ customer.initial }}</span>
+                <div>
+                    <strong>{{ customer.full_name }}</strong>
+                    <span>{{ customer.email }}</span>
+                </div>
+            </div>
+            <nav>
+                <a href="#orders">Orders</a>
+                <a href="#details">Delivery details</a>
+                <a href="#password">Password</a>
+                <a href="{% url 'store:wishlist' %}">Saved products</a>
+                <a href="{% url 'store:order_track' %}">Track an order</a>
+                <form method="POST" action="{% url 'store:account_logout' %}">
+                    {% csrf_token %}
+                    <button type="submit">Log out</button>
+                </form>
+            </nav>
+        </aside>
+
+        <div>
+            <!-- ═══════ Orders ═══════ -->
+            <section class="acct-card" id="orders">
+                <h2>Orders</h2>
+                <p class="sub">Everything placed with this account, plus anything ordered from this browser.</p>
+
+                {% for order in orders %}
+                <article class="acct-order">
+                    <div class="acct-order-top">
+                        <span class="acct-order-num">#{{ order.order_number }}</span>
+                        {% if order.is_inquiry %}
+                        <span class="acct-chip">Inquiry</span>
+                        {% elif order.status == 'delivered' %}
+                        <span class="acct-chip ok">{{ order.get_status_display }}</span>
+                        {% elif order.status == 'cancelled' %}
+                        <span class="acct-chip bad">{{ order.get_status_display }}</span>
+                        {% else %}
+                        <span class="acct-chip">{{ order.get_status_display }}</span>
+                        {% endif %}
+                        <span class="acct-order-when">{{ order.created_at|date:"M j, Y" }}</span>
+                    </div>
+
+                    <div class="acct-order-lines">
+                        {% for item in order.items.all %}
+                        {{ item.quantity }} &times; {{ item.product.name|default:"Removed product" }}{% if not forloop.last %}<br>{% endif %}
+                        {% endfor %}
+                    </div>
+
+                    <div class="acct-order-foot">
+                        <span class="acct-order-total">Rs. {{ order.total_price|floatformat:"-2" }}</span>
+                        <a href="{% url 'store:order_detail' order_number=order.order_number %}">View order</a>
+                    </div>
+                </article>
+                {% empty %}
+                <div class="acct-empty">
+                    <p>No orders yet.</p>
+                    <a href="{% url 'store:product_list' %}" class="acct-alt">Start shopping</a>
+                </div>
+                {% endfor %}
+            </section>
+
+            <!-- ═══════ Saved products ═══════ -->
+            {% if saved_products %}
+            <section class="acct-card">
+                <h2>Saved products</h2>
+                <p class="sub">Kept for later — <a href="{% url 'store:wishlist' %}">see all</a>.</p>
+                <div class="acct-saved">
+                    {% for entry in saved_products %}
+                    <a href="{% url 'store:product_detail' slug=entry.product.slug %}">
+                        <img src="{% product_image_url entry.product %}" alt="" loading="lazy">
+                        {{ entry.product.name|truncatechars:44 }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
+            <!-- ═══════ Delivery details ═══════ -->
+            <section class="acct-card" id="details">
+                <h2>Delivery details</h2>
+                <p class="sub">These prefill the order form, so you don't retype them on every order.</p>
+
+                <form method="POST" action="{% url 'store:account_profile' %}" novalidate>
+                    {% csrf_token %}
+                    {% for error in profile_form.non_field_errors %}
+                    <div class="acct-formwide-error">{{ error }}</div>
+                    {% endfor %}
+
+                    {% include "store/partials/acct_field.html" with field=profile_form.full_name %}
+                    {% include "store/partials/acct_field.html" with field=profile_form.email %}
+                    {% include "store/partials/acct_field.html" with field=profile_form.phone %}
+                    {% include "store/partials/acct_field.html" with field=profile_form.district %}
+                    {% include "store/partials/acct_field.html" with field=profile_form.address %}
+
+                    <button type="submit" class="acct-submit">Save details</button>
+                </form>
+            </section>
+
+            <!-- ═══════ Password ═══════ -->
+            <section class="acct-card" id="password">
+                <h2>Password</h2>
+                <p class="sub">Changing it signs this browser back in on a fresh session.</p>
+
+                <form method="POST" action="{% url 'store:account_password' %}" novalidate>
+                    {% csrf_token %}
+                    {% for error in password_form.non_field_errors %}
+                    <div class="acct-formwide-error">{{ error }}</div>
+                    {% endfor %}
+
+                    {% include "store/partials/acct_field.html" with field=password_form.current_password %}
+                    {% include "store/partials/acct_field.html" with field=password_form.new_password %}
+                    {% include "store/partials/acct_field.html" with field=password_form.new_password_confirm %}
+
+                    <button type="submit" class="acct-submit">Change password</button>
+                </form>
+            </section>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if open_panel %}
+<script>
+    // A failed save re-renders the whole page; jump back to the form the
+    // shopper was actually in rather than dropping them at the top with an
+    // error they cannot see.
+    (function () {
+        var panel = document.getElementById("{{ open_panel|escapejs }}");
+        if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    })();
+</script>
+{% endif %}
+{% endblock %}

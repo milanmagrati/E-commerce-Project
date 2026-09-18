@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+{% load dashboard_extras %}
+{% comment %}
+Bulk invoice print sheet.
+
+One document holding every selected order's invoice. The invoices themselves
+are `invoice/_document.html` — the same partial the single-order invoice
+renders — repeated through the `invoice_document` tag, so nothing about how an
+invoice looks is decided here. What *is* decided here is the sheet: the
+screen-only toolbar, the per-invoice ribbon, and where the page breaks fall.
+
+The stylesheet is emitted once, not once per order: `InvoiceTemplate` is a
+singleton, so all of them resolve to the same rules.
+{% endcomment %}
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ count }} {{ cfg.document_title|default:"Invoice" }}{{ count|pluralize:"s" }} — {{ brand.name }}</title>
+    <style>
+{% include "invoice/_styles.html" %}
+
+/* ─────────────────────────────────────────────────────────────────
+   The sheet around the invoices. Everything below is bulk-only and
+   deliberately last, so it wins over the shared invoice rules above.
+   ───────────────────────────────────────────────────────────────── */
+
+body { padding: 0; background: #e9ecf2; }
+
+/* ── Toolbar (screen only) ──────────────────────────────────────── */
+.bulk-bar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 18px;
+    background: #1e293b; color: #f8fafc;
+    box-shadow: 0 2px 14px -4px rgba(15, 23, 42, .55);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+}
+.bulk-bar .bb-title { font-weight: 800; letter-spacing: .2px; margin-right: 2px; }
+.bulk-bar .bb-count {
+    background: #4f46e5; color: #fff; border-radius: 999px;
+    padding: 2px 11px; font-weight: 800; font-size: 12px;
+}
+.bulk-bar .bb-spacer { margin-left: auto; }
+.bulk-bar label { font-size: 12px; color: #cbd5e1; font-weight: 600; }
+.bulk-bar select {
+    font: inherit; font-size: 12px; padding: 5px 9px; border-radius: 6px;
+    border: 1px solid #475569; background: #0f172a; color: #f1f5f9; cursor: pointer;
+}
+.bb-btn, .bulk-bar button {
+    font: inherit; font-weight: 700; font-size: 12.5px; cursor: pointer;
+    border: none; border-radius: 6px; padding: 7px 16px; transition: background .15s;
+}
+.bb-print { background: #4f46e5; color: #fff; }
+.bb-print:hover { background: #4338ca; }
+.bb-reset { background: #334155; color: #e2e8f0; }
+.bb-reset:hover { background: #475569; }
+.bb-close { background: #e2e8f0; color: #1e293b; }
+.bb-close:hover { background: #cbd5e1; }
+
+/* ── Notices ────────────────────────────────────────────────────── */
+.bulk-notice {
+    max-width: 900px; margin: 12px auto 0; padding: 9px 14px;
+    border-radius: 8px; border: 1px solid #fcd34d; background: #fffbeb; color: #92400e;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 12.5px; font-weight: 600;
+}
+
+/* ── Sheets ─────────────────────────────────────────────────────── */
+.bulk-wrap { padding: 16px 14px 40px; }
+.bulk-sheet { margin: 0 auto 22px; max-width: var(--inv-width); }
+.bulk-sheet.is-dropped { display: none; }
+
+.bulk-ribbon {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 5px 4px 7px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 12px; color: #475569;
+}
+.bulk-ribbon .rb-index {
+    background: #1e293b; color: #fff; border-radius: 5px;
+    padding: 2px 8px; font-weight: 800; font-size: 11px;
+}
+.bulk-ribbon .rb-order { font-weight: 800; color: #1e293b; }
+.bulk-ribbon .rb-total { font-weight: 700; color: #0f766e; }
+.bulk-ribbon .rb-actions { margin-left: auto; display: flex; gap: 6px; }
+.bulk-ribbon .rb-actions button {
+    font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+    border: 1px solid #cbd5e1; background: #fff; color: #475569;
+    border-radius: 5px; padding: 3px 10px; transition: all .15s;
+}
+.bulk-ribbon .rb-actions button:hover { border-color: #94a3b8; color: #1e293b; }
+.bulk-ribbon .rb-actions .rb-drop:hover { border-color: #fca5a5; color: #b91c1c; background: #fef2f2; }
+
+.bulk-sheet .invoice-container { max-width: none; }
+
+/* Printing a single invoice from its ribbon hides its neighbours; because
+   they are display:none they are also absent from the printout. */
+body.is-solo .bulk-sheet:not(.is-solo) { display: none; }
+
+.bulk-empty {
+    max-width: 520px; margin: 60px auto; text-align: center;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #64748b; font-size: 14px; font-weight: 600;
+}
+
+/* ── Print ──────────────────────────────────────────────────────── */
+@media print {
+    body { background: #fff; padding: 0; }
+    .bulk-bar, .bulk-ribbon, .bulk-notice, .bulk-empty { display: none !important; }
+    .bulk-wrap { padding: 0; }
+    .bulk-sheet { margin: 0 auto; max-width: none; }
+    .bulk-sheet .invoice-container { box-shadow: none; border-radius: 0; }
+
+    /* One invoice per sheet of paper. The last one must not force a break, or
+       every print run ends on a blank page. */
+    body[data-layout="page"] .bulk-sheet { page-break-after: always; break-after: page; }
+    body[data-layout="page"] .bulk-sheet.is-last { page-break-after: auto; break-after: auto; }
+
+    /* Continuous: invoices flow one after another to save paper, each kept
+       whole where it fits, with a cut line between them. */
+    body[data-layout="flow"] .bulk-sheet { page-break-inside: avoid; break-inside: avoid; }
+    body[data-layout="flow"] .bulk-sheet + .bulk-sheet { padding-top: 10mm; }
+    body[data-layout="flow"] .bulk-sheet:not(.is-last)::after {
+        content: ""; display: block; margin-top: 10mm;
+        border-bottom: 1px dashed #9ca3af;
+    }
+
+    /* A solo print is always one page, whatever the sheet layout says. */
+    body.is-solo .bulk-sheet { page-break-after: auto; break-after: auto; }
+}
+
+{{ cfg.custom_css|safe }}
+    </style>
+</head>
+<body data-layout="{{ layout }}">
+
+<div class="bulk-bar">
+    <span class="bb-title">🖨 Bulk Invoice Print</span>
+    <span class="bb-count" id="bulkCount">{{ count }}</span>
+    <span class="bb-spacer"></span>
+    <label for="bulkLayout">Layout</label>
+    <select id="bulkLayout" onchange="setLayout(this.value)">
+        <option value="page" {% if layout == 'page' %}selected{% endif %}>One invoice per page</option>
+        <option value="flow" {% if layout == 'flow' %}selected{% endif %}>Continuous (save paper)</option>
+    </select>
+    <button type="button" class="bb-reset" onclick="restoreAll()" id="bulkRestore" style="display: none;">&#8635; Restore removed</button>
+    <button type="button" class="bb-print" onclick="printAll()">&#128424; Print all</button>
+    <button type="button" class="bb-close" onclick="window.close()">&#10005; Close</button>
+</div>
+
+{% if skipped or truncated %}
+<div class="bulk-notice">
+    {% if skipped %}{{ skipped }} selected order{{ skipped|pluralize }} could not be printed (deleted, or not yours to view).{% endif %}
+    {% if truncated %}{% if skipped %}<br>{% endif %}{{ truncated }} more order{{ truncated|pluralize }} left out — a single sheet prints at most {{ max_invoices }}.{% endif %}
+</div>
+{% endif %}
+
+<div class="bulk-wrap" id="bulkWrap">
+    {% for invoice in invoices %}
+    <div class="bulk-sheet" data-order="{{ invoice.order_number }}">
+        <div class="bulk-ribbon">
+            <span class="rb-index">{{ forloop.counter }}</span>
+            <span class="rb-order">{{ cfg.invoice_number_prefix }}{{ invoice.order_number }}</span>
+            <span>{{ invoice.customer_name }}</span>
+            {% if invoice.total %}<span class="rb-total">{{ invoice.total }}</span>{% endif %}
+            <span class="rb-actions">
+                <button type="button" onclick="printOne(this)">Print this</button>
+                <button type="button" class="rb-drop" onclick="dropOne(this)">Remove</button>
+            </span>
+        </div>
+        {% invoice_document invoice.context %}
+    </div>
+    {% endfor %}
+    <div class="bulk-empty" id="bulkEmpty" style="display: none;">
+        Every invoice has been removed from this sheet.
+    </div>
+</div>
+
+<script>
+// Layout, removals and solo printing. Nothing here reads or writes an invoice's
+// contents — the sheet only decides what is on it and where the paper breaks.
+var LAYOUT_KEY = 'bulkInvoiceLayout';
+
+function sheets() {
+    return Array.prototype.slice.call(document.querySelectorAll('.bulk-sheet'));
+}
+
+function visibleSheets() {
+    return sheets().filter(function (sheet) { return !sheet.classList.contains('is-dropped'); });
+}
+
+/* Renumbers the ribbons, retags the final sheet (the one that must not force a
+   page break) and keeps the toolbar count honest after a removal. */
+function refresh() {
+    var all = sheets();
+    var visible = visibleSheets();
+    all.forEach(function (sheet) { sheet.classList.remove('is-last'); });
+    visible.forEach(function (sheet, index) {
+        var badge = sheet.querySelector('.rb-index');
+        if (badge) { badge.textContent = index + 1; }
+    });
+    if (visible.length) { visible[visible.length - 1].classList.add('is-last'); }
+
+    document.getElementById('bulkCount').textContent = visible.length;
+    document.getElementById('bulkEmpty').style.display = visible.length ? 'none' : 'block';
+    document.getElementById('bulkRestore').style.display =
+        visible.length === all.length ? 'none' : 'inline-block';
+}
+
+function setLayout(value) {
+    document.body.dataset.layout = value;
+    try { localStorage.setItem(LAYOUT_KEY, value); } catch (e) { /* private mode */ }
+}
+
+function dropOne(button) {
+    button.closest('.bulk-sheet').classList.add('is-dropped');
+    refresh();
+}
+
+function restoreAll() {
+    sheets().forEach(function (sheet) { sheet.classList.remove('is-dropped'); });
+    refresh();
+}
+
+function printAll() {
+    if (!visibleSheets().length) {
+        alert('There is nothing left on this sheet to print.');
+        return;
+    }
+    window.print();
+}
+
+/* Print one invoice by hiding the rest. `afterprint` does not fire in every
+   browser, so the class is also cleared on a timer — leaving it on would
+   strand the page showing a single invoice. */
+function printOne(button) {
+    var sheet = button.closest('.bulk-sheet');
+    sheet.classList.add('is-solo');
+    document.body.classList.add('is-solo');
+    var clear = function () {
+        document.body.classList.remove('is-solo');
+        sheet.classList.remove('is-solo');
+        window.removeEventListener('afterprint', clear);
+    };
+    window.addEventListener('afterprint', clear);
+    setTimeout(clear, 1500);
+    window.print();
+}
+
+(function init() {
+    var saved = null;
+    try { saved = localStorage.getItem(LAYOUT_KEY); } catch (e) { saved = null; }
+    if (saved === 'page' || saved === 'flow') {
+        document.body.dataset.layout = saved;
+        document.getElementById('bulkLayout').value = saved;
+    }
+    refresh();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,515 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Quick Replies — Trendy CRM{% endblock %}
+{% block topbar_title %}Quick Replies{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn-crm-primary" id="openNewReplyBtn">
+    <i class="fas fa-plus"></i> New quick reply
+</button>
+{% endblock %}
+
+{% block extra_style %}
+/* ── Toolbar ─────────────────────────────── */
+.qr-toolbar {
+    display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+.qr-search-wrap { position: relative; flex: 1; min-width: 200px; }
+.qr-search-wrap input {
+    width: 100%; padding: .5rem .85rem .5rem 2.3rem;
+    border: 1.5px solid #e5e7eb; border-radius: 9px; font-size: .84rem;
+    font-family: inherit; color: #1f2937; outline: none;
+    transition: border-color .15s, box-shadow .15s; background: #fff;
+    box-sizing: border-box;
+}
+.qr-search-wrap input:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.1); }
+.qr-search-wrap i { position: absolute; left: .85rem; top: 50%; transform: translateY(-50%); color: #9ca3af; font-size: .8rem; }
+
+/* ── Category Filter ─────────────────────── */
+.cat-tabs { display: flex; gap: .4rem; flex-wrap: wrap; }
+.cat-tab {
+    padding: .3rem .8rem; font-size: .78rem; font-weight: 600; border-radius: 20px;
+    cursor: pointer; border: 1.5px solid #e5e7eb; background: #fff; color: #6b7280;
+    transition: all .15s; text-decoration: none; display: inline-block;
+}
+.cat-tab.active, .cat-tab:hover { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+
+/* ── Table ───────────────────────────────── */
+.qr-card { background: #fff; border-radius: 14px; border: 1px solid rgba(124,58,237,.08); box-shadow: 0 2px 10px rgba(0,0,0,.04); overflow: hidden; }
+.qr-table { width: 100%; border-collapse: collapse; }
+.qr-table thead th {
+    background: #f9f7ff; padding: .7rem 1.2rem;
+    font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: #6b7280; border-bottom: 1px solid #f3f4f6; text-align: left;
+}
+.qr-table tbody td { padding: .85rem 1.2rem; font-size: .84rem; color: #374151; border-bottom: 1px solid rgba(124,58,237,.04); vertical-align: middle; }
+.qr-table tbody tr:hover { background: #faf9ff; }
+.qr-table tbody tr:last-child td { border-bottom: none; }
+
+/* ── Shortcut Tag ────────────────────────── */
+.shortcut-tag {
+    background: #ede9fe; color: #7c3aed;
+    font-size: .73rem; font-weight: 700; padding: 2px 9px; border-radius: 6px;
+    font-family: monospace; cursor: pointer; transition: background .15s;
+    display: inline-flex; align-items: center; gap: .3rem;
+}
+.shortcut-tag:hover { background: #7c3aed; color: #fff; }
+.shortcut-tag .copy-icon { font-size: .65rem; }
+
+/* ── Category Pill ───────────────────────── */
+.cat-pill { background: #f3f4f6; color: #6b7280; font-size: .72rem; padding: 2px 8px; border-radius: 6px; }
+
+/* ── Action Buttons ──────────────────────── */
+.tbl-btn { background: none; border: 1.5px solid #e5e7eb; border-radius: 7px; padding: .28rem .6rem; font-size: .75rem; cursor: pointer; color: #6b7280; transition: all .15s; }
+.tbl-btn:hover { border-color: #7c3aed; color: #7c3aed; background: #fdf4ff; }
+.tbl-btn.danger:hover { border-color: #dc2626; color: #dc2626; background: #fef2f2; }
+
+/* ── Empty State ─────────────────────────── */
+.qr-empty { background: #fff; border-radius: 14px; border: 1px dashed #d1d5db; padding: 3.5rem 1rem; text-align: center; }
+.qr-empty-icon { width: 64px; height: 64px; background: #ede9fe; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto .85rem; font-size: 1.4rem; color: #7c3aed; }
+
+/* ── Modal ───────────────────────────────── */
+.qr-modal { position: fixed; inset: 0; z-index: 9998; background: rgba(15,10,40,.5); display: none; align-items: center; justify-content: center; padding: 1rem; }
+.qr-modal.open { display: flex; }
+.qr-modal-box { background: #fff; border-radius: 16px; width: 100%; max-width: 520px; box-shadow: 0 20px 60px rgba(0,0,0,.2); animation: slideUp .25s; }
+@keyframes slideUp { from{transform:translateY(30px);opacity:0} to{transform:none;opacity:1} }
+.qr-modal-header { padding: 1rem 1.4rem; border-bottom: 1px solid #f3f4f6; display: flex; align-items: center; justify-content: space-between; }
+.qr-modal-header h5 { margin: 0; font-weight: 700; font-size: .95rem; color: #1e1b4b; }
+.qr-modal-close { background: none; border: none; font-size: 1.2rem; color: #6b7280; cursor: pointer; }
+.qr-modal-body { padding: 1.25rem 1.4rem; }
+.qr-modal-footer { padding: .85rem 1.4rem; border-top: 1px solid #f3f4f6; display: flex; justify-content: flex-end; gap: .5rem; }
+
+/* ── Form ─────────────────────────────────── */
+.form-label { display: block; font-size: .78rem; font-weight: 600; color: #374151; margin-bottom: .3rem; }
+.qr-input, .qr-textarea {
+    width: 100%; border: 1.5px solid #e5e7eb; border-radius: 9px;
+    padding: .55rem .85rem; font-size: .85rem; font-family: inherit; color: #1f2937;
+    outline: none; transition: border-color .15s, box-shadow .15s; background: #fff;
+    box-sizing: border-box;
+}
+.qr-input:focus, .qr-textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.1); }
+.qr-textarea { resize: vertical; min-height: 90px; }
+.shortcut-wrap { position: relative; }
+.shortcut-prefix { position: absolute; left: .85rem; top: 50%; transform: translateY(-50%); font-weight: 700; color: #7c3aed; font-family: monospace; }
+.shortcut-wrap input { padding-left: 1.4rem; }
+.char-count { font-size: .7rem; color: #9ca3af; text-align: right; margin-top: .2rem; }
+
+/* ── Btn ─────────────────────────────────── */
+.btn-primary { background: linear-gradient(135deg,#7c3aed,#6d28d9); color: #fff; border: none; padding: .5rem 1.2rem; border-radius: 9px; font-size: .84rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: .4rem; transition: opacity .15s,transform .1s; }
+.btn-primary:hover { opacity: .9; transform: translateY(-1px); }
+.btn-primary:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.btn-cancel { background: #fff; border: 1.5px solid #e5e7eb; color: #374151; padding: .48rem 1rem; border-radius: 9px; font-size: .84rem; font-weight: 600; cursor: pointer; }
+.btn-cancel:hover { background: #f9f9f9; }
+
+/* ── Toast ───────────────────────────────── */
+#qrToast {
+    position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+    background: #1e1b4b; color: #fff; border-radius: 10px; padding: .75rem 1.25rem;
+    font-size: .84rem; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.15);
+    transform: translateY(80px); opacity: 0; transition: all .3s; pointer-events: none;
+    display: flex; align-items: center; gap: .5rem;
+}
+#qrToast.show { transform: translateY(0); opacity: 1; }
+#qrToast.error { background: #dc2626; }
+
+/* ── Copy tooltip ────────────────────────── */
+.copied-tip {
+    position: fixed; background: #1e1b4b; color: #fff; font-size: .72rem; font-weight: 600;
+    padding: .25rem .6rem; border-radius: 5px; pointer-events: none; z-index: 9999; opacity: 0;
+    transition: opacity .2s;
+}
+{% endblock %}
+
+{% block crm_content %}
+<div id="qrToast"><i class="fas fa-check-circle"></i> <span id="qrToastMsg">Done!</span></div>
+<div class="copied-tip" id="copiedTip">Copied!</div>
+
+<!-- ── Toolbar ──────────────────────────────────────────────── -->
+<div class="qr-toolbar">
+    <!-- Search -->
+    <form method="get" action="" style="flex:1;min-width:200px;margin:0;" id="qrSearchForm">
+        <div class="qr-search-wrap">
+            <i class="fas fa-search"></i>
+            <input type="text" name="q" id="qSearch" value="{{ search_q }}" placeholder="Search by name, shortcut or content…" autocomplete="off">
+        </div>
+        {% if active_category %}<input type="hidden" name="category" value="{{ active_category }}">{% endif %}
+    </form>
+
+    <!-- Category Tabs -->
+    {% if categories %}
+    <div class="cat-tabs">
+        <a href="?{% if search_q %}q={{ search_q }}&{% endif %}" class="cat-tab {% if not active_category %}active{% endif %}">All</a>
+        {% for cat in categories %}
+        <a href="?{% if search_q %}q={{ search_q }}&{% endif %}category={{ cat }}" class="cat-tab {% if active_category == cat %}active{% endif %}">{{ cat }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Count -->
+<div style="font-size:.82rem;color:#6b7280;margin-bottom:.75rem;">
+    {% if search_q or active_category %}
+        {{ replies|length }} result{{ replies|length|pluralize }} found
+        {% if search_q %} for "<strong>{{ search_q }}</strong>"{% endif %}
+        {% if active_category %} in <strong>{{ active_category }}</strong>{% endif %}
+        — <a href="{% url 'trendycrm:quick_replies' %}" style="color:#7c3aed;font-weight:600;">Clear filters</a>
+    {% else %}
+        Saved reply templates — type <kbd style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;border-radius:4px;padding:1px 5px;font-size:.79rem;">/</kbd> in any conversation to surface matches.
+    {% endif %}
+</div>
+
+<!-- Django messages -->
+{% if messages %}
+<div style="margin-bottom:1rem;">
+    {% for msg in messages %}
+    <div style="padding:.65rem 1rem;border-radius:8px;font-size:.84rem;margin-bottom:.4rem;background:{% if msg.tags == 'error' %}#fef2f2;border:1px solid #fecaca;color:#dc2626{% else %}#d1fae5;border:1px solid #6ee7b7;color:#065f46{% endif %};">
+        {{ msg }}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if replies %}
+<div class="qr-card">
+    <table class="qr-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Shortcut</th>
+                <th>Content</th>
+                <th>Category</th>
+                <th style="width:100px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for reply in replies %}
+            <tr id="qr-row-{{ reply.pk }}">
+                <td><strong style="font-weight:600;">{{ reply.name }}</strong></td>
+                <td>
+                    <span class="shortcut-tag" onclick="copyShortcut('{{ reply.shortcut }}', event)" title="Click to copy">
+                        /{{ reply.shortcut }}
+                        <span class="copy-icon"><i class="fas fa-copy"></i></span>
+                    </span>
+                </td>
+                <td style="max-width:260px;">
+                    <span style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.4;" title="{{ reply.content }}">{{ reply.content }}</span>
+                </td>
+                <td>
+                    {% if reply.category %}
+                    <a href="?category={{ reply.category }}" class="cat-pill" style="text-decoration:none;">{{ reply.category }}</a>
+                    {% else %}&mdash;{% endif %}
+                </td>
+                <td>
+                    <div style="display:flex;gap:.35rem;">
+                        <button class="tbl-btn" title="Edit" onclick="openEditModal({{ reply.pk }}, '{{ reply.name|escapejs }}', '{{ reply.shortcut|escapejs }}', `{{ reply.content|escapejs }}`, '{{ reply.category|default:''|escapejs }}')">
+                            <i class="fas fa-pencil-alt"></i>
+                        </button>
+                        <button class="tbl-btn danger" title="Delete" onclick="deleteReply({{ reply.pk }}, '{{ reply.name|escapejs }}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="qr-empty">
+    <div class="qr-empty-icon"><i class="fas fa-bolt"></i></div>
+    <h3 style="font-size:1rem;font-weight:700;color:#1e1b4b;margin-bottom:.4rem;">
+        {% if search_q or active_category %}No replies match your filter{% else %}No quick replies yet{% endif %}
+    </h3>
+    <p style="font-size:.84rem;color:#6b7280;margin-bottom:1rem;max-width:340px;margin-inline:auto;">
+        {% if search_q or active_category %}
+            Try clearing the filters or searching for something else.
+        {% else %}
+            Save common responses (greetings, FAQs, order confirmations) so anyone on the team can send them in one click.
+        {% endif %}
+    </p>
+    <button class="btn-primary" id="openNewReplyBtn2"><i class="fas fa-plus"></i> Create your first</button>
+</div>
+{% endif %}
+
+<!-- ═══ NEW QUICK REPLY MODAL ══════════════════════════════════ -->
+<div class="qr-modal" id="newReplyModal">
+    <div class="qr-modal-box">
+        <div class="qr-modal-header">
+            <h5><i class="fas fa-bolt" style="color:#7c3aed;margin-right:.4rem;"></i> New Quick Reply</h5>
+            <button class="qr-modal-close" onclick="closeModal('newReplyModal')">✕</button>
+        </div>
+        <form method="post" action="{% url 'trendycrm:quick_reply_create' %}" id="newReplyForm">
+            {% csrf_token %}
+            <div class="qr-modal-body">
+                <div style="margin-bottom:.9rem;">
+                    <label class="form-label">Name <span style="color:#dc2626;">*</span></label>
+                    <input type="text" name="name" id="newName" required class="qr-input" placeholder="e.g. Greeting, Order Confirm, Refund Policy">
+                </div>
+                <div style="margin-bottom:.9rem;">
+                    <label class="form-label">Shortcut <span style="color:#dc2626;">*</span> <span style="font-weight:400;color:#9ca3af;font-size:.73rem;">— no spaces</span></label>
+                    <div class="shortcut-wrap">
+                        <span class="shortcut-prefix">/</span>
+                        <input type="text" name="shortcut" id="newShortcut" required class="qr-input" placeholder="hello" oninput="this.value=this.value.replace(/\s/g,'').toLowerCase()">
+                    </div>
+                </div>
+                <div style="margin-bottom:.9rem;">
+                    <label class="form-label">Content <span style="color:#dc2626;">*</span></label>
+                    <textarea name="content" id="newContent" required class="qr-textarea" rows="5" placeholder="Type the message content…" oninput="document.getElementById('newCharCount').textContent=this.value.length+' chars'"></textarea>
+                    <div class="char-count" id="newCharCount">0 chars</div>
+                </div>
+                <div>
+                    <label class="form-label">Category <span style="font-weight:400;color:#9ca3af;font-size:.73rem;">— optional</span></label>
+                    <input type="text" name="category" class="qr-input" placeholder="e.g. Greetings, FAQ, Orders, Support" list="catSuggestions">
+                    <datalist id="catSuggestions">
+                        {% for cat in categories %}<option value="{{ cat }}">{% endfor %}
+                        <option value="Greetings">
+                        <option value="FAQ">
+                        <option value="Orders">
+                        <option value="Support">
+                        <option value="Sales">
+                    </datalist>
+                </div>
+            </div>
+            <div class="qr-modal-footer">
+                <button type="button" class="btn-cancel" onclick="closeModal('newReplyModal')">Cancel</button>
+                <button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Reply</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ═══ EDIT QUICK REPLY MODAL ════════════════════════════════ -->
+<div class="qr-modal" id="editReplyModal">
+    <div class="qr-modal-box">
+        <div class="qr-modal-header">
+            <h5><i class="fas fa-pencil-alt" style="color:#7c3aed;margin-right:.4rem;"></i> Edit Quick Reply</h5>
+            <button class="qr-modal-close" onclick="closeModal('editReplyModal')">✕</button>
+        </div>
+        <div class="qr-modal-body">
+            <div style="margin-bottom:.9rem;">
+                <label class="form-label">Name <span style="color:#dc2626;">*</span></label>
+                <input type="text" id="editName" required class="qr-input">
+            </div>
+            <div style="margin-bottom:.9rem;">
+                <label class="form-label">Shortcut <span style="color:#dc2626;">*</span></label>
+                <div class="shortcut-wrap">
+                    <span class="shortcut-prefix">/</span>
+                    <input type="text" id="editShortcut" required class="qr-input" oninput="this.value=this.value.replace(/\s/g,'').toLowerCase()">
+                </div>
+            </div>
+            <div style="margin-bottom:.9rem;">
+                <label class="form-label">Content <span style="color:#dc2626;">*</span></label>
+                <textarea id="editContent" required class="qr-textarea" rows="5" oninput="document.getElementById('editCharCount').textContent=this.value.length+' chars'"></textarea>
+                <div class="char-count" id="editCharCount">0 chars</div>
+            </div>
+            <div>
+                <label class="form-label">Category</label>
+                <input type="text" id="editCategory" class="qr-input" placeholder="e.g. Greetings, FAQ" list="catSuggestions">
+            </div>
+        </div>
+        <div class="qr-modal-footer">
+            <button type="button" class="btn-cancel" onclick="closeModal('editReplyModal')">Cancel</button>
+            <button type="button" class="btn-primary" id="editSaveBtn" onclick="saveEdit()"><i class="fas fa-save"></i> Save Changes</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || getCookie('csrftoken');
+let editingPk = null;
+
+// ── Open/Close Modals ─────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.qr-modal').forEach(m => {
+    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+// ── New Reply buttons ─────────────────────────────────────────────────────────
+document.getElementById('openNewReplyBtn')?.addEventListener('click', () => openModal('newReplyModal'));
+document.getElementById('openNewReplyBtn2')?.addEventListener('click', () => openModal('newReplyModal'));
+
+// ── Edit Modal ────────────────────────────────────────────────────────────────
+function openEditModal(pk, name, shortcut, content, category) {
+    editingPk = pk;
+    document.getElementById('editName').value = name;
+    document.getElementById('editShortcut').value = shortcut;
+    document.getElementById('editContent').value = content;
+    document.getElementById('editCharCount').textContent = content.length + ' chars';
+    document.getElementById('editCategory').value = category;
+    openModal('editReplyModal');
+}
+
+async function saveEdit() {
+    if (!editingPk) return;
+    const btn = document.getElementById('editSaveBtn');
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF);
+    fd.append('name', document.getElementById('editName').value.trim());
+    fd.append('shortcut', document.getElementById('editShortcut').value.trim());
+    fd.append('content', document.getElementById('editContent').value.trim());
+    fd.append('category', document.getElementById('editCategory').value.trim());
+
+    try {
+        const resp = await fetch(`/trendy-crm/quick-replies/${editingPk}/edit/`, {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            showToast('✓ Quick reply updated!');
+            closeModal('editReplyModal');
+            // Update the row inline.
+            // Built with textContent and a real listener rather than by splicing
+            // values into an onclick string — a name or category containing a
+            // quote used to break the row's Edit button until the page reloaded,
+            // and interpolating user text into HTML is an injection risk.
+            const row = document.getElementById(`qr-row-${editingPk}`);
+            if (row) {
+                const r = data.reply;
+                const cells = row.querySelectorAll('td');
+
+                const nameEl = document.createElement('strong');
+                nameEl.style.fontWeight = '600';
+                nameEl.textContent = r.name;
+                cells[0].replaceChildren(nameEl);
+
+                const tag = document.createElement('span');
+                tag.className = 'shortcut-tag';
+                tag.title = 'Click to copy';
+                tag.textContent = '/' + r.shortcut + ' ';
+                const copyIcon = document.createElement('span');
+                copyIcon.className = 'copy-icon';
+                copyIcon.innerHTML = '<i class="fas fa-copy"></i>';
+                tag.appendChild(copyIcon);
+                tag.addEventListener('click', (ev) => copyShortcut(r.shortcut, ev));
+                cells[1].replaceChildren(tag);
+
+                cells[2].querySelector('span').textContent = r.content;
+
+                if (r.category) {
+                    const pill = document.createElement('span');
+                    pill.className = 'cat-pill';
+                    pill.textContent = r.category;
+                    cells[3].replaceChildren(pill);
+                } else {
+                    cells[3].textContent = '—';
+                }
+
+                const editBtn = cells[4].querySelector('button');
+                editBtn.removeAttribute('onclick');
+                editBtn.onclick = () => openEditModal(r.pk, r.name, r.shortcut, r.content, r.category);
+            }
+        } else {
+            showToast(data.message || 'Error saving', true);
+        }
+    } catch(e) {
+        showToast('Network error', true);
+    } finally {
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Save Changes';
+    }
+}
+
+// ── New Reply Form Submission ──────────────────────────────────────────────────
+document.getElementById('newReplyForm')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = this.querySelector('button[type="submit"]');
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+    const fd = new FormData(this);
+    try {
+        const resp = await fetch(this.action, {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            showToast('✓ Quick reply created!');
+            closeModal('newReplyModal');
+            setTimeout(() => location.reload(), 500); // Reload to show the newly created row since rendering HTML from JS is complex for table
+        } else {
+            showToast(data.message || 'Error creating reply', true);
+        }
+    } catch(err) {
+        showToast('Network error', true);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+});
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+async function deleteReply(pk, name) {
+    if (!confirm(`Delete quick reply "${name}"? This cannot be undone.`)) return;
+    try {
+        const resp = await fetch(`/trendy-crm/quick-replies/${pk}/delete/`, {
+            method: 'POST',
+            body: new URLSearchParams({ csrfmiddlewaretoken: CSRF }),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            const row = document.getElementById(`qr-row-${pk}`);
+            if (row) {
+                row.style.transition = 'opacity .3s, transform .3s';
+                row.style.opacity = '0'; row.style.transform = 'translateX(20px)';
+                setTimeout(() => {
+                    row.remove();
+                    // Check if table is now empty
+                    const tbody = document.querySelector('.qr-table tbody');
+                    if (tbody && !tbody.querySelector('tr')) {
+                        location.reload();
+                    }
+                }, 350);
+            }
+            showToast(`✓ "${name}" deleted`);
+        } else { showToast('Failed to delete', true); }
+    } catch(e) { showToast('Network error', true); }
+}
+
+// ── Copy Shortcut ─────────────────────────────────────────────────────────────
+function copyShortcut(shortcut, event) {
+    navigator.clipboard.writeText('/' + shortcut).then(() => {
+        const tip = document.getElementById('copiedTip');
+        tip.style.left = (event.clientX + 10) + 'px';
+        tip.style.top = (event.clientY - 30) + 'px';
+        tip.style.opacity = '1';
+        setTimeout(() => tip.style.opacity = '0', 1500);
+        showToast('✓ Copied /' + shortcut + ' to clipboard');
+    });
+}
+
+// ── Live Search ───────────────────────────────────────────────────────────────
+let searchTimer;
+document.getElementById('qSearch')?.addEventListener('input', function() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+        document.getElementById('qrSearchForm').submit();
+    }, 400);
+});
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg, isError = false) {
+    const t = document.getElementById('qrToast');
+    document.getElementById('qrToastMsg').textContent = msg;
+    t.classList.toggle('error', isError);
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+function getCookie(name) {
+    const m = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+    return m ? m[2] : null;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,2365 @@
+{% extends 'base.html' %}
+
+{% block title %}Follow-ups{% endblock %}
+
+{% block extra_css %}
+{% comment %}
+Select2's stylesheet belongs in <head>, not next to the widget in the body.
+A stylesheet the browser only discovers part-way down the body is applied
+after the table has already been laid out, so on any load where it arrived
+late, the Product cell of the entry row painted as a raw full-height
+multi-select listbox and dragged the whole row's layout with it. Whether that
+happened depended on cache state, which is why the page looked fine on one
+load and broken on the next refresh.
+{% endcomment %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+{% endblock %}
+
+{% block content %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<div id="fuToastContainer" class="fu-toast-container" aria-live="polite"></div>
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h4 class="mb-0"><i class="fas fa-list-alt text-primary me-2"></i> Follow-ups
+            <span class="badge bg-light text-secondary border ms-1" style="font-size:0.7rem;font-weight:600;"><span class="fu-total-matching">{{ total_matching }}</span> matching</span>
+        </h4>
+        <div class="d-flex gap-2">
+            {% if request.user.can_export_follow_ups or request.user.is_superuser or request.user.role == 'administrator' %}
+            <div class="dropdown">
+                <button class="btn btn-sm btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-file-export"></i> Export
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li><h6 class="dropdown-header">Current filter (<span class="fu-total-matching">{{ total_matching }}</span> rows)</h6></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportFollowUps('xlsx', false); return false;"><i class="fas fa-file-excel text-success me-2"></i>Excel (.xlsx)</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportFollowUps('csv', false); return false;"><i class="fas fa-file-csv text-primary me-2"></i>CSV (.csv)</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Selected rows only</h6></li>
+                    <li><a class="dropdown-item fu-needs-selection disabled" href="#" onclick="exportFollowUps('xlsx', true); return false;"><i class="fas fa-file-excel text-success me-2"></i>Excel — <span class="fu-sel-count">0</span> selected</a></li>
+                    <li><a class="dropdown-item fu-needs-selection disabled" href="#" onclick="exportFollowUps('csv', true); return false;"><i class="fas fa-file-csv text-primary me-2"></i>CSV — <span class="fu-sel-count">0</span> selected</a></li>
+                </ul>
+            </div>
+            {% endif %}
+            {% if request.user.can_setup_follow_up_status or request.user.is_superuser or request.user.role == 'administrator' %}
+            <a href="{% url 'followup_setup_management' %}" class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-cog"></i> Status Setup
+            </a>
+            {% endif %}
+            <a href="{% url 'follow_ups_trash' %}" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-trash"></i> Trash
+            </a>
+        </div>
+    </div>
+
+    <!-- ===== Filter bar ===== -->
+    <form method="GET" class="fu-filter-bar card shadow-sm mb-3" id="filterForm">
+        {% comment %}
+        Direction lives in the URL alongside the sort field, so carry it
+        through every filter submit — otherwise picking a status silently
+        reset the column you sorted by.
+        {% endcomment %}
+        <input type="hidden" name="dir" id="sortDir" value="{{ sort_dir }}">
+        <div class="card-body py-2 px-3">
+            <div class="row g-2 align-items-end">
+                <div class="col-12 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">Search</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                        <input type="text" name="q" value="{{ search_query }}" class="form-control" placeholder="Name, phone, remarks">
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">Lead Source</label>
+                    <select class="form-select form-select-sm" name="lead_source" onchange="this.form.submit()">
+                        <option value="">All Lead Sources</option>
+                        {% for source in order_sources %}
+                        <option value="{{ source.name }}" {% if lead_source == source.name %}selected{% endif %}>{{ source.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">Status</label>
+                    <select class="form-select form-select-sm" name="status" onchange="this.form.submit()">
+                        <option value="">All Statuses</option>
+                        {% for status in statuses %}
+                        <option value="{{ status.name }}" {% if filter_status == status.name %}selected{% endif %}>{{ status.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">Date Field</label>
+                    <select class="form-select form-select-sm" name="date_field" onchange="this.form.submit()">
+                        {% for value, label in date_fields %}
+                        <option value="{{ value }}" {% if date_field == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">Date Range</label>
+                    <select class="form-select form-select-sm" name="date_range" id="dateRangeSelect" onchange="onDateRangeChange()">
+                        {% for value, label in date_presets %}
+                        <option value="{{ value }}" {% if date_range == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-3 col-xl-2 d-flex gap-1 align-items-end">
+                    <div class="flex-grow-1">
+                        <label class="fu-filter-label">Rows</label>
+                        <select class="form-select form-select-sm" name="per_page" onchange="this.form.submit()">
+                            <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                            <option value="200" {% if per_page == 200 %}selected{% endif %}>200</option>
+                            <option value="500" {% if per_page == 500 %}selected{% endif %}>500</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary" title="Apply filters"><i class="fas fa-filter"></i></button>
+                    <a href="{% url 'follow_ups_list' %}?per_page={{ per_page }}" class="btn btn-sm btn-outline-secondary" title="Reset all filters"><i class="fas fa-undo"></i></a>
+                </div>
+            </div>
+
+            <!-- Sort row -->
+            <div class="row g-2 align-items-end mt-1">
+                <div class="col-12 col-md-6 col-xl-4">
+                    <label class="fu-filter-label"><i class="fas fa-sort-amount-down me-1"></i>Sort By</label>
+                    <div class="input-group input-group-sm">
+                        {% comment %}
+                        applySort(), not a plain form submit: a new field needs
+                        its own natural direction. Submitting would carry the
+                        old ?dir= over and land you on "Name, Z → A".
+                        {% endcomment %}
+                        <select class="form-select" name="sort" id="sortField" onchange="applySort(this.value)">
+                            {% for value, label, kind in sort_options %}
+                            <option value="{{ value }}" data-kind="{{ kind }}" {% if sort_by == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        {% comment %}
+                        A toggle rather than a second dropdown: direction is
+                        binary, and what it means depends on the field — which
+                        is why the label is written by JS, not hardcoded.
+                        {% endcomment %}
+                        <button type="button" class="btn btn-outline-primary fu-sort-dir-btn" id="sortDirBtn" onclick="toggleSortDir()">
+                            <i class="fas fa-sort-amount-down me-1" id="sortDirIcon"></i><span id="sortDirLabel">Newest first</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-8 d-flex align-items-end">
+                    <div class="fu-quick-picks flex-wrap">
+                        <span class="text-muted me-1" style="font-size:0.72rem;">Quick sort:</span>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('created_at','desc')">Newest</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('created_at','asc')">Oldest</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('updated_at','desc')">Recently active</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('last_followup_at','asc')">Longest since follow-up</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('followup_count','desc')">Most follow-ups</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="applySort('name','asc')">Name A–Z</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Custom range row: only relevant when the preset is "Custom range" -->
+            <div class="row g-2 align-items-end mt-1" id="customDateRow" {% if date_range != 'custom' %}hidden{% endif %}>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">From</label>
+                    <input type="date" class="form-control form-control-sm" name="date_from" id="dateFrom" value="{{ date_from }}" max="{{ today_iso }}">
+                </div>
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label class="fu-filter-label">To</label>
+                    <input type="date" class="form-control form-control-sm" name="date_to" id="dateTo" value="{{ date_to }}">
+                </div>
+                <div class="col-12 col-md-6 col-xl-4 d-flex align-items-end">
+                    <div class="fu-quick-picks">
+                        <span class="text-muted me-1" style="font-size:0.72rem;">Quick:</span>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="quickRange(7)">7d</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="quickRange(30)">30d</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="quickRange(90)">90d</button>
+                        <button type="button" class="btn btn-outline-secondary btn-xxs" onclick="quickRange(365)">1y</button>
+                    </div>
+                </div>
+            </div>
+
+            {% if date_range or search_query or lead_source or filter_status %}
+            <div class="d-flex flex-wrap align-items-center gap-1 mt-2 pt-2 border-top">
+                <span class="text-muted" style="font-size:0.72rem;">Active:</span>
+                {% if search_query %}<span class="fu-filter-chip">Search: “{{ search_query }}” <a href="?{{ filter_query }}&amp;q=" title="Remove">&times;</a></span>{% endif %}
+                {% if lead_source %}<span class="fu-filter-chip">Source: {{ lead_source }} <a href="?{{ filter_query }}&amp;lead_source=" title="Remove">&times;</a></span>{% endif %}
+                {% if filter_status %}<span class="fu-filter-chip">Status: {{ filter_status }} <a href="?{{ filter_query }}&amp;status=" title="Remove">&times;</a></span>{% endif %}
+                {% if date_range %}<span class="fu-filter-chip"><i class="far fa-calendar-alt me-1"></i>{% for value, label in date_fields %}{% if value == date_field %}{{ label }}{% endif %}{% endfor %}: {{ date_label }} <a href="?{{ filter_query }}&amp;date_range=&amp;date_from=&amp;date_to=" title="Remove">&times;</a></span>{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </form>
+
+    <!-- ===== Bulk action bar (shown once anything is ticked) ===== -->
+    <div class="fu-bulk-bar shadow-sm" id="bulkBar" hidden>
+        <div class="fu-bulk-inner">
+            <span class="fu-bulk-count"><i class="fas fa-check-square me-1"></i><span id="bulkCount">0</span> selected</span>
+            <span class="fu-bulk-sep"></span>
+            <span id="bulkSelectAllWrap" class="fu-bulk-hint" hidden>
+                <a href="#" onclick="selectAllMatching(); return false;">Select all <span class="fu-total-matching">{{ total_matching }}</span> matching this filter</a>
+            </span>
+            <span id="bulkAllSelectedNote" class="fu-bulk-hint" hidden>
+                All <strong id="bulkAllSelectedCount">0</strong> rows matching this filter are selected.
+            </span>
+            <div class="ms-auto d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="clearSelection()">
+                    <i class="fas fa-times"></i> Clear
+                </button>
+                {% if request.user.can_export_follow_ups or request.user.is_superuser or request.user.role == 'administrator' %}
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-file-export"></i> Export Selected
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item" href="#" onclick="exportFollowUps('xlsx', true); return false;"><i class="fas fa-file-excel text-success me-2"></i>Excel (.xlsx)</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportFollowUps('csv', true); return false;"><i class="fas fa-file-csv text-primary me-2"></i>CSV (.csv)</a></li>
+                    </ul>
+                </div>
+                {% endif %}
+                <button type="button" class="btn btn-sm btn-danger" id="bulkDeleteBtn" onclick="bulkDeleteSelected()">
+                    <i class="fas fa-trash-alt"></i> Delete Selected
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered mb-0 align-middle follow-ups-table" id="followUpsTable">
+                    <thead>
+                        <tr>
+                            <th style="width: 38px;" class="text-center">
+                                <input type="checkbox" class="form-check-input fu-check" id="selectAllOnPage"
+                                       onclick="toggleSelectAllOnPage(this)" title="Select all rows on this page">
+                            </th>
+                            <th style="width: 50px;">S.N.</th>
+                            <th class="fu-sortable" data-sort="name" onclick="sortBy('name')">Name <i class="fas fa-sort fu-sort-icon"></i></th>
+                            <th class="fu-sortable" data-sort="phone" onclick="sortBy('phone')">Phone Number <i class="fas fa-sort fu-sort-icon"></i></th>
+                            <th class="fu-sortable" data-sort="lead_source" onclick="sortBy('lead_source')">Lead Source <i class="fas fa-sort fu-sort-icon"></i></th>
+                            <th class="product-column">Product</th>
+                            <th class="fu-sortable" data-sort="last_followup_at" onclick="sortBy('last_followup_at')" style="min-width: 135px;">Follow up <i class="fas fa-sort fu-sort-icon"></i></th>
+                            <th class="fu-sortable" data-sort="status" onclick="sortBy('status')">Status <i class="fas fa-sort fu-sort-icon"></i></th>
+                            <th style="max-width: 200px;">Remarks</th>
+                            {% comment %}
+                            Sorts by whichever timestamp the date filter is set to, so the
+                            column you filtered on is the one you can order by.
+                            {% endcomment %}
+                            <th class="fu-sortable" data-sort="{{ date_field }}" onclick="sortBy('{{ date_field }}')" style="min-width:125px;">
+                                {% for value, label in date_fields %}{% if value == date_field %}{{ label }}{% endif %}{% endfor %}
+                                <i class="fas fa-sort fu-sort-icon"></i>
+                            </th>
+                            <th style="width: 110px;" class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="followUpsTbody">
+                        <!-- Data Entry Row -->
+                        <tr class="entry-row-bg" id="entryRow">
+                            <td></td>
+                            <td class="text-center fw-bold text-success" style="font-size: 1.2rem;">+</td>
+                            <td><input type="text" class="form-control form-control-sm" id="newName" placeholder="Name"></td>
+                            <td>
+                                <input type="text" class="form-control form-control-sm" id="newPhone" placeholder="Phone (10 digits)" maxlength="10" inputmode="numeric"
+                                    oninput="this.value=this.value.replace(/[^0-9]/g,''); validatePhone(this,'newPhoneErr')">
+                                <div id="newPhoneErr" style="color:#dc3545;font-size:0.72rem;display:none;">Must be exactly 10 digits</div>
+                            </td>
+                            <td>
+                                <select class="form-select form-select-sm" id="newLeadSource">
+                                    <option value="">Lead Source</option>
+                                    {% for source in order_sources %}
+                                    <option value="{{ source.name }}">{{ source.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td class="product-column">
+                                <select class="form-select select2-products" id="newProducts" multiple="multiple" style="width: 100%;">
+                                    {% for product in products %}
+                                    <option value="{{ product.id }}" data-type="{{ product.product_type }}">{{ product.name }}</option>
+                                    {% if product.product_type == 'variable' %}
+                                        {% for var in product.variations.all %}
+                                        <option value="v_{{ var.id }}" data-type="variant" data-product-name="{{ product.name }}">&nbsp;&nbsp;&nbsp;&nbsp;↳ {{ var.variation_name|default:var.sku }}</option>
+                                        {% endfor %}
+                                    {% endif %}
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="text" class="form-control form-control-sm" id="newFollowupNote" placeholder="Follow up note"></td>
+                            <td>
+                                <select class="form-select form-select-sm" id="newStatus">
+                                    {% for status in action_statuses %}
+                                    <option value="{{ status.name }}" {% if status.is_default %}selected{% endif %}>{{ status.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="text" class="form-control form-control-sm" id="newRemarks" placeholder="Remarks"></td>
+                            <td class="text-muted text-center" style="font-size:0.7rem;">—</td>
+                            <td class="text-center">
+                                <button class="action-btn border text-success" onclick="saveFollowUp()" title="Save Entry">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </td>
+                        </tr>
+
+                        <!-- Existing Records -->
+                        {% for item in follow_ups %}
+                        {% with all_products=item.get_formatted_products %}
+                        <tr data-id="{{ item.id }}" data-status="{{ item.status }}"
+                            data-name="{{ item.name|default:'' }}"
+                            data-phone="{{ item.phone }}"
+                            data-lead="{{ item.lead_source|default:'' }}"
+                            data-products='[{% for p in all_products %}{"id":"{{ p.id }}","name":"{{ p.name|escapejs }}","price":{{ p.price }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
+                            data-remarks="{{ item.remarks|default:'' }}"
+                            data-version="{{ item.version|default:1 }}"
+                            data-created-iso="{{ item.created_at|date:'c' }}"
+                            data-followup-count="{{ item.followup_count }}">
+                            <td class="text-center">
+                                <input type="checkbox" class="form-check-input fu-check fu-row-check" value="{{ item.id }}"
+                                       onclick="onRowCheckClick(event, this)">
+                            </td>
+                            <td class="text-center sn-column">{{ page_obj.start_index|add:forloop.counter0 }}</td>
+                            <td>{{ item.name|default:"-" }}</td>
+                            <td>{{ item.phone }}</td>
+                            <td>{{ item.lead_source|default:"-" }}</td>
+                            <td class="product-column">
+                                {% if all_products %}
+                                    <div class="d-flex flex-wrap">
+                                    {% for p in all_products %}
+                                        <span class="chip-badge me-1">{{ p.name }}</span>
+                                    {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <!-- Follow up cell -->
+                            <td class="fu-cell position-relative p-1" style="min-width:135px; vertical-align:top; background-color:#f8f9fa;">
+                                <div class="fu-content">
+                                    {% with log=item.latest_followup_log %}
+                                    {% if log %}
+                                    <div class="mb-1">
+                                        <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
+                                            <div class="mb-1">
+                                                {% if 'Followup' in log.field_changed %}
+                                                    <span class="badge" style="background-color: #6f42c1; color: white; font-size: 0.55rem; padding: 0.2rem 0.4rem;">{{ log.field_changed }}</span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary" style="font-size: 0.55rem; padding: 0.2rem 0.4rem;">{{ log.field_changed }}</span>
+                                                {% endif %}
+                                            </div>
+                                            <div class="text-muted" style="font-size:0.6rem;">{{ log.timestamp|date:"M d, Y h:i A" }} by {{ log.user.username|default:"System" }}</div>
+                                        </div>
+                                        <div class="text-dark text-break" style="font-size:0.75rem;">{{ log.new_value }}</div>
+                                    </div>
+                                    {% else %}
+                                    <span class="text-muted" style="font-size:0.75rem;">-</span>
+                                    {% endif %}
+                                    {% endwith %}
+                                </div>
+                                <button class="fu-add-btn" onclick="openAddNoteModal({{ item.id }})" title="Add Follow up Note">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </td>
+                            <!-- Status: click to inline-edit -->
+                            <td class="inline-editable position-relative" onclick="makeInlineStatusEditable(this, {{ item.id }})">
+                                <span class="badge status-badge rounded-pill px-2 py-1" data-status-val="{{ item.status|default:''|lower }}">{{ item.status|title|default:"-" }}</span>
+                            </td>
+                            <td class="text-break" style="max-width:200px;">{{ item.remarks|default:"-" }}</td>
+                            <td class="fu-date-cell">
+                                {% if date_field == 'updated_at' %}
+                                <div class="fu-date-main">{{ item.updated_at|date:"M d, Y" }}</div>
+                                <div class="fu-date-sub">{{ item.updated_at|date:"h:i A" }}</div>
+                                <div class="fu-date-sub" title="Date added">+ {{ item.created_at|date:"M d, Y" }}</div>
+                                {% else %}
+                                <div class="fu-date-main">{{ item.created_at|date:"M d, Y" }}</div>
+                                <div class="fu-date-sub">{{ item.created_at|date:"h:i A" }}</div>
+                                <div class="fu-date-sub" title="Last activity"><i class="fas fa-pen" style="font-size:0.55rem;"></i> {{ item.updated_at|date:"M d, Y" }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="text-center" style="white-space:nowrap;">
+                                <a href="{% url 'order_create' %}?followup_id={{ item.id }}" class="action-btn border text-success me-1" title="Create Order">
+                                    <i class="fas fa-shopping-cart"></i>
+                                </a>
+                                <button class="action-btn border text-info me-1" onclick="viewLogs({{ item.id }})" title="View Logs">
+                                    <i class="fas fa-history"></i>
+                                </button>
+                                <button class="action-btn border text-primary me-1" onclick="openEditModal({{ item.id }})" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="action-btn border text-danger" onclick="deleteFollowUp({{ item.id }}, this)" title="Delete">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endwith %}
+                        {% empty %}
+                        <tr id="emptyRow">
+                            <td colspan="11" class="text-center text-muted py-4">No follow-ups found. Create one above!</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <nav aria-label="Page navigation" class="mt-4">
+        <ul class="pagination justify-content-center mb-0">
+            {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?{{ filter_query }}&amp;page={{ page_obj.previous_page_number }}" aria-label="Previous">
+                    <span aria-hidden="true">&laquo;</span>
+                </a>
+            </li>
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">&laquo;</span>
+            </li>
+            {% endif %}
+            
+            {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                <li class="page-item"><a class="page-link" href="?{{ filter_query }}&amp;page={{ num }}">{{ num }}</a></li>
+                {% endif %}
+            {% endfor %}
+            
+            {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?{{ filter_query }}&amp;page={{ page_obj.next_page_number }}" aria-label="Next">
+                    <span aria-hidden="true">&raquo;</span>
+                </a>
+            </li>
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">&raquo;</span>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% csrf_token %}
+
+<!-- Add Follow-Up Note Modal -->
+<div class="modal fade" id="addNoteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title"><i class="fas fa-plus-circle text-success me-2"></i> Add Follow-up Note</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-1">
+                    <span class="badge bg-secondary" id="addNoteFieldLabel">Follow up</span>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Note <span class="text-danger">*</span></label>
+                    <textarea class="form-control" id="addNoteText" rows="3" placeholder="Enter your follow-up note..."></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Update Status <span class="text-muted small">(optional)</span></label>
+                    <select class="form-select" id="addNoteStatus">
+                        <option value="">-- Keep current status --</option>
+                        {% for status in action_statuses %}
+                        <option value="{{ status.name }}">{{ status.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="saveNoteBtn" onclick="saveAddNote()">
+                    <i class="fas fa-save me-1"></i> Save Note
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Follow-Up Modal -->
+<div class="modal fade" id="editFollowUpModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Follow-up</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" id="editName">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Phone Number <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editPhone" maxlength="10" inputmode="numeric"
+                            oninput="this.value=this.value.replace(/[^0-9]/g,''); this.classList.remove('is-invalid');"
+                            placeholder="10-digit phone number">
+                        <div class="invalid-feedback">Must be exactly 10 digits.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Lead Source</label>
+                        <select class="form-select" id="editLeadSource">
+                            <option value="">Select Lead Source</option>
+                            {% for source in order_sources %}
+                            <option value="{{ source.name }}">{{ source.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Products</label>
+                        <select class="form-select select2-products" id="editProducts" multiple="multiple" style="width:100%;">
+                            {% for product in products %}
+                            <option value="{{ product.id }}" data-type="{{ product.product_type }}">{{ product.name }}</option>
+                            {% if product.product_type == 'variable' %}
+                                {% for var in product.variations.all %}
+                                <option value="v_{{ var.id }}" data-type="variant" data-product-name="{{ product.name }}">&nbsp;&nbsp;&nbsp;&nbsp;↳ {{ var.variation_name|default:var.sku }}</option>
+                                {% endfor %}
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="editStatus">
+                            {% for status in action_statuses %}
+                            <option value="{{ status.name }}">{{ status.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Remarks</label>
+                        <input type="text" class="form-control" id="editRemarks">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveEditBtn" onclick="saveEditFollowUp()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Logs Modal -->
+<div class="modal fade" id="logsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title"><i class="fas fa-history text-info me-2"></i> Activity Log</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="logsContainer" class="p-4"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* ===== Filter bar ===== */
+.fu-filter-label {
+    display: block; font-size: 0.68rem; font-weight: 600; color: #64748b;
+    text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px;
+}
+.fu-filter-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.72rem; padding: 2px 8px; border-radius: 999px;
+    background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+}
+.fu-filter-chip a { color: #1d4ed8; text-decoration: none; font-weight: 700; opacity: 0.6; }
+.fu-filter-chip a:hover { opacity: 1; }
+.btn-xxs { font-size: 0.68rem; padding: 1px 7px; line-height: 1.5; border-radius: 5px; }
+.fu-quick-picks { display: flex; align-items: center; gap: 4px; padding-bottom: 2px; }
+/* Bootstrap's .row sets display:flex, which outranks the browser's own
+   [hidden] rule. Say it explicitly so the custom-date row and the bulk bar
+   really do stay hidden until they're wanted. */
+#customDateRow[hidden], #bulkBar[hidden] { display: none !important; }
+
+/* ===== Bulk action bar =====
+   Sticks to the top of the viewport so the actions stay reachable after
+   scrolling down a 500-row page to tick the last few boxes. */
+.fu-bulk-bar {
+    position: sticky; top: 8px; z-index: 1020;
+    background: linear-gradient(90deg, #1e293b, #334155);
+    color: #f8fafc; border-radius: 10px; margin-bottom: 12px;
+    animation: fuBulkIn 0.18s ease-out;
+}
+@keyframes fuBulkIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.fu-bulk-inner { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 14px; }
+.fu-bulk-count { font-weight: 700; font-size: 0.85rem; white-space: nowrap; }
+.fu-bulk-sep { width: 1px; height: 18px; background: rgba(248,250,252,0.25); }
+.fu-bulk-hint { font-size: 0.78rem; color: #cbd5e1; }
+.fu-bulk-hint a { color: #93c5fd; text-decoration: underline; }
+.fu-bulk-hint a:hover { color: #dbeafe; }
+
+/* ===== Selection ===== */
+.fu-check { cursor: pointer; width: 1rem; height: 1rem; }
+tr.fu-row-selected > td { background-color: #eff6ff !important; }
+
+/* Keep the direction toggle a fixed width so the control doesn't jump about
+   as its label changes between "A → Z" and "Longest since follow-up". */
+.fu-sort-dir-btn { white-space: nowrap; min-width: 132px; font-weight: 600; }
+
+/* ===== Sortable headers ===== */
+.fu-sortable { cursor: pointer; user-select: none; }
+.fu-sortable:hover { background-color: #eef2f7 !important; }
+.fu-sort-icon { font-size: 0.65rem; opacity: 0.35; margin-left: 2px; }
+.fu-sortable.fu-sorted { color: #1d4ed8 !important; }
+.fu-sortable.fu-sorted .fu-sort-icon { opacity: 1; color: #1d4ed8; }
+
+/* ===== Date column ===== */
+.fu-date-cell { white-space: nowrap; font-size: 0.75rem; }
+.fu-date-main { font-weight: 600; color: #1e293b; }
+.fu-date-sub { font-size: 0.65rem; color: #94a3b8; }
+
+/* ===== Table ===== */
+.follow-ups-table { min-width: 1320px; font-size: 0.9rem; }
+.follow-ups-table th {
+    white-space: nowrap;
+    background-color: #f8fafc !important;
+    color: #475569;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+    padding: 1rem 0.75rem;
+    border-bottom: 2px solid #e2e8f0;
+}
+.follow-ups-table td { vertical-align: middle; padding: 0.75rem; }
+/* The table is auto-layout, so every column's width is negotiated from its
+   content. The Product column is the one cell whose content changes shape
+   after load (native select -> select2 widget, and chips repainted by the sync
+   poll), so pin it: otherwise the whole table re-flowed the moment select2
+   initialised and the row looked different from one refresh to the next. */
+.follow-ups-table .product-column { width: 230px; min-width: 230px; }
+.entry-row-bg > td {
+    background-color: #f0fdf4 !important;
+    border-bottom: 2px solid #bbf7d0;
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+}
+
+/* ===== Followup cell with + button ===== */
+.fu-cell { position: relative; }
+.fu-cell .fu-add-btn {
+    display: none;
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%;
+    background: #22c55e;
+    color: #fff;
+    font-size: 0.6rem;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    transition: transform 0.15s, box-shadow 0.15s;
+    z-index: 2;
+    padding: 0;
+}
+.fu-cell:hover .fu-add-btn { display: flex; }
+.fu-add-btn:hover { transform: scale(1.15); box-shadow: 0 4px 8px rgba(34,197,94,0.4); }
+
+/* ===== Status inline edit ===== */
+.inline-editable { cursor: pointer; transition: background-color 0.2s; }
+.inline-editable:hover { background-color: #f1f5f9 !important; }
+.inline-editing { padding: 0.25rem !important; }
+.inline-editing:hover { background-color: transparent !important; }
+
+/* ===== Action buttons ===== */
+.action-btn {
+    width: 32px; height: 32px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 6px; transition: all 0.2s ease; background: white;
+}
+.action-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+
+/* ===== Product chips ===== */
+.chip-badge {
+    font-size: 0.75rem; padding: 0.35rem 0.6rem; border-radius: 6px;
+    background: white; border: 1px solid #cbd5e1; color: #334155;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    display: inline-flex; align-items: center; gap: 0.35rem; margin-bottom: 0.25rem;
+}
+
+/* ===== Select2 ===== */
+.select2-container .select2-selection--multiple { min-height: 31px; border-color: #dee2e6; border-radius: 6px; }
+.wide-dropdown { min-width: 350px !important; }
+/* Between first paint and select2 taking over, #newProducts is still a native
+   <select multiple> holding every product and variation, which the browser
+   draws as a full-height scroll list. Select2 stamps .select2-hidden-accessible
+   on the element once it owns it, so this rule targets only that in-between
+   state and keeps the cell one input tall. It also keeps the row usable if
+   the select2 script itself never arrives. */
+select.select2-products:not(.select2-hidden-accessible) {
+    height: 31px;
+    overflow: hidden;
+    display: block;
+    width: 100%;
+}
+
+/* ===== Timeline ===== */
+.timeline-item { position: relative; padding-left: 30px; margin-bottom: 20px; }
+.timeline-item::before { content: ''; position: absolute; left: 6px; top: 0; bottom: -20px; width: 2px; background: #e9ecef; }
+.timeline-item:last-child::before { display: none; }
+.timeline-icon { position: absolute; left: 0; top: 0; width: 14px; height: 14px; border-radius: 50%; background: #0dcaf0; border: 2px solid #fff; box-shadow: 0 0 0 2px #0dcaf0; }
+.timeline-content { background: #f8f9fa; padding: 10px 15px; border-radius: 6px; font-size: 0.9rem; }
+
+/* ===== Typing Indicator ===== */
+.typing-dots { display: inline-flex; align-items: center; gap: 3px; }
+.typing-dots span { width: 5px; height: 5px; background: currentColor; border-radius: 50%; animation: typingBlink 1.4s infinite both; }
+.typing-dots span:nth-child(1) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(2) { animation-delay: 0.4s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.6s; }
+@keyframes typingBlink { 0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1.2); } }
+
+/* ===== Live Update Toasts ===== */
+.fu-toast-container {
+    position: fixed;
+    top: 78px;
+    right: 18px;
+    z-index: 2000;
+    width: 360px;
+    max-width: calc(100vw - 24px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+.fu-toast {
+    pointer-events: auto;
+    position: relative;
+    display: flex;
+    gap: 10px;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 12px 14px 14px 12px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18), 0 2px 8px rgba(15, 23, 42, 0.08);
+    border-left: 4px solid #64748b;
+    overflow: hidden;
+    cursor: pointer;
+    transform: translateX(120%) scale(0.96);
+    opacity: 0;
+    animation: fuToastIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.fu-toast:hover { box-shadow: 0 14px 36px rgba(15, 23, 42, 0.24), 0 4px 10px rgba(15, 23, 42, 0.1); transform: translateY(-2px); }
+.fu-toast.fu-toast-out { animation: fuToastOut 0.25s cubic-bezier(0.4, 0, 1, 1) forwards; }
+.fu-toast.fu-toast-new { border-left-color: #22c55e; }
+.fu-toast.fu-toast-updated { border-left-color: #3b82f6; }
+.fu-toast.fu-toast-deleted { border-left-color: #ef4444; }
+
+@keyframes fuToastIn {
+    0% { transform: translateX(120%) scale(0.96); opacity: 0; }
+    60% { transform: translateX(-6px) scale(1.01); opacity: 1; }
+    100% { transform: translateX(0) scale(1); opacity: 1; }
+}
+@keyframes fuToastOut {
+    0% { transform: translateX(0) scale(1); opacity: 1; max-height: 200px; margin-bottom: 10px; }
+    100% { transform: translateX(110%) scale(0.94); opacity: 0; max-height: 0; margin-bottom: 0; }
+}
+
+.fu-toast-avatar {
+    flex: 0 0 auto;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 0.85rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    text-transform: uppercase;
+}
+.fu-toast-body { flex: 1 1 auto; min-width: 0; }
+.fu-toast-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+    margin-bottom: 2px;
+}
+.fu-toast-actor { font-size: 0.83rem; font-weight: 700; color: #0f172a; }
+.fu-toast-verb { font-weight: 500; color: #475569; }
+.fu-toast-time { font-size: 0.68rem; color: #94a3b8; white-space: nowrap; flex-shrink: 0; }
+.fu-toast-target { font-size: 0.78rem; color: #334155; margin-bottom: 4px; word-break: break-word; }
+.fu-toast-target strong { color: #0f172a; }
+.fu-toast-changes { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }
+.fu-toast-chip {
+    font-size: 0.68rem; padding: 2px 7px; border-radius: 999px;
+    background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;
+    display: inline-flex; align-items: center; gap: 4px;
+}
+.fu-toast-chip .arrow { color: #94a3b8; }
+.fu-toast-hidden-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.68rem; font-weight: 600; color: #b45309;
+    background: #fffbeb; border: 1px solid #fde68a;
+    padding: 2px 7px; border-radius: 999px; margin-top: 4px;
+}
+.fu-toast-close {
+    position: absolute; top: 6px; right: 8px;
+    background: none; border: none; color: #cbd5e1; font-size: 0.9rem;
+    line-height: 1; cursor: pointer; padding: 4px;
+}
+.fu-toast-close:hover { color: #64748b; }
+.fu-toast-progress {
+    position: absolute; left: 0; bottom: 0; height: 3px;
+    background: linear-gradient(90deg, #60a5fa, #a78bfa);
+    width: 100%;
+    animation-name: fuToastShrink;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+}
+.fu-toast.fu-toast-new .fu-toast-progress { background: linear-gradient(90deg, #34d399, #22c55e); }
+.fu-toast.fu-toast-deleted .fu-toast-progress { background: linear-gradient(90deg, #f87171, #ef4444); }
+.fu-toast.fu-toast-paused .fu-toast-progress { animation-play-state: paused; }
+@keyframes fuToastShrink { from { width: 100%; } to { width: 0%; } }
+</style>
+
+<script>
+    // ===== State =====
+    let currentEditId = null;
+    let editModal = null;
+    let addNoteModal = null;
+    let currentNoteId = null;
+
+    // Currently active filters (from server-rendered context), used to keep
+    // live-synced rows consistent with what the user has filtered for.
+    const activeFilters = {
+        q: "{{ search_query|escapejs }}",
+        lead_source: "{{ lead_source|escapejs }}",
+        status: "{{ filter_status|escapejs }}",
+        date_field: "{{ date_field|escapejs }}",
+        date_range: "{{ date_range|escapejs }}",
+        date_from: "{{ date_from|escapejs }}",   // YYYY-MM-DD, local (NPT) day
+        date_to: "{{ date_to|escapejs }}"
+    };
+
+    // The date filter compares local calendar days, so reduce a timestamp to
+    // the YYYY-MM-DD the *browser* would print for it. Staff and server are
+    // both on Asia/Kathmandu, which is what the server filter uses too.
+    function localDayKey(value) {
+        const dt = value ? new Date(value) : new Date();
+        if (isNaN(dt.getTime())) return null;
+        const pad = n => String(n).padStart(2, '0');
+        return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+    }
+
+    // Mirrors the backend filtering in follow_ups_list/sync_follow_ups, so
+    // locally-made edits (inline status, add note, full edit) can decide
+    // whether the row still belongs under the currently active filters.
+    function rowMatchesActiveFilters(d) {
+        if (activeFilters.q) {
+            const q = activeFilters.q.toLowerCase();
+            const haystack = `${d.name || ''} ${d.phone || ''} ${d.remarks || ''}`.toLowerCase();
+            if (!haystack.includes(q)) return false;
+        }
+        if (activeFilters.lead_source && (d.lead_source || '').toLowerCase() !== activeFilters.lead_source.toLowerCase()) {
+            return false;
+        }
+        if (activeFilters.status && (d.status || '').toLowerCase() !== activeFilters.status.toLowerCase()) {
+            return false;
+        }
+        if (activeFilters.date_from || activeFilters.date_to) {
+            // Filtering on "Last Activity" and we just saved: the row's
+            // updated_at is now, so compare against the current day. Filtering
+            // on "Date Added": use the row's own creation timestamp.
+            const day = activeFilters.date_field === 'updated_at'
+                ? localDayKey(null)
+                : localDayKey(d.created_at_iso);
+            // A row whose creation time we don't know can't be judged; leave it
+            // on screen rather than making it vanish on an unrelated edit.
+            if (!day) return true;
+            if (activeFilters.date_from && day < activeFilters.date_from) return false;
+            if (activeFilters.date_to && day > activeFilters.date_to) return false;
+        }
+        return true;
+    }
+
+    // ===== Filter bar behaviour =====
+    function onDateRangeChange() {
+        const preset = document.getElementById('dateRangeSelect').value;
+        const row = document.getElementById('customDateRow');
+        row.hidden = preset !== 'custom';
+        if (preset !== 'custom') {
+            // A preset supersedes whatever was typed into From/To. Clearing
+            // them keeps the submitted URL honest about what actually applied.
+            document.getElementById('dateFrom').value = '';
+            document.getElementById('dateTo').value = '';
+            document.getElementById('filterForm').submit();
+        }
+    }
+
+    function quickRange(days) {
+        const to = new Date();
+        const from = new Date();
+        from.setDate(from.getDate() - (days - 1));
+        const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        document.getElementById('dateFrom').value = fmt(from);
+        document.getElementById('dateTo').value = fmt(to);
+        document.getElementById('filterForm').submit();
+    }
+
+    // ===== Sorting =====
+    //
+    // Three ways in, one code path: the Sort By select, the quick-sort
+    // shortcuts, and clicking a column header all just rewrite ?sort=&dir= and
+    // reload. The server is the only thing that actually orders rows, so the
+    // sort always spans every page rather than shuffling the current one.
+    const currentSort = { field: "{{ sort_by|escapejs }}", dir: "{{ sort_dir|escapejs }}", kind: "{{ sort_kind|escapejs }}" };
+
+    const SORT_KINDS = {
+        {% for value, label, kind in sort_options %}"{{ value|escapejs }}": "{{ kind|escapejs }}",{% endfor %}
+    };
+
+    // What "ascending" means depends on what you're sorting. Spelling it out
+    // beats an unlabelled arrow the reader has to decode.
+    const SORT_DIR_TEXT = {
+        date:   { desc: ['Newest first', 'fa-sort-amount-down'],  asc: ['Oldest first', 'fa-sort-amount-up-alt'] },
+        text:   { desc: ['Z → A', 'fa-sort-alpha-up-alt'],   asc: ['A → Z', 'fa-sort-alpha-down'] },
+        number: { desc: ['High → Low', 'fa-sort-numeric-down-alt'], asc: ['Low → High', 'fa-sort-numeric-down'] }
+    };
+
+    //: The direction a freshly picked column should start in. Dates and counts
+    //: read newest/most first; names read A-Z.
+    function defaultDirFor(field) {
+        return SORT_KINDS[field] === 'text' ? 'asc' : 'desc';
+    }
+
+    function applySort(field, dir) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('sort', field);
+        url.searchParams.set('dir', dir || defaultDirFor(field));
+        url.searchParams.set('page', '1');
+        window.location.href = url.toString();
+    }
+
+    // Column header click: the same column again flips direction, a new one
+    // starts on its natural reading.
+    function sortBy(field) {
+        applySort(field, currentSort.field === field
+            ? (currentSort.dir === 'asc' ? 'desc' : 'asc')
+            : defaultDirFor(field));
+    }
+
+    function toggleSortDir() {
+        applySort(document.getElementById('sortField').value,
+                  currentSort.dir === 'asc' ? 'desc' : 'asc');
+    }
+
+    function renderSortDirButton() {
+        const btn = document.getElementById('sortDirBtn');
+        if (!btn) return;
+        // Read the select, not currentSort: the user may have opened the
+        // dropdown and be looking at a different field than the page was
+        // rendered with (the form submits on change, but not before).
+        const field = document.getElementById('sortField').value;
+        const kind = SORT_KINDS[field] || 'date';
+        const [label, icon] = SORT_DIR_TEXT[kind][currentSort.dir];
+        document.getElementById('sortDirLabel').textContent = label;
+        document.getElementById('sortDirIcon').className = 'fas me-1 ' + icon;
+        btn.title = `Sorted ${label.toLowerCase()} — click to reverse`;
+    }
+
+    function markSortedHeader() {
+        document.querySelectorAll('.fu-sortable').forEach(th => {
+            const icon = th.querySelector('.fu-sort-icon');
+            const isActive = th.getAttribute('data-sort') === currentSort.field;
+            th.classList.toggle('fu-sorted', isActive);
+            if (!icon) return;
+            icon.className = 'fas fu-sort-icon ' + (
+                isActive ? (currentSort.dir === 'asc' ? 'fa-sort-up' : 'fa-sort-down') : 'fa-sort'
+            );
+            th.title = isActive
+                ? `Sorted ${currentSort.dir === 'asc' ? 'ascending' : 'descending'} — click to reverse`
+                : 'Click to sort by this column';
+        });
+        renderSortDirButton();
+    }
+
+    function changePerPage(value) {
+        let url = new URL(window.location.href);
+        url.searchParams.set('per_page', value);
+        url.searchParams.set('page', '1');
+        window.location.href = url.toString();
+    }
+
+    // ===== Init =====
+    //
+    // jQuery and select2 come off a CDN. If either is slow or blocked, the
+    // whole DOMContentLoaded handler used to die on the first `$(...)` call —
+    // taking the modals, the entry-row Enter shortcut and the status badge
+    // colours down with the product picker. Each step is now independent, and
+    // the picker waits for its dependencies instead of failing once and for
+    // all on the first tick.
+    const SELECT2_READY_RETRY_MS = 100;
+    const SELECT2_READY_MAX_WAIT_MS = 10000;
+
+    function initProductSelects(waitedMs) {
+        waitedMs = waitedMs || 0;
+
+        if (typeof jQuery === 'undefined' || !jQuery.fn || !jQuery.fn.select2) {
+            if (waitedMs >= SELECT2_READY_MAX_WAIT_MS) {
+                // The CSS keeps the bare <select> a single input tall, so the
+                // row still looks right and stays usable without select2.
+                console.warn('select2 did not load; product pickers stay as plain multi-selects.');
+                return;
+            }
+            setTimeout(() => initProductSelects(waitedMs + SELECT2_READY_RETRY_MS), SELECT2_READY_RETRY_MS);
+            return;
+        }
+
+        function formatProductResult(product) {
+            if (!product.id) return product.text;
+            const type = $(product.element).data('type');
+            let html = '<span>' + escapeHtml(product.text) + '</span>';
+            if (type === 'bundle' || type === 'combo') html += ' <span class="badge bg-info text-dark" style="font-size:0.6rem">Combo</span>';
+            else if (type === 'variable' || type === 'variant') html += ' <span class="badge bg-secondary" style="font-size:0.6rem">Variant</span>';
+            return $(html);
+        }
+        function formatProductSelection(product) {
+            if (!product.id) return product.text;
+            const type = $(product.element).data('type');
+            let text = product.text.replace(/&nbsp;/g, '').replace('↳', '').trim();
+            if (type === 'variant') {
+                const pName = $(product.element).data('product-name');
+                if (pName) text = pName + ' - ' + text;
+            }
+            let html = '<span>' + escapeHtml(text) + '</span>';
+            if (type === 'bundle' || type === 'combo') html += ' <span class="badge bg-info text-dark" style="font-size:0.6rem">Combo</span>';
+            else if (type === 'variable' || type === 'variant') html += ' <span class="badge bg-secondary" style="font-size:0.6rem">Variant</span>';
+            return $(html);
+        }
+        $('.select2-products').select2({
+            // Stated explicitly rather than left to select2's 'resolve'
+            // default, which reads back whatever width the cell happens to
+            // have at the moment it initialises.
+            width: '100%',
+            placeholder: 'Select Products...',
+            allowClear: true,
+            dropdownCssClass: 'wide-dropdown',
+            templateResult: formatProductResult,
+            templateSelection: formatProductSelection,
+            escapeMarkup: m => m
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        editModal = new bootstrap.Modal(document.getElementById('editFollowUpModal'));
+        addNoteModal = new bootstrap.Modal(document.getElementById('addNoteModal'));
+
+        // Enter to save in entry row
+        document.getElementById('entryRow').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type === 'text') {
+                e.preventDefault();
+                saveFollowUp();
+            }
+        });
+
+        applyStatusBadgeColors();
+        initProductSelects();
+        markSortedHeader();
+        loadSelection();
+        syncSelectionUI();
+    });
+
+    // ===== Utilities =====
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.toString()
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
+
+    const CUSTOM_STATUS_COLORS = {
+        {% for status in statuses %}
+        {% if status.color %}
+        "{{ status.name|escapejs|lower }}": "{{ status.color|escapejs }}",
+        {% endif %}
+        {% endfor %}
+    };
+
+    function getStatusBadgeClass(status) {
+        if (!status) return 'bg-secondary';
+        const s = status.toLowerCase();
+        if (CUSTOM_STATUS_COLORS[s]) return '';
+        if (['pending','processing','on hold','waiting'].some(k => s.includes(k))) return 'bg-warning text-dark';
+        if (['success','delivered','completed','paid','confirmed','approved'].some(k => s.includes(k))) return 'bg-success';
+        if (['cancelled','returned','failed','trash','rejected'].some(k => s.includes(k))) return 'bg-danger';
+        if (['shipped','dispatched','in transit'].some(k => s.includes(k))) return 'bg-info text-dark';
+        return 'bg-secondary';
+    }
+
+    function getStatusBadgeStyle(status) {
+        if (!status) return '';
+        const s = status.toLowerCase();
+        const hex = CUSTOM_STATUS_COLORS[s];
+        if (hex) return `background-color: ${hex} !important; color: white !important; border-color: ${hex} !important;`;
+        return '';
+    }
+
+    function applyStatusBadgeColors() {
+        document.querySelectorAll('.status-badge').forEach(badge => {
+            const status = badge.getAttribute('data-status-val') || badge.textContent;
+            badge.className = `badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(status)}`;
+            const customStyle = getStatusBadgeStyle(status);
+            if (customStyle) {
+                badge.style.cssText = customStyle;
+            } else {
+                badge.style.cssText = '';
+            }
+        });
+    }
+
+
+    // ===== Bulk selection =====
+    //
+    // The set of ticked ids lives in sessionStorage, not just in the DOM, so a
+    // selection survives paging and filter changes — you can tick ten rows on
+    // page 1, jump to page 3, tick five more, and delete or export all fifteen
+    // in one go. It is per-tab and cleared by the Clear button.
+    const FU_SELECTION_KEY = 'followups.selection';
+    const FU_BULK_LIMIT = {{ bulk_limit }};
+    const FU_FILTER_QUERY = "{{ filter_query|escapejs }}";
+
+    //: How many rows match the current filters across every page. Server-
+    //: rendered, then kept in step as rows are deleted here or elsewhere, so
+    //: the "N matching" badge and the "Select all N" link never go stale.
+    let totalMatching = {{ total_matching }};
+
+    function adjustTotalMatching(delta) {
+        totalMatching = Math.max(0, totalMatching + delta);
+        document.querySelectorAll('.fu-total-matching').forEach(el => el.textContent = totalMatching);
+    }
+
+    let selectedIds = new Set();
+    let lastCheckedIndex = null;   // anchor for shift-click range selection
+
+    function loadSelection() {
+        try {
+            const raw = sessionStorage.getItem(FU_SELECTION_KEY);
+            if (raw) selectedIds = new Set(JSON.parse(raw).map(Number).filter(Boolean));
+        } catch (e) { selectedIds = new Set(); }
+    }
+
+    function persistSelection() {
+        try {
+            sessionStorage.setItem(FU_SELECTION_KEY, JSON.stringify([...selectedIds]));
+        } catch (e) { /* private mode / quota — selection just won't outlive the page */ }
+    }
+
+    function pageCheckboxes() {
+        return Array.from(document.querySelectorAll('#followUpsTbody .fu-row-check'));
+    }
+
+    function syncSelectionUI() {
+        const boxes = pageCheckboxes();
+        boxes.forEach(cb => {
+            const on = selectedIds.has(Number(cb.value));
+            cb.checked = on;
+            cb.closest('tr')?.classList.toggle('fu-row-selected', on);
+        });
+
+        const count = selectedIds.size;
+        document.querySelectorAll('.fu-sel-count').forEach(el => el.textContent = count);
+        const bar = document.getElementById('bulkBar');
+        bar.hidden = count === 0;
+        document.getElementById('bulkCount').textContent = count;
+
+        // Offer "select all matching" only when it would actually add rows.
+        const everythingSelected = count >= totalMatching && totalMatching > 0;
+        document.getElementById('bulkSelectAllWrap').hidden = everythingSelected || totalMatching <= boxes.length;
+        const allNote = document.getElementById('bulkAllSelectedNote');
+        allNote.hidden = !everythingSelected;
+        document.getElementById('bulkAllSelectedCount').textContent = count;
+
+        // Grey out the "selected rows only" export entries while nothing is
+        // ticked, rather than letting a click fail with an error toast.
+        document.querySelectorAll('.fu-needs-selection').forEach(el => {
+            el.classList.toggle('disabled', count === 0);
+            el.setAttribute('aria-disabled', count === 0 ? 'true' : 'false');
+        });
+
+        const master = document.getElementById('selectAllOnPage');
+        const onPage = boxes.filter(cb => cb.checked).length;
+        master.checked = boxes.length > 0 && onPage === boxes.length;
+        master.indeterminate = onPage > 0 && onPage < boxes.length;
+    }
+
+    function setSelected(id, on) {
+        if (on) selectedIds.add(Number(id));
+        else selectedIds.delete(Number(id));
+    }
+
+    function onRowCheckClick(event, cb) {
+        const boxes = pageCheckboxes();
+        const index = boxes.indexOf(cb);
+
+        // Shift-click selects the whole span since the last box you touched —
+        // the standard file-manager gesture, and the only sane way to tick 80
+        // consecutive rows.
+        if (event.shiftKey && lastCheckedIndex !== null && index > -1) {
+            const [from, to] = [Math.min(lastCheckedIndex, index), Math.max(lastCheckedIndex, index)];
+            for (let i = from; i <= to; i++) setSelected(boxes[i].value, cb.checked);
+        } else {
+            setSelected(cb.value, cb.checked);
+        }
+        lastCheckedIndex = index;
+        persistSelection();
+        syncSelectionUI();
+    }
+
+    function toggleSelectAllOnPage(master) {
+        pageCheckboxes().forEach(cb => setSelected(cb.value, master.checked));
+        lastCheckedIndex = null;
+        persistSelection();
+        syncSelectionUI();
+    }
+
+    function clearSelection() {
+        selectedIds.clear();
+        lastCheckedIndex = null;
+        persistSelection();
+        syncSelectionUI();
+    }
+
+    // Keep the selection honest when a row leaves the table (deleted here,
+    // deleted by someone else, or filtered out by a live update).
+    function dropFromSelection(id) {
+        if (selectedIds.delete(Number(id))) {
+            persistSelection();
+            syncSelectionUI();
+        }
+    }
+
+    function selectAllMatching() {
+        const params = new URLSearchParams(FU_FILTER_QUERY);
+        params.delete('page');
+        params.delete('per_page');
+        fetch(`/api/orders/follow-ups/ids/?${params.toString()}`)
+            .then(r => r.json())
+            .then(result => {
+                if (!result.success) { alertify.error(result.error || 'Could not load matching rows.'); return; }
+                result.ids.forEach(id => selectedIds.add(Number(id)));
+                persistSelection();
+                syncSelectionUI();
+                if (result.truncated) {
+                    alertify.warning(`Selected the first ${result.count} of ${result.total} matching rows (limit ${result.limit}).`);
+                } else {
+                    alertify.success(`${result.count} follow-up${result.count === 1 ? '' : 's'} selected.`);
+                }
+            })
+            .catch(err => { console.error(err); alertify.error('Could not load matching rows.'); });
+    }
+
+    function bulkDeleteSelected() {
+        const ids = [...selectedIds];
+        if (!ids.length) { alertify.error('Nothing selected.'); return; }
+        if (ids.length > FU_BULK_LIMIT) {
+            alertify.error(`Too many rows selected (${ids.length}). Delete at most ${FU_BULK_LIMIT} at a time.`);
+            return;
+        }
+        if (!confirm(`Move ${ids.length} follow-up${ids.length === 1 ? '' : 's'} to Trash?\n\nThey can be restored from the Trash page.`)) return;
+
+        const btn = document.getElementById('bulkDeleteBtn');
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+        btn.disabled = true;
+
+        trackWrite(fetch("{% url 'bulk_delete_follow_ups' %}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+            body: JSON.stringify({ ids })
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (!result.success) { alertify.error('Error: ' + (result.error || 'Bulk delete failed.')); return; }
+
+            result.ids.forEach(id => {
+                document.querySelector(`tr[data-id="${id}"]`)?.remove();
+                selectedIds.delete(Number(id));
+            });
+            // Ids the server didn't touch were already gone (someone else
+            // deleted them first) — drop them too, or the bar keeps counting
+            // rows that no longer exist.
+            ids.forEach(id => selectedIds.delete(Number(id)));
+            persistSelection();
+            updateSerialNumbers();
+            adjustTotalMatching(-result.deleted);
+            syncSelectionUI();
+
+            if (!document.querySelector('#followUpsTbody tr[data-id]')) {
+                document.getElementById('followUpsTbody').insertAdjacentHTML(
+                    'beforeend',
+                    '<tr id="emptyRow"><td colspan="11" class="text-center text-muted py-4">No follow-ups found. Create one above!</td></tr>'
+                );
+            }
+
+            let msg = `${result.deleted} follow-up${result.deleted === 1 ? '' : 's'} moved to Trash.`;
+            if (result.skipped) msg += ` ${result.skipped} already deleted.`;
+            alertify.success(msg);
+        })
+        .catch(err => { console.error(err); alertify.error('An error occurred during bulk delete.'); })
+        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; }));
+    }
+
+    // ===== Export =====
+    function exportFollowUps(format, selectedOnly) {
+        const params = new URLSearchParams(FU_FILTER_QUERY);
+        params.delete('page');
+        params.delete('per_page');
+        params.set('format', format);
+
+        if (selectedOnly) {
+            if (!selectedIds.size) { alertify.error('Select at least one row first.'); return; }
+            params.set('ids', [...selectedIds].join(','));
+        }
+
+        // A plain navigation, not fetch(): the browser handles the file
+        // download and Content-Disposition, and the page stays put.
+        window.location.href = `{% url 'export_follow_ups' %}?${params.toString()}`;
+        alertify.success(selectedOnly
+            ? `Exporting ${selectedIds.size} selected follow-up${selectedIds.size === 1 ? '' : 's'}...`
+            : `Exporting ${totalMatching} follow-up${totalMatching === 1 ? '' : 's'}...`);
+    }
+
+    // ===== Live Update Toast Notifications =====
+    const FU_AVATAR_PALETTE = ['#6366f1', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#0ea5e9', '#84cc16', '#f43f5e', '#a855f7', '#06b6d4'];
+
+    function fuAvatarColor(name) {
+        const str = name || '?';
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        return FU_AVATAR_PALETTE[Math.abs(hash) % FU_AVATAR_PALETTE.length];
+    }
+
+    function fuToastVerb(ev, type) {
+        if (type === 'new') return 'created a new follow-up';
+        if (type === 'deleted') return 'deleted a follow-up';
+        const fields = (ev.changes || []).map(c => c.field);
+        if (fields.includes('Status')) return 'changed the status';
+        if (fields.some(f => (f || '').startsWith('Followup'))) return 'added a follow-up note';
+        if (fields.includes('Remarks')) return 'updated remarks';
+        return 'updated details';
+    }
+
+    function fuToastChangeChip(change) {
+        if (!change || change.field === 'Entry Created' || change.field === 'Deleted') return null;
+        let newVal = (change.new || '-').toString();
+        if (newVal.length > 40) newVal = newVal.slice(0, 40) + '…';
+        if ((change.field || '').startsWith('Followup')) {
+            return `<span class="fu-toast-chip"><i class="fas fa-sticky-note"></i> ${escapeHtml(newVal)}</span>`;
+        }
+        let oldVal = (change.old || '-').toString();
+        if (oldVal.length > 18) oldVal = oldVal.slice(0, 18) + '…';
+        return `<span class="fu-toast-chip">${escapeHtml(change.field)}: ${escapeHtml(oldVal)} <span class="arrow">&rarr;</span> ${escapeHtml(newVal)}</span>`;
+    }
+
+    function dismissFuToast(el) {
+        if (!el || el.classList.contains('fu-toast-out')) return;
+        el.classList.add('fu-toast-out');
+        el.addEventListener('animationend', () => el.remove(), { once: true });
+    }
+
+    function locateFollowUpEntry(ev) {
+        const row = document.querySelector(`tr[data-id="${ev.followup_id}"]`);
+        if (row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.style.transition = 'background-color 0.4s';
+            row.style.backgroundColor = '#fef9c3';
+            setTimeout(() => row.style.backgroundColor = '', 1600);
+            return;
+        }
+        // Not visible under the active filters (or on another page) — jump
+        // straight to it by searching for its phone number.
+        const url = new URL(window.location.href);
+        url.searchParams.set('q', ev.phone || '');
+        url.searchParams.set('lead_source', '');
+        url.searchParams.set('status', '');
+        url.searchParams.set('page', '1');
+        window.location.href = url.toString();
+    }
+
+    // Final safety net against duplicate toasts. The server cursor should
+    // already guarantee an event is delivered once, but a retried request or a
+    // second copy of the loop must never produce a second identical toast.
+    const MAX_TOASTS_PER_POLL = 5;
+    const FU_SEEN_EVENT_LIMIT = 500;
+    const fuSeenEvents = new Set();
+
+    function isUnseenEvent(ev) {
+        const key = ev && ev.event_key
+            ? ev.event_key
+            : `${ev && ev.followup_id}:${ev && ev.user}:${ev && ev.timestamp}`;
+        if (fuSeenEvents.has(key)) return false;
+        fuSeenEvents.add(key);
+        if (fuSeenEvents.size > FU_SEEN_EVENT_LIMIT) {
+            // Drop the oldest keys — Sets iterate in insertion order.
+            const excess = fuSeenEvents.size - FU_SEEN_EVENT_LIMIT;
+            let dropped = 0;
+            for (const k of fuSeenEvents) {
+                fuSeenEvents.delete(k);
+                if (++dropped >= excess) break;
+            }
+        }
+        return true;
+    }
+
+    function showUpdateToast(ev) {
+        const container = document.getElementById('fuToastContainer');
+        if (!container) return;
+
+        const type = ev.is_deleted ? 'deleted' : (ev.is_new ? 'new' : 'updated');
+        const verb = fuToastVerb(ev, type);
+        const initial = (ev.user || '?').trim().charAt(0) || '?';
+
+        const changeChips = (ev.changes || [])
+            .map(fuToastChangeChip)
+            .filter(Boolean)
+            .slice(0, 4)
+            .join('');
+
+        const statusChip = (!ev.is_deleted && ev.status)
+            ? `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(ev.status)}" style="${getStatusBadgeStyle(ev.status)} font-size:0.65rem;" data-status-val="${ev.status.toLowerCase()}">${escapeHtml(ev.status)}</span>`
+            : '';
+
+        const hiddenTag = (!ev.is_deleted && !ev.matches_filter)
+            ? `<div class="fu-toast-hidden-tag"><i class="fas fa-filter"></i> Not shown in current filter — click to view</div>`
+            : '';
+
+        const el = document.createElement('div');
+        el.className = `fu-toast fu-toast-${type}`;
+        el.innerHTML = `
+            <div class="fu-toast-avatar" style="background:${fuAvatarColor(ev.user)}">${escapeHtml(initial)}</div>
+            <div class="fu-toast-body">
+                <div class="fu-toast-head">
+                    <span><span class="fu-toast-actor">${escapeHtml(ev.user || 'Someone')}</span> <span class="fu-toast-verb">${verb}</span></span>
+                    <span class="fu-toast-time">${escapeHtml(ev.timestamp || '')}</span>
+                </div>
+                <div class="fu-toast-target"><strong>${escapeHtml(ev.name) || 'Unnamed'}</strong> &middot; ${escapeHtml(ev.phone || '-')} ${statusChip}</div>
+                ${changeChips ? `<div class="fu-toast-changes">${changeChips}</div>` : ''}
+                ${hiddenTag}
+            </div>
+            <button type="button" class="fu-toast-close" title="Dismiss">&times;</button>
+            <div class="fu-toast-progress"></div>
+        `;
+
+        container.prepend(el);
+
+        const DURATION = 2800;
+        const progressEl = el.querySelector('.fu-toast-progress');
+        progressEl.style.animationDuration = `${DURATION}ms`;
+        progressEl.style.animationName = 'fuToastShrink';
+
+        let dismissTimer = setTimeout(() => dismissFuToast(el), DURATION);
+
+        el.addEventListener('mouseenter', () => {
+            el.classList.add('fu-toast-paused');
+            clearTimeout(dismissTimer);
+        });
+        el.addEventListener('mouseleave', () => {
+            el.classList.remove('fu-toast-paused');
+            dismissTimer = setTimeout(() => dismissFuToast(el), 2000);
+        });
+
+        el.querySelector('.fu-toast-close').addEventListener('click', (e) => {
+            e.stopPropagation();
+            clearTimeout(dismissTimer);
+            dismissFuToast(el);
+        });
+
+        el.addEventListener('click', () => {
+            clearTimeout(dismissTimer);
+            locateFollowUpEntry(ev);
+            dismissFuToast(el);
+        });
+
+        // Keep the stack from growing unbounded during busy periods.
+        const MAX_TOASTS = 5;
+        const toasts = container.querySelectorAll('.fu-toast:not(.fu-toast-out)');
+        if (toasts.length > MAX_TOASTS) {
+            dismissFuToast(toasts[toasts.length - 1]);
+        }
+    }
+
+    function validatePhone(input, errId) {
+        const errEl = document.getElementById(errId);
+        if (input.value.length > 0 && input.value.replace(/[^0-9]/g,'').length !== 10) {
+            input.style.borderColor = '#dc3545';
+            if (errEl) { errEl.textContent = 'Must be exactly 10 digits'; errEl.style.display = 'block'; }
+        } else {
+            input.style.borderColor = '';
+            if (errEl) errEl.style.display = 'none';
+        }
+    }
+
+
+
+    // ===== Count how many "Followup N" log entries a row has =====
+    function countFollowupLogs(logs) {
+        return (logs || []).filter(l => (l.field_changed || '').startsWith('Followup')).length;
+    }
+
+    // ===== Build followup cell HTML (for JS-added rows) =====
+    function buildFuCellHtml(logs, fuId) {
+        let contentHtml;
+        if (logs && logs.length > 0) {
+            const log = logs[0];
+            let badgeHtml = '';
+            if (log.field_changed) {
+                let isFollowup = log.field_changed.startsWith('Followup');
+                let badgeStyle = isFollowup ? 'background-color: #6f42c1; color: white;' : '';
+                let badgeClass = isFollowup ? '' : 'bg-secondary';
+                badgeHtml = `<div class="mb-1">
+                                <span class="badge ${badgeClass}" style="${badgeStyle} font-size: 0.55rem; padding: 0.2rem 0.4rem;">${escapeHtml(log.field_changed)}</span>
+                             </div>`;
+            }
+            contentHtml = `
+                <div class="mb-1">
+                    <div class="d-inline-block border rounded bg-light px-2 py-1 mb-1 text-center shadow-sm" style="font-size:0.65rem;width:100%;">
+                        ${badgeHtml}
+                        <div class="text-muted" style="font-size:0.6rem;">${log.timestamp} by ${escapeHtml(log.user)}</div>
+                    </div>
+                    <div class="text-dark text-break" style="font-size:0.75rem;">${escapeHtml(log.new_value)}</div>
+                </div>`;
+        } else {
+            contentHtml = `<span class="text-muted" style="font-size:0.75rem;">-</span>`;
+        }
+        return `<div class="fu-content">${contentHtml}</div>
+                <button class="fu-add-btn" onclick="openAddNoteModal(${fuId})" title="Add Follow up Note">
+                    <i class="fas fa-plus"></i>
+                </button>`;
+    }
+
+    // ===== Save new follow-up (entry row) =====
+    function saveFollowUp() {
+        const btn = document.querySelector('#entryRow button[title="Save Entry"]');
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btn.disabled = true;
+
+        const productIds = Array.from(document.getElementById('newProducts').selectedOptions).map(o => o.value);
+        const data = {
+            name: document.getElementById('newName').value.trim(),
+            phone: document.getElementById('newPhone').value.trim(),
+            lead_source: document.getElementById('newLeadSource').value.trim(),
+            product_ids: productIds,
+            new_followup_note: document.getElementById('newFollowupNote').value.trim(),
+            status: document.getElementById('newStatus').value,
+            remarks: document.getElementById('newRemarks').value.trim(),
+        };
+
+        const phoneErrEl = document.getElementById('newPhoneErr');
+        const phoneInput = document.getElementById('newPhone');
+        if (!data.phone) {
+            phoneInput.style.borderColor = '#dc3545';
+            phoneErrEl.textContent = 'Phone number is required';
+            phoneErrEl.style.display = 'block';
+            btn.innerHTML = origHtml; btn.disabled = false; return;
+        }
+        if (data.phone.replace(/\D/g,'').length !== 10) {
+            phoneInput.style.borderColor = '#dc3545';
+            phoneErrEl.textContent = 'Must be exactly 10 digits';
+            phoneErrEl.style.display = 'block';
+            btn.innerHTML = origHtml; btn.disabled = false; return;
+        }
+
+        trackWrite(fetch("{% url 'add_follow_up' %}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+            body: JSON.stringify(data)
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                ['newName','newPhone','newFollowupNote','newRemarks'].forEach(id => document.getElementById(id).value = '');
+                document.getElementById('newLeadSource').value = '';
+                if (typeof jQuery !== 'undefined') $('#newProducts').val(null).trigger('change');
+                const newStatusEl = document.getElementById('newStatus');
+                const defOpt = [...newStatusEl.options].find(o => o.defaultSelected);
+                newStatusEl.value = defOpt ? defOpt.value : newStatusEl.options[0]?.value;
+
+                appendNewRow(result.data);
+                document.getElementById('emptyRow')?.remove();
+                alertify.success('Follow-up added successfully!');
+            } else {
+                alertify.error('Error: ' + result.error);
+            }
+        })
+        .catch((err) => { console.error(err); alertify.error('An error occurred while saving.'); })
+        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; }));
+    }
+
+    function appendNewRow(data) {
+        const entryRow = document.getElementById('entryRow');
+        const orderCreateUrl = "{% url 'order_create' %}";
+
+        let productsHtml = '<span class="text-muted">-</span>';
+        if (data.products?.length > 0) {
+            productsHtml = '<div class="d-flex flex-wrap">' + data.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>';
+        }
+
+        const newTr = document.createElement('tr');
+        newTr.setAttribute('data-id', data.id);
+        newTr.setAttribute('data-status', data.status || '');
+        newTr.setAttribute('data-name', data.name || '');
+        newTr.setAttribute('data-phone', data.phone || '');
+        newTr.setAttribute('data-lead', data.lead_source || '');
+        newTr.setAttribute('data-products', JSON.stringify(data.products || []));
+        newTr.setAttribute('data-remarks', data.remarks || '');
+        newTr.setAttribute('data-version', data.version || 1);
+        newTr.setAttribute('data-created-iso', data.created_at_iso || '');
+        newTr.setAttribute('data-followup-count', countFollowupLogs(data.all_logs));
+
+        newTr.innerHTML = `
+            <td class="text-center">
+                <input type="checkbox" class="form-check-input fu-check fu-row-check" value="${data.id}" onclick="onRowCheckClick(event, this)">
+            </td>
+            <td class="text-center sn-column"></td>
+            <td>${escapeHtml(data.name) || '-'}</td>
+            <td>${escapeHtml(data.phone)}</td>
+            <td>${escapeHtml(data.lead_source) || '-'}</td>
+            <td class="product-column">${productsHtml}</td>
+            <td class="fu-cell position-relative p-1" style="min-width:135px;vertical-align:top;background-color:#f8f9fa;">
+                ${buildFuCellHtml(data.all_logs, data.id)}
+            </td>
+            <td class="inline-editable position-relative" onclick="makeInlineStatusEditable(this, ${data.id})">
+                <span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(data.status)}" style="${getStatusBadgeStyle(data.status)}" data-status-val="${(data.status||'').toLowerCase()}">${data.status || '-'}</span>
+            </td>
+            <td class="text-break" style="max-width:200px;">${escapeHtml(data.remarks) || '-'}</td>
+            <td class="fu-date-cell">${buildDateCellHtml(data)}</td>
+            <td class="text-center" style="white-space:nowrap;">
+                <a href="${orderCreateUrl}?followup_id=${data.id}" class="action-btn border text-success me-1" title="Create Order">
+                    <i class="fas fa-shopping-cart"></i>
+                </a>
+                <button class="action-btn border text-info me-1" onclick="viewLogs(${data.id})" title="View Logs">
+                    <i class="fas fa-history"></i>
+                </button>
+                <button class="action-btn border text-primary me-1" onclick="openEditModal(${data.id})" title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="action-btn border text-danger" onclick="deleteFollowUp(${data.id}, this)" title="Delete">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </td>`;
+        entryRow.after(newTr);
+        updateSerialNumbers();
+        adjustTotalMatching(1);
+        syncSelectionUI();
+    }
+
+    // The Date cell for rows the server didn't render. A row that has just been
+    // created or touched is, by definition, active right now — so a payload
+    // without created_at_iso (older responses) still shows a sensible value.
+    function buildDateCellHtml(d) {
+        const created = d.created_at_iso ? new Date(d.created_at_iso) : new Date();
+        const now = new Date();
+        const primary = activeFilters.date_field === 'updated_at' ? now : created;
+        const secondary = activeFilters.date_field === 'updated_at' ? created : now;
+        const day = dt => dt.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+        const clock = dt => dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        return `<div class="fu-date-main">${day(primary)}</div>
+                <div class="fu-date-sub">${clock(primary)}</div>
+                <div class="fu-date-sub">${day(secondary)}</div>`;
+    }
+
+    function updateSerialNumbers() {
+        let currentIndex = {{ page_obj.start_index|default:1 }};
+        document.querySelectorAll('#followUpsTbody tr:not(#entryRow):not(#emptyRow)').forEach(row => {
+            let snCell = row.querySelector('.sn-column');
+            if (snCell) {
+                snCell.textContent = currentIndex++;
+            }
+        });
+    }
+
+    // Repaint an existing row from a server payload.
+    //
+    // One function for every path that refreshes a row - your own edit, and
+    // the sync poll delivering somebody else's. They used to be two copies of
+    // this list and had drifted: the poll stopped at the Status cell, so a
+    // remark typed by one user updated the hidden data-remarks attribute in
+    // everyone else's browser but never repainted the Remarks column, which
+    // sat on whatever it had shown at page load. The poll also never refreshed
+    // data-followup-count, so the next "Add Follow-up Note" on that row
+    // proposed a number that was already taken.
+    //
+    // Column order: 0 Select | 1 S.N. | 2 Name | 3 Phone | 4 Lead | 5 Product
+    //               6 Follow Up | 7 Status | 8 Remarks | 9 Date | 10 Action
+    function paintRow(row, d) {
+        if (!row || !d) return;
+        const id = d.id || row.getAttribute('data-id');
+
+        row.setAttribute('data-version', d.version || 1);
+        row.setAttribute('data-status', d.status || '');
+        row.setAttribute('data-name', d.name || '');
+        row.setAttribute('data-phone', d.phone || '');
+        row.setAttribute('data-lead', d.lead_source || '');
+        row.setAttribute('data-products', JSON.stringify(d.products || []));
+        row.setAttribute('data-remarks', d.remarks || '');
+        if (d.created_at_iso) row.setAttribute('data-created-iso', d.created_at_iso);
+        row.setAttribute('data-followup-count', countFollowupLogs(d.all_logs));
+
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 10) return;   // not a data row
+
+        cells[2].textContent = d.name || '-';
+        cells[3].textContent = d.phone || '-';
+        cells[4].textContent = d.lead_source || '-';
+        cells[5].innerHTML = d.products?.length > 0
+            ? '<div class="d-flex flex-wrap">' + d.products.map(p => `<span class="chip-badge me-1">${escapeHtml(p.name)}</span>`).join('') + '</div>'
+            : '<span class="text-muted">-</span>';
+        cells[6].innerHTML = buildFuCellHtml(d.all_logs, id);
+        cells[7].innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(d.status)}" style="${getStatusBadgeStyle(d.status)}" data-status-val="${(d.status || '').toLowerCase()}">${d.status || '-'}</span>`;
+        // textContent, not innerHTML: remarks are free text typed by staff.
+        cells[8].textContent = d.remarks || '-';
+        cells[9].innerHTML = buildDateCellHtml({
+            created_at_iso: d.created_at_iso || row.getAttribute('data-created-iso') || ''
+        });
+    }
+
+    // ===== Add Note Modal =====
+    function openAddNoteModal(id) {
+        currentNoteId = id;
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        const existingCount = parseInt(row?.getAttribute('data-followup-count') || '0', 10) || 0;
+        document.getElementById('addNoteText').value = '';
+        document.getElementById('addNoteStatus').value = '';
+        document.getElementById('addNoteFieldLabel').textContent = `Followup ${existingCount + 1}`;
+        addNoteModal.show();
+    }
+
+    function saveAddNote() {
+        if (!currentNoteId) return;
+        const noteText = document.getElementById('addNoteText').value.trim();
+        if (!noteText) { alertify.error('Note text cannot be empty'); return; }
+
+        const statusVal = document.getElementById('addNoteStatus').value;
+        const btn = document.getElementById('saveNoteBtn');
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+
+        const row = document.querySelector(`tr[data-id="${currentNoteId}"]`);
+
+        trackWrite(fetch(`/api/orders/follow-ups/${currentNoteId}/edit/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+            body: JSON.stringify({
+                new_followup_note: noteText,
+                name: row.getAttribute('data-name') || '',
+                phone: row.getAttribute('data-phone') || '',
+                lead_source: row.getAttribute('data-lead') || '',
+                status: statusVal ? statusVal : (row.getAttribute('data-status') || ''),
+                remarks: row.getAttribute('data-remarks') || '',
+                version: row.getAttribute('data-version') || 1
+            })
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                addNoteModal.hide();
+                alertify.success('Note added successfully!');
+
+                // The server's copy of the row is the authority on whether it
+                // still belongs under the active filters — it carries the
+                // fields another user may have changed in the meantime.
+                if (!rowMatchesActiveFilters(result.data)) {
+                    row.remove();
+                    dropFromSelection(currentNoteId);
+                    updateSerialNumbers();
+                    adjustTotalMatching(-1);
+                    return;
+                }
+
+                // Repaint from the server's copy of the row, not just the two
+                // cells this action changed: another user may have edited the
+                // same row in between, and the response carries their values.
+                paintRow(row, result.data);
+
+            } else {
+                alertify.error('Error: ' + result.error);
+            }
+        })
+        .catch(() => alertify.error('An error occurred while saving.'))
+        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; }));
+    }
+
+    // ===== Edit Modal (full edit of name/phone/lead/products/status/remarks) =====
+    function openEditModal(id) {
+        currentEditId = id;
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        if (!row) return;
+
+        document.getElementById('editName').value = row.getAttribute('data-name') || '';
+        document.getElementById('editPhone').value = row.getAttribute('data-phone') || '';
+        document.getElementById('editLeadSource').value = row.getAttribute('data-lead') || '';
+        document.getElementById('editRemarks').value = row.getAttribute('data-remarks') || '';
+
+        const statusSelect = document.getElementById('editStatus');
+        const currentStatus = row.getAttribute('data-status') || '';
+        
+        // Ensure current status exists in options so it doesn't default to wrong value
+        let found = false;
+        for (let i = 0; i < statusSelect.options.length; i++) {
+            if (statusSelect.options[i].value === currentStatus) found = true;
+        }
+        if (!found && currentStatus) {
+            const opt = document.createElement('option');
+            opt.value = currentStatus;
+            opt.text = currentStatus;
+            statusSelect.appendChild(opt);
+        }
+        statusSelect.value = currentStatus;
+        
+        if (currentStatus.toLowerCase() === 'converted') {
+            statusSelect.disabled = true;
+        } else {
+            statusSelect.disabled = false;
+        }
+
+        try {
+            const products = JSON.parse(row.getAttribute('data-products') || '[]');
+            if (typeof jQuery !== 'undefined') $('#editProducts').val(products.map(p => p.id.toString())).trigger('change');
+        } catch(e) {}
+
+        editModal.show();
+    }
+
+    function saveEditFollowUp() {
+        if (!currentEditId) return;
+        const btn = document.getElementById('saveEditBtn');
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+
+        const phone = document.getElementById('editPhone').value.trim();
+        const phoneInput = document.getElementById('editPhone');
+        if (!phone) {
+            phoneInput.classList.add('is-invalid');
+            phoneInput.nextElementSibling.textContent = 'Phone number is required';
+            btn.innerHTML = origHtml; btn.disabled = false; return;
+        }
+        if (phone.replace(/\D/g,'').length !== 10) {
+            phoneInput.classList.add('is-invalid');
+            phoneInput.nextElementSibling.textContent = 'Must be exactly 10 digits';
+            btn.innerHTML = origHtml; btn.disabled = false; return;
+        }
+
+        const row = document.querySelector(`tr[data-id="${currentEditId}"]`);
+        const productIds = Array.from(document.getElementById('editProducts').selectedOptions).map(o => o.value);
+
+        const data = {
+            name: document.getElementById('editName').value.trim(),
+            phone,
+            lead_source: document.getElementById('editLeadSource').value.trim(),
+            product_ids: productIds,
+            status: document.getElementById('editStatus').value,
+            remarks: document.getElementById('editRemarks').value.trim(),
+            version: row.getAttribute('data-version') || 1
+        };
+
+        trackWrite(fetch(`/api/orders/follow-ups/${currentEditId}/edit/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+            body: JSON.stringify(data)
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                const d = result.data;
+
+                if (!rowMatchesActiveFilters(d)) {
+                    row.remove();
+                    dropFromSelection(currentEditId);
+                    updateSerialNumbers();
+                    adjustTotalMatching(-1);
+                    editModal.hide();
+                    alertify.success('Updated successfully!');
+                    return;
+                }
+
+                paintRow(row, d);
+
+                editModal.hide();
+                alertify.success('Updated successfully!');
+            } else {
+                alertify.error('Error: ' + result.error);
+            }
+        })
+        .catch(() => alertify.error('An error occurred while saving.'))
+        .finally(() => { btn.innerHTML = origHtml; btn.disabled = false; }));
+    }
+
+    // ===== Delete =====
+    function deleteFollowUp(id, btn) {
+        if (!confirm('Are you sure you want to delete this follow-up?')) return;
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btn.disabled = true;
+
+        trackWrite(fetch(`/api/orders/follow-ups/${id}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value }
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                document.querySelector(`tr[data-id="${id}"]`)?.remove();
+                dropFromSelection(id);
+                updateSerialNumbers();
+                adjustTotalMatching(-1);
+                alertify.success('Deleted successfully!');
+            } else {
+                alertify.error('Error deleting: ' + result.error);
+                btn.innerHTML = origHtml; btn.disabled = false;
+            }
+        })
+        .catch((err) => { console.error(err); alertify.error('An error occurred.'); btn.innerHTML = origHtml; btn.disabled = false; }));
+    }
+
+    // ===== View Logs =====
+    function viewLogs(id) {
+        const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('logsModal'));
+        const container = document.getElementById('logsContainer');
+        container.innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i><p class="mt-2 text-muted">Loading logs...</p></div>';
+        modal.show();
+
+        fetch(`/api/orders/follow-ups/${id}/logs/`)
+        .then(r => r.json())
+        .then(result => {
+            if (!result.success) { container.innerHTML = `<div class="text-danger py-3 text-center">${result.error}</div>`; return; }
+            if (result.data.length === 0) { container.innerHTML = '<div class="text-center text-muted py-4">No changes have been recorded yet.</div>'; return; }
+            container.innerHTML = result.data.map(log => {
+                let bodyHtml = '';
+                if (log.field_changed === 'Status') {
+                    bodyHtml = `
+                        <div class="mb-1">
+                            <span class="badge bg-info text-dark border border-info px-2 py-0 shadow-sm" style="font-size: 0.7rem;"><i class="fas fa-sync-alt me-1"></i> Status Updated</span>
+                        </div>
+                        <div class="d-inline-flex align-items-center bg-light p-1 px-2 rounded border border-info" style="border-style: dashed !important;">
+                            <span class="badge rounded-pill ${getStatusBadgeClass(log.old_value)} px-2 py-1 shadow-sm" style="font-size: 0.75rem; ${getStatusBadgeStyle(log.old_value)}">${log.old_value || 'None'}</span>
+                            <i class="fas fa-arrow-right mx-2 text-secondary" style="font-size: 0.8rem;"></i>
+                            <span class="badge rounded-pill ${getStatusBadgeClass(log.new_value)} px-2 py-1 shadow-sm" style="font-size: 0.75rem; ${getStatusBadgeStyle(log.new_value)}">${log.new_value || 'None'}</span>
+                        </div>
+                    `;
+                } else {
+                    let isFollowup = (log.field_changed || '').startsWith('Followup');
+                    let isEntryCreated = log.field_changed === 'Entry Created';
+                    let badgeStyle = isFollowup ? 'background-color: #6f42c1; color: white;' : '';
+                    let badgeClass = isFollowup ? '' : 'bg-secondary';
+                    let suffix = isEntryCreated ? '' : ' updated';
+
+                    bodyHtml = `
+                        <div class="mb-1"><span class="badge ${badgeClass}" style="${badgeStyle}">${log.field_changed}</span>${suffix}</div>
+                        <div class="text-muted small bg-light p-2 rounded border">
+                            <del class="text-danger me-2">${log.old_value || '-'}</del>
+                            <i class="fas fa-arrow-right mx-1 text-muted"></i>
+                            <ins class="text-success text-decoration-none fw-bold ms-2">${log.new_value || '-'}</ins>
+                        </div>
+                    `;
+                }
+
+                return `
+                <div class="timeline-item">
+                    <div class="timeline-icon ${log.field_changed === 'Status' ? 'bg-info' : ''}">
+                        ${log.field_changed === 'Status' ? '<i class="fas fa-exchange-alt text-white" style="font-size: 10px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);"></i>' : ''}
+                    </div>
+                    <div class="timeline-content shadow-sm ${log.field_changed === 'Status' ? 'border-start border-4 border-info' : ''}">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <strong class="text-primary"><i class="far fa-user me-1"></i>${log.user}</strong>
+                            <span class="text-muted small"><i class="far fa-clock me-1"></i>${log.timestamp}</span>
+                        </div>
+                        ${bodyHtml}
+                    </div>
+                </div>`;
+            }).join('');
+        })
+        .catch((err) => { console.error(err); container.innerHTML = '<div class="text-danger py-3 text-center">Failed to load logs.</div>'; });
+    }
+
+    // ===== Inline Status Editing =====
+    function makeInlineStatusEditable(cell, id) {
+        if (cell.classList.contains('inline-editing')) return;
+        const row = cell.closest('tr');
+        const currentStatus = row.getAttribute('data-status') || '';
+        
+        if (currentStatus.toLowerCase() === 'converted') {
+            if (typeof alertify !== 'undefined') alertify.warning('This follow-up is already converted and cannot be changed.');
+            return;
+        }
+        cell.classList.add('inline-editing');
+        const optionsHtml = document.getElementById('newStatus').innerHTML;
+        cell.innerHTML = `<select class="form-select form-select-sm" onchange="saveInlineStatus(this, ${id})" onblur="cancelInlineStatus(this, '${escapeHtml(currentStatus)}')" onkeydown="if(event.key==='Escape') cancelInlineStatus(this, '${escapeHtml(currentStatus)}')">${optionsHtml}</select>`;
+        const select = cell.querySelector('select');
+        select.value = currentStatus;
+        select.focus();
+    }
+
+    function cancelInlineStatus(select, originalValue) {
+        if (select?.disabled) return;
+        const cell = select?.closest('td');
+        if (cell) {
+            cell.classList.remove('inline-editing');
+            cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalValue)}" style="${getStatusBadgeStyle(originalValue)}" data-status-val="${(originalValue||'').toLowerCase()}">${originalValue || '-'}</span>`;
+        }
+    }
+
+    function saveInlineStatus(select, id) {
+        select.disabled = true;
+        const newStatus = select.value;
+        const cell = select.closest('td');
+        const row = select.closest('tr');
+        const originalStatus = row.getAttribute('data-status') || '';
+
+        if (newStatus === originalStatus) {
+            select.disabled = false;
+            cancelInlineStatus(select, originalStatus);
+            return;
+        }
+
+        cell.innerHTML = '<div class="d-flex justify-content-center"><div class="spinner-border spinner-border-sm text-primary" role="status"></div></div>';
+
+        let productIds = [];
+        try { productIds = JSON.parse(row.getAttribute('data-products') || '[]').map(p => p.id); } catch(e) {}
+
+        const data = {
+            name: row.getAttribute('data-name') || '',
+            phone: row.getAttribute('data-phone') || '',
+            lead_source: row.getAttribute('data-lead') || '',
+            product_ids: productIds,
+            status: newStatus,
+            remarks: row.getAttribute('data-remarks') || '',
+            version: row.getAttribute('data-version') || 1
+        };
+
+        fetch(`/api/orders/follow-ups/${id}/edit/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+            body: JSON.stringify(data)
+        })
+        .then(r => r.json())
+        .then(result => {
+            cell.classList.remove('inline-editing');
+            if (result.success) {
+                const finalStatus = result.data.status || '';
+
+                // If the new status no longer matches the active filters,
+                // drop the row from view instead of leaving a mismatched
+                // entry displayed under the current filter.
+                if (!rowMatchesActiveFilters(result.data)) {
+                    row.remove();
+                    dropFromSelection(id);
+                    updateSerialNumbers();
+                    adjustTotalMatching(-1);
+                    alertify.success('Status updated!');
+                    return;
+                }
+
+                row.setAttribute('data-status', finalStatus);
+                row.setAttribute('data-version', result.data.version || 1);
+                cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(finalStatus)}" style="${getStatusBadgeStyle(finalStatus)}" data-status-val="${finalStatus.toLowerCase()}">${finalStatus || '-'}</span>`;
+                alertify.success('Status updated!');
+            } else {
+                alertify.error('Error: ' + result.error);
+                cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalStatus)}" style="${getStatusBadgeStyle(originalStatus)}" data-status-val="${(originalStatus||'').toLowerCase()}">${originalStatus || '-'}</span>`;
+            }
+        })
+        .catch((err) => {
+            console.error(err);
+            cell.classList.remove('inline-editing');
+            alertify.error('An error occurred.');
+            cell.innerHTML = `<span class="badge status-badge rounded-pill px-2 py-1 ${getStatusBadgeClass(originalStatus)}" style="${getStatusBadgeStyle(originalStatus)}" data-status-val="${(originalStatus||'').toLowerCase()}">${originalStatus || '-'}</span>`;
+        });
+    }
+
+    // Real-Time AJAX Polling Setup (cPanel / WSGI Compatible)
+    let typingTimer = null;
+    // Cursors are seeded from the server, never from the browser clock — a
+    // client running behind the server would otherwise re-request activity it
+    // has already displayed.
+    let lastSyncTimestamp = "{{ sync_cursor }}";
+    let lastEventId = {{ event_cursor|default:0 }};
+    let syncInFlight = false;
+    let syncTimer = null;
+
+    //: Number of user-initiated writes currently in flight (save note, save
+    //: edit, add row, delete...). While this is above zero the background
+    //: pollers stand down so they aren't competing with the user for the
+    //: browser's handful of per-host connections. Always adjusted through
+    //: trackWrite() so a failed request can't leave it stuck above zero.
+    let writesInFlight = 0;
+
+    function trackWrite(promise) {
+        writesInFlight++;
+        return promise.finally(() => {
+            writesInFlight = Math.max(0, writesInFlight - 1);
+            // The write almost certainly changed something; refresh promptly
+            // rather than waiting out the remainder of the poll interval.
+            if (writesInFlight === 0) {
+                lastPollAt = 0;
+                runSyncPoll();
+            }
+        });
+    }
+
+    function runSyncPoll() {
+        // Never let two polls overlap. setInterval fired regardless of whether
+        // the previous request had returned, so a response slower than the
+        // interval sent the next request with a stale cursor and every event
+        // in that window was delivered — and toasted — twice.
+        if (syncInFlight) return Promise.resolve();
+
+        // Yield to whatever the user is actually doing. A browser allows only
+        // ~6 connections per host, and this page keeps several timers running;
+        // a save fired while a slow poll held a slot would sit in the browser's
+        // own queue, leaving the button spinning on "Saving..." long after the
+        // click. User writes take priority — a poll skipped here is picked up
+        // 2 seconds later, and the cursors mean nothing is missed.
+        if (writesInFlight > 0) return Promise.resolve();
+
+        syncInFlight = true;
+
+        // The date filter goes over the wire too: without it the server would
+        // report a row updated outside the active range as "matches", and the
+        // poll would splice a row into a date-filtered table that the page
+        // itself would never have rendered.
+        const params = new URLSearchParams({
+            last_sync: lastSyncTimestamp,
+            last_event_id: lastEventId,
+            q: activeFilters.q,
+            lead_source: activeFilters.lead_source,
+            status: activeFilters.status,
+            date_field: activeFilters.date_field,
+            date_range: activeFilters.date_range,
+            date_from: activeFilters.date_from,
+            date_to: activeFilters.date_to
+        });
+        return fetch(`/api/orders/follow-ups/sync/?${params.toString()}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    lastSyncTimestamp = data.timestamp;
+                    if (typeof data.last_event_id === 'number') {
+                        lastEventId = data.last_event_id;
+                    }
+
+                    // Handle deleted rows
+                    data.deleted_ids.forEach(id => {
+                        const row = document.querySelector(`tr[data-id="${id}"]`);
+                        if (row) {
+                            row.remove();
+                            updateSerialNumbers();
+                            adjustTotalMatching(-1);
+                        }
+                        // Drop it from the selection whether or not it was on
+                        // this page — a bulk delete elsewhere must not leave
+                        // this tab holding ids that no longer exist.
+                        dropFromSelection(id);
+                    });
+
+                    // Handle added/updated rows
+                    data.updates.forEach(d => {
+                        let row = document.querySelector(`tr[data-id="${d.id}"]`);
+
+                        if (!d.matches_filter) {
+                            // Doesn't match the currently active filters.
+                            // Remove it if it's shown, otherwise ignore it entirely.
+                            if (row) {
+                                row.remove();
+                                updateSerialNumbers();
+                                adjustTotalMatching(-1);
+                            }
+                            return;
+                        }
+
+                        if (!row) {
+                            appendNewRow(d);
+                            row = document.querySelector(`tr[data-id="${d.id}"]`);
+                            document.getElementById('emptyRow')?.remove();
+                        } else {
+                            paintRow(row, d);
+                        }
+
+                        if (row) {
+                            row.style.transition = 'background-color 0.5s';
+                            row.style.backgroundColor = '#d4edda';
+                            setTimeout(() => row.style.backgroundColor = '', 1500);
+                        }
+                    });
+
+                    // Rows may have come or gone above; re-tick the checkboxes
+                    // and refresh the master/indeterminate state to match.
+                    syncSelectionUI();
+
+                    // Handle live-update notification toasts (other users' activity).
+                    // Only the newest few are rendered: anything older would be
+                    // trimmed off the stack immediately anyway, and after a long
+                    // spell in a background tab the backlog can be large.
+                    const freshEvents = (data.events || []).filter(isUnseenEvent);
+                    freshEvents.slice(-MAX_TOASTS_PER_POLL).forEach(ev => showUpdateToast(ev));
+
+                    // Handle presence indicators
+                    document.querySelectorAll('.presence-indicator').forEach(el => el.remove()); // clear all
+                    (data.presences || []).forEach(p => {
+                        // Only show presence for OTHER users
+                        // We check if username matches the current user's name (basic check)
+                        const currentUser = "{{ request.user.username }}";
+                        if (p.user__username !== currentUser) {
+                            showPresence(p.followup_id, p.user__username, p.action);
+                        }
+                    });
+                }
+            })
+            .catch(err => console.error("Sync error:", err))
+            .finally(() => { syncInFlight = false; });
+    }
+
+    const SYNC_INTERVAL_MS = 2000;         // foreground: near-real-time
+    const SYNC_HIDDEN_INTERVAL_MS = 30000; // background: keep cursors moving cheaply
+    let lastPollAt = 0;
+
+    function startSyncLoop() {
+        if (syncTimer) return;   // guard against a double start
+        syncTimer = setInterval(() => {
+            // A background tab doesn't need second-by-second updates, and the
+            // browser throttles its timers anyway. Back off instead of stopping
+            // so the cursors keep advancing and the tab never has to catch up
+            // on a huge backlog when it comes back to the foreground.
+            const minGap = document.hidden ? SYNC_HIDDEN_INTERVAL_MS : SYNC_INTERVAL_MS;
+            if (Date.now() - lastPollAt < minGap) return;
+            lastPollAt = Date.now();
+            runSyncPoll();
+        }, SYNC_INTERVAL_MS);
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                lastPollAt = Date.now();
+                runSyncPoll();
+            }
+        });
+    }
+
+
+    function sendPresence(type, id) {
+        if (!id) return;
+        fetch('/api/orders/follow-ups/presence/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ type: type, id: id })
+        }).catch(err => console.error("Presence update error:", err));
+    }
+
+    function showPresence(id, username, action) {
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        if (row) {
+            let indicator = row.querySelector('.presence-indicator');
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.className = 'presence-indicator text-primary position-absolute top-0 end-0 p-1 bg-white border rounded shadow-sm';
+                indicator.style.fontSize = '0.75rem';
+                indicator.style.zIndex = '10';
+                indicator.style.transform = 'translate(10%, -50%)';
+                
+                // 3rd cell: 1 is the select checkbox, 2 is the S.N.
+                const nameCell = row.querySelector('td:nth-child(3)');
+                if(nameCell) {
+                    nameCell.style.position = 'relative';
+                    nameCell.appendChild(indicator);
+                }
+            }
+            if (action === 'typing') {
+                indicator.innerHTML = `<strong>${username}</strong> is typing <span class="typing-dots"><span></span><span></span><span></span></span>`;
+            } else {
+                indicator.innerHTML = `<i class="fas fa-eye"></i> <strong>${username}</strong> is viewing`;
+            }
+        }
+    }
+
+    let heartbeatTimer = null;
+    let currentPresenceAction = 'viewing';
+
+    // 10s, not 5s: this exists so a colleague sees "X is typing" within a
+    // second or two of it being true, and 10s is well inside the presence
+    // record's own lifetime. At 5s it was the second-chattiest timer on the
+    // page, and every tick is a POST that writes a row.
+    const PRESENCE_INTERVAL_MS = 10000;
+
+    function startHeartbeat(id) {
+        stopHeartbeat();
+        currentPresenceAction = 'viewing';
+        sendPresence(currentPresenceAction, id);
+        heartbeatTimer = setInterval(() => {
+            // Nobody is watching a hidden tab type. Skip rather than clear the
+            // timer, so it resumes on its own when the tab comes back.
+            if (document.hidden) return;
+            sendPresence(currentPresenceAction, id);
+        }, PRESENCE_INTERVAL_MS);
+    }
+
+    function stopHeartbeat(id) {
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+        if (id) sendPresence('closed_modal', id);
+    }
+
+    // Attach listeners for Edit Modal presence
+    document.getElementById('editFollowUpModal').addEventListener('shown.bs.modal', function () {
+        if (currentEditId) startHeartbeat(currentEditId);
+    });
+    document.getElementById('editFollowUpModal').addEventListener('hidden.bs.modal', function () {
+        if (currentEditId) stopHeartbeat(currentEditId);
+    });
+    const editInputs = document.querySelectorAll('#editFollowUpModal input, #editFollowUpModal textarea');
+    editInputs.forEach(input => {
+        input.addEventListener('input', () => {
+            if (currentEditId && currentPresenceAction !== 'typing') {
+                currentPresenceAction = 'typing';
+                sendPresence('typing', currentEditId);
+            }
+        });
+    });
+
+    // Attach listeners for Add Note Modal presence
+    document.getElementById('addNoteModal').addEventListener('shown.bs.modal', function () {
+        if (currentNoteId) startHeartbeat(currentNoteId);
+    });
+    document.getElementById('addNoteModal').addEventListener('hidden.bs.modal', function () {
+        if (currentNoteId) stopHeartbeat(currentNoteId);
+    });
+    const noteInputs = document.querySelectorAll('#addNoteModal input, #addNoteModal textarea');
+    noteInputs.forEach(input => {
+        input.addEventListener('input', () => {
+            if (currentNoteId && currentPresenceAction !== 'typing') {
+                currentPresenceAction = 'typing';
+                sendPresence('typing', currentNoteId);
+            }
+        });
+    });
+
+    // Start AJAX Polling Sync
+    startSyncLoop();
+
+</script>
+
+{% endblock %}

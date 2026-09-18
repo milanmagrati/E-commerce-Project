@@ -14,14 +14,14 @@
     .scanner-container {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 15px;
-        padding: 40px;
+        padding: 15px 25px;
         color: white;
-        margin-bottom: 30px;
+        margin-bottom: 15px;
     }
     
     .barcode-icon {
-        font-size: 4rem;
-        margin-bottom: 20px;
+        font-size: 2.5rem;
+        margin-bottom: 10px;
         animation: pulse 2s infinite;
     }
     
@@ -31,8 +31,8 @@
     }
     
     #barcodeInput {
-        font-size: 1.8rem;
-        padding: 20px;
+        font-size: 1.25rem;
+        padding: 10px;
         border: 3px dashed #fff;
         border-radius: 12px;
         text-align: center;
@@ -52,10 +52,10 @@
         background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
         border: none;
         color: white;
-        padding: 15px 40px;
+        padding: 10px 20px;
         border-radius: 30px;
         font-weight: 600;
-        font-size: 1.1rem;
+        font-size: 1rem;
         transition: all 0.3s ease;
     }
     
@@ -66,12 +66,12 @@
     }
     
     .scan-status {
-        padding: 15px;
+        padding: 10px;
         border-radius: 10px;
-        margin-top: 20px;
+        margin-top: 15px;
         font-weight: 600;
         text-align: center;
-        font-size: 1.1rem;
+        font-size: 1rem;
     }
     
     .scan-status.waiting {
@@ -101,7 +101,7 @@
     /* Scanned Orders List - Compact Design */
     .scanned-orders-section {
         display: none;
-        margin-top: 30px;
+        margin-top: 15px;
     }
     
     .scanned-orders-section.active {
@@ -126,6 +126,17 @@
         overflow: hidden;
     }
     
+    .order-compact-card.quantity-alert {
+        background-color: #ffe5b4 !important; /* Distinct light orange/yellow */
+        border-left-color: #fd7e14 !important;
+    }
+    
+    .order-compact-card.quantity-alert:hover,
+    .order-compact-card.quantity-alert .order-header:hover {
+        background-color: #ffd89b !important;
+        border-left-color: #fd7e14 !important;
+    }
+    
     .order-compact-card:hover {
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         border-left-color: #0d6efd;
@@ -134,6 +145,11 @@
     .order-compact-card.expanded {
         border-left-color: #0d6efd;
         box-shadow: 0 6px 20px rgba(13, 110, 253, 0.15);
+    }
+    
+    .order-compact-card.quantity-alert.expanded {
+        border-left-color: #fd7e14 !important;
+        box-shadow: 0 6px 20px rgba(253, 126, 20, 0.2);
     }
     
     .order-header {
@@ -375,7 +391,7 @@
     </div>
 
     <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h2 class="mb-1">
                 <i class="fas fa-undo-alt text-primary"></i> Create Return Request
@@ -393,16 +409,16 @@
         <div class="col-lg-8">
             <!-- Barcode Scanner Section -->
             <div class="scanner-container">
-                <div class="text-center">
+                <div class="text-center mb-2">
                     <i class="fas fa-barcode barcode-icon"></i>
-                    <h3 class="mb-2">Scan Order Barcode</h3>
-                    <p class="mb-4 opacity-75">Scan or enter order number to start return process</p>
+                    <h4 class="mb-1">Scan Order Barcode</h4>
+                    <p class="mb-2 opacity-75">Scan or enter order number to start return process</p>
                 </div>
                 
-                <div class="bg-white rounded p-4">
+                <div class="bg-white rounded p-3 shadow-sm">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-8">
-                            <label class="form-label text-dark fw-bold">
+                            <label class="form-label text-dark fw-bold mb-1">
                                 <i class="fas fa-keyboard text-primary"></i> Order Barcode / Order Number
                             </label>
                             <input type="text" 
@@ -427,8 +443,8 @@
                     </div>
                 </div>
                 
-                <div class="text-center mt-3">
-                    <button type="button" class="btn btn-link text-white text-decoration-none" id="toggleManualMode">
+                <div class="text-center mt-2">
+                    <button type="button" class="btn btn-link text-white text-decoration-none py-0" id="toggleManualMode">
                         <i class="fas fa-list me-2"></i> Or select from list manually
                     </button>
                 </div>
@@ -463,9 +479,14 @@
                                 <h5 class="mb-0">
                                     <i class="fas fa-check-circle me-2"></i> Scanned Orders
                                 </h5>
-                                <small id="draftIndicator" class="text-success-light" style="display:none;">
-                                    <i class="fas fa-history me-1"></i> Draft (Auto-saved)
-                                </small>
+                                <div id="draftIndicator" style="display:none;" class="mt-1">
+                                    <small class="text-success-light" style="color: rgba(255,255,255,0.85);">
+                                        <i class="fas fa-history me-1"></i> Draft (Auto-saved)
+                                    </small>
+                                    <button type="button" class="btn btn-sm btn-link text-white py-0 px-1 ms-2 text-decoration-none" onclick="resetDraftManually()" title="Clear Draft">
+                                        <i class="fas fa-trash-alt text-danger"></i> <small>Reset</small>
+                                    </button>
+                                </div>
                             </div>
                             <div class="d-flex align-items-center gap-3">
                                 <span class="badge bg-white text-success" id="scannedCount">0 Orders</span>
@@ -646,12 +667,15 @@
     // ✅ Save draft to localStorage
     function saveDraft() {
         try {
-            const draftData = Array.from(scannedOrders.entries()).map(([key, value]) => ({
-                order_number: key,
-                order: value
-            }));
-            localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
-            console.log('💾 Draft saved:', draftData.length, 'order(s)');
+            const draftPayload = {
+                timestamp: new Date().getTime(),
+                orders: Array.from(scannedOrders.entries()).map(([key, value]) => ({
+                    order_number: key,
+                    order: value
+                }))
+            };
+            localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftPayload));
+            console.log('💾 Draft saved:', draftPayload.orders.length, 'order(s)');
         } catch (e) {
             console.error('Failed to save draft:', e);
         }
@@ -660,15 +684,45 @@
     // ✅ Load draft from localStorage
     function loadDraft() {
         try {
-            const draftData = localStorage.getItem(DRAFT_STORAGE_KEY);
-            if (draftData) {
-                const orders = JSON.parse(draftData);
+            const rawData = localStorage.getItem(DRAFT_STORAGE_KEY);
+            if (rawData) {
+                const parsed = JSON.parse(rawData);
+                let orders = [];
+                let timestamp = 0;
+                
+                if (Array.isArray(parsed)) {
+                    // Backwards compatibility with old array-based format
+                    orders = parsed;
+                } else if (parsed && parsed.orders) {
+                    orders = parsed.orders;
+                    timestamp = parsed.timestamp;
+                }
+                
+                // Expiry check: 6 hours
+                const SIX_HOURS = 6 * 60 * 60 * 1000;
+                if (timestamp && (new Date().getTime() - timestamp > SIX_HOURS)) {
+                    console.log('⏳ Draft expired (older than 6 hours), clearing...');
+                    clearDraft();
+                    return false;
+                }
+
                 orders.forEach(item => {
-                    addScannedOrder(item.order);
+                    let needsAlert = false;
+                    let totalQty = 0;
+                    if (item.order && item.order.items) {
+                        item.order.items.forEach(i => {
+                            totalQty += parseInt(i.quantity) || 0;
+                        });
+                        if (totalQty >= 2) {
+                            needsAlert = true;
+                        }
+                    }
+                    addScannedOrder(item.order, needsAlert);
                 });
+                
                 // Show draft indicator
                 const draftIndicator = document.getElementById('draftIndicator');
-                if (draftIndicator) {
+                if (draftIndicator && orders.length > 0) {
                     draftIndicator.style.display = 'block';
                 }
                 console.log('📂 Draft loaded:', orders.length, 'order(s)');
@@ -694,6 +748,18 @@
             console.error('Failed to clear draft:', e);
         }
     }
+
+    // ✅ Reset draft manually
+    window.resetDraftManually = function() {
+        if (confirm('Are you sure you want to clear the draft? This will remove all scanned orders.')) {
+            clearDraft();
+            scannedOrders.clear();
+            scannedOrdersList.innerHTML = '';
+            scannedOrdersSection.classList.remove('active');
+            scannedCount.textContent = '0 Orders';
+            updateBulkButton();
+        }
+    };
 
     // Manual Mode Toggle
     document.getElementById('toggleManualMode').addEventListener('click', function() {
@@ -860,9 +926,26 @@
                 pendingBarcodes.delete(barcode);
                 if (data.success) {
                     console.log('✅ Order found:', data.order.order_number);
-                    addScannedOrder(data.order);
+                    
+                    let needsAlert = false;
+                    let totalQty = 0;
+                    if (data.order && data.order.items) {
+                        data.order.items.forEach(item => {
+                            totalQty += parseInt(item.quantity) || 0;
+                        });
+                        if (totalQty >= 2) {
+                            needsAlert = true;
+                        }
+                    }
+                    
+                    addScannedOrder(data.order, needsAlert);
                     updateScanStatus('success', `<i class="fas fa-check-circle"></i> Added!`);
-                    playSuccessBeep();
+                    
+                    if (needsAlert) {
+                        playAlertBeep();
+                    } else {
+                        playSuccessBeep();
+                    }
                     
                     // Clear input immediately
                     barcodeInput.value = '';
@@ -908,9 +991,12 @@
 
  
     // Create Order Card with Accordion
-    function createOrderCard(orderData) {
+    function createOrderCard(orderData, needsAlert = false) {
         const cardDiv = document.createElement('div');
         cardDiv.className = 'order-compact-card';
+        if (needsAlert) {
+            cardDiv.classList.add('quantity-alert');
+        }
         cardDiv.setAttribute('data-order-number', orderData.order_number);
         
         cardDiv.innerHTML = `
@@ -962,14 +1048,11 @@
             // Expand this card
             card.classList.add('expanded');
             const orderData = scannedOrders.get(orderNumber);
-            loadOrderDetails(orderNumber, orderData, detailsPanel);
+            if (!detailsPanel.querySelector('form')) {
+                loadOrderDetails(orderNumber, orderData, detailsPanel);
+            }
             detailsPanel.classList.add('show');
             expandedOrderId = orderNumber;
-            
-            // Scroll to the card
-            setTimeout(() => {
-                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }, 100);
         }
     };
 
@@ -1300,9 +1383,28 @@
         })
         .then(response => {
             if (response.ok) {
-                // ✅ Clear draft after successful submission
-                clearDraft();
-                window.location.href = '{% url "returns_list" %}';
+                // ✅ Update draft after successful submission
+                scannedOrders.delete(orderNumber);
+                
+                if (scannedOrders.size === 0) {
+                    clearDraft();
+                    window.location.href = '{% url "returns_list" %}';
+                } else {
+                    saveDraft();
+                    loadingOverlay.classList.remove('active');
+                    alert(`Return for ${orderNumber} processed successfully!`);
+                    
+                    // Remove the card element
+                    const card = document.querySelector(`[data-order-number="${orderNumber}"]`);
+                    if (card) {
+                        card.style.animation = 'slideOut 0.3s ease';
+                        setTimeout(() => card.remove(), 300);
+                    }
+                    
+                    // Update count
+                    scannedCount.textContent = `${scannedOrders.size} Order${scannedOrders.size !== 1 ? 's' : ''}`;
+                    updateBulkButton();
+                }
             } else {
                 throw new Error('Submission failed');
             }
@@ -1315,7 +1417,7 @@
     };
 
     // Add Scanned Order
-    function addScannedOrder(orderData) {
+    function addScannedOrder(orderData, needsAlert = false) {
         // Store order data
         scannedOrders.set(orderData.order_number, orderData);
         
@@ -1325,7 +1427,7 @@
         }
         
         // Create and add order card at the top
-        const cardDiv = createOrderCard(orderData);
+        const cardDiv = createOrderCard(orderData, needsAlert);
         scannedOrdersList.prepend(cardDiv);
         
         // Update count
@@ -1336,11 +1438,6 @@
 
         // Update bulk return button
         updateBulkButton();
-
-        // Scroll to the new card at the top
-        setTimeout(() => {
-            cardDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
     }
 
     // Remove Order
@@ -1411,6 +1508,27 @@
             gain.gain.setValueAtTime(0.2, context.currentTime);
             oscillator.start(context.currentTime);
             oscillator.stop(context.currentTime + 0.15);
+        } catch(e) {}
+    }
+
+    function playAlertBeep() {
+        try {
+            const context = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+            oscillator.type = 'square';
+            oscillator.frequency.value = 600;
+            
+            // Quick double beep
+            gain.gain.setValueAtTime(0.3, context.currentTime);
+            gain.gain.setValueAtTime(0, context.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.3, context.currentTime + 0.15);
+            gain.gain.setValueAtTime(0, context.currentTime + 0.25);
+            
+            oscillator.start(context.currentTime);
+            oscillator.stop(context.currentTime + 0.3);
         } catch(e) {}
     }
 

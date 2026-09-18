@@ -8,6 +8,7 @@ class Role(models.Model):
     name = models.CharField(max_length=50, unique=True, help_text="Internal name used in code (e.g. administrator, sales, warehouse)")
     display_name = models.CharField(max_length=100, help_text="Human-readable name shown in UI")
     description = models.TextField(blank=True, default='')
+    default_permissions = models.JSONField(default=dict, blank=True)
     is_system = models.BooleanField(default=False, help_text="System roles cannot be deleted without extra confirmation")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -59,6 +60,7 @@ class CustomUser(AbstractUser):
     can_cancel_orders = models.BooleanField(default=False)
     can_view_on_hold_orders = models.BooleanField(default=False)
     can_export_orders = models.BooleanField(default=False, verbose_name="Can Export Orders to Excel")
+    can_access_offer_price = models.BooleanField(default=False, verbose_name="Can Access Offer Price")
     
     # PRODUCT PERMISSIONS
     can_view_products = models.BooleanField(default=True)
@@ -98,6 +100,8 @@ class CustomUser(AbstractUser):
     can_view_daily_sales_reports = models.BooleanField(default=False, verbose_name="Can View Daily Sales Reports")
     can_view_product_sales_reports = models.BooleanField(default=False, verbose_name="Can View Product Sales Reports")
     can_view_financial_reports = models.BooleanField(default=False)
+    can_view_orders_by_source_report = models.BooleanField(default=False, verbose_name="Can View Orders by Source Report")
+    can_view_rtv_report = models.BooleanField(default=False, verbose_name="Can View RTV Report")
     can_view_total_revenue = models.BooleanField(default=False, verbose_name="Can View Total Revenue")
     can_export_data = models.BooleanField(default=False)
     
@@ -137,9 +141,16 @@ class CustomUser(AbstractUser):
     can_edit_cities = models.BooleanField(default=False, verbose_name="Can Edit Cities")
     can_delete_cities = models.BooleanField(default=False, verbose_name="Can Delete Cities")
 
+    # CONTENT MANAGEMENT PERMISSIONS
+    can_view_content_management = models.BooleanField(default=False, verbose_name="Can View Content Management")
+
     # DASHBOARD PERMISSIONS
-    can_view_dashboard = models.BooleanField(default=True, verbose_name="Can View Dashboard")
+    can_view_dashboard = models.BooleanField(default=False, verbose_name="Dashboard Access")
     can_view_low_stock_alerts = models.BooleanField(default=False, verbose_name="Can View Low Stock Alerts")
+    can_view_dashboard_incomplete_attendance = models.BooleanField(default=False, verbose_name="Incomplete Attendance Alert")
+    can_view_dashboard_sales_overview = models.BooleanField(default=False, verbose_name="Sales Overview")
+    can_view_dashboard_orders_overview = models.BooleanField(default=False, verbose_name="Orders Overview")
+    can_view_dashboard_orders_by_source = models.BooleanField(default=False, verbose_name="Orders by Source")
 
     # NCM LOGISTICS PERMISSIONS
     can_view_ncm_orders = models.BooleanField(default=False, verbose_name="Can View NCM Orders")
@@ -148,6 +159,8 @@ class CustomUser(AbstractUser):
     can_delete_ncm_orders = models.BooleanField(default=False, verbose_name="Can Delete NCM Orders")
     can_view_ncm_bulk_logs = models.BooleanField(default=False, verbose_name="Can View NCM Bulk Logs")
     can_manage_ncm_bulk_logs = models.BooleanField(default=False, verbose_name="Can Manage NCM Bulk Logs")
+    can_export_logistics_orders = models.BooleanField(default=False, verbose_name="Can Export Logistics Orders")
+    can_export_logistics_bulk_logs = models.BooleanField(default=False, verbose_name="Can Export Logistics Bulk Logs")
     can_view_ncm_trash = models.BooleanField(default=False, verbose_name="Can View NCM Trash")
     can_sync_ncm_orders = models.BooleanField(default=False, verbose_name="Can Sync NCM Orders")
     can_view_ncm_branches = models.BooleanField(default=False, verbose_name="Can View NCM Branches")
@@ -159,9 +172,28 @@ class CustomUser(AbstractUser):
     can_view_hrm_asset_management = models.BooleanField(default=False, verbose_name="Can View Asset Management")
     can_view_hrm_attendance = models.BooleanField(default=False, verbose_name="Can View Attendance")
     can_view_hrm_payroll = models.BooleanField(default=False, verbose_name="Can View Payroll Management")
+    can_view_hrm_incomplete_attendance = models.BooleanField(default=False, verbose_name="Incomplete Attendance Alert")
+    can_fix_hrm_incomplete_attendance = models.BooleanField(default=False, verbose_name="Fix Incomplete Attendance")
 
     # TODO / TICKETING PERMISSIONS
     can_access_todo = models.BooleanField(default=False, verbose_name="Access to Todo/Ticketing")
+
+    # FOLLOW UP PERMISSIONS
+    can_access_follow_ups = models.BooleanField(default=False, verbose_name="Can Access Follow Ups")
+    can_export_follow_ups = models.BooleanField(default=False, verbose_name="Can Export Follow Ups")
+    can_view_follow_up_report = models.BooleanField(default=False, verbose_name="Can View Follow Up Report")
+    can_setup_follow_up_status = models.BooleanField(default=False, verbose_name="Can Setup Follow Up Status")
+
+    # RESOURCES / KNOWLEDGE BASE PERMISSIONS
+    can_view_resources = models.BooleanField(default=False, verbose_name="Can View Resources")
+    can_create_resources = models.BooleanField(default=False, verbose_name="Can Create/Edit/Delete Resources")
+
+    # SENTINEL VAULT (AUDIT TRAIL) PERMISSIONS
+    can_view_audit_trail = models.BooleanField(default=False, verbose_name="Can Access Sentinel Vault")
+    can_view_all_users_activity = models.BooleanField(default=False, verbose_name="Can View Everyone's Activity")
+    can_export_audit_logs = models.BooleanField(default=False, verbose_name="Can Export Audit Logs")
+    can_manage_sessions = models.BooleanField(default=False, verbose_name="Can Revoke Sessions & Resolve Alerts")
+    can_configure_audit = models.BooleanField(default=False, verbose_name="Can Configure Audit Settings")
 
     groups = models.ManyToManyField('auth.Group', related_name='custom_user_set', blank=True)
     user_permissions = models.ManyToManyField('auth.Permission', related_name='custom_user_set', blank=True)
@@ -200,32 +232,63 @@ class CustomUser(AbstractUser):
     
     def set_default_permissions_by_role(self):
         """Auto-set permissions based on role"""
-        if self.role == 'warehouse':
-            self.can_view_dashboard = True
-            self.can_view_orders = True
-            self.can_edit_orders = True
-            self.can_view_on_hold_orders = True
-            self.can_view_dispatch = True
-            self.can_manage_dispatch = True
-            self.can_delete_dispatch = True
-            self.can_scan_barcodes = True
-            self.can_view_inventory = True
-            self.can_manage_inventory = True
-            self.can_adjust_stock = True
-            self.can_view_own_targets = True
+        if not self.role:
+            return
 
-        elif self.role == 'sales':
-            self.can_view_dashboard = True
-            self.can_view_orders = True
-            self.can_create_orders = True
-            self.can_edit_orders = True
-            self.can_view_products = True
-            self.can_view_customers = True
-            self.can_create_customers = True
-            self.can_edit_customers = True
-            self.can_give_discounts = True
-            self.max_discount_percent = Decimal('10.00')
-            self.can_view_own_targets = True
+        if self.role == 'administrator':
+            for perm in [
+                'can_view_dashboard', 'can_view_total_revenue', 'can_view_low_stock_alerts',
+                'can_view_dashboard_incomplete_attendance', 'can_view_dashboard_sales_overview',
+                'can_view_dashboard_orders_overview', 'can_view_dashboard_orders_by_source',
+                'can_view_orders', 'can_create_orders', 'can_edit_orders', 
+                'can_delete_orders', 'can_cancel_orders', 'can_view_on_hold_orders', 
+                'can_export_orders', 'can_view_orders_list', 'can_access_offer_price',
+                'can_view_products', 'can_create_products', 'can_edit_products', 'can_delete_products',
+                'can_view_customers', 'can_create_customers', 'can_edit_customers', 'can_delete_customers',
+                'can_view_returns', 'can_create_returns', 'can_edit_returns',
+                'can_delete_returns', 'can_approve_returns', 'can_process_refunds',
+                'can_view_targets', 'can_set_targets', 'can_edit_targets',
+                'can_delete_targets', 'can_view_own_targets',
+                'can_view_dispatch', 'can_manage_dispatch', 'can_delete_dispatch', 'can_scan_barcodes',
+                'can_view_inventory', 'can_manage_inventory', 'can_adjust_stock',
+                'can_view_inventory_cost', 'can_toggle_product_price',
+                'can_view_selling_unit_price', 'can_view_cost_unit_price',
+                'can_view_valuation_selling', 'can_view_valuation_cost', 'can_toggle_stock_valuation',
+                'can_view_reports', 'can_view_sales_reports', 'can_view_daily_sales_reports', 'can_view_product_sales_reports', 'can_view_financial_reports', 'can_view_orders_by_source_report', 'can_view_rtv_report', 'can_export_data',
+                'can_view_purchases', 'can_create_purchases', 'can_manage_suppliers', 'can_make_supplier_payments',
+                'can_view_staff_performance',
+                'can_view_cities', 'can_add_cities', 'can_edit_cities', 'can_delete_cities',
+                'can_view_ncm_orders', 'can_create_ncm_orders', 'can_edit_ncm_orders',
+                'can_delete_ncm_orders', 'can_view_ncm_bulk_logs', 'can_manage_ncm_bulk_logs',
+                'can_export_logistics_orders', 'can_export_logistics_bulk_logs',
+                'can_view_ncm_trash', 'can_sync_ncm_orders', 'can_view_ncm_branches', 'can_manage_ncm_branches',
+                'can_view_hrm', 'can_view_hrm_hr_management', 'can_view_hrm_asset_management',
+                'can_view_hrm_attendance', 'can_view_hrm_payroll', 'can_view_hrm_incomplete_attendance',
+                'can_fix_hrm_incomplete_attendance',
+                'can_access_todo', 'can_access_follow_ups', 'can_export_follow_ups', 'can_view_follow_up_report', 'can_setup_follow_up_status',
+                'can_view_cost_price', 'can_edit_prices', 'can_give_discounts',
+                'can_view_content_management', 'can_view_resources', 'can_create_resources',
+                'can_view_audit_trail', 'can_view_all_users_activity', 'can_export_audit_logs',
+                'can_manage_sessions', 'can_configure_audit'
+            ]:
+                setattr(self, perm, True)
+            self.max_discount_percent = Decimal('100.00')
+            return
+
+        try:
+            role_obj = Role.objects.get(name=self.role)
+            default_perms = role_obj.default_permissions
+            
+            if 'permissions' in default_perms:
+                for perm in default_perms['permissions']:
+                    if hasattr(self, perm):
+                        setattr(self, perm, True)
+            
+            if 'max_discount_percent' in default_perms:
+                self.max_discount_percent = Decimal(str(default_perms['max_discount_percent']))
+                
+        except Role.DoesNotExist:
+            pass
     
     class Meta:
         verbose_name = 'User'

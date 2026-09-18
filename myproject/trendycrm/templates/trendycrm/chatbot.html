@@ -1,0 +1,2041 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}{{ chatbot.business_name|default:chatbot.name }} — Chatbot (AI) — Trendy CRM{% endblock %}
+{% block topbar_title %}{{ chatbot.business_name|default:chatbot.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="biz-switcher-wrap">
+    <button type="button" class="biz-switcher-btn" onclick="toggleBizSwitcher()" id="bizSwitcherBtn">
+        <i class="fas fa-store"></i>
+        <span>Switch Business</span>
+        <i class="fas fa-chevron-down" style="font-size:.7rem;"></i>
+    </button>
+    <div class="biz-switcher-menu" id="bizSwitcherMenu">
+        <div class="biz-switcher-current">
+            <div class="cb-avatar-sm">{{ chatbot.business_name|default:chatbot.name|slice:":1"|upper }}</div>
+            <div>
+                <div class="biz-switcher-name">{{ chatbot.business_name|default:chatbot.name }}</div>
+                <div class="biz-switcher-tag">Currently editing</div>
+            </div>
+        </div>
+        {% if other_businesses %}
+        <div class="biz-switcher-divider"></div>
+        {% for biz in other_businesses %}
+        <a href="{% url 'trendycrm:chatbot' biz.id %}" class="biz-switcher-item">
+            <div class="cb-avatar-sm">{{ biz.business_name|default:biz.name|slice:":1"|upper }}</div>
+            <div style="flex:1; min-width:0;">
+                <div class="biz-switcher-name">{{ biz.business_name|default:biz.name }}</div>
+            </div>
+            {% if biz.is_active %}<span class="status-badge active" style="padding:1px 7px;">Active</span>{% else %}<span class="status-badge paused" style="padding:1px 7px;">Paused</span>{% endif %}
+        </a>
+        {% endfor %}
+        {% endif %}
+        <div class="biz-switcher-divider"></div>
+        <a href="{% url 'trendycrm:chatbot_list' %}" class="biz-switcher-item biz-switcher-action">
+            <i class="fas fa-th-large"></i> All Businesses
+        </a>
+        <form action="{% url 'trendycrm:chatbot_create' %}" method="POST" style="margin:0;">
+            {% csrf_token %}
+            <button type="submit" class="biz-switcher-item biz-switcher-action" style="width:100%; text-align:left; background:none; border:none; cursor:pointer; font:inherit;">
+                <i class="fas fa-plus"></i> Add New Business
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_style %}
+:root {
+    --crm-primary: #7c3aed;
+    --crm-accent: #a78bfa;
+}
+/* ── Layout ────────────────────────────────── */
+.cb-grid { display: grid; grid-template-columns: 1fr 300px; gap: 1.25rem; }
+@media(max-width:900px){ .cb-grid{ grid-template-columns:1fr; } }
+
+/* ── Toggle Bar ─────────────────────────────── */
+.toggle-bar {
+    background: linear-gradient(135deg,#fdf4ff,#f3e8ff);
+    border: 1px solid rgba(124,58,237,.18);
+    border-radius: 14px;
+    padding: 1.1rem 1.4rem;
+    margin-bottom: 1.25rem;
+    display: flex; align-items: flex-start; gap: 1rem;
+    transition: background .3s;
+}
+.toggle-bar.active-state { background: linear-gradient(135deg,#ecfdf5,#d1fae5); border-color: rgba(5,150,105,.2); }
+
+/* ── Toggle Switch ──────────────────────────── */
+.ai-toggle-wrap { position: relative; display: inline-block; width: 52px; height: 28px; flex-shrink:0; }
+.ai-toggle-wrap input { opacity:0; width:0; height:0; }
+.ai-toggle-slider {
+    position: absolute; inset:0;
+    background: #d1d5db; border-radius: 28px; cursor: pointer;
+    transition: background .25s;
+}
+.ai-toggle-slider::before {
+    content:''; position:absolute;
+    width:22px; height:22px; left:3px; top:3px;
+    background:#fff; border-radius:50%;
+    transition: transform .25s; box-shadow: 0 1px 4px rgba(0,0,0,.2);
+}
+.ai-toggle-wrap input:checked + .ai-toggle-slider { background: #7c3aed; }
+.ai-toggle-wrap input:checked + .ai-toggle-slider::before { transform: translateX(24px); }
+
+/* ── Status Badge ───────────────────────────── */
+.status-badge {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .72rem; font-weight: 700; padding: 2px 9px; border-radius: 30px;
+}
+.status-badge.active { background:#d1fae5; color:#059669; }
+.status-badge.paused { background:#fee2e2; color:#dc2626; }
+
+/* ── Section Card ───────────────────────────── */
+.sec-card { background:#fff; border-radius:14px; border:1px solid rgba(124,58,237,.08); box-shadow:0 2px 12px rgba(0,0,0,.04); margin-bottom:1.25rem; overflow:hidden; }
+.sec-card-header { padding:.85rem 1.25rem; border-bottom:1px solid #f3f4f6; display:flex; align-items:center; justify-content:space-between; }
+.sec-card-title { font-weight:700; font-size:.9rem; color:#1e1b4b; display:flex; align-items:center; gap:.5rem; }
+.sec-card-body { padding:1.25rem; }
+
+/* ── Knowledge Tabs ─────────────────────────── */
+.kb-tabs { display:flex; gap:.4rem; flex-wrap:wrap; margin-bottom:1.1rem; }
+.kb-tab {
+    padding:.35rem .85rem; font-size:.78rem; font-weight:600; border-radius:20px; cursor:pointer; border:1.5px solid #e5e7eb; background:#fff; color:#6b7280; transition:all .15s;
+}
+.kb-tab.active, .kb-tab:hover { background:#7c3aed; color:#fff; border-color:#7c3aed; }
+.kb-panel { display:none; }
+.kb-panel.active { display:block; }
+
+/* ── Input Styles ───────────────────────────── */
+.cb-input, .cb-textarea, .cb-select {
+    width:100%; border:1.5px solid #e5e7eb; border-radius:9px; padding:.55rem .85rem;
+    font-size:.84rem; font-family:inherit; color:#1f2937; background:#fff; outline:none; transition:border-color .15s, box-shadow .15s;
+    box-sizing: border-box;
+}
+.cb-input:focus, .cb-textarea:focus, .cb-select:focus {
+    border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.1);
+}
+.cb-textarea { resize:vertical; min-height:90px; }
+.cb-select { cursor:pointer; }
+.form-label { display:block; font-size:.77rem; font-weight:600; color:#374151; margin-bottom:.3rem; }
+.form-label .hint { font-weight:400; color:#9ca3af; font-size:.73rem; }
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:.85rem; }
+.form-grid .full { grid-column:1/-1; }
+
+/* ── Credit Bar ─────────────────────────────── */
+.credit-bar {
+    background:#fff; border:1px solid rgba(124,58,237,.08); border-radius:12px; padding:1rem 1.2rem;
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem;
+    box-shadow:0 2px 8px rgba(0,0,0,.04);
+}
+.credit-amount { font-size:1.6rem; font-weight:800; color:#1e1b4b; line-height:1.1; }
+.credit-label { font-size:.72rem; color:#6b7280; margin-bottom:.15rem; }
+
+/* ── AI Test Console ─────────────────────────── */
+.ai-test-card {
+    background: linear-gradient(to right, #ffffff, #faf5ff);
+    border: 1px solid rgba(124,58,237,0.15);
+    border-radius: 14px;
+    padding: 1.25rem 1.4rem;
+    margin-bottom: 1.25rem;
+    box-shadow: 0 4px 20px rgba(124,58,237,0.06);
+    position: relative;
+    overflow: hidden;
+}
+.ai-test-card::before {
+    content: ''; position: absolute; top:0; left:0; width:4px; height:100%;
+    background: linear-gradient(180deg, var(--crm-primary), var(--crm-accent));
+}
+.ai-test-header { display:flex; align-items:center; gap:.6rem; margin-bottom:.6rem; }
+.ai-test-header i { font-size:1.1rem; color:var(--crm-primary); }
+.ai-test-header h3 { font-size:1rem; font-weight:700; color:#1e1b4b; margin:0; }
+.ai-test-desc { font-size:.8rem; color:#6b7280; margin-bottom:1rem; }
+.ai-test-row { display:flex; gap:.85rem; flex-wrap:wrap; align-items:center; }
+.test-input-wrap { flex:1; min-width:250px; position:relative; }
+.test-input-wrap i { position:absolute; left:1rem; top:50%; transform:translateY(-50%); color:#9ca3af; }
+.test-input-wrap input {
+    width:100%; padding:.7rem 1rem .7rem 2.5rem; border:1.5px solid #e5e7eb; border-radius:9px;
+    font-size:.85rem; box-sizing:border-box; outline:none; transition:border-color .15s, box-shadow .15s;
+}
+.test-input-wrap input:focus { border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.1); }
+.btn-test {
+    background:#1e1b4b; color:#fff; border:none; padding:.7rem 1.4rem; border-radius:9px;
+    font-weight:600; font-size:.85rem; cursor:pointer; display:flex; align-items:center; gap:.5rem;
+    box-shadow:0 4px 12px rgba(0,0,0,.1); transition:all .15s;
+}
+.btn-test:hover { background:#000; transform:translateY(-1px); }
+.btn-test:disabled { opacity:.6; cursor:not-allowed; transform:none; }
+.btn-attach {
+    background:#f5f3ff; color:#7c3aed; border:1.5px solid #ddd6fe; width:44px; height:44px;
+    border-radius:9px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    font-size:1rem; transition:all .15s; flex-shrink:0;
+}
+.btn-attach:hover { background:#7c3aed; color:#fff; border-color:#7c3aed; transform:translateY(-1px); }
+.btn-attach.has-image { background:#ecfdf5; color:#059669; border-color:#a7f3d0; }
+.ai-test-preview {
+    display:none; align-items:center; gap:.6rem; margin-top:.75rem; padding:.5rem .7rem;
+    background:#fff; border:1px solid #e5e7eb; border-radius:9px; width:fit-content; max-width:100%;
+}
+.ai-test-preview img { width:48px; height:48px; object-fit:cover; border-radius:6px; border:1px solid #e5e7eb; }
+.ai-test-preview .prev-name { font-size:.78rem; color:#4b5563; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ai-test-preview .prev-remove {
+    background:none; border:none; color:#ef4444; cursor:pointer; font-size:.95rem; padding:.2rem .35rem; border-radius:5px;
+}
+.ai-test-preview .prev-remove:hover { background:#fef2f2; }
+.ai-test-result {
+    margin-top:1rem; background:#fff; border:1px solid #e5e7eb; border-radius:9px;
+    padding:1rem 1.1rem; font-size:.85rem; display:none; line-height:1.5; box-shadow:0 4px 15px rgba(0,0,0,.03);
+}
+.ai-test-result.success { border-left:4px solid #10b981; }
+.ai-test-result.error { border-left:4px solid #ef4444; background:#fef2f2; }
+.result-meta { display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:.65rem; padding-bottom:.65rem; border-bottom:1px solid #f3f4f6; }
+.result-badge { font-size:.68rem; font-weight:700; padding:.2rem .55rem; border-radius:6px; text-transform:uppercase; letter-spacing:.05em; }
+.badge-intent { background:#ede9fe; color:#5b21b6; }
+.badge-model { background:#e0f2fe; color:#0369a1; }
+.badge-ticket { background:#fef2f2; color:#991b1b; }
+
+/* ── Channel Item ───────────────────────────── */
+.ch-item { display:flex; align-items:center; gap:.75rem; padding:.65rem 0; border-bottom:1px solid rgba(124,58,237,.05); }
+.ch-item:last-child { border-bottom:none; }
+.ch-icon { width:30px; height:30px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:.85rem; flex-shrink:0; }
+.ch-name { font-size:.84rem; font-weight:500; color:#1f2937; flex:1; }
+.ch-status { font-size:.72rem; color:#6b7280; }
+
+/* ── Btn Styles ─────────────────────────────── */
+.bottom-action-bar {
+    padding: 1.5rem 0 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.5rem;
+    border-top: 1px solid rgba(124,58,237,.15);
+}
+@media(max-width:768px) {
+    .bottom-action-bar { flex-direction: column; gap: 1rem; }
+    .bottom-action-bar a, .bottom-action-bar button { width: 100%; justify-content: center; }
+}
+.btn-outline-back {
+    display: inline-flex; align-items: center; gap: 0.5rem; color: #4b5563; font-weight: 600; text-decoration: none; font-size: 0.9rem; padding: 0.5rem 1.1rem; border-radius: 8px; border: 1.5px solid #d1d5db; background: #fff; transition: all 0.2s;
+}
+.btn-outline-back:hover { background: #f9fafb; color: #1f2937; border-color: #9ca3af; }
+.btn-primary-apply {
+    display: inline-flex; align-items: center; gap: 0.5rem; background: #7c3aed; color: #fff; font-weight: 600; font-size: 0.95rem; padding: 0.6rem 1.5rem; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 10px rgba(124,58,237,0.25); transition: all 0.2s;
+}
+.btn-primary-apply:hover { background: #6d28d9; box-shadow: 0 6px 14px rgba(124,58,237,0.35); transform: translateY(-1px); }
+.tag-input-container {
+    display: flex; flex-wrap: wrap; gap: .4rem;
+    border: 1.5px solid #e5e7eb; border-radius: 9px; padding: .55rem .85rem;
+    background: #fff; min-height: 42px; align-items: center;
+}
+.tag-input-container:focus-within {
+    border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.1);
+}
+.tag {
+    background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: .2rem .5rem; font-size: .78rem; color: #374151; display: flex; align-items: center; gap: .3rem;
+}
+.tag .delete-tag {
+    cursor: pointer; color: #9ca3af; font-size: .7rem; transition: color .15s;
+}
+.tag .delete-tag:hover { color: #dc2626; }
+
+/* ── Message Triage Rules ───────────────────── */
+.tri-note {
+    display:flex; align-items:flex-start; gap:.5rem; background:#f5f3ff; border:1px solid #ede9fe;
+    color:#5b21b6; border-radius:9px; padding:.5rem .75rem; font-size:.76rem; margin-bottom:.9rem;
+}
+.tri-row { border:1.5px solid #e5e7eb; border-radius:10px; margin-bottom:.45rem; background:#fff; transition:border-color .15s; }
+.tri-row.open { border-color:#ddd6fe; }
+.tri-row.disabled .tri-head { opacity:.55; }
+.tri-head { display:flex; align-items:center; gap:.5rem; padding:.5rem .65rem; }
+.tri-caret { color:#9ca3af; font-size:.7rem; cursor:pointer; width:14px; text-align:center; flex-shrink:0; }
+.tri-name { flex:1; min-width:0; font-size:.83rem; font-weight:600; color:#1f2937; cursor:pointer;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tri-name .tri-key { font-weight:400; color:#9ca3af; font-size:.72rem; margin-left:.35rem; }
+.tri-count { font-size:.7rem; color:#9ca3af; flex-shrink:0; }
+.tri-pri { border:1.5px solid #e5e7eb; border-radius:20px; padding:.15rem 1.4rem .15rem .55rem; font-size:.72rem;
+           font-weight:700; background:#fff; cursor:pointer; outline:none; appearance:none;
+           background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+           background-repeat:no-repeat; background-position:right .35rem center; background-size:10px; }
+.tri-pri[data-p="low"]    { color:#15803d; border-color:#bbf7d0; background-color:#f0fdf4; }
+.tri-pri[data-p="medium"] { color:#a16207; border-color:#fef08a; background-color:#fefce8; }
+.tri-pri[data-p="high"]   { color:#c2410c; border-color:#fed7aa; background-color:#fff7ed; }
+.tri-pri[data-p="urgent"] { color:#b91c1c; border-color:#fecaca; background-color:#fef2f2; }
+.tri-bell { border:none; background:none; cursor:pointer; font-size:.82rem; color:#d1d5db; padding:.15rem .25rem; flex-shrink:0; }
+.tri-bell.on { color:#f59e0b; }
+.tri-icon-btn { border:none; background:none; cursor:pointer; color:#9ca3af; font-size:.78rem; padding:.15rem .25rem; flex-shrink:0; transition:color .15s; }
+.tri-icon-btn:hover { color:#7c3aed; }
+.tri-icon-btn.danger:hover { color:#dc2626; }
+.tri-icon-btn:disabled { opacity:.3; cursor:not-allowed; }
+.tri-lock { color:#c4b5fd; font-size:.72rem; flex-shrink:0; }
+.tri-body { display:none; padding:.15rem .75rem .8rem 1.5rem; }
+.tri-row.open .tri-body { display:block; }
+.tri-body .form-label { margin-top:.6rem; }
+.tri-match { display:flex; gap:1rem; flex-wrap:wrap; font-size:.78rem; color:#374151; }
+.tri-match label { display:flex; align-items:center; gap:.35rem; cursor:pointer; }
+.tri-try { border-top:1px dashed #e5e7eb; margin-top:1rem; padding-top:.9rem; }
+.tri-try-row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+.tri-try-row input { flex:1; min-width:200px; }
+.tri-result { margin-top:.6rem; font-size:.8rem; color:#374151; display:none; align-items:center; gap:.5rem; flex-wrap:wrap; }
+.tri-result.show { display:flex; }
+.tri-chip { display:inline-flex; align-items:center; gap:.35rem; background:#f9fafb; border:1px solid #e5e7eb;
+            border-radius:20px; padding:.15rem .6rem; font-size:.74rem; font-weight:600; color:#374151; }
+.tri-dot { width:7px; height:7px; border-radius:50%; display:inline-block; }
+
+.btn-save { background:linear-gradient(135deg,#7c3aed,#6d28d9); color:#fff; border:none; padding:.5rem 1.25rem; border-radius:9px; font-size:.84rem; font-weight:600; cursor:pointer; transition:opacity .15s,transform .1s; display:inline-flex; align-items:center; gap:.4rem; }
+.btn-save:hover { opacity:.9; transform:translateY(-1px); }
+.btn-save:disabled { opacity:.6; cursor:not-allowed; transform:none; }
+.btn-outline { background:#fff; color:#7c3aed; border:1.5px solid #7c3aed; padding:.45rem 1rem; border-radius:9px; font-size:.82rem; font-weight:600; cursor:pointer; transition:all .15s; display:inline-flex; align-items:center; gap:.4rem; }
+.btn-outline:hover { background:#f5f3ff; }
+
+/* ── API Key Field ──────────────────────────── */
+.api-key-wrap { position:relative; }
+.api-key-wrap .cb-input { padding-right:2.5rem; font-family:monospace; letter-spacing:.05em; }
+.api-key-toggle { position:absolute; right:.75rem; top:50%; transform:translateY(-50%); background:none; border:none; color:#9ca3af; cursor:pointer; padding:0; font-size:.85rem; }
+.api-status { display:inline-flex; align-items:center; gap:.3rem; font-size:.72rem; font-weight:600; padding:2px 7px; border-radius:6px; }
+.api-status.set { background:#d1fae5; color:#059669; }
+.api-status.unset { background:#fef3c7; color:#92400e; }
+
+/* ── Save Toast ─────────────────────────────── */
+#saveToast {
+    position:fixed; bottom:1.5rem; right:1.5rem; z-index:9999;
+    background:#1e1b4b; color:#fff; border-radius:10px; padding:.75rem 1.25rem;
+    display:flex; align-items:center; gap:.5rem; font-size:.84rem; font-weight:600;
+    box-shadow:0 8px 24px rgba(0,0,0,.15); transform:translateY(80px); opacity:0;
+    transition:all .3s; pointer-events:none;
+}
+#saveToast.show { transform:translateY(0); opacity:1; }
+#saveToast.error { background:#dc2626; }
+
+/* ── Modal ──────────────────────────────────── */
+.cb-modal { position:fixed; inset:0; z-index:9998; background:rgba(15,10,40,.5); display:none; align-items:center; justify-content:center; padding:1rem; }
+.cb-modal.open { display:flex; }
+.cb-modal-box { background:#fff; border-radius:16px; width:100%; max-width:640px; box-shadow:0 20px 60px rgba(0,0,0,.2); animation:slideUp .25s ease; }
+@keyframes slideUp { from{transform:translateY(30px);opacity:0} to{transform:none;opacity:1} }
+.cb-modal-header { padding:1rem 1.4rem; border-bottom:1px solid #f3f4f6; display:flex; align-items:center; justify-content:space-between; }
+.cb-modal-header h5 { margin:0; font-weight:700; font-size:.95rem; color:#1e1b4b; }
+.cb-modal-close { background:none; border:none; font-size:1.2rem; color:#6b7280; cursor:pointer; padding:0 .25rem; }
+.cb-modal-body { padding:1.25rem 1.4rem; max-height:72vh; overflow-y:auto; }
+.cb-modal-footer { padding:.85rem 1.4rem; border-top:1px solid #f3f4f6; display:flex; justify-content:flex-end; gap:.5rem; }
+
+/* ── Credit History Table ───────────────────── */
+.hist-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+.hist-table th { background:#f9f7ff; padding:.6rem 1rem; text-align:left; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; border-bottom:1px solid #f3f4f6; }
+.hist-table td { padding:.65rem 1rem; border-bottom:1px solid #f9f9f9; color:#374151; vertical-align:middle; }
+.hist-table tr:last-child td { border-bottom:none; }
+.credit-badge { font-size:.72rem; font-weight:700; padding:2px 7px; border-radius:6px; }
+.credit-badge.usage { background:#fee2e2; color:#dc2626; }
+.credit-badge.topup { background:#d1fae5; color:#059669; }
+
+/* ── Unsaved Indicator ──────────────────────── */
+.unsaved-dot { width:7px; height:7px; border-radius:50%; background:#f59e0b; display:none; }
+.unsaved-dot.show { display:inline-block; }
+
+/* ── Language Select Boxes ─────────────────── */
+.lang-box-container { display: flex; gap: 1rem; margin-bottom: .25rem; flex-wrap: wrap; }
+.lang-box {
+    flex: 1; min-width: 150px;
+    border: 1.5px solid #e5e7eb; border-radius: 12px; padding: 1rem;
+    cursor: pointer; transition: all 0.2s;
+    background: #fff;
+    display: flex; align-items: flex-start; gap: .75rem;
+}
+.lang-box:hover { border-color: #a78bfa; }
+.lang-box.active { border-color: #7c3aed; background: #f5f3ff; }
+
+.lang-radio {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid #d1d5db; display: flex; align-items: center; justify-content: center;
+    margin-top: .15rem; flex-shrink: 0;
+}
+.lang-box.active .lang-radio { border-color: #7c3aed; }
+.lang-box.active .lang-radio::after {
+    content: ''; width: 8px; height: 8px; background: #7c3aed; border-radius: 50%;
+}
+
+.lang-info h6 { margin: 0 0 .2rem 0; font-size: .85rem; font-weight: 700; color: #1f2937; }
+.lang-info p { margin: 0; font-size: .72rem; color: #6b7280; line-height: 1.4; }
+.lang-box.active .lang-info h6 { color: #5b21b6; }
+
+/* ── Business Switcher ─────────────────────── */
+.biz-switcher-wrap { position: relative; }
+.biz-switcher-btn {
+    display: flex; align-items: center; gap: .5rem;
+    background: #fff; border: 1.5px solid #e5e7eb; border-radius: 9px;
+    padding: .5rem .9rem; font-size: .82rem; font-weight: 600; color: #4b5563;
+    cursor: pointer; transition: all .15s;
+}
+.biz-switcher-btn:hover { border-color: #a78bfa; color: #7c3aed; }
+.biz-switcher-menu {
+    display: none; position: absolute; right: 0; top: calc(100% + 8px);
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.12); width: 280px; z-index: 200;
+    padding: .5rem; max-height: 70vh; overflow-y: auto;
+}
+.biz-switcher-menu.open { display: block; }
+.biz-switcher-current, .biz-switcher-item {
+    display: flex; align-items: center; gap: .65rem; padding: .55rem .6rem; border-radius: 8px;
+    text-decoration: none; color: inherit;
+}
+.biz-switcher-current { background: #f5f3ff; }
+a.biz-switcher-item:hover { background: #f9fafb; }
+.biz-switcher-action { color: #7c3aed; font-weight: 600; font-size: .82rem; }
+.biz-switcher-name { font-size: .84rem; font-weight: 600; color: #1e1b4b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.biz-switcher-tag { font-size: .7rem; color: #9ca3af; }
+.biz-switcher-divider { height: 1px; background: #f3f4f6; margin: .4rem 0; }
+.cb-avatar-sm {
+    width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--crm-primary), var(--crm-accent));
+    color: #fff; font-weight: 800; font-size: .8rem;
+    display: flex; align-items: center; justify-content: center;
+}
+{% endblock %}
+
+{% block crm_content %}
+<!-- ── Drag to Verify Modal ────────────────────────────────────── -->
+<div id="dragModalOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:9999; justify-content:center; align-items:center; backdrop-filter:blur(3px);">
+    <div style="background:#fff; width:350px; padding:2rem; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); text-align:center; position:relative;">
+        <button id="dragModalClose" style="position:absolute; top:12px; right:12px; border:none; background:transparent; font-size:1.2rem; cursor:pointer; color:#6b7280; outline:none;">&times;</button>
+        <h4 style="margin:0 0 .5rem 0; color:#1f2937; font-weight:700;" id="dragModalTitle">Confirm Action</h4>
+        <p style="font-size:.85rem; color:#6b7280; margin-bottom:1.5rem;" id="dragModalDesc">Slide to confirm you want to toggle the AI.</p>
+
+        <!-- Drag Track -->
+        <div id="dragTrack" style="width:100%; height:46px; background:#f3f4f6; border-radius:30px; position:relative; overflow:hidden; border:1px solid #e5e7eb;">
+            <!-- Progress Fill -->
+            <div id="dragFill" style="position:absolute; left:0; top:0; height:100%; width:0; background:linear-gradient(90deg, #a78bfa, #7c3aed); border-radius:30px 0 0 30px; pointer-events:none;"></div>
+            <!-- Thumb -->
+            <div id="dragThumb" style="width:40px; height:40px; background:#fff; border-radius:50%; position:absolute; top:2px; left:2px; box-shadow:0 2px 5px rgba(0,0,0,0.15); cursor:grab; display:flex; justify-content:center; align-items:center; color:#7c3aed; font-size:1rem; user-select:none; z-index:2;">
+                <i class="fas fa-arrow-right"></i>
+            </div>
+            <!-- Track Text -->
+            <div style="position:absolute; width:100%; height:100%; line-height:46px; text-align:center; color:#9ca3af; font-size:.8rem; font-weight:600; z-index:1; pointer-events:none;">Slide to confirm</div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast notification -->
+<div id="saveToast"><i class="fas fa-check-circle"></i> <span id="saveToastMsg">Saved successfully!</span></div>
+
+<!-- ── Master AI Toggle ───────────────────────────────────── -->
+<div class="toggle-bar {% if chatbot.is_active %}active-state{% endif %}" id="toggleBar">
+    <i class="fas fa-power-off mt-1" style="color:{% if chatbot.is_active %}#059669{% else %}#d1d5db{% endif %};font-size:1.1rem;" id="toggleIcon"></i>
+    <div style="flex:1;">
+        <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.25rem;">
+            <strong style="font-size:.9rem;color:#1e1b4b;">Master AI toggle</strong>
+            <span class="status-badge {% if chatbot.is_active %}active{% else %}paused{% endif %}" id="statusBadge">
+                <span id="statusDot" style="width:6px;height:6px;border-radius:50%;background:{% if chatbot.is_active %}#059669{% else %}#dc2626{% endif %};display:inline-block;"></span>
+                <span id="statusText">{% if chatbot.is_active %}Active{% else %}Paused{% endif %}</span>
+            </span>
+        </div>
+        <p style="font-size:.8rem;color:#6b7280;margin:0;line-height:1.5;" id="toggleDesc">
+            {% if chatbot.is_active %}AI is active and auto-replying on all connected channels.{% else %}All AI is paused — customer auto-replies, digest, and other tools won't run.{% endif %}
+        </p>
+    </div>
+    <label class="ai-toggle-wrap" title="Toggle AI Master Switch">
+        <input type="checkbox" id="masterToggle" {% if chatbot.is_active %}checked{% endif %}>
+        <span class="ai-toggle-slider"></span>
+    </label>
+</div>
+
+<!-- ── AI Credits ──────────────────────────────────────────── -->
+<div class="credit-bar">
+    <div style="display:flex; align-items:center; gap:.9rem;">
+        <i class="fas fa-bolt" style="color:#f59e0b; font-size:1.3rem;"></i>
+        <div>
+            <div class="credit-label">AI credits remaining</div>
+            <div class="credit-amount" id="creditBalance">{{ chatbot.ai_credits }}</div>
+        </div>
+    </div>
+    <button type="button" class="btn-outline" onclick="openCreditHistory()">
+        <i class="fas fa-clock-rotate-left"></i> Usage history
+    </button>
+</div>
+
+{% if chatbot.last_error %}
+<!-- ── Last auto-reply failure ─────────────────────────────────────────────────
+     Clears itself: the next successful auto-reply — or a successful run of the
+     test console below — wipes last_error, so this banner is only ever showing a
+     problem that was still true at the last attempt. Saying so stops it reading
+     like a permanent fault when it was a 30-second rate limit. ────────────── -->
+<div id="botErrorBanner" style="display:flex; gap:.85rem; align-items:flex-start; background:#fef2f2; border:1px solid #fecaca; border-radius:12px; padding:1rem 1.15rem; margin-bottom:1.25rem;">
+    <i class="fas fa-triangle-exclamation" style="color:#dc2626; font-size:1.15rem; margin-top:.1rem;"></i>
+    <div style="flex:1; min-width:0;">
+        <div style="font-weight:700; font-size:.88rem; color:#991b1b;">
+            The last auto-reply could not be sent
+        </div>
+        <div style="font-size:.8rem; color:#7f1d1d; margin-top:.3rem; word-break:break-word;">
+            {{ chatbot.last_error }}
+        </div>
+        <div style="font-size:.72rem; color:#b91c1c; margin-top:.45rem;">
+            <i class="far fa-clock"></i> {{ chatbot.last_error_at|date:"M d, Y — h:i A" }}
+            &nbsp;·&nbsp; Customers were not sent an error message; the bot stayed silent.
+        </div>
+        <div style="font-size:.72rem; color:#b91c1c; margin-top:.45rem; opacity:.9;">
+            <i class="fas fa-wand-magic-sparkles"></i>
+            Failed replies are retried automatically for a few minutes, and no AI credits
+            are charged for them. This notice disappears on the next successful reply —
+            run a test below to check now.
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- ── AI Test Console ─────────────────────────────────────── -->
+<div class="ai-test-card">
+    <div class="ai-test-header">
+        <i class="fas fa-flask"></i>
+        <h3>Test Your AI</h3>
+    </div>
+    <p class="ai-test-desc">Send a mock customer message — or upload an image (a product photo, receipt, or screenshot) — through this bot's routing engine to preview how it classifies intent and replies, using your saved Knowledge Base above.</p>
+
+    <div class="ai-test-row">
+        <input type="file" id="testImageInput" accept="image/*" style="display:none;">
+        <button type="button" class="btn-attach" id="btnAttach" onclick="document.getElementById('testImageInput').click()" title="Attach an image">
+            <i class="fas fa-plus"></i>
+        </button>
+        <div class="test-input-wrap">
+            <i class="fas fa-comment-dots"></i>
+            <input type="text" id="testMessage" placeholder='e.g. "How much is the serum?" — or add an image and ask about it'>
+        </div>
+        <button class="btn-test" onclick="runAiTest()" id="btnTestRouter">
+            <i class="fas fa-paper-plane"></i> Test Route
+        </button>
+    </div>
+
+    {% if connected_accounts %}
+    <div class="ai-test-row" style="margin-top:0.6rem;">
+        <label for="testIntegration" style="font-size:0.78rem;color:var(--crm-text-muted);white-space:nowrap;">
+            Reply as page:
+        </label>
+        <select id="testIntegration" class="cb-input" style="max-width:340px;">
+            <option value="">No page (generic knowledge base only)</option>
+            {% for acc in connected_accounts %}
+                <option value="{{ acc.pk }}">{{ acc.account_name|default:acc.get_channel_type_display }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <p class="ai-test-desc" style="margin-top:0.35rem;font-size:0.74rem;">
+        Picking a page also loads that page's Product Profile (and its checkout link),
+        so the preview matches exactly what a real customer on that page would get.
+    </p>
+    {% endif %}
+
+    <div class="ai-test-preview" id="aiTestPreview">
+        <img id="aiTestPreviewImg" src="" alt="preview">
+        <span class="prev-name" id="aiTestPreviewName"></span>
+        <button type="button" class="prev-remove" onclick="clearTestImage()" title="Remove image"><i class="fas fa-times"></i></button>
+    </div>
+
+    <div class="ai-test-result" id="aiTestResult"></div>
+</div>
+
+<div class="cb-grid">
+    <!-- ═══ LEFT COLUMN ═══════════════════════════════════════ -->
+    <div>
+        <!-- ── Message Triage Rules ────────────────────────── -->
+        {{ triage_rules|json_script:"triageRulesData" }}
+        {{ triage_defaults|json_script:"triageDefaultsData" }}
+        <div class="sec-card">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-diagram-project" style="color:#7c3aed;"></i> Message Triage Rules</div>
+                <span class="unsaved-dot" id="triageUnsaved" title="Unsaved changes"></span>
+            </div>
+            <div class="sec-card-body">
+                <p style="font-size:.82rem;color:#6b7280;margin-bottom:.9rem;">
+                    Decide what each kind of customer message is called, how urgent it is, and how the AI
+                    answers it. These are the chips your team sees on every message in Conversations.
+                </p>
+                <div class="tri-note">
+                    <i class="fas fa-circle-info" style="margin-top:2px;"></i>
+                    <span>
+                        A message is checked against these rules top to bottom and <strong>the first match
+                        wins</strong> — so keep the types that need a person above the ones the bot can handle.
+                        Anything nothing matches becomes <strong>General Inquiry</strong>.
+                    </span>
+                </div>
+
+                {% comment %}
+                Rules belong to this business, and a conversation is labelled by
+                the rules of the page it arrived on. Saying so here is what keeps
+                "I renamed it and nothing changed" from looking like a bug.
+                {% endcomment %}
+                <p style="font-size:.75rem;color:#6b7280;margin:-.4rem 0 .9rem;">
+                    {% if triage_pages %}
+                        Applies to
+                        {% for page in triage_pages %}<strong>{{ page.parsed_name|default:page.get_channel_type_display }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %}.
+                    {% else %}
+                        No connected page uses this business yet — pick one under
+                        <strong>Auto-reply channels</strong> so these rules apply to its chats.
+                    {% endif %}
+                    {% if triage_unlinked_pages %}
+                        <span style="color:#b45309;">
+                            {% for page in triage_unlinked_pages %}{{ page.parsed_name|default:page.get_channel_type_display }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                            {{ triage_unlinked_pages|length|pluralize:"is,are" }} not linked to any business, so
+                            {{ triage_unlinked_pages|length|pluralize:"its,their" }} chats keep the built-in labels.
+                        </span>
+                    {% endif %}
+                </p>
+
+                <form id="triageForm" action="{% url 'trendycrm:chatbot_save_triage' chatbot.id %}" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="triage_rules" id="triageRulesHidden">
+
+                    <div id="triageList"></div>
+
+                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem;">
+                        <button type="button" class="btn-outline" id="triageAddBtn">
+                            <i class="fas fa-plus"></i> Add message type
+                        </button>
+                        <button type="button" class="btn-outline" id="triageResetBtn"
+                                style="color:#6b7280;border-color:#e5e7eb;">
+                            <i class="fas fa-rotate-left"></i> Restore defaults
+                        </button>
+                    </div>
+
+                    <!-- Try it: runs the rules on screen, saved or not. Keyword
+                         matching only, so it costs nothing and can be spammed. -->
+                    <div class="tri-try">
+                        <label class="form-label">Try it <span class="hint">— see where a message lands before you save</span></label>
+                        <div class="tri-try-row">
+                            <input type="text" class="cb-input" id="triageTryInput"
+                                   placeholder='e.g. "where is my order?"'>
+                            <button type="button" class="btn-outline" id="triageTryBtn">
+                                <i class="fas fa-flask"></i> Test
+                            </button>
+                        </div>
+                        <div class="tri-result" id="triageTryResult"></div>
+                    </div>
+
+                    <div style="margin-top:1rem; display:flex; align-items:center; justify-content:space-between; gap:.5rem; flex-wrap:wrap;">
+                        <span style="font-size:.75rem;color:#9ca3af;" id="triageSaveStatus">
+                            {% if chatbot.triage_rules %}Customised for this business{% else %}Using the built-in rules{% endif %}
+                        </span>
+                        <button type="submit" class="btn-save" id="triageSaveBtn">
+                            <i class="fas fa-save"></i> Save Triage Rules
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ── Business Knowledge Base ─────────────────────── -->
+        <div class="sec-card">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-brain" style="color:#7c3aed;"></i> Business Knowledge Base</div>
+                <span class="unsaved-dot" id="knowledgeUnsaved" title="Unsaved changes"></span>
+            </div>
+            <div class="sec-card-body">
+                <p style="font-size:.82rem;color:#6b7280;margin-bottom:1rem;">Teach the AI about your business — identity, tone, offerings, FAQs, and playbook.</p>
+
+                <!-- Knowledge Tabs -->
+                <div class="kb-tabs">
+                    <div class="kb-tab active" onclick="switchTab('identity', this)">🏢 Identity</div>
+                    <div class="kb-tab" onclick="switchTab('tone', this)">🗣 Tone of Voice</div>
+                    <div class="kb-tab" onclick="switchTab('offerings', this)">🛍 Offerings</div>
+                    <div class="kb-tab" onclick="switchTab('faqs', this)">❓ FAQs</div>
+                    <div class="kb-tab" onclick="switchTab('playbook', this)">📋 Playbook</div>
+                </div>
+
+                <form id="knowledgeForm" action="{% url 'trendycrm:chatbot_save_knowledge' chatbot.id %}" method="post">
+                    {% csrf_token %}
+
+                    <!-- Identity -->
+                    <div class="kb-panel active" id="panel-identity">
+                        <div class="form-grid">
+                            <div>
+                                <label class="form-label">Business Name <span class="hint">*</span></label>
+                                <input name="business_name" type="text" class="cb-input" value="{{ chatbot.business_name|default:'' }}" placeholder="e.g. Trendy Shop">
+                            </div>
+                            <div>
+                                <label class="form-label">Support Email</label>
+                                <input name="business_email" type="email" class="cb-input" value="{{ chatbot.business_email|default:'' }}" placeholder="support@trendy.com">
+                            </div>
+                            <div>
+                                <label class="form-label">Support Phone</label>
+                                <input name="business_phone" type="text" class="cb-input" value="{{ chatbot.business_phone|default:'' }}" placeholder="+977 98XXXXXXXX">
+                            </div>
+                            <div class="full">
+                                <label class="form-label">About Your Business <span class="hint">— The AI's "about us" paragraph</span></label>
+                                <textarea name="about_blurb" class="cb-textarea" rows="3" placeholder="We are Trendy Shop, Nepal's fastest growing online store for skincare and wellness products…">{{ chatbot.about_blurb|default:'' }}</textarea>
+                            </div>
+                            <div class="full">
+                                <label class="form-label">Welcome Message <span class="hint">— First message the AI sends</span></label>
+                                <textarea name="welcome_message" class="cb-textarea" rows="2" placeholder="Hi! 👋 Welcome to Trendy Shop. How can I help you today?">{{ chatbot.welcome_message|default:'' }}</textarea>
+                            </div>
+                            <div class="full">
+                                <label class="form-label">Address <span class="hint">— Optional. Where customers can find you</span></label>
+                                <textarea name="business_address" class="cb-textarea" rows="2" placeholder="Putalisadak, Kathmandu 44600, Nepal">{{ chatbot.business_address|default:'' }}</textarea>
+                            </div>
+                            <div class="full">
+                                <label class="form-label">Cities Served <span class="hint">— Optional. Where you deliver / operate</span></label>
+                                <div class="tag-input-container" id="cityTagContainer">
+                                    {% for city in chatbot.cities_served %}
+                                    <div class="tag" data-val="{{ city }}">
+                                        {{ city }} <i class="fas fa-times delete-tag"></i>
+                                    </div>
+                                    {% endfor %}
+                                    <input type="text" id="cityTagInput" placeholder="Add city and press Enter" style="border:none;outline:none;background:transparent;flex:1;min-width:150px;font-size:.85rem;padding:.2rem 0;">
+                                </div>
+                                <input type="hidden" name="cities_served" id="citiesServedHidden" value="{{ cities_served_json }}">
+                            </div>
+                            <div>
+                                <label class="form-label">Facebook <span class="hint">— Optional</span></label>
+                                <input name="social_facebook" type="text" class="cb-input" value="{{ chatbot.social_facebook|default:'' }}" placeholder="facebook.com/trendyshop">
+                            </div>
+                            <div>
+                                <label class="form-label">Instagram <span class="hint">— Optional</span></label>
+                                <input name="social_instagram" type="text" class="cb-input" value="{{ chatbot.social_instagram|default:'' }}" placeholder="instagram.com/trendyshop">
+                            </div>
+                            <div>
+                                <label class="form-label">TikTok <span class="hint">— Optional</span></label>
+                                <input name="social_tiktok" type="text" class="cb-input" value="{{ chatbot.social_tiktok|default:'' }}" placeholder="tiktok.com/@trendyshop">
+                            </div>
+                            <div>
+                                <label class="form-label">WhatsApp <span class="hint">— Optional</span></label>
+                                <input name="social_whatsapp" type="text" class="cb-input" value="{{ chatbot.social_whatsapp|default:'' }}" placeholder="+977 98XXXXXXXX">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tone of Voice -->
+                    <div class="kb-panel" id="panel-tone">
+                        <label class="form-label">How should the AI sound? <span class="hint">— Describe writing style, brand voice, words to avoid</span></label>
+                        <textarea name="tone_voice" class="cb-textarea" rows="7" placeholder="Be warm, friendly, and conversational. Always use the customer's name when possible. Avoid corporate jargon. Use emojis sparingly (max 2 per message). Never sound robotic or scripted.">{{ chatbot.tone_voice|default:'' }}</textarea>
+                    </div>
+
+                    <!-- Offerings -->
+                    <div class="kb-panel" id="panel-offerings">
+                        <label class="form-label">Your Products & Services <span class="hint">— List what you sell so the AI can recommend them</span></label>
+                        <textarea name="offerings" class="cb-textarea" rows="9" placeholder="1. Trendy Face Serum (NPR 1,200) — Vitamin C + Niacinamide. Best seller.&#10;2. Trendy Sunscreen SPF50 (NPR 850) — Lightweight, no white cast.&#10;3. Trendy Body Lotion (NPR 650) — Moisturizing, all skin types.&#10;&#10;Delivery: 2 days Kathmandu, 3-5 days nationwide.">{{ chatbot.offerings|default:'' }}</textarea>
+                    </div>
+
+                    <!-- FAQs -->
+                    <div class="kb-panel" id="panel-faqs">
+                        <label class="form-label">Common FAQs <span class="hint">— The AI will use these to answer customer questions accurately</span></label>
+                        <textarea name="faq_text" class="cb-textarea" rows="9" placeholder="Q: Do you deliver outside Kathmandu?&#10;A: Yes! We deliver nationwide via Dhadkan Courier. 3-5 business days.&#10;&#10;Q: How do I return a product?&#10;A: Contact us within 7 days. Send photos of the defective item to support@trendy.com.&#10;&#10;Q: Do you accept COD?&#10;A: Yes, cash on delivery is available for orders above NPR 500.">{{ chatbot.faq_text|default:'' }}</textarea>
+                    </div>
+
+                    <!-- Playbook -->
+                    <div class="kb-panel" id="panel-playbook">
+                        <label class="form-label">Sales & Support Playbook <span class="hint">— How to handle tricky situations, complaints, refunds</span></label>
+                        <textarea name="playbook" class="cb-textarea" rows="9" placeholder="ANGRY CUSTOMER: Always apologize first, never argue. Say 'I completely understand your frustration' and escalate to a human if needed.&#10;&#10;REFUND REQUEST: Check if it's within 7 days. If yes, process the refund within 3 days. Log in CRM as a ticket.&#10;&#10;SALE PUSH: If customer hesitates on price, offer 5% discount code: TRENDY5.">{{ chatbot.playbook|default:'' }}</textarea>
+                    </div>
+
+                    <div style="margin-top:1rem; display:flex; align-items:center; justify-content:space-between;">
+                        <span style="font-size:.75rem;color:#9ca3af;" id="knowledgeSaveStatus">Last saved: {{ chatbot.updated_at|date:"M d, H:i" }}</span>
+                        <button type="submit" class="btn-save" id="knowledgeSaveBtn">
+                            <i class="fas fa-save"></i> Save Knowledge Base
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ── Language ────────────────────────── -->
+        <div class="sec-card" style="margin-bottom:1rem;">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-globe" style="color:#7c3aed;"></i> Language</div>
+            </div>
+            <div class="sec-card-body" style="padding:1rem 1.25rem;">
+                <div class="lang-box-container">
+                    <div class="lang-box {% if chatbot.primary_language == 'en' %}active{% endif %}" onclick="selectLanguage('en', this)">
+                        <div class="lang-radio"></div>
+                        <div class="lang-info">
+                            <h6>English</h6>
+                            <p>Always respond in English</p>
+                        </div>
+                    </div>
+                    <div class="lang-box {% if chatbot.primary_language == 'ne' %}active{% endif %}" onclick="selectLanguage('ne', this)">
+                        <div class="lang-radio"></div>
+                        <div class="lang-info">
+                            <h6>Nepali</h6>
+                            <p>Always respond in romanized Nepali</p>
+                        </div>
+                    </div>
+                    <div class="lang-box {% if chatbot.primary_language == 'auto' or not chatbot.primary_language %}active{% endif %}" onclick="selectLanguage('auto', this)">
+                        <div class="lang-radio"></div>
+                        <div class="lang-info">
+                            <h6>Auto-detect</h6>
+                            <p>Match the language the user writes in</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Human Handoff Triggers ────────────────────────── -->
+        <div class="sec-card" style="margin-bottom:1rem;">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-user-headset" style="color:#7c3aed;"></i> Human Handoff Triggers</div>
+            </div>
+            <div class="sec-card-body" style="padding:1rem 1.25rem;">
+                <p style="font-size:.82rem;color:#6b7280;margin-bottom:1rem;line-height:1.4;">
+                    When a user sends any of these phrases, the conversation is handed off to a human agent.
+                </p>
+                <div class="tag-input-container" id="handoffTagContainer">
+                    {% for tag in chatbot.handoff_triggers %}
+                    <div class="tag" data-val="{{ tag }}">
+                        {{ tag }} <i class="fas fa-times delete-tag"></i>
+                    </div>
+                    {% endfor %}
+                    <input type="text" id="handoffTagInput" placeholder="Add another..." style="border:none;outline:none;background:transparent;flex:1;min-width:120px;font-size:.85rem;padding:.2rem 0;">
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Custom Tools ────────────────────────────────── -->
+        <div class="sec-card">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-tools" style="color:#7c3aed;"></i> Custom Tools</div>
+            </div>
+            <div class="sec-card-body" style="padding:1rem 1.25rem;">
+                <p style="font-size:.82rem;color:#6b7280;margin-bottom:1rem;">
+                    Extend the AI with static replies or HTTP calls to your services — order lookups, warranty checks, custom Q&A.
+                </p>
+                <a href="{% url 'trendycrm:page_profiles' %}" class="btn-outline" style="text-decoration:none;">
+                    <i class="fas fa-arrow-right"></i> Manage Page Profiles & Tools →
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ RIGHT COLUMN ═══════════════════════════════════════ -->
+    <div>
+        <!-- ── Auto-Reply Channels ─────────────────────────── -->
+        <div class="sec-card" style="margin-bottom:1rem;">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-broadcast-tower" style="color:#7c3aed;"></i> Auto-reply channels</div>
+            </div>
+            <div class="sec-card-body" style="padding:.85rem 1.1rem;">
+                <p style="font-size:.76rem;color:#6b7280;margin-bottom:.85rem;line-height:1.4;">
+                    Pick the channels where Trendy AI should auto-reply. Turn a channel off to pause only that platform.
+                </p>
+                {% for group in channel_groups %}
+                <div class="ch-group-item" style="border-bottom:1px solid rgba(124,58,237,.05); padding:.45rem 0;">
+                    <div class="ch-item" style="border-bottom:none; padding:.2rem 0; cursor:{% if group.is_connected %}pointer{% else %}default{% endif %};"
+                         {% if group.is_connected %}onclick="toggleDropdown('{{ group.channel_type }}')"{% endif %}>
+                        <div class="ch-icon" style="background:{{ group.meta.tint }};">
+                            <i class="{{ group.meta.prefix }} {{ group.meta.icon }}" style="color:{{ group.meta.color }};"></i>
+                        </div>
+                        <div class="ch-name">{{ group.display_name }}</div>
+                        <div style="display:flex; align-items:center; gap:.4rem;">
+                            {% if group.is_connected %}
+                            {% if group.enabled_here %}<span class="status-badge active" style="font-size:.62rem; padding:1px 6px;">On</span>{% endif %}
+                            <i class="fas fa-chevron-down" id="icon-{{ group.channel_type }}" style="color:#9ca3af; font-size:.85rem; transition:transform 0.2s;{% if group.enabled_here %}transform:rotate(180deg);{% endif %}"></i>
+                            {% else %}
+                            <span class="ch-status">Not connected</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% if group.is_connected %}
+                    <div id="dropdown-{{ group.channel_type }}" style="display:{% if group.enabled_here %}block{% else %}none{% endif %}; padding: .5rem 0 .5rem 2.5rem; background:#fafafa; border-radius:8px; margin-top:.3rem; border: 1px solid #f3f4f6;">
+                        {% for acc in group.accounts %}
+                            {% if acc.status == 'connected' or acc.status == 'error' %}
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding: .4rem .6rem;">
+                                <div style="min-width:0;">
+                                    <span style="font-size:.8rem; font-weight:500; color:#374151;">{{ acc.account_name|default:"Unnamed Account" }}</span>
+                                    {% if acc.status == 'error' %}
+                                    <div style="font-size:.68rem; color:#dc2626; margin-top:1px;"><i class="fas fa-triangle-exclamation"></i> Token problem — replies may fail until you reconnect this page</div>
+                                    {% endif %}
+                                    {% if acc.chatbot_config_id and acc.chatbot_config_id != chatbot.id %}
+                                    <div style="font-size:.68rem; color:#b45309; margin-top:1px;"><i class="fas fa-exclamation-triangle"></i> In use by {{ acc.chatbot_config.business_name|default:acc.chatbot_config.name }} — enabling here moves it</div>
+                                    {% endif %}
+                                </div>
+                                <label class="ai-toggle-wrap" title="Toggle auto-reply for {{ acc.account_name }}" style="width:38px;height:20px;flex-shrink:0;" onclick="event.stopPropagation()">
+                                    <input type="checkbox" class="channel-toggle" data-integration-id="{{ acc.id }}"
+                                        data-owned-by-other="{% if acc.chatbot_config_id and acc.chatbot_config_id != chatbot.id %}1{% else %}0{% endif %}"
+                                        data-owner-name="{% if acc.chatbot_config %}{{ acc.chatbot_config.business_name|default:acc.chatbot_config.name|escapejs }}{% endif %}"
+                                        {% if acc.chatbot_config_id == chatbot.id %}checked{% endif %}>
+                                    <span class="ai-toggle-slider" style="border-radius:20px;"></span>
+                                </label>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <div style="text-align:center;padding:1.5rem 0;font-size:.82rem;color:#6b7280;">
+                    <i class="fas fa-plug" style="font-size:1.5rem;color:#d1d5db;display:block;margin-bottom:.5rem;"></i>
+                    No integrations.<br>
+                    <a href="{% url 'trendycrm:integrations' %}" style="color:#7c3aed;font-weight:600;">Connect a channel →</a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- ── Agent Configuration ─────────────────────────── -->
+        <div class="sec-card">
+            <div class="sec-card-header">
+                <div class="sec-card-title"><i class="fas fa-robot" style="color:#7c3aed;"></i> Agent configuration</div>
+            </div>
+            <div class="sec-card-body" style="padding:1rem;">
+                <form id="agentForm" action="{% url 'trendycrm:chatbot_save_agent' chatbot.id %}" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="handoff_triggers" id="handoffTriggersHidden">
+                    
+                    <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden;">
+                        
+                        <!-- NOTE: the old "AI Model" select was removed — the router picks
+                             models from the Model Routing block below, so that control was
+                             saved but never read. Configure models there instead. -->
+
+                        <!-- Response Tone -->
+                        <div style="padding:.65rem .85rem; border-bottom:1px solid #e5e7eb;">
+                            <label class="form-label" style="margin:0 0 .25rem 0; font-size:.78rem; font-weight:600;">Response Tone</label>
+                            <select name="response_tone" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0; border:1px solid #d1d5db;">
+                                {% for val, label in chatbot.TONE_CHOICES %}
+                                <option value="{{ val }}" {% if chatbot.response_tone == val %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Creativity Level -->
+                        <div style="padding:.65rem .85rem; border-bottom:1px solid #e5e7eb;">
+                            <label class="form-label" style="margin:0 0 .25rem 0; font-size:.78rem; font-weight:600;">Creativity Level</label>
+                            <select name="creativity_level" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0; border:1px solid #d1d5db;">
+                                {% for val, label in chatbot.CREATIVITY_CHOICES %}
+                                <option value="{{ val }}" {% if chatbot.creativity_level == val %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Response Length -->
+                        <div style="padding:.65rem .85rem; border-bottom:1px solid #e5e7eb;">
+                            <label class="form-label" style="margin:0 0 .25rem 0; font-size:.78rem; font-weight:600;">Response Length</label>
+                            <select name="response_length" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0; border:1px solid #d1d5db;">
+                                {% for val, label in chatbot.LENGTH_CHOICES %}
+                                <option value="{{ val }}" {% if chatbot.response_length == val %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- ── Model Routing (purpose-based provider selection) ── -->
+                        <div style="padding:.65rem .85rem; border-bottom:1px solid #e5e7eb; background:#faf5ff;">
+                            <div style="display:flex; align-items:center; gap:.4rem; margin-bottom:.5rem;">
+                                <i class="fas fa-route" style="color:#7c3aed; font-size:.8rem;"></i>
+                                <span style="font-size:.8rem; font-weight:700; color:#5b21b6;">Model Routing</span>
+                            </div>
+                            <p style="font-size:.68rem; color:#6b7280; margin:0 0 .55rem 0; line-height:1.35;">
+                                Pick which AI provider handles each purpose. Choose <strong>Auto</strong> for smart routing,
+                                or force a provider. If a chosen provider has no key, the assistant safely falls back to the other.
+                            </p>
+
+                            <!-- Provider availability badges -->
+                            <div style="display:flex; gap:.4rem; flex-wrap:wrap; margin-bottom:.6rem;">
+                                <span style="font-size:.66rem; font-weight:600; padding:.18rem .5rem; border-radius:999px; {% if openai_available %}background:#dcfce7; color:#166534;{% else %}background:#fef2f2; color:#b91c1c;{% endif %}">
+                                    <i class="fas {% if openai_available %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                    OpenAI {% if openai_available %}connected{% else %}— no key{% endif %}
+                                </span>
+                                <span style="font-size:.66rem; font-weight:600; padding:.18rem .5rem; border-radius:999px; {% if gemini_available %}background:#dcfce7; color:#166534;{% else %}background:#fef2f2; color:#b91c1c;{% endif %}">
+                                    <i class="fas {% if gemini_available %}fa-check-circle{% else %}fa-times-circle{% endif %}"></i>
+                                    Gemini {% if gemini_available %}connected{% else %}— no key{% endif %}
+                                </span>
+                            </div>
+
+                            <!-- Text Responses -->
+                            <label class="form-label" style="margin:0 0 .2rem 0; font-size:.72rem; font-weight:600;">
+                                <i class="fas fa-comment-dots" style="color:#7c3aed; font-size:.68rem;"></i> Text Responses
+                            </label>
+                            <select name="text_provider" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0 0 .5rem 0; border:1px solid #d1d5db;">
+                                {% for val, label in chatbot.PROVIDER_CHOICES %}
+                                <option value="{{ val }}" {% if chatbot.text_provider == val %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+
+                            <!-- Image Recognition -->
+                            <label class="form-label" style="margin:0 0 .2rem 0; font-size:.72rem; font-weight:600;">
+                                <i class="fas fa-image" style="color:#7c3aed; font-size:.68rem;"></i> Image Recognition
+                            </label>
+                            <select name="image_provider" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.75rem; border-radius:6px; background:#fff; margin:0 0 .6rem 0; border:1px solid #d1d5db;">
+                                {% for val, label in chatbot.PROVIDER_CHOICES %}
+                                <option value="{{ val }}" {% if chatbot.image_provider == val %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+
+                            <!-- Specific model names -->
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
+                                <div>
+                                    <label class="form-label" style="margin:0 0 .2rem 0; font-size:.68rem; font-weight:600; color:#6b7280;">OpenAI model</label>
+                                    <input type="text" name="openai_model" list="openaiModelList"
+                                           value="{{ chatbot.openai_model|default:'gpt-4o' }}"
+                                           placeholder="gpt-4o"
+                                           style="width:100%; padding:.35rem .5rem; font-size:.72rem; border-radius:6px; background:#fff; border:1px solid #d1d5db;">
+                                    <datalist id="openaiModelList">
+                                        {% for val, label in chatbot.OPENAI_MODEL_CHOICES %}
+                                        <option value="{{ val }}">{{ label }}</option>
+                                        {% endfor %}
+                                    </datalist>
+                                </div>
+                                <div>
+                                    <label class="form-label" style="margin:0 0 .2rem 0; font-size:.68rem; font-weight:600; color:#6b7280;">Gemini model</label>
+                                    <select name="gemini_model" class="cb-select" style="width:100%; padding:.35rem .5rem; font-size:.72rem; border-radius:6px; background:#fff; margin:0; border:1px solid #d1d5db;">
+                                        {% for val, label in chatbot.GEMINI_MODEL_CHOICES %}
+                                        <option value="{{ val }}" {% if chatbot.gemini_model == val %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Primary Language Removed -->
+
+
+                    </div>
+
+                    <div style="margin-top:.85rem;">
+                        <button type="submit" class="btn-save" id="agentSaveBtn" style="width:100%; padding:.65rem; border-radius:8px;">
+                            <i class="fas fa-save"></i> Save Configuration
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Credit History Modal ─────────────────────────────────────── -->
+<div class="cb-modal" id="creditHistoryModal">
+    <div class="cb-modal-box">
+        <div class="cb-modal-header">
+            <h5><i class="fas fa-bolt" style="color:#f59e0b;"></i> AI Credit Usage</h5>
+            <button type="button" class="cb-modal-close" onclick="closeModal('creditHistoryModal')">&times;</button>
+        </div>
+        <div class="cb-modal-body" id="creditHistoryBody" style="padding:0;"></div>
+    </div>
+</div>
+
+<!-- ── Bottom Action Bar ────────────────────────────────────────── -->
+<div class="bottom-action-bar">
+    <a href="{% url 'trendycrm:chatbot_list' %}" class="btn-outline-back">
+        <i class="fas fa-arrow-left"></i> Back to All Businesses
+    </a>
+    <button onclick="saveAllSettings()" class="btn-primary-apply" id="globalApplyBtn">
+        <i class="fas fa-check-double"></i> Apply Changes
+    </button>
+</div>
+
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || getCookie('csrftoken');
+
+// ── Master Toggle (Drag Validation) ──────────────────────────────────────────
+const masterToggle = document.getElementById('masterToggle');
+let targetToggleState = false;
+let isDragging = false;
+let startX = 0;
+
+masterToggle.addEventListener('click', function(e) {
+    targetToggleState = this.checked;
+    e.preventDefault(); // Prevent direct toggle
+    
+    const title = document.getElementById('dragModalTitle');
+    const desc = document.getElementById('dragModalDesc');
+    if (targetToggleState) {
+        title.textContent = "Activate AI";
+        desc.textContent = "Slide to confirm you want to activate the AI.";
+    } else {
+        title.textContent = "Pause AI";
+        desc.textContent = "Slide to confirm you want to pause all AI operations.";
+    }
+    
+    document.getElementById('dragModalOverlay').style.display = 'flex';
+    resetDrag();
+});
+
+document.getElementById('dragModalClose').addEventListener('click', () => {
+    document.getElementById('dragModalOverlay').style.display = 'none';
+});
+
+const dragThumb = document.getElementById('dragThumb');
+const dragTrack = document.getElementById('dragTrack');
+const dragFill = document.getElementById('dragFill');
+
+function resetDrag() {
+    dragThumb.style.left = '2px';
+    dragThumb.style.transition = 'left 0.3s ease';
+    dragFill.style.width = '0px';
+    dragFill.style.transition = 'width 0.3s ease';
+    dragThumb.innerHTML = '<i class="fas fa-arrow-right"></i>';
+    dragThumb.style.color = '#7c3aed';
+}
+
+function handleDragStart(e) {
+    isDragging = true;
+    startX = e.type.includes('mouse') ? e.pageX : e.touches[0].pageX;
+    dragThumb.style.transition = 'none';
+    dragFill.style.transition = 'none';
+    dragThumb.style.cursor = 'grabbing';
+}
+
+function handleDragMove(e) {
+    if (!isDragging) return;
+    let currentX = e.type.includes('mouse') ? e.pageX : e.touches[0].pageX;
+    let diff = currentX - startX;
+    let newLeft = 2 + diff;
+    let maxLeft = dragTrack.offsetWidth - dragThumb.offsetWidth - 2;
+    
+    if (newLeft < 2) newLeft = 2;
+    if (newLeft > maxLeft) newLeft = maxLeft;
+    
+    dragThumb.style.left = newLeft + 'px';
+    dragFill.style.width = (newLeft + 20) + 'px'; 
+}
+
+function handleDragEnd(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    dragThumb.style.cursor = 'grab';
+    
+    let currentLeft = parseInt(dragThumb.style.left);
+    let maxLeft = dragTrack.offsetWidth - dragThumb.offsetWidth - 2;
+    
+    if (currentLeft >= maxLeft * 0.95) {
+        // Validation Success
+        dragThumb.style.left = maxLeft + 'px';
+        dragThumb.innerHTML = '<i class="fas fa-check"></i>';
+        dragThumb.style.color = '#059669';
+        dragFill.style.width = '100%';
+        
+        setTimeout(() => {
+            document.getElementById('dragModalOverlay').style.display = 'none';
+            executeMasterToggle(targetToggleState);
+        }, 300);
+    } else {
+        // Snap back
+        resetDrag();
+    }
+}
+
+dragThumb.addEventListener('mousedown', handleDragStart);
+document.addEventListener('mousemove', handleDragMove);
+document.addEventListener('mouseup', handleDragEnd);
+
+dragThumb.addEventListener('touchstart', handleDragStart, {passive: true});
+document.addEventListener('touchmove', handleDragMove, {passive: true});
+document.addEventListener('touchend', handleDragEnd);
+
+async function executeMasterToggle(enabled) {
+    masterToggle.checked = enabled; // Flip switch visually
+    try {
+        // Send the state we want, not "flip whatever you have" — otherwise a stale
+        // page or a second tab makes the server go the opposite way.
+        const fd = new FormData();
+        fd.append('enabled', enabled ? 'true' : 'false');
+        const resp = await fetch('{% url "trendycrm:chatbot_toggle" chatbot.id %}', {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        const active = data.is_active;
+        masterToggle.checked = active; // trust the server's answer
+
+        const bar = document.getElementById('toggleBar');
+        const icon = document.getElementById('toggleIcon');
+        const badge = document.getElementById('statusBadge');
+        const dot = document.getElementById('statusDot');
+        const text = document.getElementById('statusText');
+        const desc = document.getElementById('toggleDesc');
+
+        if (active) {
+            bar.classList.add('active-state');
+            icon.style.color = '#059669';
+            badge.className = 'status-badge active';
+            dot.style.background = '#059669';
+            text.textContent = 'Active';
+            desc.textContent = 'AI is active and auto-replying on all connected channels.';
+        } else {
+            bar.classList.remove('active-state');
+            icon.style.color = '#d1d5db';
+            badge.className = 'status-badge paused';
+            dot.style.background = '#dc2626';
+            text.textContent = 'Paused';
+            desc.textContent = 'All AI is paused — customer auto-replies, digest, and other tools won\'t run.';
+        }
+        showToast(active ? '⚡ AI is now Active' : '⏸ AI Paused', false);
+    } catch(e) {
+        masterToggle.checked = !enabled; // revert
+        showToast('Failed to toggle AI', true);
+    }
+}
+
+// ── Knowledge Base Form ──────────────────────────────────────────────────────
+const knowledgeForm = document.getElementById('knowledgeForm');
+const knowledgeInputs = knowledgeForm.querySelectorAll('input,textarea');
+knowledgeInputs.forEach(el => el.addEventListener('input', () => {
+    document.getElementById('knowledgeUnsaved').classList.add('show');
+}));
+
+// Both forms post through this helper so "Apply Changes" can await them.
+// Returns true only when the server confirmed the save.
+async function submitCrmForm(form, btn, idleHtml) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+    try {
+        const resp = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data.status === 'ok') {
+            return { ok: true, message: data.message || 'Saved' };
+        }
+        return { ok: false, message: data.message || 'Error saving' };
+    } catch (e) {
+        return { ok: false, message: 'Network error' };
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = idleHtml;
+    }
+}
+
+async function saveKnowledge(silent) {
+    const btn = document.getElementById('knowledgeSaveBtn');
+    const res = await submitCrmForm(knowledgeForm, btn, '<i class="fas fa-save"></i> Save Knowledge Base');
+    if (res.ok) {
+        if (!silent) showToast('✓ ' + res.message);
+        document.getElementById('knowledgeSaveStatus').textContent = 'Saved just now';
+        document.getElementById('knowledgeUnsaved').classList.remove('show');
+    } else {
+        showToast(res.message, true);
+    }
+    return res.ok;
+}
+
+knowledgeForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    saveKnowledge(false);
+});
+
+// ── Message Triage Rules ─────────────────────────────────────────────────────
+// The rules on screen are held in this array rather than read back out of the
+// DOM: they get reordered, added to and deleted, and a list that only exists as
+// markup loses its order the moment a row is re-rendered.
+let triageRules = JSON.parse(document.getElementById('triageRulesData').textContent);
+const triageDefaults = JSON.parse(document.getElementById('triageDefaultsData').textContent);
+const triageForm = document.getElementById('triageForm');
+const triageList = document.getElementById('triageList');
+const TRI_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+const TRI_DOT_COLORS = { low: '#22c55e', medium: '#eab308', high: '#f97316', urgent: '#ef4444' };
+// Rows the operator has opened, kept across re-renders so editing a keyword
+// doesn't collapse the row you're typing in.
+let triageOpen = new Set();
+
+function triageDirty() {
+    document.getElementById('triageUnsaved').classList.add('show');
+}
+
+// escapeHtml is for text between tags — it leaves quotes alone, which is fine
+// there and breaks the markup inside an attribute. A label like: Size "S"
+// would otherwise close value=" early and swallow the rest of the row.
+function triageAttr(value) {
+    return escapeHtml(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function triageRowHtml(rule, index) {
+    const isLocked = !!rule.locked;
+    const isFallback = rule.key === 'general_query';
+    const kwCount = (rule.keywords || []).length;
+    const options = TRI_PRIORITIES.map(p =>
+        `<option value="${p}"${rule.priority === p ? ' selected' : ''}>${p[0].toUpperCase() + p.slice(1)}</option>`
+    ).join('');
+
+    return `
+    <div class="tri-row ${triageOpen.has(rule.key) ? 'open' : ''} ${rule.enabled === false ? 'disabled' : ''}" data-index="${index}">
+        <div class="tri-head">
+            <i class="fas fa-chevron-${triageOpen.has(rule.key) ? 'down' : 'right'} tri-caret" data-act="toggle"></i>
+            <span class="tri-name" data-act="toggle">
+                ${escapeHtml(rule.label)}<span class="tri-key">${escapeHtml(rule.key)}</span>
+            </span>
+            <span class="tri-count">${isFallback ? 'fallback' : kwCount + ' keyword' + (kwCount === 1 ? '' : 's')}</span>
+            <select class="tri-pri" data-act="priority" data-p="${rule.priority}" title="Priority">${options}</select>
+            <button type="button" class="tri-bell ${rule.alert ? 'on' : ''}" data-act="alert"
+                    title="${rule.alert ? 'Alerts an agent' : 'No alert'}">
+                <i class="fas fa-bell${rule.alert ? '' : '-slash'}"></i>
+            </button>
+            <button type="button" class="tri-icon-btn" data-act="up" title="Move up" ${index === 0 ? 'disabled' : ''}>
+                <i class="fas fa-arrow-up"></i>
+            </button>
+            <button type="button" class="tri-icon-btn" data-act="down" title="Move down"
+                    ${index === triageRules.length - 1 ? 'disabled' : ''}>
+                <i class="fas fa-arrow-down"></i>
+            </button>
+            ${isLocked
+                ? '<i class="fas fa-lock tri-lock" title="This is where unmatched messages land — it can be renamed, but not removed."></i>'
+                : '<button type="button" class="tri-icon-btn danger" data-act="delete" title="Delete"><i class="fas fa-trash"></i></button>'}
+        </div>
+        <div class="tri-body">
+            <label class="form-label">Chip label <span class="hint">— what your team reads on the message</span></label>
+            <input type="text" class="cb-input" data-act="label" maxlength="40" value="${triageAttr(rule.label)}">
+
+            ${isFallback ? `
+            <p style="font-size:.76rem;color:#9ca3af;margin:.7rem 0 0;">
+                Every message no other rule claims lands here, so it needs no keywords of its own.
+            </p>` : `
+            <label class="form-label">Keywords</label>
+            <div class="tag-input-container" data-act="kw-container">
+                ${(rule.keywords || []).map(k =>
+                    `<div class="tag" data-val="${triageAttr(k)}">${escapeHtml(k)} <i class="fas fa-times delete-tag"></i></div>`
+                ).join('')}
+                <input type="text" data-act="kw-input" placeholder="Add keyword and press Enter"
+                       style="border:none;outline:none;background:transparent;flex:1;min-width:150px;font-size:.85rem;padding:.2rem 0;">
+            </div>
+
+            <label class="form-label">When does it match?</label>
+            <div class="tri-match">
+                <label><input type="radio" name="match-${index}" value="contains" data-act="match"
+                       ${rule.match !== 'exact' ? 'checked' : ''}> Keyword appears anywhere in the message</label>
+                <label><input type="radio" name="match-${index}" value="exact" data-act="match"
+                       ${rule.match === 'exact' ? 'checked' : ''}> Keyword is the whole message</label>
+            </div>
+            <p style="font-size:.72rem;color:#9ca3af;margin:.35rem 0 0;">
+                Short words like "hi" or "ok" must use <em>whole message</em> — as a substring they'd also
+                match "this" and "broken".
+            </p>`}
+
+            <label class="form-label">AI reply instruction <span class="hint">— optional. How the bot should answer this type</span></label>
+            <textarea class="cb-textarea" data-act="instruction" rows="3" style="min-height:70px;"
+                      placeholder="${triageAttr(triageInstructionHint(rule))}">${escapeHtml(rule.instruction || '')}</textarea>
+
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:#374151;margin-top:.7rem;cursor:pointer;">
+                <input type="checkbox" data-act="enabled" ${rule.enabled === false ? '' : 'checked'}>
+                Use this rule
+            </label>
+        </div>
+    </div>`;
+}
+
+// The built-in types already have a reply mode written for them, so the box is
+// an override and the placeholder says what happens if it's left empty. Which
+// types those are is read off the defaults the server sent rather than listed
+// again here, so the two can't drift apart.
+function triageInstructionHint(rule) {
+    return triageDefaults.some(d => d.key === rule.key)
+        ? 'Leave empty to keep the built-in behaviour for this type.'
+        : 'e.g. "Ask which sizes they need and how many, then promise a quote within the hour."';
+}
+
+function renderTriage() {
+    // The fallback can never win by keyword, so its position doesn't change what
+    // gets matched — but it's the end of the list conceptually, and the server
+    // stores it there. Pinning it keeps the panel reading the way the classifier
+    // runs instead of drifting out of order until the next reload.
+    triageRules.sort((a, b) => (a.key === 'general_query') - (b.key === 'general_query'));
+    triageList.innerHTML = triageRules.map(triageRowHtml).join('');
+    document.getElementById('triageRulesHidden').value = JSON.stringify(triageRules);
+}
+
+function triageIndexOf(el) {
+    return parseInt(el.closest('.tri-row').dataset.index, 10);
+}
+
+triageList.addEventListener('click', function (e) {
+    // Checked before the data-act lookup: the × sits inside the keyword box,
+    // which carries a data-act of its own and would otherwise swallow the click.
+    if (e.target.classList.contains('delete-tag')) {
+        const rule = triageRules[triageIndexOf(e.target)];
+        const val = e.target.closest('.tag').dataset.val;
+        rule.keywords = (rule.keywords || []).filter(k => k !== val);
+        triageDirty();
+        renderTriage();
+        return;
+    }
+
+    const target = e.target.closest('[data-act]');
+    if (!target) return;
+
+    const act = target.dataset.act;
+    const index = triageIndexOf(target);
+    const rule = triageRules[index];
+
+    if (act === 'toggle') {
+        if (triageOpen.has(rule.key)) { triageOpen.delete(rule.key); } else { triageOpen.add(rule.key); }
+        renderTriage();
+    } else if (act === 'alert') {
+        rule.alert = !rule.alert;
+        triageDirty();
+        renderTriage();
+    } else if (act === 'up' && index > 0) {
+        triageRules.splice(index - 1, 0, triageRules.splice(index, 1)[0]);
+        triageDirty();
+        renderTriage();
+    } else if (act === 'down' && index < triageRules.length - 1) {
+        triageRules.splice(index + 1, 0, triageRules.splice(index, 1)[0]);
+        triageDirty();
+        renderTriage();
+    } else if (act === 'delete') {
+        if (!confirm(`Delete "${rule.label}"? Messages already classified as this will show its name until they are re-analysed.`)) return;
+        triageRules.splice(index, 1);
+        triageDirty();
+        renderTriage();
+    }
+});
+
+triageList.addEventListener('change', function (e) {
+    const target = e.target.closest('[data-act]');
+    if (!target) return;
+    const rule = triageRules[triageIndexOf(target)];
+
+    if (target.dataset.act === 'priority') {
+        rule.priority = target.value;
+        target.dataset.p = target.value;
+        triageDirty();
+    } else if (target.dataset.act === 'match') {
+        rule.match = target.value;
+        triageDirty();
+    } else if (target.dataset.act === 'enabled') {
+        rule.enabled = target.checked;
+        triageDirty();
+        renderTriage();
+    }
+    document.getElementById('triageRulesHidden').value = JSON.stringify(triageRules);
+});
+
+// Typing edits the rule in place without re-rendering — a redraw on every
+// keystroke would move the caret to the end of the field.
+triageList.addEventListener('input', function (e) {
+    const target = e.target.closest('[data-act]');
+    if (!target) return;
+    const row = target.closest('.tri-row');
+    const rule = triageRules[parseInt(row.dataset.index, 10)];
+
+    if (target.dataset.act === 'label') {
+        rule.label = target.value;
+        // Only the header text is rewritten, not the whole row — a re-render on
+        // every keystroke would throw the caret to the end of the field.
+        row.querySelector('.tri-name').firstChild.textContent = (target.value || 'Untitled') + ' ';
+        if (rule.isNew) {
+            const previous = rule.key;
+            rule.key = triageSlug(target.value);
+            row.querySelector('.tri-key').textContent = rule.key;
+            if (triageOpen.delete(previous)) triageOpen.add(rule.key);
+        }
+        triageDirty();
+    } else if (target.dataset.act === 'instruction') {
+        rule.instruction = target.value;
+        triageDirty();
+    }
+    document.getElementById('triageRulesHidden').value = JSON.stringify(triageRules);
+});
+
+triageList.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' || !e.target.matches('[data-act="kw-input"]')) return;
+    e.preventDefault();
+    const val = e.target.value.trim().toLowerCase();
+    if (!val) return;
+    const rule = triageRules[triageIndexOf(e.target)];
+    if (!(rule.keywords || []).includes(val)) {
+        rule.keywords = (rule.keywords || []).concat([val]);
+        triageDirty();
+        renderTriage();
+        // Put the cursor back where it was — this row stays open, so the input exists.
+        const again = triageList.querySelector(`.tri-row[data-index="${triageRules.indexOf(rule)}"] [data-act="kw-input"]`);
+        if (again) again.focus();
+    } else {
+        e.target.value = '';
+    }
+});
+
+function triageSlug(label) {
+    return label.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 24);
+}
+
+document.getElementById('triageAddBtn').addEventListener('click', function () {
+    // New types go above the fallback but below the existing ones, so adding a
+    // rule never silently outranks the ones already tuned.
+    const at = Math.max(0, triageRules.findIndex(r => r.key === 'general_query'));
+    // `isNew` keeps the id following the label while it's being typed. A saved
+    // rule's id is frozen — it's what every message already classified as this
+    // type is stored under, and renaming must not orphan them.
+    const draft = {
+        key: '', label: '', priority: 'medium', match: 'contains',
+        keywords: [], alert: false, instruction: '', enabled: true, locked: false, isNew: true,
+    };
+    triageRules.splice(at, 0, draft);
+    triageOpen.add('');
+    triageDirty();
+    renderTriage();
+    const input = triageList.querySelector(`.tri-row[data-index="${at}"] [data-act="label"]`);
+    if (input) { input.focus(); input.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+});
+
+document.getElementById('triageResetBtn').addEventListener('click', function () {
+    if (!confirm('Restore the built-in message types? Anything you added here will be removed.')) return;
+    triageRules = JSON.parse(JSON.stringify(triageDefaults));
+    triageOpen = new Set();
+    triageDirty();
+    renderTriage();
+});
+
+// ── Try it ───────────────────────────────────────────────────────────────────
+async function runTriageTry() {
+    const input = document.getElementById('triageTryInput');
+    const out = document.getElementById('triageTryResult');
+    const btn = document.getElementById('triageTryBtn');
+    if (!input.value.trim()) { input.focus(); return; }
+
+    btn.disabled = true;
+    try {
+        const body = new FormData();
+        body.append('csrfmiddlewaretoken', triageForm.querySelector('[name=csrfmiddlewaretoken]').value);
+        body.append('message', input.value);
+        body.append('triage_rules', JSON.stringify(triageRules));
+        const resp = await fetch("{% url 'trendycrm:triage_preview' chatbot.id %}", {
+            method: 'POST', body: body, headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json().catch(() => ({}));
+        out.classList.add('show');
+        if (!resp.ok || data.status !== 'ok') {
+            out.innerHTML = `<span style="color:#dc2626;">${escapeHtml(data.message || 'Could not test that.')}</span>`;
+            return;
+        }
+        const dot = TRI_DOT_COLORS[data.priority] || '#9ca3af';
+        out.innerHTML =
+            `<span class="tri-chip"><span class="tri-dot" style="background:#6366f1;"></span>${escapeHtml(data.label)}</span>` +
+            `<span class="tri-chip"><span class="tri-dot" style="background:${dot};"></span>` +
+            `${escapeHtml(data.priority.charAt(0).toUpperCase() + data.priority.slice(1))}</span>` +
+            (data.alert ? '<span class="tri-chip" style="color:#b45309;"><i class="fas fa-bell"></i> alerts an agent</span>' : '') +
+            (data.matched_keyword
+                ? `<span style="color:#9ca3af;font-size:.75rem;">matched “${escapeHtml(data.matched_keyword)}”</span>`
+                : '<span style="color:#9ca3af;font-size:.75rem;">no keyword matched — went to the fallback</span>');
+    } catch (e) {
+        out.classList.add('show');
+        out.innerHTML = '<span style="color:#dc2626;">Network error.</span>';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+document.getElementById('triageTryBtn').addEventListener('click', runTriageTry);
+document.getElementById('triageTryInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); runTriageTry(); }
+});
+
+async function saveTriage(silent) {
+    // Caught here rather than on the server so the offending row can be opened
+    // and focused — a toast alone leaves you hunting for which one it meant.
+    for (let i = 0; i < triageRules.length; i++) {
+        const r = triageRules[i];
+        if (!r.label.trim() || !r.key) {
+            triageOpen.add(r.key);
+            renderTriage();
+            const input = triageList.querySelector(`.tri-row[data-index="${i}"] [data-act="label"]`);
+            if (input) input.focus();
+            showToast('Give every message type a name first.', true);
+            return false;
+        }
+        if (triageRules.findIndex(other => other.key === r.key) !== i) {
+            showToast(`Two message types are both called "${r.label}" — rename one.`, true);
+            return false;
+        }
+    }
+
+    document.getElementById('triageRulesHidden').value = JSON.stringify(triageRules);
+    const btn = document.getElementById('triageSaveBtn');
+    const res = await submitCrmForm(triageForm, btn, '<i class="fas fa-save"></i> Save Triage Rules');
+    if (res.ok) {
+        if (!silent) showToast('✓ ' + res.message);
+        document.getElementById('triageSaveStatus').textContent = 'Saved just now';
+        document.getElementById('triageUnsaved').classList.remove('show');
+        // A saved rule's id is now the one every message it classifies is stored
+        // under, so it stops following the label. Renaming from here on changes
+        // only what the chip reads.
+        triageRules.forEach(r => { delete r.isNew; });
+    } else {
+        showToast(res.message, true);
+    }
+    return res.ok;
+}
+
+triageForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    saveTriage(false);
+});
+
+renderTriage();
+
+// ── Agent Config Form ────────────────────────────────────────────────────────
+const agentForm = document.getElementById('agentForm');
+
+async function saveAgent(silent) {
+    const btn = document.getElementById('agentSaveBtn');
+    const res = await submitCrmForm(agentForm, btn, '<i class="fas fa-save"></i> Save Configuration');
+    if (res.ok) {
+        if (!silent) showToast('✓ ' + res.message);
+    } else {
+        showToast(res.message, true);
+    }
+    return res.ok;
+}
+
+agentForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    saveAgent(false);
+});
+
+// ── Channel Toggles ──────────────────────────────────────────────────────────
+document.querySelectorAll('.channel-toggle').forEach(toggle => {
+    toggle.addEventListener('change', async function() {
+        const integrationId = this.dataset.integrationId;
+        const enabled = this.checked;
+
+        if (enabled && this.dataset.ownedByOther === '1') {
+            const ok = confirm(`This channel is currently handled by "${this.dataset.ownerName}". Enabling it here will move it to this business and stop auto-replies from the other one. Continue?`);
+            if (!ok) { this.checked = false; return; }
+        }
+
+        const fd = new FormData();
+        fd.append('integration_id', integrationId);
+        fd.append('enabled', enabled ? 'true' : 'false');
+        try {
+            const resp = await fetch('{% url "trendycrm:chatbot_toggle_channel" chatbot.id %}', {
+                method: 'POST',
+                body: fd,
+                headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            const data = await resp.json();
+            if (data.status === 'ok') {
+                showToast((enabled ? '✓ Auto-reply enabled' : '⏸ Auto-reply paused') + ' for account');
+            }
+        } catch(e) {
+            this.checked = !this.checked; // revert
+            showToast('Failed to update channel account', true);
+        }
+    });
+});
+
+// ── Business Switcher ────────────────────────────────────────────────────────
+function toggleBizSwitcher() {
+    document.getElementById('bizSwitcherMenu').classList.toggle('open');
+}
+document.addEventListener('click', function(e) {
+    const wrap = document.querySelector('.biz-switcher-wrap');
+    const menu = document.getElementById('bizSwitcherMenu');
+    if (wrap && menu && !wrap.contains(e.target)) {
+        menu.classList.remove('open');
+    }
+});
+
+function toggleDropdown(channelType) {
+    const dropdown = document.getElementById('dropdown-' + channelType);
+    const icon = document.getElementById('icon-' + channelType);
+    if (dropdown.style.display === 'none') {
+        dropdown.style.display = 'block';
+        icon.style.transform = 'rotate(180deg)';
+    } else {
+        dropdown.style.display = 'none';
+        icon.style.transform = 'rotate(0deg)';
+    }
+}
+
+// ── Knowledge Tabs ───────────────────────────────────────────────────────────
+function switchTab(id, el) {
+    document.querySelectorAll('.kb-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.kb-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('panel-' + id)?.classList.add('active');
+    el.classList.add('active');
+}
+
+// ── Human Handoff Tags ────────────────────────────────────────────────────────
+const tagContainer = document.getElementById('handoffTagContainer');
+const tagInput = document.getElementById('handoffTagInput');
+const hiddenTagInput = document.getElementById('handoffTriggersHidden');
+let tags = [];
+
+// Initialize tags from DOM
+tagContainer.querySelectorAll('.tag').forEach(tagEl => {
+    tags.push(tagEl.dataset.val);
+});
+updateHiddenTagInput();
+
+function updateHiddenTagInput() {
+    hiddenTagInput.value = JSON.stringify(tags);
+}
+
+async function autoSaveTags() {
+    const fd = new FormData();
+    fd.append('handoff_triggers', JSON.stringify(tags));
+    try {
+        const resp = await fetch('{% url "trendycrm:chatbot_save_agent" chatbot.id %}', {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        // A 200 alone isn't success: save_agent swallows malformed
+        // handoff_triggers JSON, so check the status field it reports back.
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data.status !== 'error') {
+            showToast('✓ Handoff triggers auto-saved');
+        } else {
+            showToast(data.message || 'Error saving handoff triggers', true);
+        }
+    } catch(e) {
+        showToast('Failed to auto-save tags', true);
+    }
+}
+
+function createTag(val) {
+    const div = document.createElement('div');
+    div.className = 'tag';
+    div.dataset.val = val;
+    // Trigger phrases are operator input — escape before it touches innerHTML.
+    div.innerHTML = `${escapeHtml(val)} <i class="fas fa-times delete-tag"></i>`;
+    tagContainer.insertBefore(div, tagInput);
+    tags.push(val);
+    updateHiddenTagInput();
+    autoSaveTags();
+}
+
+tagInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = this.value.trim();
+        if (val && !tags.includes(val)) {
+            createTag(val);
+            this.value = '';
+        }
+    } else if (e.key === 'Backspace' && this.value === '' && tags.length > 0) {
+        // Remove last tag on backspace if input is empty
+        const lastTagEl = tagContainer.querySelectorAll('.tag');
+        const last = lastTagEl[lastTagEl.length - 1];
+        const val = last.dataset.val;
+        tags = tags.filter(t => t !== val);
+        last.remove();
+        updateHiddenTagInput();
+        autoSaveTags();
+    }
+});
+
+tagContainer.addEventListener('click', function(e) {
+    if (e.target.classList.contains('delete-tag')) {
+        const tagEl = e.target.closest('.tag');
+        const val = tagEl.dataset.val;
+        tags = tags.filter(t => t !== val);
+        tagEl.remove();
+        updateHiddenTagInput();
+        autoSaveTags();
+    }
+});
+
+// ── Cities Served Tags ────────────────────────────────────────────────────────
+// Unlike handoff triggers these don't auto-save: they live inside the knowledge
+// form, so they go out with "Save Knowledge Base" alongside the rest of Identity.
+const cityContainer = document.getElementById('cityTagContainer');
+const cityInput = document.getElementById('cityTagInput');
+const citiesHidden = document.getElementById('citiesServedHidden');
+let cities = [];
+
+cityContainer.querySelectorAll('.tag').forEach(el => cities.push(el.dataset.val));
+syncCities();
+
+function syncCities() {
+    citiesHidden.value = JSON.stringify(cities);
+}
+
+function markKnowledgeDirty() {
+    document.getElementById('knowledgeUnsaved').classList.add('show');
+}
+
+function addCity(val) {
+    const div = document.createElement('div');
+    div.className = 'tag';
+    div.dataset.val = val;
+    // City names are operator input — escape before it touches innerHTML.
+    div.innerHTML = `${escapeHtml(val)} <i class="fas fa-times delete-tag"></i>`;
+    cityContainer.insertBefore(div, cityInput);
+    cities.push(val);
+    syncCities();
+    markKnowledgeDirty();
+}
+
+function removeCity(tagEl) {
+    cities = cities.filter(c => c !== tagEl.dataset.val);
+    tagEl.remove();
+    syncCities();
+    markKnowledgeDirty();
+}
+
+cityInput.addEventListener('keydown', function(e) {
+    // Comma commits too — pasting "Kathmandu, Pokhara" shouldn't need Enter twice.
+    if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        const val = this.value.trim().replace(/,$/, '');
+        if (val && !cities.some(c => c.toLowerCase() === val.toLowerCase())) {
+            addCity(val);
+        }
+        this.value = '';
+    } else if (e.key === 'Backspace' && this.value === '' && cities.length > 0) {
+        const existing = cityContainer.querySelectorAll('.tag');
+        removeCity(existing[existing.length - 1]);
+    }
+});
+
+// Don't lose a half-typed city when the operator clicks Save straight away.
+cityInput.addEventListener('blur', function() {
+    const val = this.value.trim();
+    if (val && !cities.some(c => c.toLowerCase() === val.toLowerCase())) {
+        addCity(val);
+    }
+    this.value = '';
+});
+
+cityContainer.addEventListener('click', function(e) {
+    if (e.target.classList.contains('delete-tag')) {
+        removeCity(e.target.closest('.tag'));
+    }
+});
+
+async function selectLanguage(langCode, el) {
+    document.querySelectorAll('.lang-box').forEach(box => box.classList.remove('active'));
+    el.classList.add('active');
+
+    const fd = new FormData();
+    fd.append('primary_language', langCode);
+    try {
+        const resp = await fetch('{% url "trendycrm:chatbot_save_agent" chatbot.id %}', {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data.status !== 'error') {
+            showToast('✓ Language auto-saved');
+        } else {
+            showToast(data.message || 'Error saving language', true);
+        }
+    } catch(e) {
+        showToast('Failed to auto-save language', true);
+    }
+}
+
+// ── Credit History ───────────────────────────────────────────────────────────
+async function openCreditHistory() {
+    openModal('creditHistoryModal');
+    const body = document.getElementById('creditHistoryBody');
+    body.innerHTML = '<div style="text-align:center;padding:1.5rem;color:#9ca3af;"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';
+    try {
+        const resp = await fetch('{% url "trendycrm:credit_history" chatbot.id %}', {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+        document.getElementById('creditBalance').textContent = data.balance;
+        if (!data.logs.length) {
+            body.innerHTML = '<div style="text-align:center;padding:2rem;color:#9ca3af;font-size:.85rem;">'
+                + '<i class="fas fa-bolt" style="font-size:1.6rem;display:block;margin-bottom:.5rem;color:#e5e7eb;"></i>'
+                + 'No AI usage recorded yet. Run a test above or let the AI answer a customer.</div>';
+            return;
+        }
+        const rows = data.logs.map(l =>
+            '<tr><td>' + l.created_at + '</td>'
+            + '<td>' + escapeHtml(l.action) + '<div style="font-size:.72rem;color:#9ca3af;">' + escapeHtml(l.description) + '</div></td>'
+            + '<td>' + escapeHtml(l.model_used) + '</td>'
+            + '<td style="text-align:right;"><span class="credit-badge ' + (l.is_topup ? 'topup' : 'usage') + '">'
+            + (l.is_topup ? '+' : '') + l.credits_used + '</span></td></tr>'
+        ).join('');
+        body.innerHTML = '<table class="hist-table"><thead><tr><th>When</th><th>Action</th><th>Model</th>'
+            + '<th style="text-align:right;">Credits</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    } catch (e) {
+        body.innerHTML = '<div style="padding:1.5rem;color:#dc2626;font-size:.85rem;">Could not load credit history.</div>';
+    }
+}
+
+function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : s;
+    return d.innerHTML;
+}
+
+// ── Modal Helpers ─────────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.cb-modal').forEach(m => {
+    m.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
+});
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg, isError = false) {
+    const t = document.getElementById('saveToast');
+    const tm = document.getElementById('saveToastMsg');
+    tm.textContent = msg;
+    t.classList.toggle('error', isError);
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+function getCookie(name) {
+    const m = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+    return m ? m[2] : null;
+}
+
+// ── Global Save Logic ─────────────────────────────────────────────────────────
+// Waits for both saves to actually come back before reporting success. The old
+// version fired two clicks and declared victory on a timer, so a slow Knowledge
+// Base save could still be in flight when the page reloaded — losing the edit.
+async function saveAllSettings() {
+    const globalApplyBtn = document.getElementById('globalApplyBtn');
+    const originalText = '<i class="fas fa-check-double"></i> Apply Changes';
+
+    globalApplyBtn.disabled = true;
+    globalApplyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+    const [knowledgeOk, agentOk, triageOk] = await Promise.all([
+        saveKnowledge(true),
+        saveAgent(true),
+        saveTriage(true),
+    ]);
+
+    globalApplyBtn.disabled = false;
+    if (knowledgeOk && agentOk && triageOk) {
+        globalApplyBtn.innerHTML = '<i class="fas fa-check-double"></i> Saved Successfully';
+        showToast('✓ All settings saved');
+    } else if (knowledgeOk || agentOk || triageOk) {
+        globalApplyBtn.innerHTML = originalText;
+        // Name what didn't land — the triage rules refuse a bad payload with a
+        // reason, and "something failed" would hide it.
+        const failed = [
+            knowledgeOk ? null : 'Knowledge Base',
+            agentOk ? null : 'Agent configuration',
+            triageOk ? null : 'Triage rules',
+        ].filter(Boolean).join(' and ');
+        showToast(failed + ' failed to save', true);
+        return;
+    } else {
+        globalApplyBtn.innerHTML = originalText;
+        showToast('Nothing was saved — check your connection', true);
+        return;
+    }
+    setTimeout(() => { globalApplyBtn.innerHTML = originalText; }, 3000);
+}
+
+// ── AI Test Console ─────────────────────────────────────────────────────────
+let selectedTestImage = null;
+
+document.getElementById('testImageInput')?.addEventListener('change', function () {
+    const file = this.files && this.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+        alertify.error('Please choose an image file.');
+        this.value = '';
+        return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        alertify.error('Image is too large (max 10 MB).');
+        this.value = '';
+        return;
+    }
+    selectedTestImage = file;
+    document.getElementById('aiTestPreviewImg').src = URL.createObjectURL(file);
+    document.getElementById('aiTestPreviewName').textContent = file.name;
+    document.getElementById('aiTestPreview').style.display = 'flex';
+    document.getElementById('btnAttach').classList.add('has-image');
+});
+
+function clearTestImage() {
+    selectedTestImage = null;
+    const input = document.getElementById('testImageInput');
+    if (input) input.value = '';
+    document.getElementById('aiTestPreview').style.display = 'none';
+    document.getElementById('aiTestPreviewImg').src = '';
+    document.getElementById('btnAttach').classList.remove('has-image');
+}
+
+async function runAiTest() {
+    const msgInput = document.getElementById('testMessage');
+    const msg = msgInput.value.trim();
+    const resultEl = document.getElementById('aiTestResult');
+    const btnTest = document.getElementById('btnTestRouter');
+
+    if (!msg && !selectedTestImage) {
+        msgInput.focus();
+        return;
+    }
+
+    resultEl.style.display = 'none';
+    const originalBtnHtml = btnTest.innerHTML;
+    btnTest.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+    btnTest.disabled = true;
+
+    const formData = new FormData();
+    formData.append('message', msg);
+    formData.append('bot_id', '{{ chatbot.id }}');
+    // Pass the selected page so the test runs against the same Page Profile (and
+    // checkout link) a real customer on that page would hit.
+    const integSelect = document.getElementById('testIntegration');
+    if (integSelect && integSelect.value) {
+        formData.append('integration_id', integSelect.value);
+    }
+    if (selectedTestImage) {
+        formData.append('image', selectedTestImage);
+    }
+
+    // Snapshot the image preview to echo it above the reply.
+    const sentImageSrc = selectedTestImage ? document.getElementById('aiTestPreviewImg').src : null;
+
+    try {
+        const resp = await fetch('{% url "trendycrm:ai_test" %}', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await resp.json();
+
+        resultEl.style.display = 'block';
+        if (data.error) {
+            resultEl.className = 'ai-test-result error';
+            resultEl.innerHTML = '<strong><i class="fas fa-exclamation-circle"></i> Error:</strong> ' + escapeHtml(data.error);
+        } else {
+            resultEl.className = 'ai-test-result success';
+            const ticketHtml = data.open_ticket ? '<span class="result-badge badge-ticket"><i class="fas fa-ticket-alt"></i> Ticket Auto-Created</span>' : '';
+            const checkoutHtml = data.checkout_link ? '<div style="margin-top:.75rem; padding-top:.6rem; border-top:1px solid #e5e7eb; font-size:.8rem;"><i class="fas fa-link" style="color:var(--crm-primary);"></i> <strong>Checkout Link:</strong> <a href="' + encodeURI(data.checkout_link) + '" target="_blank" rel="noopener" style="color:var(--crm-primary); text-decoration:none;">' + escapeHtml(data.checkout_link) + '</a></div>' : '';
+            const noticeHtml = data.notice ? '<div style="margin-bottom:.55rem; padding:.4rem .6rem; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; color:#92400e; font-size:.72rem;"><i class="fas fa-info-circle"></i> ' + escapeHtml(data.notice) + '</div>' : '';
+            const imageHtml = sentImageSrc ? '<div style="margin-bottom:.6rem;"><img src="' + sentImageSrc + '" alt="sent image" style="max-width:160px; max-height:160px; border-radius:8px; border:1px solid #e5e7eb;"></div>' : '';
+
+            // Show the chip the thread would show, not just the raw key — it's
+            // how an operator checks their triage rules actually caught this.
+            const priorityLabel = data.intent_priority
+                ? data.intent_priority.charAt(0).toUpperCase() + data.intent_priority.slice(1) : '';
+            const intentText = data.intent_label
+                ? data.intent_label + (priorityLabel ? ' · ' + priorityLabel : '')
+                : data.intent;
+
+            resultEl.innerHTML = '<div class="result-meta">' +
+                '<span class="result-badge badge-intent"><i class="fas fa-bullseye"></i> Intent: ' + escapeHtml(intentText) + '</span>' +
+                '<span class="result-badge badge-model"><i class="fas fa-microchip"></i> Model: ' + escapeHtml(data.model_used) + '</span>' +
+                ticketHtml +
+                '</div>' +
+                noticeHtml +
+                imageHtml +
+                '<div style="color:#1f2937; margin-bottom:.4rem;"><strong>AI Reply:</strong></div>' +
+                '<div style="color:#4b5563; white-space:pre-wrap;">' + escapeHtml(data.reply || '—') + '</div>' + checkoutHtml;
+
+            // Each test costs a credit — keep the balance on screen honest.
+            if (typeof data.credits_remaining === 'number') {
+                document.getElementById('creditBalance').textContent = data.credits_remaining;
+            }
+            // A working test is proof the recorded failure is over; the server has
+            // already cleared it, so take the banner down with it rather than
+            // leaving a contradiction on screen until the next reload.
+            const errorBanner = document.getElementById('botErrorBanner');
+            if (errorBanner) errorBanner.remove();
+        }
+    } catch (err) {
+        resultEl.style.display = 'block';
+        resultEl.className = 'ai-test-result error';
+        resultEl.innerHTML = '<strong><i class="fas fa-wifi"></i> Network Error:</strong> ' + err.message;
+    } finally {
+        btnTest.innerHTML = originalBtnHtml;
+        btnTest.disabled = false;
+    }
+}
+
+document.getElementById('testMessage')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') runAiTest();
+});
+</script>
+{% endblock %}

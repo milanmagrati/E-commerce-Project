@@ -137,6 +137,35 @@
   .punch-table tbody td { padding: .5rem .6rem; border-bottom: 1px solid #f3f4f6; color: #374151; }
 
   .bio-device-label { font-family: monospace; font-size: .82rem; color: #6b7280; }
+
+  .bio-upload-btn {
+    background: #fff; border: 1px solid #d1d5db; color: #374151;
+    padding: .6rem 1.2rem; border-radius: 10px; font-size: .88rem; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; gap: .4rem; transition: all .2s;
+  }
+  .bio-upload-btn:hover { border-color: #6366f1; color: #6366f1; transform: translateY(-1px); box-shadow: 0 4px 15px rgba(99,102,241,.18); }
+
+  /* attlog.dat drop zone */
+  .bio-dropzone {
+    border: 2px dashed #d1d5db; border-radius: 12px; background: #f9fafb;
+    padding: 2rem 1.25rem; text-align: center; cursor: pointer; transition: all .2s;
+  }
+  .bio-dropzone:hover, .bio-dropzone.is-dragover { border-color: #6366f1; background: #f5f3ff; }
+  .bio-dropzone i { font-size: 2rem; color: #9ca3af; margin-bottom: .6rem; display: block; }
+  .bio-dropzone.is-dragover i { color: #6366f1; }
+  .bio-dropzone-title { font-weight: 600; color: #374151; font-size: .95rem; }
+  .bio-dropzone-hint  { color: #9ca3af; font-size: .82rem; margin-top: .25rem; }
+  .bio-file-chip {
+    display: none; align-items: center; gap: .6rem; margin-top: .9rem;
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: .65rem .9rem;
+  }
+  .bio-file-chip .name { font-weight: 600; color: #1e40af; font-size: .88rem; word-break: break-all; }
+  .bio-file-chip .size { color: #6b7280; font-size: .8rem; margin-left: auto; white-space: nowrap; }
+  .bio-upload-result { display: none; margin-top: 1rem; border-radius: 10px; padding: .9rem 1rem; font-size: .88rem; }
+  .bio-upload-result.ok  { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+  .bio-upload-result.bad { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+  .bio-upload-stats { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem; }
+  .bio-upload-stat { background: rgba(255,255,255,.7); border-radius: 8px; padding: .35rem .7rem; font-size: .8rem; font-weight: 600; }
 </style>
 {% endblock %}
 
@@ -169,11 +198,16 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
     <h2 class="bio-page-title mb-1"><i class="fas fa-fingerprint me-2 text-primary"></i>Biometric Attendance</h2>
-    <p class="text-muted mb-0" style="font-size:.9rem;">Attendance records pushed from ZKTeco ADMS devices</p>
+    <p class="text-muted mb-0" style="font-size:.9rem;">Attendance pushed live from ZKTeco ADMS devices, or imported from a device attlog.dat file</p>
   </div>
-  <button class="bio-sync-btn" id="globalSyncBtn" onclick="syncAll()">
-    <i class="fas fa-sync-alt"></i> Refresh Data
-  </button>
+  <div class="d-flex align-items-center gap-2">
+    <button class="bio-upload-btn" id="uploadDatBtn" onclick="openUploadModal()">
+      <i class="fas fa-file-upload"></i> Upload Device File
+    </button>
+    <button class="bio-sync-btn" id="globalSyncBtn" onclick="syncAll()">
+      <i class="fas fa-sync-alt"></i> Refresh Data
+    </button>
+  </div>
 </div>
 
 <!-- Search & Filter bar -->
@@ -186,9 +220,15 @@
           <button type="submit" class="bio-search-btn"><i class="fas fa-search"></i> Search</button>
         </div>
         <button type="button" class="bio-filter-btn" onclick="toggleFilters()">
-          <i class="fas fa-filter"></i> Filters{% if date_from or date_to %} <span class="badge bg-primary rounded-pill" style="font-size:.65rem;">ON</span>{% endif %}
+          <i class="fas fa-filter"></i> Filters{% if has_filters %} <span class="badge bg-primary rounded-pill" style="font-size:.65rem;">ON</span>{% endif %}
         </button>
         <div class="ms-auto d-flex align-items-center gap-2">
+          <select class="bio-per-page-select" name="sort_by" onchange="this.form.submit()" style="margin-right: 0.5rem; max-width: 180px;">
+            <option value="-date" {% if sort_by == '-date' %}selected{% endif %}>Recent Date</option>
+            <option value="date" {% if sort_by == 'date' %}selected{% endif %}>Oldest Date</option>
+            <option value="employee_name" {% if sort_by == 'employee_name' %}selected{% endif %}>Employee Name (A-Z)</option>
+            <option value="-employee_name" {% if sort_by == '-employee_name' %}selected{% endif %}>Employee Name (Z-A)</option>
+          </select>
           <span class="text-muted" style="font-size:.88rem; white-space:nowrap;">Per Page:</span>
           <select name="per_page" class="bio-per-page-select" onchange="this.form.submit()">
             {% for opt in per_page_options %}
@@ -196,18 +236,16 @@
             {% endfor %}
           </select>
         </div>
-        {% if date_from %}<input type="hidden" name="date_from" value="{{ date_from }}">{% endif %}
-        {% if date_to %}<input type="hidden" name="date_to" value="{{ date_to }}">{% endif %}
       </div>
 
       <div id="filterPanel" class="bio-filter-panel mt-3" style="display:{% if date_from or date_to %}flex{% else %}none{% endif %}; flex-wrap:wrap; gap:1rem; align-items:flex-end;">
         <div>
           <label class="form-label mb-1" style="font-size:.82rem; color:#6b7280; font-weight:600;">Date From</label>
-          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="min-width:155px;">
+          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" style="min-width:155px;" onchange="this.form.submit()">
         </div>
         <div>
           <label class="form-label mb-1" style="font-size:.82rem; color:#6b7280; font-weight:600;">Date To</label>
-          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" style="min-width:155px;">
+          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" style="min-width:155px;" onchange="this.form.submit()">
         </div>
         <div class="d-flex gap-2">
           <button type="submit" class="btn btn-sm btn-primary" style="border-radius:8px; padding:.4rem .9rem;">Apply</button>
@@ -222,8 +260,19 @@
 <div class="card bio-card">
   <div class="card-header">
     <div class="bio-device-icon"><i class="fas fa-clock"></i></div>
-    <span>Aggregated attendance from raw device punches</span>
-    <span class="ms-auto text-muted" style="font-size:.82rem;">{{ total_records }} total record{{ total_records|pluralize }}</span>
+    {% if default_today %}
+      <span>Today's attendance &ndash; <strong>{{ today_str }}</strong></span>
+    {% elif date_from and date_to and date_from == date_to %}
+      <span>Attendance for <strong>{{ date_from }}</strong></span>
+    {% elif date_from or date_to %}
+      <span>Attendance from raw device punches</span>
+    {% else %}
+      <span>All attendance records</span>
+    {% endif %}
+    {% if default_today %}
+      <a href="{% url 'hrm:biometric_attendance' %}?date_from=&date_to=" class="ms-2 btn btn-sm btn-outline-secondary" style="font-size:.75rem; padding:.2rem .6rem; border-radius:6px;">View All Dates</a>
+    {% endif %}
+    <span class="ms-auto text-muted" style="font-size:.82rem;">{{ total_records }} record{{ total_records|pluralize }}</span>
   </div>
 
   <div class="table-responsive">
@@ -283,9 +332,15 @@
           <td colspan="9">
             <div class="bio-empty">
               <i class="fas fa-fingerprint d-block"></i>
-              <p class="mb-0">No biometric records found{% if search_q or date_from or date_to %} matching your filters{% endif %}.</p>
-              <p class="mb-0 mt-1" style="font-size:.82rem;">Records appear here automatically when a ZKTeco device pushes attendance data.</p>
-              {% if search_q or date_from or date_to %}
+              {% if has_filters %}
+              <p class="mb-0">No biometric records found matching your filters.</p>
+              {% elif default_today %}
+              <p class="mb-0">No attendance recorded for today yet.</p>
+              {% else %}
+              <p class="mb-0">No biometric records found.</p>
+              {% endif %}
+              <p class="mb-0 mt-1" style="font-size:.82rem;">Records appear here automatically when a ZKTeco device pushes attendance data &mdash; or use <strong>Upload Device File</strong> to import an <code>attlog.dat</code> from a USB stick.</p>
+              {% if has_filters %}
               <a href="{% url 'hrm:biometric_attendance' %}" class="btn btn-sm btn-outline-primary mt-3" style="border-radius:8px;">Clear Filters</a>
               {% endif %}
             </div>
@@ -388,6 +443,65 @@
 </div>
 
 
+<!-- ==================== Upload Device File (attlog.dat) ==================== -->
+<div class="modal fade" id="bioUploadModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content border-0 shadow-lg" style="border-radius:16px; overflow:hidden;">
+      <div class="modal-header bio-modal-header">
+        <h5 class="modal-title"><i class="fas fa-file-upload me-2"></i>Upload Device File (attlog.dat)</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <p class="text-muted mb-3" style="font-size:.88rem;">
+          Copy the attendance log off the device onto a USB stick
+          (<strong>Menu &rarr; USB Manager &rarr; Download &rarr; Attendance Data</strong>)
+          and upload the <code>attlog.dat</code> file here. Use this when the device could not
+          reach the server &mdash; punches already on file are skipped, so re-uploading the
+          same file is safe.
+        </p>
+
+        <form id="bioUploadForm" enctype="multipart/form-data">
+          <div class="bio-dropzone" id="bioDropzone">
+            <i class="fas fa-cloud-upload-alt"></i>
+            <div class="bio-dropzone-title">Drop attlog.dat here, or click to browse</div>
+            <div class="bio-dropzone-hint">Accepts .dat, .txt, .csv or .log &middot; up to 20&nbsp;MB</div>
+            <input type="file" id="bioUploadInput" name="attlog_file" accept=".dat,.txt,.csv,.log" style="display:none;">
+          </div>
+
+          <div class="bio-file-chip" id="bioFileChip">
+            <i class="fas fa-file-alt text-primary"></i>
+            <span class="name" id="bioFileName"></span>
+            <span class="size" id="bioFileSize"></span>
+            <button type="button" class="btn-close" id="bioFileClear" aria-label="Remove file" style="font-size:.7rem;"></button>
+          </div>
+
+          {% if devices %}
+          <div class="mt-3">
+            <label class="form-label mb-1" style="font-size:.82rem; color:#6b7280; font-weight:600;">
+              Device <span class="fw-normal text-muted">(optional &mdash; tags the imported punches)</span>
+            </label>
+            <select name="device_id" id="bioUploadDevice" class="form-select form-select-sm" style="border-radius:8px;">
+              <option value="">Not specified</option>
+              {% for d in devices %}
+              <option value="{{ d.id }}">{{ d.name|default:d.serial_number }} ({{ d.serial_number }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+        </form>
+
+        <div class="bio-upload-result" id="bioUploadResult"></div>
+      </div>
+      <div class="modal-footer border-0 pb-4 gap-2">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" style="border-radius:8px; min-width:100px;">Close</button>
+        <button type="button" class="btn btn-primary" id="bioUploadSubmit" disabled style="border-radius:8px; min-width:140px;">
+          <i class="fas fa-file-import me-1"></i>Import
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -396,11 +510,12 @@ document.addEventListener('DOMContentLoaded', function () {
   var CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
   // URL templates — rendered by Django, placeholders replaced in JS
-  var _viewUrlTpl   = "{% url 'hrm:biometric_attendance_view'  pin='__P__' date_str='__D__' %}";
-  var _syncUrlTpl   = "{% url 'hrm:biometric_sync_single'       pin='__P__' date_str='__D__' %}";
-  var _deleteUrlTpl = "{% url 'hrm:biometric_attendance_delete' pin='__P__' date_str='__D__' %}";
+  // NOTE: Do NOT use encodeURIComponent on path segments — it double-encodes and breaks routing.
+  var _viewUrlTpl   = "{% url 'hrm:biometric_attendance_view'  pin='__PIN__' date_str='__DATE__' %}";
+  var _syncUrlTpl   = "{% url 'hrm:biometric_sync_single'       pin='__PIN__' date_str='__DATE__' %}";
+  var _deleteUrlTpl = "{% url 'hrm:biometric_attendance_delete' pin='__PIN__' date_str='__DATE__' %}";
   function bioUrl(tpl, pin, dateStr) {
-    return tpl.replace('__P__', encodeURIComponent(pin)).replace('__D__', encodeURIComponent(dateStr));
+    return tpl.replace('__PIN__', pin).replace('__DATE__', dateStr);
   }
 
   function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -446,10 +561,18 @@ document.addEventListener('DOMContentLoaded', function () {
     fetch(bioUrl(_viewUrlTpl, pin, dateStr), {
       headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) {
+        // Server returned non-2xx (e.g. 500, 403, 404)
+        return r.text().then(function(txt) {
+          throw new Error('Server returned ' + r.status + '. ' + (txt.length < 200 ? txt : ''));
+        });
+      }
+      return r.json();
+    })
     .then(function (data) {
       if (!data.success) {
-        document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center"></p>';
+        document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center py-3"><i class="fas fa-exclamation-triangle me-2"></i></p>';
         document.getElementById('bioViewBody').querySelector('p').textContent = data.error || 'Failed to load.';
         return;
       }
@@ -482,8 +605,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
       document.getElementById('bioViewBody').innerHTML = html;
     })
-    .catch(function () {
-      document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center">Failed to load.</p>';
+    .catch(function (err) {
+      document.getElementById('bioViewBody').innerHTML = '<p class="text-danger text-center py-3"><i class="fas fa-exclamation-triangle me-2"></i><span></span></p>';
+      document.getElementById('bioViewBody').querySelector('span').textContent = err.message || 'Failed to load punch data.';
     });
   };
 
@@ -496,7 +620,12 @@ document.addEventListener('DOMContentLoaded', function () {
       method: 'POST',
       headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
     })
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) {
+        return r.text().then(function(txt) { throw new Error('Server ' + r.status); });
+      }
+      return r.json();
+    })
     .then(function (data) {
       btn.disabled = false;
       btn.querySelector('i').classList.remove('fa-spin');
@@ -506,10 +635,10 @@ document.addEventListener('DOMContentLoaded', function () {
         showInlineToast(data.error || 'Sync failed.', 'error');
       }
     })
-    .catch(function () {
+    .catch(function (err) {
       btn.disabled = false;
       btn.querySelector('i').classList.remove('fa-spin');
-      showInlineToast('Network error during sync.', 'error');
+      showInlineToast(err.message || 'Network error during sync.', 'error');
     });
   };
 
@@ -563,7 +692,12 @@ document.addEventListener('DOMContentLoaded', function () {
       method: 'POST',
       headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
     })
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) {
+        return r.text().then(function(txt) { throw new Error('Server ' + r.status); });
+      }
+      return r.json();
+    })
     .then(function (data) {
       bsModal('bioDeleteModal').hide();
       if (data.success) {
@@ -573,10 +707,167 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       window.location.reload();
     })
-    .catch(function () {
+    .catch(function (err) {
       bsModal('bioDeleteModal').hide();
-      showToast('Network error.', 'error');
+      showToast(err.message || 'Network error.', 'error');
       window.location.reload();
+    });
+  });
+
+  // ── Upload Device File (attlog.dat)
+  var _uploadUrl   = "{% url 'hrm:biometric_upload_dat' %}";
+  var _uploadInput = document.getElementById('bioUploadInput');
+  var _dropzone    = document.getElementById('bioDropzone');
+  var _fileChip    = document.getElementById('bioFileChip');
+  var _submitBtn   = document.getElementById('bioUploadSubmit');
+  var _resultBox   = document.getElementById('bioUploadResult');
+  var _pickedFile  = null;
+  var _uploading   = false;
+  var MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+  var ALLOWED_EXT = ['.dat', '.txt', '.csv', '.log'];
+
+  function humanSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function showUploadResult(html, ok) {
+    _resultBox.className = 'bio-upload-result ' + (ok ? 'ok' : 'bad');
+    _resultBox.innerHTML = html;
+    _resultBox.style.display = 'block';
+  }
+
+  function clearPickedFile() {
+    _pickedFile = null;
+    _uploadInput.value = '';
+    _fileChip.style.display = 'none';
+    _submitBtn.disabled = true;
+  }
+
+  function setPickedFile(file) {
+    if (!file) { clearPickedFile(); return; }
+
+    var lower = file.name.toLowerCase();
+    var okExt = ALLOWED_EXT.some(function (ext) { return lower.endsWith(ext); });
+    if (!okExt) {
+      clearPickedFile();
+      showUploadResult('<i class="fas fa-times-circle me-1"></i>Unsupported file type. Upload the device export (.dat, .txt, .csv or .log).', false);
+      return;
+    }
+    if (file.size === 0) {
+      clearPickedFile();
+      showUploadResult('<i class="fas fa-times-circle me-1"></i>That file is empty.', false);
+      return;
+    }
+    // Mirrors the server-side cap so an oversized file fails instantly rather
+    // than after a long upload that the server then rejects.
+    if (file.size > MAX_UPLOAD_BYTES) {
+      clearPickedFile();
+      showUploadResult('<i class="fas fa-times-circle me-1"></i>File is too large (' + humanSize(file.size) + '). Limit is 20 MB.', false);
+      return;
+    }
+
+    _pickedFile = file;
+    document.getElementById('bioFileName').textContent = file.name;
+    document.getElementById('bioFileSize').textContent = humanSize(file.size);
+    _fileChip.style.display = 'flex';
+    _submitBtn.disabled = false;
+    _resultBox.style.display = 'none';
+  }
+
+  window.openUploadModal = function () {
+    clearPickedFile();
+    _resultBox.style.display = 'none';
+    bsModal('bioUploadModal').show();
+  };
+
+  if (_dropzone) {
+    _dropzone.addEventListener('click', function () { _uploadInput.click(); });
+    _uploadInput.addEventListener('change', function () { setPickedFile(this.files[0]); });
+    document.getElementById('bioFileClear').addEventListener('click', function (e) {
+      e.stopPropagation();
+      clearPickedFile();
+    });
+
+    ['dragenter', 'dragover'].forEach(function (evt) {
+      _dropzone.addEventListener(evt, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        _dropzone.classList.add('is-dragover');
+      });
+    });
+    ['dragleave', 'drop'].forEach(function (evt) {
+      _dropzone.addEventListener(evt, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        _dropzone.classList.remove('is-dragover');
+      });
+    });
+    _dropzone.addEventListener('drop', function (e) {
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+        setPickedFile(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  document.getElementById('bioUploadModal').addEventListener('hide.bs.modal', function (e) {
+    // Don't let the modal close mid-import — the result would never be shown.
+    if (_uploading) { e.preventDefault(); }
+  });
+
+  _submitBtn.addEventListener('click', function () {
+    if (!_pickedFile || _uploading) return;
+
+    var fd = new FormData();
+    fd.append('attlog_file', _pickedFile);
+    var deviceSel = document.getElementById('bioUploadDevice');
+    if (deviceSel && deviceSel.value) { fd.append('device_id', deviceSel.value); }
+
+    _uploading = true;
+    _submitBtn.disabled = true;
+    _submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Importing...';
+    _resultBox.style.display = 'none';
+
+    // NOTE: no Content-Type header — the browser must set the multipart
+    // boundary itself, and forcing one here makes Django parse zero files.
+    fetch(_uploadUrl, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd
+    })
+    .then(function (r) {
+      if (!r.ok) { throw new Error('Server returned ' + r.status + '.'); }
+      return r.json();
+    })
+    .then(function (data) {
+      _uploading = false;
+      _submitBtn.innerHTML = '<i class="fas fa-file-import me-1"></i>Import';
+
+      if (!data.success) {
+        _submitBtn.disabled = false;
+        showUploadResult('<i class="fas fa-times-circle me-1"></i>' + esc(data.error || 'Import failed.'), false);
+        return;
+      }
+
+      var st = data.stats || {};
+      var html = '<div><i class="fas fa-check-circle me-1"></i>' + esc(data.message || 'Import complete.') + '</div>';
+      html += '<div class="bio-upload-stats">';
+      html += '<span class="bio-upload-stat">' + parseInt(st.created || 0) + ' imported</span>';
+      html += '<span class="bio-upload-stat">' + parseInt(st.duplicates || 0) + ' already on file</span>';
+      html += '<span class="bio-upload-stat">' + parseInt(st.skipped || 0) + ' skipped</span>';
+      html += '<span class="bio-upload-stat">' + parseInt(st.employees || 0) + ' employees matched</span>';
+      if (st.date_range) { html += '<span class="bio-upload-stat">' + esc(st.date_range) + '</span>'; }
+      html += '</div>';
+      html += '<div class="mt-2" style="font-size:.82rem;">Reloading to show the imported records&hellip;</div>';
+      showUploadResult(html, true);
+
+      showToast(data.message || 'Attendance file imported.');
+      setTimeout(function () { window.location.reload(); }, 1800);
+    })
+    .catch(function (err) {
+      _uploading = false;
+      _submitBtn.disabled = false;
+      _submitBtn.innerHTML = '<i class="fas fa-file-import me-1"></i>Import';
+      showUploadResult('<i class="fas fa-times-circle me-1"></i>' + esc(err.message || 'Network error during upload.'), false);
     });
   });
 

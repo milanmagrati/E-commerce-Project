@@ -1,0 +1,359 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Businesses — Trendy CRM{% endblock %}
+{% block topbar_title %}AI Businesses{% endblock %}
+
+{% block topbar_actions %}
+{% if total_businesses > 0 %}
+<form action="{% url 'trendycrm:chatbot_create' %}" method="POST" style="margin:0;">
+    {% csrf_token %}
+    <button type="submit" class="btn-crm-primary" style="border:none;">
+        <i class="fas fa-plus"></i> Add Business
+    </button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block extra_style %}
+    .biz-hero {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;
+    }
+    .biz-hero h2 { font-size: 1.35rem; font-weight: 800; color: #1e1b4b; margin: 0 0 .3rem 0; }
+    .biz-hero p { color: #6b7280; font-size: .88rem; margin: 0; max-width: 520px; line-height: 1.45; }
+
+    .biz-stats { display: flex; gap: .85rem; flex-wrap: wrap; }
+    .biz-stat {
+        background: #fff; border: 1px solid rgba(124,58,237,.1); border-radius: 12px;
+        padding: .7rem 1.1rem; min-width: 118px; box-shadow: 0 2px 10px rgba(0,0,0,.03);
+    }
+    .biz-stat-num { font-size: 1.25rem; font-weight: 800; color: #1e1b4b; line-height: 1.1; }
+    .biz-stat-label { font-size: .68rem; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; margin-top: .15rem; }
+
+    .cb-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.25rem;
+    }
+    .cb-card {
+        background: #fff;
+        border-radius: 14px;
+        border: 1px solid rgba(124,58,237,.1);
+        padding: 1.4rem;
+        box-shadow: 0 3px 14px rgba(0,0,0,.03);
+        transition: transform .18s, box-shadow .18s, border-color .18s;
+        text-decoration: none;
+        color: inherit;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+    .cb-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 28px rgba(124,58,237,.1);
+        border-color: rgba(124,58,237,.35);
+        color: inherit;
+    }
+    .cb-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: .75rem;
+        margin-bottom: .9rem;
+    }
+    .cb-avatar {
+        width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
+        background: linear-gradient(135deg, var(--crm-primary), var(--crm-primary-light));
+        color: #fff; font-weight: 800; font-size: .95rem;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .cb-title-wrap { flex: 1; min-width: 0; }
+    .cb-title {
+        font-weight: 700;
+        font-size: 1.02rem;
+        color: #1e1b4b;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cb-subtitle {
+        font-size: 0.78rem;
+        color: #9ca3af;
+    }
+    .status-badge {
+        display: inline-flex; align-items: center; gap: .3rem;
+        font-size: .68rem; font-weight: 700; padding: 3px 9px; border-radius: 30px;
+        white-space: nowrap; flex-shrink: 0;
+    }
+    .status-badge.active { background:#d1fae5; color:#059669; }
+    .status-badge.paused { background:#fee2e2; color:#dc2626; }
+
+    .cb-desc {
+        font-size: 0.82rem; color: #4b5563; margin-bottom: 1rem; line-height: 1.45;
+        min-height: 2.6em;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+
+    .cb-channels { display: flex; align-items: center; gap: .35rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .cb-channel-pill {
+        width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center;
+        font-size: .72rem; background: #f3f4f6; color: #9ca3af;
+    }
+    .cb-channel-pill.offline { opacity: .5; }
+    .cb-channel-empty { font-size: .74rem; color: #b3b3bd; }
+
+    .cb-credit {
+        display: flex; align-items: center; gap: .35rem; font-size: .76rem; color: #6b7280; font-weight: 600;
+    }
+    .cb-credit i { color: #f59e0b; }
+
+    .cb-card-footer {
+        display: flex; justify-content: space-between; align-items: center;
+        border-top: 1px solid #f3f4f6; padding-top: .85rem; margin-top: auto;
+    }
+    .cb-configure { color: #7c3aed; font-size: 0.85rem; font-weight: 700; display: flex; align-items: center; gap: .3rem; }
+    .btn-delete-bot {
+        background: transparent; border: none; color: #ef4444; cursor: pointer; padding: 4px;
+        font-size: 1rem; opacity: .55; transition: opacity .2s; border-radius: 6px;
+    }
+    .btn-delete-bot:hover { opacity: 1; background: #fef2f2; }
+
+    .create-card {
+        background: rgba(124,58,237,.03);
+        border: 2px dashed rgba(124,58,237,.28);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        cursor: pointer;
+        min-height: 190px;
+        width: 100%;
+        font-family: inherit;
+        appearance: none;
+        color: inherit;
+    }
+    .create-card:hover {
+        background: rgba(124,58,237,.06);
+        border-color: rgba(124,58,237,.55);
+    }
+    .create-icon { font-size: 1.9rem; color: #7c3aed; margin-bottom: .6rem; }
+    .create-text { font-weight: 700; color: #7c3aed; font-size: .95rem; }
+{% endblock %}
+
+{% block crm_content %}
+<div class="crm-container">
+    <div class="biz-hero">
+        <div>
+            <h2>AI Chatbots</h2>
+            <p>Every business gets its own identity, tone, knowledge base, and connected channels — run as many storefronts or brands as you need from one place.</p>
+        </div>
+        {% if total_businesses > 0 %}
+        <div class="biz-stats">
+            <div class="biz-stat">
+                <div class="biz-stat-num">{{ total_businesses }}</div>
+                <div class="biz-stat-label">Business{{ total_businesses|pluralize }}</div>
+            </div>
+            <div class="biz-stat">
+                <div class="biz-stat-num" style="color:#059669;">{{ active_count }}</div>
+                <div class="biz-stat-label">Active AI</div>
+            </div>
+            <div class="biz-stat" title="Channels connected on the Integrations page, across all businesses.">
+                <div class="biz-stat-num">{{ connected_channels_count }}</div>
+                <div class="biz-stat-label">Channels Connected</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if total_businesses == 0 %}
+    <div class="crm-empty-state" style="background:#fff; border-radius:14px; border:1px solid rgba(124,58,237,.08);">
+        <div class="crm-empty-icon"><i class="fas fa-robot"></i></div>
+        <div class="crm-empty-title">Set up your first AI business</div>
+        <div class="crm-empty-desc">Create a business profile to teach the AI your identity, tone of voice, offerings, and FAQs — then connect it to a channel to start auto-replying.</div>
+        <form action="{% url 'trendycrm:chatbot_create' %}" method="POST" style="margin-top:1.25rem;">
+            {% csrf_token %}
+            <button type="submit" class="btn-crm-primary" style="border:none;">
+                <i class="fas fa-plus"></i> Create Your First Business
+            </button>
+        </form>
+    </div>
+    {% else %}
+    <div class="cb-grid">
+        {% for bot in chatbots %}
+        <a href="{% url 'trendycrm:chatbot' bot.id %}" class="cb-card">
+            <div class="cb-card-header">
+                <div class="cb-avatar">{{ bot.business_name|default:bot.name|slice:":1"|upper }}</div>
+                <div class="cb-title-wrap">
+                    <div class="cb-title">{{ bot.business_name|default:bot.name }}</div>
+                    <div class="cb-subtitle">
+                        {% if bot.assigned_count %}{{ bot.assigned_count }} channel{{ bot.assigned_count|pluralize }} assigned{% else %}No channels assigned{% endif %}
+                    </div>
+                </div>
+                {% if bot.is_active %}
+                    <span class="status-badge active"><i class="fas fa-circle" style="font-size:6px;"></i> Active</span>
+                {% else %}
+                    <span class="status-badge paused"><i class="fas fa-pause-circle" style="font-size:9px;"></i> Paused</span>
+                {% endif %}
+            </div>
+
+            <div class="cb-desc">
+                {% if bot.about_blurb %}{{ bot.about_blurb|truncatewords:16 }}{% else %}No business description set yet — open Configure to fill in the knowledge base.{% endif %}
+            </div>
+
+            <div class="cb-channels">
+                {% for ch in bot.assigned_channels %}
+                <div class="cb-channel-pill{% if not ch.is_connected %} offline{% endif %}"
+                     style="{% if ch.is_connected %}background:{{ ch.meta.tint }};color:{{ ch.meta.color }};{% endif %}"
+                     title="{{ ch.display_name }}: {{ ch.account_name|default:'Unnamed' }}{% if not ch.is_connected %} (disconnected){% endif %}">
+                    <i class="{{ ch.meta.prefix }} {{ ch.meta.icon }}"></i>
+                </div>
+                {% empty %}
+                <span class="cb-channel-empty">
+                    <i class="fas fa-plug" style="margin-right:.25rem;"></i>No channels assigned yet
+                    {% if unassigned_connected_count %}— {{ unassigned_connected_count }} connected channel{{ unassigned_connected_count|pluralize }} waiting{% endif %}
+                </span>
+                {% endfor %}
+            </div>
+
+            <div class="cb-card-footer">
+                <span class="cb-credit"><i class="fas fa-bolt"></i> {{ bot.ai_credits }} credits</span>
+                <div style="display:flex; align-items:center; gap:14px;">
+                    <span class="cb-configure">Configure <i class="fas fa-arrow-right" style="font-size:.75rem;"></i></span>
+                    <button class="btn-delete-bot" onclick="event.preventDefault(); event.stopPropagation(); openDeleteModal('{{ bot.id }}', '{{ bot.business_name|default:bot.name|escapejs }}');" title="Delete Business">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+
+        <form action="{% url 'trendycrm:chatbot_create' %}" method="POST" style="margin:0; padding:0; display:flex;">
+            {% csrf_token %}
+            <button type="submit" class="cb-card create-card">
+                <div class="create-icon"><i class="fas fa-plus-circle"></i></div>
+                <div class="create-text">Add New Business</div>
+                <div class="cb-subtitle" style="margin-top: 0.25rem;">Create a new AI configuration</div>
+            </button>
+        </form>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ── Drag to Delete Modal ────────────────────────────────────── -->
+<div id="dragDeleteOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:9999; justify-content:center; align-items:center; backdrop-filter:blur(3px);">
+    <div style="background:#fff; width:350px; padding:2rem; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.1); text-align:center; position:relative;">
+        <button onclick="document.getElementById('dragDeleteOverlay').style.display='none'" style="position:absolute; top:12px; right:12px; border:none; background:transparent; font-size:1.2rem; cursor:pointer; color:#6b7280; outline:none;">&times;</button>
+        <h4 style="margin:0 0 .5rem 0; color:#1f2937; font-weight:700;">Delete Business</h4>
+        <p style="font-size:.85rem; color:#ef4444; margin-bottom:1.5rem;" id="dragDeleteDesc">Are you sure you want to delete this business? This action cannot be undone.</p>
+
+        <!-- Drag Track -->
+        <div id="dragDeleteTrack" style="width:100%; height:46px; background:#fee2e2; border-radius:30px; position:relative; overflow:hidden; border:1px solid #fecaca;">
+            <!-- Progress Fill -->
+            <div id="dragDeleteFill" style="position:absolute; left:0; top:0; height:100%; width:0; background:linear-gradient(90deg, #ef4444, #dc2626); border-radius:30px 0 0 30px; pointer-events:none;"></div>
+            <!-- Thumb -->
+            <div id="dragDeleteThumb" style="width:40px; height:40px; background:#fff; border-radius:50%; position:absolute; top:2px; left:2px; box-shadow:0 2px 5px rgba(0,0,0,0.15); cursor:grab; display:flex; justify-content:center; align-items:center; color:#dc2626; font-size:1rem; user-select:none; z-index:2;">
+                <i class="fas fa-trash"></i>
+            </div>
+            <!-- Track Text -->
+            <div style="position:absolute; width:100%; height:100%; line-height:46px; text-align:center; color:#b91c1c; font-size:.8rem; font-weight:600; z-index:1; pointer-events:none;">Slide to delete</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let dragDeleteBotId = null;
+    let isDeleting = false;
+    let startX = 0;
+
+    const dragDeleteTrack = document.getElementById('dragDeleteTrack');
+    const dragDeleteFill = document.getElementById('dragDeleteFill');
+    const dragDeleteThumb = document.getElementById('dragDeleteThumb');
+
+    function openDeleteModal(botId, botName) {
+        dragDeleteBotId = botId;
+        document.getElementById('dragDeleteDesc').innerHTML = `Are you sure you want to delete <strong>${botName}</strong>?<br>Its connected channels will simply become unassigned. This action cannot be undone.`;
+        resetDeleteDrag();
+        document.getElementById('dragDeleteOverlay').style.display = 'flex';
+    }
+
+    function resetDeleteDrag() {
+        dragDeleteThumb.style.left = '2px';
+        dragDeleteThumb.style.transition = 'left 0.3s ease';
+        dragDeleteFill.style.width = '0px';
+        dragDeleteFill.style.transition = 'width 0.3s ease';
+        dragDeleteThumb.innerHTML = '<i class="fas fa-trash"></i>';
+        dragDeleteThumb.style.color = '#dc2626';
+    }
+
+    function handleDeleteDragStart(e) {
+        isDeleting = true;
+        startX = e.type.includes('mouse') ? e.pageX : e.touches[0].pageX;
+        dragDeleteThumb.style.transition = 'none';
+        dragDeleteFill.style.transition = 'none';
+        dragDeleteThumb.style.cursor = 'grabbing';
+    }
+
+    function handleDeleteDragMove(e) {
+        if (!isDeleting) return;
+        let currentX = e.type.includes('mouse') ? e.pageX : e.touches[0].pageX;
+        let diff = currentX - startX;
+        let newLeft = 2 + diff;
+        let maxLeft = dragDeleteTrack.offsetWidth - dragDeleteThumb.offsetWidth - 2;
+
+        if (newLeft < 2) newLeft = 2;
+        if (newLeft > maxLeft) newLeft = maxLeft;
+
+        dragDeleteThumb.style.left = newLeft + 'px';
+        dragDeleteFill.style.width = (newLeft + 20) + 'px';
+    }
+
+    async function handleDeleteDragEnd(e) {
+        if (!isDeleting) return;
+        isDeleting = false;
+        dragDeleteThumb.style.cursor = 'grab';
+
+        let currentLeft = parseInt(dragDeleteThumb.style.left);
+        let maxLeft = dragDeleteTrack.offsetWidth - dragDeleteThumb.offsetWidth - 2;
+
+        if (currentLeft >= maxLeft * 0.95) {
+            dragDeleteThumb.style.left = maxLeft + 'px';
+            dragDeleteThumb.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            dragDeleteThumb.style.color = '#fff';
+            dragDeleteFill.style.width = '100%';
+
+            try {
+                let csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+                if (!csrf) {
+                    const match = document.cookie.match('(^|;) ?csrftoken=([^;]*)(;|$)');
+                    csrf = match ? match[2] : '';
+                }
+
+                let url = "{% url 'trendycrm:chatbot_delete' 999999 %}".replace('999999', dragDeleteBotId);
+                let response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' }
+                });
+
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Error deleting business.');
+                    resetDeleteDrag();
+                }
+            } catch (err) {
+                alert('Network error.');
+                resetDeleteDrag();
+            }
+        } else {
+            resetDeleteDrag();
+        }
+    }
+
+    dragDeleteThumb.addEventListener('mousedown', handleDeleteDragStart);
+    dragDeleteThumb.addEventListener('touchstart', handleDeleteDragStart, {passive:true});
+    document.addEventListener('mousemove', handleDeleteDragMove);
+    document.addEventListener('touchmove', handleDeleteDragMove, {passive:true});
+    document.addEventListener('mouseup', handleDeleteDragEnd);
+    document.addEventListener('touchend', handleDeleteDragEnd);
+</script>
+{% endblock %}

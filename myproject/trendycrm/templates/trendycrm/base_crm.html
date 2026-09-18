@@ -1,0 +1,764 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Trendy CRM{% endblock %}
+
+{% block content %}
+<style>
+    /* ========== OVERRIDE BASE LAYOUT ========== */
+    /* Hide the main dashboard sidebar to give CRM full width */
+    .sidebar { display: none !important; }
+    #content { margin-left: 0 !important; width: 100% !important; }
+    
+    /* Hide dashboard notifications (like low stock and expiry) on CRM pages */
+    .low-stock-notification, #expiryNotification { display: none !important; }
+    
+    /* ========== CRM CSS VARIABLES ========== */
+    :root {
+        --crm-primary: #7c3aed;
+        --crm-primary-light: #8b5cf6;
+        --crm-primary-dark: #6d28d9;
+        --crm-accent: #a78bfa;
+        --crm-bg: #f5f3ff;
+        --crm-sidebar-bg: #ffffff;
+        --crm-sidebar-width: 160px;
+        --crm-text: #1e1b4b;
+        --crm-text-muted: #6b7280;
+        --crm-border: #e5e7eb;
+        --crm-hover: #f3f0ff;
+        --crm-active-bg: #ede9fe;
+        --crm-active-color: #7c3aed;
+        --crm-card-shadow: 0 1px 3px rgba(124,58,237,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    }
+
+    /* ========== CRM OUTER SHELL ========== */
+    .crm-shell {
+        display: flex;
+        /* Calculate height to fit between main navbar and footer, with some padding */
+        height: calc(100vh - 120px); 
+        min-height: 500px;
+        max-width: 1400px;
+        margin: 0 auto;
+        overflow: hidden;
+        background: var(--crm-bg);
+        color: var(--crm-text);
+        font-family: 'Inter', sans-serif;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        border: 1px solid var(--crm-border);
+    }
+
+    /* ========== CRM LEFT SIDEBAR ========== */
+    .crm-sidebar {
+        /* Dark Theme Overrides for Sidebar */
+        --crm-sidebar-bg: #0f172a;
+        --crm-border: #1e293b;
+        --crm-text-muted: #94a3b8;
+        --crm-hover: #1e293b;
+        --crm-active-bg: linear-gradient(135deg, var(--crm-primary), var(--crm-primary-dark));
+        --crm-active-color: #ffffff;
+
+        width: var(--crm-sidebar-width);
+        background: var(--crm-sidebar-bg);
+        border-right: 1px solid var(--crm-border);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .crm-sidebar::-webkit-scrollbar { width: 4px; }
+    .crm-sidebar::-webkit-scrollbar-thumb { background: var(--crm-accent); border-radius: 2px; }
+
+    .crm-brand {
+        padding: 1.2rem 0.75rem 1rem;
+        border-bottom: 1px solid var(--crm-border);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .crm-brand-logo {
+        width: 30px;
+        height: 30px;
+        background: linear-gradient(135deg, var(--crm-primary), var(--crm-primary-light));
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+
+    .crm-brand-name {
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: #ffffff;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+
+    .crm-brand-sub {
+        font-size: 0.65rem;
+        color: var(--crm-text-muted);
+        font-weight: 400;
+        white-space: nowrap;
+    }
+
+    .crm-nav {
+        list-style: none;
+        padding: 0.75rem 0;
+        margin: 0;
+        flex: 1;
+    }
+
+    .crm-nav-item {
+        margin: 1px 0.5rem;
+    }
+
+    .crm-nav-link {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.6rem 0.8rem;
+        border-radius: 8px;
+        color: var(--crm-text-muted);
+        text-decoration: none;
+        font-size: 0.85rem;
+        font-weight: 500;
+        transition: all 0.15s ease;
+        position: relative;
+        white-space: nowrap;
+    }
+
+    .crm-nav-link:hover {
+        background: var(--crm-hover);
+        color: #ffffff;
+    }
+
+    .crm-nav-link.active {
+        background: var(--crm-active-bg);
+        color: var(--crm-active-color);
+        font-weight: 600;
+    }
+
+    .crm-nav-link .nav-icon {
+        width: 18px;
+        text-align: center;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+
+    .crm-nav-link .nav-badge {
+        margin-left: auto;
+        background: var(--crm-primary);
+        color: white;
+        font-size: 0.6rem;
+        padding: 1px 5px;
+        border-radius: 10px;
+        font-weight: 700;
+    }
+
+    .crm-nav-section {
+        font-size: 0.68rem;
+        font-weight: 700;
+        color: var(--crm-text-muted);
+        letter-spacing: 0.07em;
+        padding: 0.75rem 1.3rem 0.25rem;
+        text-transform: uppercase;
+    }
+
+    /* ========== CRM MAIN CONTENT ========== */
+    .crm-main {
+        flex: 1;
+        overflow: hidden; /* Let child views handle scrolling */
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+    }
+
+    .crm-topbar {
+        background: white;
+        border-bottom: 1px solid var(--crm-border);
+        padding: 0.75rem 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+    }
+
+    /* ========== PREMIUM TOAST NOTIFICATIONS ========== */
+    .trendy-toast-container {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        pointer-events: none;
+    }
+    
+    .trendy-toast {
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        padding: 1rem 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        min-width: 280px;
+        max-width: 380px;
+        transform: translateX(120%);
+        opacity: 0;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        pointer-events: auto;
+    }
+    
+    .trendy-toast.show {
+        transform: translateX(0);
+        opacity: 1;
+    }
+
+    .trendy-toast-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        flex-shrink: 0;
+    }
+    
+    .trendy-toast-success .trendy-toast-icon { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+    .trendy-toast-error .trendy-toast-icon { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .trendy-toast-info .trendy-toast-icon { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+    
+    .trendy-toast-content {
+        flex: 1;
+    }
+    
+    .trendy-toast-title {
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: var(--crm-text);
+        margin-bottom: 0.15rem;
+    }
+    
+    .trendy-toast-message {
+        font-size: 0.78rem;
+        color: var(--crm-text-muted);
+        line-height: 1.3;
+    }
+
+    .trendy-toast-close {
+        background: none;
+        border: none;
+        color: var(--crm-text-muted);
+        cursor: pointer;
+        padding: 0.25rem;
+        font-size: 0.85rem;
+        opacity: 0.6;
+        transition: opacity 0.2s;
+    }
+    .trendy-toast-close:hover { opacity: 1; }
+
+    @media (max-width: 768px) {
+        .trendy-toast-container {
+            bottom: 1rem;
+            right: 1rem;
+            left: 1rem;
+        }
+        .trendy-toast {
+            min-width: 0;
+            width: 100%;
+        }
+    }
+
+
+    .crm-topbar-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--crm-text);
+    }
+
+    .crm-topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .crm-content {
+        flex: 1;
+        padding: 1.5rem;
+    }
+
+    /* ========== CRM BUTTONS ========== */
+    .btn-crm-primary {
+        background: linear-gradient(135deg, var(--crm-primary), var(--crm-primary-light));
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1.2rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        text-decoration: none;
+    }
+
+    .btn-crm-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(124,58,237,0.35);
+        color: white;
+    }
+
+    .btn-crm-outline {
+        background: transparent;
+        color: var(--crm-primary);
+        border: 1.5px solid var(--crm-accent);
+        border-radius: 8px;
+        padding: 0.45rem 1rem;
+        font-size: 0.83rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        text-decoration: none;
+    }
+
+    .btn-crm-outline:hover {
+        background: var(--crm-active-bg);
+        color: var(--crm-primary);
+    }
+
+    /* ========== CRM CARDS ========== */
+    .crm-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: var(--crm-card-shadow);
+        border: 1px solid rgba(124,58,237,0.08);
+        overflow: hidden;
+    }
+
+    .crm-card-header {
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--crm-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .crm-card-body {
+        padding: 1.25rem;
+    }
+
+    /* ========== STATUS BADGES ========== */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.2rem 0.6rem;
+        border-radius: 20px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    .status-badge.connected { background: #dcfce7; color: #166534; }
+    .status-badge.not_connected { background: #f3f4f6; color: #6b7280; }
+    .status-badge.error { background: #fee2e2; color: #991b1b; }
+    .status-badge.open { background: #ede9fe; color: #6d28d9; }
+    .status-badge.resolved { background: #d1fae5; color: #065f46; }
+    .status-badge.pending { background: #fef3c7; color: #92400e; }
+
+    /* ========== EMPTY STATE ========== */
+    .crm-empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 4rem 2rem;
+        text-align: center;
+    }
+
+    .crm-empty-icon {
+        width: 80px;
+        height: 80px;
+        background: var(--crm-active-bg);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+        color: var(--crm-primary);
+        margin-bottom: 1.25rem;
+    }
+
+    .crm-empty-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: var(--crm-text);
+        margin-bottom: 0.4rem;
+    }
+
+    .crm-empty-desc {
+        font-size: 0.85rem;
+        color: var(--crm-text-muted);
+        max-width: 320px;
+        line-height: 1.5;
+    }
+
+    .crm-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+    
+    /* Prevent children from squishing when container is smaller than content */
+    .crm-content > * {
+        flex-shrink: 0;
+    }
+
+    @media (max-width: 768px) {
+        .crm-sidebar {
+            position: fixed;
+            left: -220px;
+            top: 0;
+            bottom: 0;
+            z-index: 1050;
+            transition: left 0.3s;
+        }
+        .crm-sidebar.open { left: 0; }
+        /* Keep flex direction row on mobile so sidebar is absolute, main is full */
+    }
+    
+    {% block extra_style %}{% endblock %}
+</style>
+
+<div class="crm-shell mt-2 mb-2">
+    <!-- ===== CRM Sidebar ===== -->
+    <nav class="crm-sidebar" id="crmSidebar">
+        <div class="crm-brand">
+            <div class="crm-brand-logo">
+                <i class="fas fa-bolt"></i>
+            </div>
+            <div>
+                <div class="crm-brand-name">Trendy CRM</div>
+                <div class="crm-brand-sub">Customer Relations</div>
+            </div>
+        </div>
+
+        <ul class="crm-nav">
+            <li class="crm-nav-item">
+                <a href="{% url 'trendycrm:home' %}"
+                   class="crm-nav-link {% if crm_section == 'home' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fas fa-home"></i></span>
+                    Home
+                </a>
+            </li>
+            <li class="crm-nav-item">
+                <a href="{% url 'trendycrm:conversations' %}"
+                   class="crm-nav-link {% if crm_section == 'conversations' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fas fa-comment-dots"></i></span>
+                    Conversations
+                    <span id="crmAlertNavBadge" class="nav-badge d-none">0</span>
+                </a>
+            </li>
+            <li class="crm-nav-item">
+                <a href="{% url 'trendycrm:chatbot_list' %}"
+                   class="crm-nav-link {% if request.resolver_match.url_name == 'chatbot_list' or request.resolver_match.url_name == 'chatbot' or request.resolver_match.url_name == 'chatbot_create' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fas fa-robot"></i></span>
+                    Chatbot
+                </a>
+            </li>
+            <li class="crm-nav-item">
+                <a href="{% url 'trendycrm:quick_replies' %}"
+                   class="crm-nav-link {% if crm_section == 'quick_replies' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fas fa-bolt"></i></span>
+                    Quick Replies
+                </a>
+            </li>
+            <li class="crm-nav-item">
+                <a href="{% url 'trendycrm:integrations' %}"
+                   class="crm-nav-link {% if crm_section == 'integrations' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fas fa-plug"></i></span>
+                    Integrations
+                </a>
+            </li>
+            <li class="crm-nav-item">
+                <a href="{% url 'trendycrm:contacts' %}"
+                   class="crm-nav-link {% if crm_section == 'contacts' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fas fa-address-book"></i></span>
+                    Contacts
+                </a>
+            </li>
+            <li class="crm-nav-item">
+                <a href="{% url 'trendycrm:analytics' %}"
+                   class="crm-nav-link {% if crm_section == 'analytics' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fas fa-chart-bar"></i></span>
+                    Analytics
+                </a>
+            </li>
+            <li class="crm-nav-item">
+                <a href="{% url 'trendycrm:tickets' %}"
+                   class="crm-nav-link {% if crm_section == 'tickets' %}active{% endif %}">
+                    <span class="nav-icon"><i class="fas fa-ticket-alt"></i></span>
+                    Tickets
+                </a>
+            </li>
+        </ul>
+        
+        <div style="padding: 1rem; border-top: 1px solid var(--crm-border); margin-top: auto;">
+            <a href="{% url 'dashboard' %}" class="btn w-100" style="background: rgba(255,255,255,0.05); color: var(--crm-text-muted); border: 1px solid var(--crm-border); font-size: 0.8rem; font-weight: 600; text-align: left; display: flex; align-items: center; justify-content: space-between; border-radius: 8px; transition: all 0.2s;">
+                <span><i class="fas fa-arrow-left me-2"></i> Exit CRM</span>
+            </a>
+        </div>
+    </nav>
+
+    <!-- ===== CRM Main Content ===== -->
+    <div class="crm-main">
+        <div class="crm-topbar">
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-sm d-md-none" id="crmToggleBtn" onclick="document.getElementById('crmSidebar').classList.toggle('open')">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <span class="crm-topbar-title">{% block topbar_title %}Trendy CRM{% endblock %}</span>
+            </div>
+            <div class="crm-topbar-actions">
+                {% block topbar_actions %}{% endblock %}
+            </div>
+        </div>
+
+        <div class="crm-content">
+            {% block crm_content %}{% endblock %}
+        </div>
+    </div>
+
+    <!-- Premium Toast Container -->
+    <div class="trendy-toast-container" id="trendyToastContainer"></div>
+
+    <!-- Scripts -->
+    <script>
+        function showTrendyToast(message, type = 'info', title = null) {
+            const container = document.getElementById('trendyToastContainer');
+            const toast = document.createElement('div');
+            toast.className = `trendy-toast trendy-toast-${type}`;
+            
+            let iconClass = 'fas fa-info';
+            let defaultTitle = 'Notification';
+            
+            if (type === 'success') { iconClass = 'fas fa-check'; defaultTitle = 'Success'; }
+            if (type === 'error') { iconClass = 'fas fa-exclamation'; defaultTitle = 'Error'; }
+            
+            toast.innerHTML = `
+                <div class="trendy-toast-icon">
+                    <i class="${iconClass}"></i>
+                </div>
+                <div class="trendy-toast-content">
+                    <div class="trendy-toast-title">${title || defaultTitle}</div>
+                    <div class="trendy-toast-message">${message}</div>
+                </div>
+                <button class="trendy-toast-close" onclick="this.parentElement.remove()">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => { toast.classList.add('show'); }, 10);
+            
+            // Auto remove after 4 seconds
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => { toast.remove(); }, 400); // Wait for transition
+            }, 4000);
+        }
+
+        // Cross-page "potential lead / complaint" poller. Runs on every CRM page
+        // (this file is base_crm.html) so staff see it even off the Conversations
+        // page.
+        //
+        // Announces per alert *id* rather than by comparing counts: a count only
+        // moves on the net change, so one alert being dismissed as another
+        // arrives in the same 5s window would have silently swallowed the new
+        // one. An id is announced once — a repeat message on an already-flagged
+        // conversation rewrites the same chip row (see CRMMessage.log_event), so
+        // it keeps its id and doesn't re-announce. The created_at floor stops an
+        // older alert scrolling into the capped list from reading as new.
+        var _seenAlertIds = null, _newestAlertSeen = '';
+        function pollImportantAlerts() {
+            fetch("{% url 'trendycrm:important_alerts_poll' %}", {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (data) {
+                    if (!data) return;
+                    var badge = document.getElementById('crmAlertNavBadge');
+                    if (badge) {
+                        badge.textContent = data.count;
+                        badge.classList.toggle('d-none', data.count === 0);
+                    }
+                    var ids = data.alerts.map(function (a) { return a.message_id; });
+                    var newest = data.alerts.reduce(function (max, a) {
+                        return a.created_at > max ? a.created_at : max;
+                    }, '');
+
+                    // The first read is the baseline: whatever is already open is
+                    // known, so a page load never re-announces it.
+                    if (_seenAlertIds === null) {
+                        _seenAlertIds = ids;
+                        _newestAlertSeen = newest;
+                        return;
+                    }
+
+                    var fresh = data.alerts.filter(function (a) {
+                        return _seenAlertIds.indexOf(a.message_id) === -1 &&
+                               a.created_at > _newestAlertSeen;
+                    });
+                    _seenAlertIds = ids;
+                    if (newest > _newestAlertSeen) _newestAlertSeen = newest;
+
+                    if (typeof alertify === 'undefined') return;
+                    fresh.slice(0, 3).forEach(function (a) {
+                        // Wording and icon come from the server: a business can
+                        // name its own alerting message types, so the popup can't
+                        // map a fixed event kind to fixed words any more.
+                        var url = "{% url 'trendycrm:conversations' %}?id=" + a.conversation_id;
+                        alertify.message(
+                            '<i class="fas ' + (a.icon || 'fa-bell') + ' me-2"></i>' +
+                            (a.title || 'Needs attention') + ' from ' +
+                            a.contact_name + '! <a href="' + url + '" style="font-weight:600;margin-left:8px;">View</a>'
+                        );
+                    });
+                })
+                .catch(function () {});
+        }
+        setInterval(pollImportantAlerts, 5000);
+        pollImportantAlerts();
+
+        // Override Alertify for Django messages if any exist
+        document.addEventListener('DOMContentLoaded', function() {
+            {% for message in messages %}
+                {% if message.tags == 'error' %}
+                    showTrendyToast("{{ message|escapejs }}", "error", "Error");
+                {% elif message.tags == 'success' %}
+                    showTrendyToast("{{ message|escapejs }}", "success", "Success");
+                {% else %}
+                    showTrendyToast("{{ message|escapejs }}", "info", "Notice");
+                {% endif %}
+            {% endfor %}
+            
+            // Premium Skeleton Loader for Sidebar Navigation
+            const navLinks = document.querySelectorAll('.crm-nav-link');
+            const mainContent = document.querySelector('.crm-content');
+            navLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    if (e.ctrlKey || e.shiftKey || e.metaKey || (e.button && e.button !== 0)) return;
+                    const href = this.getAttribute('href');
+                    if (href && href !== '#' && !href.startsWith('javascript')) {
+                        mainContent.innerHTML = `
+                            <div style="padding: 1.5rem; width: 100%; height: 100%; min-height: 80vh; overflow: hidden; display: flex; flex-direction: column; gap: 1.5rem; background: #fff; border-radius: 12px; border: 1px solid rgba(124, 58, 237, 0.15); box-shadow: 0 8px 24px rgba(124, 58, 237, 0.06);">
+                                <!-- Top Header Skeleton -->
+                                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid rgba(124, 58, 237, 0.08); padding-bottom: 1rem;">
+                                    <div class="shimmer" style="height: 30px; border-radius: 6px; width: 220px;"></div>
+                                    <div class="shimmer" style="height: 38px; border-radius: 8px; width: 140px;"></div>
+                                </div>
+                                
+                                <!-- Body Skeleton -->
+                                <div style="display: flex; gap: 1.5rem; flex: 1;">
+                                    <!-- Left Sidebar Skeleton -->
+                                    <div style="flex: 1; display: flex; flex-direction: column; gap: 1.25rem; border-right: 2px solid rgba(124, 58, 237, 0.08); padding-right: 1.5rem;">
+                                        <!-- Search bar -->
+                                        <div class="shimmer" style="height: 42px; border-radius: 8px; width: 100%; margin-bottom: 0.5rem;"></div>
+                                        
+                                        <!-- Contact list items -->
+                                        <div style="display: flex; align-items: center; gap: 1rem;">
+                                            <div class="shimmer" style="height: 46px; width: 46px; border-radius: 50%; flex-shrink: 0;"></div>
+                                            <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1;">
+                                                <div class="shimmer" style="height: 14px; border-radius: 4px; width: 60%;"></div>
+                                                <div class="shimmer" style="height: 12px; border-radius: 4px; width: 85%;"></div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div style="display: flex; align-items: center; gap: 1rem;">
+                                            <div class="shimmer" style="height: 46px; width: 46px; border-radius: 50%; flex-shrink: 0;"></div>
+                                            <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1;">
+                                                <div class="shimmer" style="height: 14px; border-radius: 4px; width: 75%;"></div>
+                                                <div class="shimmer" style="height: 12px; border-radius: 4px; width: 55%;"></div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div style="display: flex; align-items: center; gap: 1rem;">
+                                            <div class="shimmer" style="height: 46px; width: 46px; border-radius: 50%; flex-shrink: 0;"></div>
+                                            <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1;">
+                                                <div class="shimmer" style="height: 14px; border-radius: 4px; width: 45%;"></div>
+                                                <div class="shimmer" style="height: 12px; border-radius: 4px; width: 95%;"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Right Main Chat Skeleton -->
+                                    <div style="flex: 2.5; display: flex; flex-direction: column; gap: 2rem; padding-top: 0.5rem;">
+                                        <!-- Chat header -->
+                                        <div style="display: flex; align-items: center; gap: 1rem; border-bottom: 2px dashed rgba(124, 58, 237, 0.1); padding-bottom: 1rem;">
+                                            <div class="shimmer" style="height: 40px; width: 40px; border-radius: 50%;"></div>
+                                            <div class="shimmer" style="height: 20px; border-radius: 4px; width: 200px;"></div>
+                                        </div>
+                                        
+                                        <!-- Chat bubbles -->
+                                        <div style="display: flex; flex-direction: column; gap: 1.5rem; flex: 1;">
+                                            <div class="shimmer" style="height: 54px; border-radius: 16px 16px 16px 0; width: 60%;"></div>
+                                            <div class="shimmer" style="height: 46px; border-radius: 16px 16px 0 16px; width: 45%; align-self: flex-end;"></div>
+                                            <div class="shimmer" style="height: 82px; border-radius: 16px 16px 16px 0; width: 75%;"></div>
+                                            <div class="shimmer" style="height: 54px; border-radius: 16px 16px 0 16px; width: 55%; align-self: flex-end;"></div>
+                                        </div>
+                                        
+                                        <!-- Chat Input -->
+                                        <div class="shimmer" style="height: 60px; border-radius: 30px; width: 100%; margin-top: auto;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <style>
+                                .shimmer {
+                                    background: rgba(124, 58, 237, 0.08);
+                                    background-image: linear-gradient(to right, 
+                                        rgba(124, 58, 237, 0.08) 0%, 
+                                        rgba(124, 58, 237, 0.25) 20%, 
+                                        rgba(124, 58, 237, 0.08) 40%, 
+                                        rgba(124, 58, 237, 0.08) 100%);
+                                    background-repeat: no-repeat;
+                                    background-size: 1000px 100%; 
+                                    animation: placeholderShimmer 1.2s ease-in-out infinite forwards;
+                                }
+                                @keyframes placeholderShimmer {
+                                    0% { background-position: -1000px 0; }
+                                    100% { background-position: 1000px 0; } 
+                                }
+                            </style>
+                        `;
+                    }
+                });
+            });
+        });
+    </script>
+    {% block extra_script %}{% endblock %}
+{% endblock %}

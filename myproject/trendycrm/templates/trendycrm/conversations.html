@@ -1,0 +1,2257 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Conversations — Trendy CRM{% endblock %}
+{% block topbar_title %}Conversations{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'trendycrm:social_posts' %}" class="btn-crm-outline btn-sm me-2">
+    <i class="fas fa-layer-group"></i> Posts & Comments
+</a>
+<button class="btn-crm-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newConvModal">
+    <i class="fas fa-plus"></i> New Conversation
+</button>
+{% endblock %}
+
+{% block extra_style %}
+/* ========== CRM CONTENT OVERRIDES FOR APP LAYOUT ========== */
+.crm-content {
+    overflow: hidden !important; /* Disable outer scrollbar for this specific page */
+}
+.crm-content > * {
+    flex-shrink: 1 !important; /* Allow the layout to shrink back to container size so inner scrollbars work */
+}
+
+.conv-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr 280px;
+    height: 100%;
+    background: white;
+    overflow: hidden;
+}
+
+.conv-panel-left {
+    border-right: 1px solid var(--crm-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.conv-panel-info {
+    border-left: 1px solid var(--crm-border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    background: #fff;
+}
+
+.conv-panel-header {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--crm-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+.conv-panel-header-title {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--crm-text);
+}
+
+.conv-filter-tabs {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--crm-border);
+    flex-shrink: 0;
+}
+
+.conv-filter-tab {
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--crm-text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    background: none;
+    border: none;
+}
+
+.conv-filter-tab.active {
+    background: var(--crm-active-bg);
+    color: var(--crm-primary);
+}
+
+.conv-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.conv-list::-webkit-scrollbar { width: 4px; }
+.conv-list::-webkit-scrollbar-thumb { background: var(--crm-accent); border-radius: 2px; }
+
+#accountFilterScroll::-webkit-scrollbar { width: 4px; }
+#accountFilterScroll::-webkit-scrollbar-thumb { background: var(--crm-accent); border-radius: 2px; }
+.account-filter-row:hover { background: var(--crm-hover); }
+
+.conv-item {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid rgba(124,58,237,0.05);
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    text-decoration: none;
+    color: inherit;
+}
+
+.conv-item:hover { background: var(--crm-hover); }
+.conv-item.active { background: var(--crm-active-bg); }
+
+.conv-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--crm-primary), var(--crm-accent));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.channel-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background-size: cover;
+    background-position: center;
+}
+
+.conv-meta { flex: 1; min-width: 0; }
+.conv-name { font-size: 0.83rem; font-weight: 600; color: var(--crm-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-preview { font-size: 0.75rem; color: var(--crm-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.conv-time { font-size: 0.68rem; color: var(--crm-text-muted); flex-shrink: 0; }
+
+/* Hide caret on custom dropdowns */
+.no-caret::after {
+    display: none !important;
+}
+
+/* Right chat panel */
+.conv-panel-right {
+    display: flex;
+    flex-direction: column;
+    background: #fafafa;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.conv-chat-header {
+    padding: 0.85rem 1.25rem;
+    border-bottom: 1px solid var(--crm-border);
+    background: white;
+    flex-shrink: 0;
+}
+
+.conv-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.conv-messages::-webkit-scrollbar { width: 4px; }
+.conv-messages::-webkit-scrollbar-thumb { background: var(--crm-accent); border-radius: 2px; }
+
+.msg-bubble {
+    max-width: 65%;
+    padding: 0.65rem 1rem;
+    border-radius: 14px;
+    font-size: 0.83rem;
+    line-height: 1.45;
+}
+
+.msg-inbound {
+    background: #f1f2f5;
+    color: var(--crm-text);
+    border: none;
+    align-self: flex-start;
+}
+
+.msg-outbound {
+    background: linear-gradient(135deg, var(--crm-primary), var(--crm-primary-light));
+    color: white;
+    align-self: flex-end;
+}
+
+.msg-time {
+    font-size: 0.68rem;
+    color: var(--crm-text-muted);
+    margin-top: 2px;
+}
+
+.conv-input-bar {
+    padding: 0.85rem 1.25rem;
+    border-top: 1px solid var(--crm-border);
+    background: white;
+    flex-shrink: 0;
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.conv-input {
+    flex: 1;
+    border: 1.5px solid var(--crm-border);
+    border-radius: 999px;
+    padding: 0.55rem 1.1rem;
+    font-size: 0.83rem;
+    outline: none;
+    font-family: 'Inter', sans-serif;
+    color: var(--crm-text);
+    resize: none;
+    height: 40px;
+    transition: border-color 0.2s;
+}
+
+.conv-input:focus { border-color: var(--crm-primary); }
+
+.status-badge.unassigned { background: #fee2e2; color: #991b1b; }
+.status-badge.assigned { background: #ede9fe; color: #6d28d9; }
+.assign-badge-btn, .resolve-badge-btn, .ai-badge-btn {
+    border: none;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    text-transform: none;
+    letter-spacing: normal;
+}
+.status-badge.on { background: #dcfce7; color: #166534; }
+.status-badge.off { background: #f1f5f9; color: #64748b; }
+
+/* Marks replies written by the AI rather than a staff member. */
+.ai-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #6d28d9;
+    background: #ede9fe;
+    border-radius: 4px;
+    padding: 0 0.3rem;
+    margin-right: 0.3rem;
+    vertical-align: middle;
+}
+
+/* Names the agent who sent an outbound message, so an AI reply and a human reply
+   are never mistaken for each other in a shared inbox. */
+.agent-tag {
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: var(--crm-text-muted);
+    margin-right: 0.3rem;
+    vertical-align: middle;
+}
+
+/* AI replies keep the outbound position but carry a violet edge, so a glance down
+   the thread separates what the bot said from what the team said. */
+.msg-bubble.msg-ai {
+    background: #f5f3ff;
+    color: #312e81;
+    border-right: 3px solid #7c3aed;
+}
+
+/* Internal timeline events (takeover, AI failures). Never sent to the customer. */
+.sys-event {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.85rem auto;
+    max-width: 82%;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    background: #f8fafc;
+    border: 1px solid var(--crm-border);
+    color: var(--crm-text-muted);
+    font-size: 0.7rem;
+    line-height: 1.35;
+    text-align: center;
+}
+.sys-event i { font-size: 0.72rem; opacity: 0.85; }
+.sys-event.sys-warning {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+/* Still working on it — amber rather than red, because a retry in flight is not
+   yet something the agent has to act on. */
+.sys-event.sys-warning.sys-retrying {
+    background: #fffbeb;
+    border-color: #fde68a;
+    color: #b45309;
+}
+.sys-event.sys-lead {
+    background: #fff7ed;
+    border-color: #fed7aa;
+    color: #c2410c;
+}
+.sys-event.sys-complaint {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+.sys-event-time { opacity: 0.7; font-size: 0.65rem; }
+.sys-event-actions { display: inline-flex; gap: 0.3rem; }
+.sys-event-btn {
+    border: 1px solid currentColor;
+    background: transparent;
+    color: inherit;
+    border-radius: 999px;
+    padding: 0.12rem 0.55rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1.5;
+    transition: background 0.15s ease, opacity 0.15s ease;
+}
+.sys-event-btn:hover { background: rgba(185, 28, 28, 0.08); }
+.sys-event-btn:disabled { opacity: 0.55; cursor: default; }
+.sys-event-btn-quiet { border-color: transparent; opacity: 0.75; text-decoration: underline; }
+
+/* Paused = the toggle is on but something (a human, an assignment) is holding the
+   bot back. Visually distinct from both On and Off, because reading it as "On"
+   was exactly the confusion this state fixes. */
+.status-badge.paused { background: #fef3c7; color: #92400e; }
+.status-badge.unavailable { background: #f1f5f9; color: #64748b; }
+
+/* These three are display:flex, which outranks the browser's [hidden] rule — without
+   this the "hidden" composer would stay on screen next to the lock bar. */
+.conv-input-bar[hidden], .ai-handoff-bar[hidden], .composer-handback[hidden] { display: none; }
+
+/* ── AI ownership switch in the conversation header ─────────────────────────── */
+.ai-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid var(--crm-border);
+    background: #fff;
+    border-radius: 999px;
+    padding: 0.25rem 0.4rem 0.25rem 0.6rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--crm-text);
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+}
+.ai-switch:disabled { cursor: not-allowed; opacity: 0.65; }
+.ai-switch i { font-size: 0.72rem; color: var(--crm-primary); }
+.ai-switch-track {
+    width: 30px;
+    height: 17px;
+    border-radius: 999px;
+    background: #cbd5e1;
+    position: relative;
+    transition: background 0.18s ease;
+    flex-shrink: 0;
+}
+.ai-switch-knob {
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.3);
+    transition: transform 0.18s ease;
+}
+/* On = bot owns the chat. Paused = a human holds it but the bot resumes later.
+   Off/unavailable = the bot is not coming back on its own. */
+.ai-switch.on .ai-switch-track { background: var(--crm-primary); }
+.ai-switch.on .ai-switch-knob { transform: translateX(13px); }
+.ai-switch.paused .ai-switch-track { background: #f59e0b; }
+.ai-switch.paused .ai-switch-knob { transform: translateX(6px); }
+.ai-switch.paused i { color: #b45309; }
+.ai-switch.off i, .ai-switch.unavailable i { color: var(--crm-text-muted); }
+
+/* ── AI reply presentation ──────────────────────────────────────────────────── */
+/* The row must pack its contents to the right rather than rely on align-self: a
+   long reply's max-content width exceeds the pane, so the row always resolves to
+   full width and align-self:flex-end becomes a no-op — which left AI replies
+   stranded on the inbound side. */
+.msg-ai-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: 0.45rem;
+    width: 100%;
+}
+.ai-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px; height: 26px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #ede9fe;
+    color: #6d28d9;
+    font-size: 0.72rem;
+}
+.ai-avatar.sm { width: 20px; height: 20px; font-size: 0.6rem; }
+/* The avatar sits outside the bubble, so the meta lines under it need the same
+   offset or they hang past the bubble's right edge. */
+.ai-chips {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin: 0.25rem 2.15rem 0 0;
+}
+.msg-time.ai-meta { margin-right: 2.15rem; }
+/* Same chips on an inbound bubble, which sits on the left instead. */
+.ai-chips.ai-chips-inbound { justify-content: flex-start; margin: 0.25rem 0 0 0; }
+.ai-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    font-size: 0.63rem;
+    font-weight: 500;
+    color: var(--crm-text-muted);
+}
+.ai-chip .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.dot-intent { background: #6366f1; }
+.dot-low { background: #22c55e; }
+.dot-medium { background: #eab308; }
+.dot-high { background: #f97316; }
+.dot-urgent { background: #ef4444; }
+
+/* ── Composer lock while the AI owns the conversation ───────────────────────── */
+.ai-handoff-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 0.85rem 1.25rem;
+    border-top: 1px solid var(--crm-border);
+    background: #faf9ff;
+    flex-shrink: 0;
+}
+.ai-handoff-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.82rem;
+    color: var(--crm-text);
+}
+.ai-handoff-sub {
+    font-size: 0.72rem;
+    color: var(--crm-text-muted);
+    margin-top: 0.15rem;
+    margin-left: 1.65rem;
+}
+.ai-handoff-actions { display: flex; gap: 0.5rem; }
+.handoff-btn {
+    border: 1px solid var(--crm-border);
+    background: #fff;
+    color: var(--crm-text);
+    border-radius: 8px;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+}
+.handoff-btn.primary { background: var(--crm-primary); border-color: var(--crm-primary); color: #fff; }
+.handoff-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Shown above the composer once a human holds the chat. */
+.composer-handback {
+    position: absolute;
+    top: -1.55rem;
+    left: 1.25rem;
+    right: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    color: var(--crm-text-muted);
+}
+.composer-handback button {
+    border: none;
+    background: none;
+    color: var(--crm-primary);
+    font-weight: 600;
+    font-size: 0.68rem;
+    cursor: pointer;
+    padding: 0;
+}
+
+/* Quick-reply autocomplete above the composer */
+.qr-autocomplete {
+    position: absolute;
+    bottom: 100%;
+    left: 1.25rem;
+    right: 1.25rem;
+    background: #fff;
+    border: 1px solid var(--crm-border);
+    border-radius: 10px;
+    box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.12);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 30;
+    margin-bottom: 0.4rem;
+    display: none;
+}
+.qr-item { padding: 0.55rem 0.8rem; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
+.qr-item:last-child { border-bottom: none; }
+.qr-item:hover, .qr-item.active { background: var(--crm-active-bg); }
+.qr-item-top { display: flex; align-items: center; gap: 0.5rem; }
+.qr-item-shortcut { font-family: monospace; font-size: 0.72rem; color: var(--crm-primary); font-weight: 700; }
+.qr-item-name { font-size: 0.78rem; font-weight: 600; color: var(--crm-text); }
+.qr-item-content {
+    font-size: 0.72rem; color: var(--crm-text-muted); margin-top: 0.15rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.composer-round-btn {
+    background: #f1f5f9;
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--crm-text-muted);
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.composer-round-btn:hover { background: var(--crm-active-bg); }
+.composer-round-btn.primary { color: var(--crm-primary); }
+.assign-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.assign-row:hover { background: var(--crm-hover); }
+
+.composer-icon-btn {
+    background: none;
+    border: none;
+    color: var(--crm-text-muted);
+    font-size: 1rem;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.composer-icon-btn:hover { background: #f1f5f9; color: var(--crm-primary); }
+.composer-icon-btn:disabled, .conv-input:disabled, .composer-round-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.composer-icon-btn.recording { color: #fff; background: #ef4444; }
+.composer-icon-btn.recording:hover { background: #ef4444; color: #fff; }
+.composer-icon-btn.paused { color: #fff; background: #f59e0b; }
+.composer-icon-btn.paused:hover { background: #f59e0b; color: #fff; }
+@keyframes pulse-rec {
+    0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+    70% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+    100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+}
+.composer-icon-btn.recording { animation: pulse-rec 1.2s infinite; }
+
+.empty-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, #f3e8ff 0%, #ede9fe 50%, #e0e7ff 100%);
+}
+
+/* ========== MOBILE RESPONSIVENESS ========== */
+@media (max-width: 991px) {
+    .conv-layout {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .conv-panel-left {
+        display: {% if active_conv %}none{% else %}flex{% endif %};
+        flex: 1;
+        border-right: none;
+    }
+    
+    .conv-panel-right {
+        display: {% if active_conv %}flex{% else %}none{% endif %};
+        flex: 1;
+    }
+    
+    .conv-panel-info {
+        display: none; /* Hide info panel on mobile to save space */
+    }
+    
+    .mobile-back-btn {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #f1f5f9;
+        color: #475569;
+        text-decoration: none;
+        transition: background 0.2s;
+    }
+    .mobile-back-btn:hover { background: #e2e8f0; color: var(--crm-primary); }
+}
+.mobile-back-btn { display: none; } /* Hidden on desktop */
+{% endblock %}
+
+{% block crm_content %}
+<div class="conv-layout">
+    <!-- Left Panel -->
+    <div class="conv-panel-left">
+        <div class="conv-panel-header" id="convHeaderRow" style="{% if search_query %}display:none;{% else %}display:flex;{% endif %}">
+            <div>
+                <div class="conv-panel-header-title">Inbox</div>
+                <div style="font-size:0.73rem;color:var(--crm-text-muted);">{{ request.user.get_full_name|default:request.user.username }}</div>
+            </div>
+            <div style="display:flex; gap: 0.5rem; align-items:center;">
+                <!-- Search Toggle Button -->
+                <button type="button" onclick="toggleSearchUI()" class="btn btn-sm no-caret" style="background:#f1f5f9; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; color:var(--crm-text-muted); border:none; transition:all 0.2s;" title="Search">
+                    <i class="fas fa-search" style="font-size:0.75rem;"></i>
+                </button>
+
+                <!-- Label Filter Dropdown -->
+                <div class="dropdown">
+                    <button type="button" class="btn btn-sm no-caret dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" style="background: {% if label_filter %}rgba(124,58,237,0.1){% else %}#f1f5f9{% endif %}; border-radius: 50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; color: {% if label_filter %}var(--crm-primary){% else %}var(--crm-text-muted){% endif %}; border: none;" title="Filter by label">
+                        <i class="fas fa-tag" style="font-size:0.75rem;"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow" id="labelFilterDropdownMenu" style="border:none;border-radius:12px;padding:0.75rem;min-width:240px;font-size:0.85rem;margin-top:0.5rem;">
+                        <li style="font-weight:600;font-size:0.75rem;color:var(--crm-text-muted);margin-bottom:0.5rem;padding:0 0.5rem;">Filter by label</li>
+                        
+                        {% if label_filter %}
+                            <li>
+                                <a class="dropdown-item d-flex align-items-center gap-2" href="?{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.2rem;color:#dc3545;">
+                                    <i class="fas fa-times" style="width:16px;text-align:center;"></i> Clear filter
+                                </a>
+                            </li>
+                        {% endif %}
+
+                        {% if all_labels %}
+                            {% for label in all_labels %}
+                                <li>
+                                    <a class="dropdown-item d-flex align-items-center gap-2 {% if label_filter == label.pk %}active{% endif %}" href="?label_filter={{ label.pk }}{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}" style="border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.2rem;{% if label_filter == label.pk %}background:var(--crm-active-bg);color:var(--crm-primary);{% endif %}">
+                                        <span style="width:12px;height:12px;border-radius:50%;background:{{ label.color_hex }};display:inline-block;"></span>
+                                        <span style="font-weight:500;">{{ label.name }}</span>
+                                    </a>
+                                </li>
+                            {% endfor %}
+                        {% else %}
+                            <li id="noLabelsMsg" style="font-size:0.8rem;color:var(--crm-text-muted);padding:0.5rem;text-align:center;">No labels yet. Create one below.</li>
+                        {% endif %}
+                        
+                        <li><hr class="dropdown-divider" style="margin:0.5rem 0;"></li>
+                        <li>
+                            <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#newLabelGlobalModal" style="color:var(--crm-primary);font-weight:600;display:flex;align-items:center;gap:0.4rem;padding:0.4rem 0.5rem;border-radius:8px;">
+                                <i class="fas fa-plus"></i> New label
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Account Filter Dropdown -->
+                <div class="dropdown">
+                    <button type="button" class="dropdown-toggle no-caret" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="background:{% if page_filters %}rgba(37,99,235,0.1){% else %}rgba(124,58,237,0.1){% endif %};border:none;color:var(--crm-primary);cursor:pointer;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;transition:all 0.2s;position:relative;" title="Filter Inbox">
+                        {% if not page_filters %}
+                            <i class="fas fa-filter" style="font-size:0.75rem;"></i>
+                        {% elif single_filter_integration %}
+                            {% if single_filter_integration.channel_type == 'facebook' %}
+                                <i class="fab fa-facebook-messenger" style="color:#2563eb;font-size:1.05rem;"></i>
+                            {% elif single_filter_integration.channel_type == 'instagram' %}
+                                <i class="fab fa-instagram" style="color:#db2777;font-size:1.05rem;"></i>
+                            {% elif single_filter_integration.channel_type == 'tiktok' %}
+                                <i class="fab fa-tiktok" style="color:#010101;font-size:1.05rem;"></i>
+                            {% elif single_filter_integration.channel_type == 'whatsapp' %}
+                                <i class="fab fa-whatsapp" style="color:#25D366;font-size:1.05rem;"></i>
+                            {% else %}
+                                <i class="fas fa-filter" style="font-size:0.75rem;"></i>
+                            {% endif %}
+                        {% else %}
+                            <i class="fas fa-filter" style="font-size:0.75rem;"></i>
+                            <span style="position:absolute;top:-3px;right:-3px;background:var(--crm-primary);color:#fff;border-radius:999px;font-size:0.55rem;font-weight:700;min-width:14px;height:14px;line-height:14px;text-align:center;padding:0 2px;">{{ page_filters|length }}</span>
+                        {% endif %}
+                    </button>
+                    <form method="GET" action="{% url 'trendycrm:conversations' %}" onsubmit="return prepAccountFilterSubmit();" class="dropdown-menu dropdown-menu-end shadow" style="border:none;border-radius:12px;padding:0.6rem;min-width:250px;font-size:0.85rem;margin-top:0.5rem;">
+                        {% if active_conv %}<input type="hidden" name="id" value="{{ active_conv.pk }}">{% endif %}
+                        {% if read_status %}<input type="hidden" name="read_status" value="{{ read_status }}">{% endif %}
+                        {% if label_filter %}<input type="hidden" name="label_filter" value="{{ label_filter }}">{% endif %}
+                        {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}"><input type="hidden" name="search_type" value="{{ search_type }}">{% endif %}
+
+                        <h6 class="dropdown-header" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--crm-text-muted);margin-bottom:0.25rem;padding:0 0.5rem;">Filter by account</h6>
+
+                        <div class="account-filter-row" style="display:flex;align-items:center;gap:0.6rem;border-radius:8px;padding:0.5rem 0.5rem;margin-bottom:0.1rem;">
+                            <input type="checkbox" name="page_filter" value="all" id="page_filter_all" onchange="toggleAllAccounts(this)" {% if not page_filters %}checked{% endif %} style="cursor:pointer;flex-shrink:0;width:15px;height:15px;margin:0;">
+                            <label for="page_filter_all" style="display:flex;align-items:center;gap:0.5rem;width:100%;cursor:pointer;margin:0;">
+                                <span style="width:20px;display:flex;justify-content:center;flex-shrink:0;"><img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:16px;height:16px;filter:grayscale(100%);opacity:0.6;"></span>
+                                <span style="font-weight:600;font-size:0.85rem;">All Accounts</span>
+                            </label>
+                        </div>
+
+                        {% if connected_integrations %}
+                        <hr style="margin:0.4rem 0;">
+                        <div style="max-height:230px;overflow-y:auto;overflow-x:hidden;" id="accountFilterScroll">
+                            {% for integ in connected_integrations %}
+                            <div class="account-filter-row" style="display:flex;align-items:center;gap:0.6rem;border-radius:8px;padding:0.5rem 0.5rem;margin-bottom:0.1rem;">
+                                <input type="checkbox" class="account-filter-cb" name="page_filter" value="{{ integ.pk }}" id="page_filter_{{ integ.pk }}" onchange="onAccountCbChange()" {% if not page_filters or integ.pk in page_filters %}checked{% endif %} style="cursor:pointer;flex-shrink:0;width:15px;height:15px;margin:0;">
+                                <label for="page_filter_{{ integ.pk }}" style="display:flex;align-items:center;gap:0.5rem;width:100%;cursor:pointer;margin:0;">
+                                    <span style="width:20px;display:flex;justify-content:center;flex-shrink:0;">
+                                        {% if integ.channel_type == 'facebook' %}
+                                            <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:16px;height:16px;">
+                                        {% elif integ.channel_type == 'instagram' %}
+                                            <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:16px;height:16px;">
+                                        {% elif integ.channel_type == 'tiktok' %}
+                                            <i class="fab fa-tiktok" style="font-size:14px;"></i>
+                                        {% elif integ.channel_type == 'whatsapp' %}
+                                            <i class="fab fa-whatsapp" style="color:#25D366;font-size:14px;"></i>
+                                        {% endif %}
+                                    </span>
+                                    <span style="font-weight:500;white-space:normal;line-height:1.2;font-size:0.85rem;">{{ integ.account_name }}</span>
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <button type="submit" id="accountFilterApplyBtn" class="btn-crm-primary btn-sm w-100" style="margin-top:0.6rem;font-weight:600;border-radius:8px;">
+                            Apply{% if page_filters|length > 0 %} ({{ page_filters|length }}){% endif %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Search UI Row -->
+        <div id="convSearchRow" style="padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--crm-border); background: #fff; display:none;">
+            <div style="display:flex; gap:0.5rem; align-items:flex-start;">
+                <form method="GET" style="flex:1; margin:0;" id="searchForm">
+                    <div style="display:flex; align-items:center; border: 1.5px solid var(--crm-primary); border-radius:6px; padding:0; transition: all 0.2s; box-shadow: 0 0 0 2px rgba(124,58,237,0.1);">
+                        <i class="fas fa-search" style="color:var(--crm-text-muted); font-size:0.9rem; padding-left: 0.5rem;"></i>
+                        <input type="text" name="q" placeholder="Search name, phone, order #..." value="{{ search_query|default:'' }}" style="border:none; background:transparent; width:100%; outline:none; font-size:0.85rem; padding:0.4rem 0.5rem; font-family: 'Inter', sans-serif;">
+                        {% if search_query %}
+                        <a href="?{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="color:var(--crm-text-muted); text-decoration:none; padding: 0.2rem 0.5rem; font-size:0.9rem;" title="Clear input">
+                            <i class="fas fa-times-circle"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% for pf in page_filters %}<input type="hidden" name="page_filter" value="{{ pf }}">{% endfor %}
+                    {% if read_status %}<input type="hidden" name="read_status" value="{{ read_status }}">{% endif %}
+                    {% if label_filter %}<input type="hidden" name="label_filter" value="{{ label_filter }}">{% endif %}
+                    
+                    <div style="margin-top: 0.4rem; display:flex; gap: 0.3rem; background: #f8fafc; padding: 0.2rem; border-radius: 6px; width: fit-content;">
+                        <button type="submit" name="search_type" value="chats" class="btn btn-sm" style="{% if search_type == 'chats' or not search_type %}background:#fff; color:var(--crm-primary); font-weight:600; box-shadow: 0 1px 2px rgba(0,0,0,0.05);{% else %}background:transparent; border:none; color:var(--crm-text-muted); font-weight:500;{% endif %} border-radius:4px; font-size:0.75rem; padding: 0.2rem 0.6rem; transition: all 0.2s; border: none;">Chats</button>
+                        <button type="submit" name="search_type" value="messages" class="btn btn-sm" style="{% if search_type == 'messages' %}background:#fff; color:var(--crm-primary); font-weight:600; box-shadow: 0 1px 2px rgba(0,0,0,0.05);{% else %}background:transparent; border:none; color:var(--crm-text-muted); font-weight:500;{% endif %} border-radius:4px; font-size:0.75rem; padding: 0.2rem 0.6rem; transition: all 0.2s; border: none;">Messages</button>
+                    </div>
+                </form>
+                
+                <button type="button" class="btn btn-sm" style="background: #f1f5f9; border-radius: 6px; width: 32px; height: 32px; display:flex; align-items:center; justify-content:center; color: var(--crm-text-muted); border: 1px solid var(--crm-border); font-size: 1rem; transition: all 0.2s; padding:0;" onclick="toggleSearchUI(true)">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+
+        <div style="padding:0.4rem 0.75rem;border-bottom:1px solid var(--crm-border); display:flex; gap:0.5rem;">
+            <a href="?{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if not read_status %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">All</a>
+            <a href="?read_status=unread{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if read_status == 'unread' %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">Unread</a>
+            <a href="?read_status=read{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}" style="text-decoration:none; font-size:0.75rem; font-weight:600; padding:0.25rem 0.5rem; border-radius:6px; {% if read_status == 'read' %}background:var(--crm-active-bg); color:var(--crm-primary);{% else %}color:var(--crm-text-muted);{% endif %}">Read</a>
+        </div>
+
+        <div class="conv-list" id="convList">
+            {% include "trendycrm/partials/conversation_list.html" %}
+        </div>
+    </div>
+
+    <!-- Right Panel -->
+    {% if active_conv %}
+    <div class="conv-panel-right">
+        <div class="conv-chat-header d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-2">
+                <a href="{% url 'trendycrm:conversations' %}" class="mobile-back-btn me-1">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
+                <div class="conv-avatar" style="width:32px;height:32px;font-size:0.75rem;">
+                    {{ active_conv.contact.name|first|upper|default:"?" }}
+                    {% if active_conv.channel == 'facebook' %}
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" class="channel-badge" style="width:12px;height:12px;">
+                    {% elif active_conv.channel == 'instagram' %}
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" class="channel-badge" style="width:12px;height:12px;">
+                    {% elif active_conv.channel == 'tiktok' %}
+                        <i class="fab fa-tiktok channel-badge" style="font-size:11px;"></i>
+                    {% elif active_conv.channel == 'whatsapp' %}
+                        <i class="fab fa-whatsapp channel-badge" style="color:#25D366;font-size:11px;"></i>
+                    {% endif %}
+                </div>
+                <div>
+                    <div style="font-weight:600;font-size:0.88rem;">{{ active_conv.contact.name|default:"Unknown" }}</div>
+                    <div style="font-size:0.72rem;color:var(--crm-text-muted);display:flex;align-items:center;gap:0.35rem;margin-top:1px;">
+                        {% if active_conv.channel == 'facebook' %}
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:12px;height:12px;">
+                        {% elif active_conv.channel == 'instagram' %}
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:12px;height:12px;">
+                        {% elif active_conv.channel == 'tiktok' %}
+                            <i class="fab fa-tiktok" style="font-size:11px;"></i>
+                        {% elif active_conv.channel == 'whatsapp' %}
+                            <i class="fab fa-whatsapp" style="color:#25D366;font-size:11px;"></i>
+                        {% endif %}
+                        @{{ active_conv.contact.name|slugify|default:"unknown" }}
+                    </div>
+                    <div style="margin-top:2px;">
+                        <span id="headerStatusBadge" class="status-badge {{ active_conv.status }}" style="font-size:0.65rem;">{{ active_conv.get_status_display }}</span>
+                        {% if active_conv.integration %}
+                            <span style="font-size:0.65rem; color:var(--crm-text-muted); margin-left: 0.5rem;"><i class="fas fa-link"></i> {{ active_conv.integration.account_name|truncatechars:20 }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <button type="button" id="aiToggleBtn"
+                        class="ai-switch {{ ai_state.state }}"
+                        data-state="{{ ai_state.state }}"
+                        data-resumable="{{ ai_state.resumable|yesno:'1,0' }}"
+                        onclick="toggleConversationAi()"
+                        title="{{ ai_state.reason }}">
+                    <i class="fas fa-robot"></i>
+                    <span id="aiToggleLabel">{{ ai_state.label }}</span>
+                    <span class="ai-switch-track"><span class="ai-switch-knob"></span></span>
+                </button>
+                <span id="assignBadge" class="status-badge assign-badge-btn {% if active_conv.assigned_to %}assigned{% else %}unassigned{% endif %}" style="font-size:0.68rem;" onclick="new bootstrap.Modal(document.getElementById('assignConvModal')).show();" title="Click to assign this conversation">
+                    {% if active_conv.assigned_to %}
+                        <i class="fas fa-user-check"></i> {{ assigned_employee_name }}
+                    {% else %}
+                        <i class="fas fa-user-slash"></i> Unassigned
+                    {% endif %}
+                </span>
+                <button type="button" id="resolveBtn" class="status-badge resolve-badge-btn {{ active_conv.status }}" style="font-size:0.68rem;" onclick="toggleResolve()">
+                    {% if active_conv.status == 'resolved' %}
+                        <i class="fas fa-rotate-left"></i> Reopen
+                    {% else %}
+                        <i class="fas fa-check"></i> Resolve
+                    {% endif %}
+                </button>
+                <form action="{% url 'trendycrm:delete_conversation' active_conv.pk %}" method="post" onsubmit="return confirm('Are you sure you want to delete this entire conversation? This action cannot be undone.');" style="margin: 0;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm" style="color: #dc3545; background: none; border: none; padding: 0.25rem 0.5rem; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'" title="Delete Conversation">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="conv-messages" id="msgArea">
+            {% include 'trendycrm/partials/messages_list.html' %}
+        </div>
+
+        <div id="attachPreviewBar" style="display:none;padding:0.5rem 1.25rem;border-top:1px solid var(--crm-border);background:#fafafa;align-items:center;gap:0.6rem;flex-shrink:0;">
+            <div id="attachPreviewThumb" style="width:36px;height:36px;border-radius:6px;background:#e2e8f0;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+                <i class="fas fa-paperclip" style="color:var(--crm-text-muted);"></i>
+            </div>
+            <div id="attachPreviewName" style="font-size:0.8rem;color:var(--crm-text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+            <button type="button" onclick="clearAttachment()" style="background:none;border:none;color:var(--crm-text-muted);font-size:0.9rem;cursor:pointer;padding:0.2rem;" title="Remove attachment">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        {% comment %}
+        While the AI owns the chat the composer is view-only, so an agent can't
+        half-answer over the top of a reply already on its way to the customer.
+        Take over is the deliberate door into the conversation.
+        {% endcomment %}
+        <div class="ai-handoff-bar" id="aiHandoffBar" {% if ai_state.state != 'on' %}hidden{% endif %}>
+            <div class="ai-handoff-text">
+                <div class="ai-handoff-title">
+                    <span class="ai-avatar sm"><i class="fas fa-robot"></i></span>
+                    Handled by <strong>{{ active_conv.integration.chatbot_config.name|default:"Trendy AI" }}</strong>
+                </div>
+                <div class="ai-handoff-sub">View-only — the AI is replying to this customer</div>
+            </div>
+            <div class="ai-handoff-actions">
+                <button type="button" class="handoff-btn primary" onclick="takeOverConversation()">Take over</button>
+                <button type="button" class="handoff-btn" onclick="new bootstrap.Modal(document.getElementById('assignConvModal')).show();">Assign to member</button>
+            </div>
+        </div>
+
+        <form class="conv-input-bar" id="sendMessageForm" method="post" action="{% url 'trendycrm:send_message' active_conv.pk %}" enctype="multipart/form-data" style="position:relative;" {% if ai_state.state == 'on' %}hidden{% endif %}>
+            {% csrf_token %}
+            {% comment %}
+            Idempotency key for this one message — see the submit guard below and
+            client_token in CRMMessage. Rewritten after every send.
+            {% endcomment %}
+            <input type="hidden" name="client_token" id="clientMsgToken" value="">
+            <div class="composer-handback" id="composerHandback" {% if not ai_state.resumable or ai_state.state == 'off' %}hidden{% endif %}>
+                <span><i class="fas fa-user-check"></i> You're handling this chat</span>
+                <button type="button" onclick="toggleConversationAi()">Hand back to AI</button>
+            </div>
+            <div id="qrAutocomplete" class="qr-autocomplete" role="listbox" aria-label="Quick replies"></div>
+            <input type="file" id="imageFileInput" name="image_file" accept="image/*" style="display:none;" onchange="handleFileSelect(this, 'image')">
+            <input type="file" id="docFileInput" name="doc_file" style="display:none;" onchange="handleFileSelect(this, 'document')">
+            <input type="file" id="audioFileInput" name="audio_file" style="display:none;">
+
+            <button type="button" class="composer-icon-btn" id="attachImageBtn" onclick="document.getElementById('imageFileInput').click();" title="Attach image">
+                <i class="fas fa-image"></i>
+            </button>
+            <button type="button" class="composer-icon-btn" id="micBtn" onclick="toggleVoiceRecording()" title="Record voice message">
+                <i class="fas fa-microphone"></i>
+            </button>
+            <button type="button" class="composer-icon-btn" id="pauseResumeBtn" onclick="togglePauseRecording()" title="Pause recording" style="display:none;">
+                <i class="fas fa-pause"></i>
+            </button>
+            <button type="button" class="composer-icon-btn" id="cancelRecordingBtn" onclick="cancelVoiceRecording()" title="Discard recording" style="display:none;color:#ef4444;">
+                <i class="fas fa-trash-alt"></i>
+            </button>
+            <button type="button" class="composer-icon-btn" id="attachFileBtn" onclick="document.getElementById('docFileInput').click();" title="Attach file">
+                <i class="fas fa-paperclip"></i>
+            </button>
+
+            <textarea name="body" id="messageBodyInput" class="conv-input" placeholder="Write your message…  (type / for quick replies)" rows="1" onkeydown="handleComposerKeydown(event, this)"></textarea>
+
+            <button type="button" class="composer-round-btn" onclick="new bootstrap.Modal(document.getElementById('assignConvModal')).show();" title="Assign conversation">
+                <i class="fas fa-user-plus"></i>
+            </button>
+            <button type="submit" class="composer-round-btn primary" id="sendMsgBtn" title="Send">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </form>
+    </div>
+    
+    <!-- Info Panel (3rd Pane) -->
+    <div class="conv-panel-info">
+        <div style="padding: 2rem 1.5rem; text-align: center; border-bottom: 1px solid var(--crm-border);">
+            <div class="conv-avatar" style="width:64px;height:64px;font-size:1.5rem;margin: 0 auto 0.75rem;">
+                {{ active_conv.contact.name|first|upper|default:"?" }}
+            </div>
+            <div style="font-weight:700;font-size:1.1rem;color:var(--crm-text);">{{ active_conv.contact.name|default:"Unknown" }}</div>
+            {% if active_conv.channel == 'facebook' %}
+                <div style="font-size:0.8rem;color:var(--crm-text-muted);display:flex;align-items:center;justify-content:center;gap:0.4rem;margin-top:0.25rem;">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg" style="width:14px;height:14px;"> @{{ active_conv.contact.name|slugify|default:"Unknown" }}
+                </div>
+            {% elif active_conv.channel == 'instagram' %}
+                <div style="font-size:0.8rem;color:var(--crm-text-muted);display:flex;align-items:center;justify-content:center;gap:0.4rem;margin-top:0.25rem;">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/9/95/Instagram_logo_2022.svg" style="width:14px;height:14px;"> @{{ active_conv.contact.name|slugify|default:"Unknown" }}
+                </div>
+            {% elif active_conv.channel == 'tiktok' %}
+                <div style="font-size:0.8rem;color:var(--crm-text-muted);display:flex;align-items:center;justify-content:center;gap:0.4rem;margin-top:0.25rem;">
+                    <i class="fab fa-tiktok"></i> @{{ active_conv.contact.name|slugify|default:"Unknown" }}
+                </div>
+            {% elif active_conv.channel == 'whatsapp' %}
+                <div style="font-size:0.8rem;color:var(--crm-text-muted);display:flex;align-items:center;justify-content:center;gap:0.4rem;margin-top:0.25rem;">
+                    <i class="fab fa-whatsapp" style="color:#25D366;"></i> {{ active_conv.contact.phone|default:"Unknown number" }}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div style="padding: 1.25rem;">
+            <!-- Contact Information -->
+            <div style="font-size:0.8rem;font-weight:600;color:var(--crm-text);margin-bottom:0.75rem;">
+                Contact information 
+                <i class="fas fa-user-plus" style="float:right;color:var(--crm-primary);cursor:pointer;" onclick="new bootstrap.Modal(document.getElementById('linkContactModal')).show();" title="Link Contact"></i>
+            </div>
+            {% if active_conv.contact and active_conv.contact.email or active_conv.contact.phone or active_conv.contact.company %}
+            <div style="border:1px solid var(--crm-border);border-radius:8px;padding:1rem;background:white;" id="sidebarContactInfo">
+                <div style="font-weight:600;font-size:0.85rem;margin-bottom:0.5rem;">{{ active_conv.contact.name }}</div>
+                {% if active_conv.contact.email %}<div style="font-size:0.8rem;color:var(--crm-text-muted);"><i class="fas fa-envelope"></i> {{ active_conv.contact.email }}</div>{% endif %}
+                {% if active_conv.contact.phone %}<div style="font-size:0.8rem;color:var(--crm-text-muted);margin-top:0.2rem;"><i class="fas fa-phone"></i> {{ active_conv.contact.phone }}</div>{% endif %}
+                {% if active_conv.contact.company %}<div style="font-size:0.8rem;color:var(--crm-text-muted);margin-top:0.2rem;"><i class="fas fa-building"></i> {{ active_conv.contact.company }}</div>{% endif %}
+            </div>
+            {% else %}
+            <div style="border:1px dashed var(--crm-border);border-radius:8px;padding:1rem;text-align:center;background:var(--crm-bg);" id="sidebarContactInfo">
+                <div style="width:32px;height:32px;border-radius:50%;background:rgba(124,58,237,0.1);color:var(--crm-primary);display:flex;align-items:center;justify-content:center;margin:0 auto 0.5rem;"><i class="fas fa-user-plus"></i></div>
+                <div style="font-size:0.75rem;font-weight:600;color:var(--crm-text);">No detailed contact linked</div>
+                <div style="font-size:0.7rem;color:var(--crm-text-muted);">Link a contact to keep history.</div>
+                <button class="btn btn-sm btn-crm-outline mt-2" onclick="new bootstrap.Modal(document.getElementById('linkContactModal')).show();">Link Contact</button>
+            </div>
+            {% endif %}
+            
+            <!-- Labels -->
+            <div style="margin-top:1.5rem;">
+                <div style="font-size:0.8rem;font-weight:600;color:var(--crm-text);margin-bottom:0.5rem;display:flex;justify-content:space-between;">
+                    Labels <i class="fas fa-tags" style="color:var(--crm-text-muted);"></i>
+                </div>
+                <div id="labelsContainer" style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.5rem;">
+                    {% for label in active_conv.labels.all %}
+                        <span class="badge" style="background-color:{{ label.color_hex }}15;color:{{ label.color_hex }};border:1px solid {{ label.color_hex }}30;font-size:0.7rem;border-radius:12px;padding:0.35rem 0.6rem;">
+                            {{ label.name }} 
+                            <i class="fas fa-times ms-1" style="cursor:pointer;opacity:0.6;" onclick="removeLabel({{ label.pk }}, this)"></i>
+                        </span>
+                    {% endfor %}
+                </div>
+                
+                <div class="dropdown">
+                    <button class="btn btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" style="background:transparent;border:1px solid var(--crm-border);border-radius:999px;font-size:0.7rem;padding:0.3rem 0.75rem;color:var(--crm-text-muted);">
+                        <i class="fas fa-plus"></i> Add label
+                    </button>
+                    <div class="dropdown-menu p-2 shadow-sm" style="border-radius:12px;min-width:200px;">
+                        <form onsubmit="addLabel(event)">
+                            <div class="input-group input-group-sm mb-2">
+                                <input type="text" id="newLabelName" class="form-control" placeholder="New label name" required>
+                            </div>
+                            <div class="mb-2 d-flex gap-2 justify-content-between">
+                                <input type="color" id="newLabelColor" class="form-control form-control-color p-0" value="#7c3aed" title="Choose color" style="height:28px;width:35px;">
+                                <button type="submit" class="btn btn-sm btn-crm-primary flex-grow-1">Add</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Internal Notes -->
+            <div style="margin-top:1.5rem;">
+                <div style="font-size:0.8rem;font-weight:600;color:var(--crm-text);margin-bottom:0.5rem;display:flex;justify-content:space-between;">
+                    Internal notes ({{ active_conv.notes.count }}) 
+                    <i class="fas fa-plus" style="color:var(--crm-primary);cursor:pointer;" onclick="document.getElementById('newNoteBox').style.display='block';"></i>
+                </div>
+                
+                <div id="newNoteBox" style="display:none;margin-bottom:1rem;background:var(--crm-bg);padding:0.75rem;border-radius:8px;border:1px solid var(--crm-border);">
+                    <textarea id="noteText" class="form-control" rows="2" style="font-size:0.8rem;border:none;background:transparent;padding:0;resize:none;" placeholder="Type an internal note..."></textarea>
+                    <div style="display:flex;justify-content:flex-end;margin-top:0.5rem;gap:0.5rem;">
+                        <button class="btn btn-sm text-muted" onclick="document.getElementById('newNoteBox').style.display='none';">Cancel</button>
+                        <button class="btn btn-sm btn-crm-primary" onclick="addNote()">Save</button>
+                    </div>
+                </div>
+
+                <div id="notesContainer" style="display:flex;flex-direction:column;gap:0.75rem;">
+                    {% for note in active_conv.notes.all %}
+                    <div style="background:#fff9c4;padding:0.75rem;border-radius:8px;font-size:0.8rem;color:#5a4a00;border-left:3px solid #fbc02d;">
+                        <div style="font-weight:600;margin-bottom:0.25rem;display:flex;justify-content:space-between;">
+                            <span>{{ note.author.first_name|default:note.author.username }}</span>
+                            <span style="font-size:0.65rem;font-weight:400;opacity:0.8;">{{ note.created_at|date:"M d, h:i A" }}</span>
+                        </div>
+                        <div>{{ note.text|linebreaksbr }}</div>
+                    </div>
+                    {% empty %}
+                    <div id="noNotesMsg" style="font-size:0.75rem;color:var(--crm-text-muted);font-style:italic;">No notes yet.</div>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div style="margin-top:1.5rem;">
+                <div style="font-size:0.8rem;font-weight:600;color:var(--crm-text);margin-bottom:0.25rem;display:flex;justify-content:space-between;">Tickets (0) <i class="fas fa-plus" style="color:var(--crm-text-muted);"></i></div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-right">
+        <div style="text-align:center;">
+            <div class="crm-empty-icon" style="margin:0 auto 1.25rem;background:rgba(255,255,255,0.9);width:80px;height:80px;font-size:1.8rem;box-shadow:0 8px 24px rgba(124,58,237,0.15);">
+                <i class="fas fa-bolt" style="color:var(--crm-primary);"></i>
+            </div>
+            <h5 style="font-weight:700;color:var(--crm-text);margin-bottom:0.4rem;">Welcome back, {{ request.user.first_name|default:request.user.username }}</h5>
+            <p style="font-size:0.83rem;color:var(--crm-text-muted);max-width:300px;margin:0 auto 1.25rem;">Pick a conversation from your inbox to jump in — your messages, notes, and AI assists all live there.</p>
+            {% if conversations %}
+            <a href="?id={{ conversations.first.pk }}" class="btn-crm-outline">
+                <i class="fas fa-arrow-left"></i> Open the inbox on the left
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% block extra_script %}
+<script>
+    // ── Inbox sidebar live refresh ────────────────────────────────────────────
+    // Runs whether or not a chat is open. The message poll only ever replaced the
+    // open thread, so the sidebar preview and timestamp stayed stale until reload.
+    (function pollConversationList() {
+        const list = document.getElementById('convList');
+        if (!list) return;
+
+        // Carry the current filters through so the refresh can't disagree with
+        // what the user has selected.
+        const params = new URLSearchParams(window.location.search);
+        const url = "{% url 'trendycrm:conversations_list_ajax' %}" +
+                    (params.toString() ? '?' + params.toString() : '');
+
+        setInterval(function () {
+            // Don't yank the list out from under an open row menu.
+            if (list.querySelector('.dropdown-menu.show')) return;
+
+            fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(r => r.text())
+                .then(html => {
+                    if (!html.trim() || list.innerHTML === html) return;
+                    const scroll = list.scrollTop;
+                    list.innerHTML = html;
+                    list.scrollTop = scroll;
+                })
+                .catch(err => console.error('Failed to refresh the inbox list:', err));
+        }, 3000);
+    })();
+
+    {% if active_conv %}
+    // Counts rendered bubbles. The old check compared innerHTML *length*, which
+    // fired the toast on any status-icon change and missed a short new message
+    // that arrived alongside one.
+    function countBubbles(container) {
+        return container.querySelectorAll('.msg-bubble').length;
+    }
+
+    // Set while an alert action is waiting on the server. The 3-second repaint
+    // would otherwise swap the button out mid-request, taking its "Retrying…"
+    // state with it and leaving the agent unsure whether the click registered.
+    let alertActionInFlight = false;
+
+    // Auto-fetcher for Real-Time UI updates
+    setInterval(function() {
+        if (alertActionInFlight) return;
+        fetch("{% url 'trendycrm:conversations_ajax' %}?id={{ active_conv.pk }}")
+        .then(response => response.text())
+        .then(html => {
+            const msgArea = document.getElementById('msgArea');
+            if (html.trim() === "" || msgArea.innerHTML === html) return;
+            // The fragment carries the AI state; repaint the header from it below.
+
+            const isFirstLoad = (msgArea.innerHTML.trim() === "");
+            const oldCount = countBubbles(msgArea);
+            // Only follow new messages if the reader is already at the bottom,
+            // so this can't yank them away while they scroll back through history.
+            const wasAtBottom =
+                msgArea.scrollHeight - msgArea.scrollTop - msgArea.clientHeight < 80;
+
+            msgArea.innerHTML = html;
+            syncAiBadgeFromFragment();
+            const newCount = countBubbles(msgArea);
+
+            if (!isFirstLoad && newCount > oldCount && typeof showTrendyToast === 'function') {
+                showTrendyToast("New message received in this conversation", "info", "New Message");
+            }
+            if (isFirstLoad || wasAtBottom || newCount > oldCount) {
+                msgArea.scrollTop = msgArea.scrollHeight;
+            }
+        })
+        .catch(err => console.error('Failed to fetch new messages:', err));
+    }, 3000); // Check every 3 seconds
+
+    // ── Quick-reply autocomplete ──────────────────────────────────────────────
+    // Typing "/" at the start of an empty composer searches saved quick replies
+    // and inserts the full text. Without this the Quick Replies page had no way
+    // to reach a conversation — pasting the raw "/shortcut" would send it verbatim.
+    var qrResults = [];
+    var qrActive = -1;
+    var qrTimer = null;
+
+    function qrBox() { return document.getElementById('qrAutocomplete'); }
+
+    function hideQuickReplies() {
+        qrResults = [];
+        qrActive = -1;
+        const box = qrBox();
+        if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+    }
+
+    function renderQuickReplies() {
+        const box = qrBox();
+        if (!box) return;
+        if (!qrResults.length) { hideQuickReplies(); return; }
+
+        box.innerHTML = qrResults.map((r, i) =>
+            '<div class="qr-item' + (i === qrActive ? ' active' : '') + '" role="option" data-index="' + i + '">' +
+                '<div class="qr-item-top">' +
+                    '<span class="qr-item-shortcut">/' + escapeHtml(r.shortcut) + '</span>' +
+                    '<span class="qr-item-name">' + escapeHtml(r.name) + '</span>' +
+                '</div>' +
+                '<div class="qr-item-content">' + escapeHtml(r.content) + '</div>' +
+            '</div>'
+        ).join('');
+        box.style.display = 'block';
+
+        box.querySelectorAll('.qr-item').forEach(el => {
+            el.addEventListener('mousedown', function (e) {
+                // mousedown, not click — the textarea's blur would close the box first.
+                e.preventDefault();
+                applyQuickReply(parseInt(this.dataset.index, 10));
+            });
+        });
+    }
+
+    function escapeHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : s;
+        return d.innerHTML;
+    }
+
+    function applyQuickReply(index) {
+        const reply = qrResults[index];
+        const input = document.getElementById('messageBodyInput');
+        if (!reply || !input) return;
+        input.value = reply.content;
+        hideQuickReplies();
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+    }
+
+    function maybeSearchQuickReplies(input) {
+        const value = input.value;
+        // Only while the whole composer is a single "/token" — never mid-message,
+        // so a customer address like "1/2 Newroad" can't trigger it.
+        if (!/^\/\S*$/.test(value)) { hideQuickReplies(); return; }
+
+        clearTimeout(qrTimer);
+        qrTimer = setTimeout(function () {
+            const q = value.slice(1);
+            const url = "{% url 'trendycrm:quick_replies_search' %}?q=" + encodeURIComponent(q || '');
+            fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(r => r.json())
+                .then(data => {
+                    qrResults = data.results || [];
+                    qrActive = qrResults.length ? 0 : -1;
+                    renderQuickReplies();
+                })
+                .catch(err => { console.error('Quick reply search failed:', err); hideQuickReplies(); });
+        }, 120);
+    }
+
+    function handleComposerKeydown(event, input) {
+        const open = qrResults.length > 0 && qrBox() && qrBox().style.display === 'block';
+
+        if (open) {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                qrActive = (qrActive + 1) % qrResults.length;
+                renderQuickReplies();
+                return;
+            }
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                qrActive = (qrActive - 1 + qrResults.length) % qrResults.length;
+                renderQuickReplies();
+                return;
+            }
+            if (event.key === 'Enter' || event.key === 'Tab') {
+                event.preventDefault();
+                applyQuickReply(qrActive >= 0 ? qrActive : 0);
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                hideQuickReplies();
+                return;
+            }
+        }
+
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            hideQuickReplies();
+            input.closest('form').requestSubmit();
+        }
+    }
+
+    (function initQuickReplies() {
+        const input = document.getElementById('messageBodyInput');
+        if (!input) return;
+        input.addEventListener('input', function () { maybeSearchQuickReplies(this); });
+        input.addEventListener('blur', function () { setTimeout(hideQuickReplies, 120); });
+    })();
+
+    // One send per click. The form navigates, so between the click and the new
+    // page there is a window in which a second click (or a second Enter, or a
+    // stab at the button while the network is slow) posts the whole composer
+    // again — which reaches the customer as two identical messages.
+    //
+    // Two layers, because neither alone is enough: this guard stops the second
+    // submit leaving the browser, and the token it stamps makes the send
+    // idempotent server-side if one gets out anyway (see crm_send_message).
+    (function initSendGuard() {
+        const form = document.getElementById('sendMessageForm');
+        if (!form) return;
+        const btn = document.getElementById('sendMsgBtn');
+        const tokenField = document.getElementById('clientMsgToken');
+        let sending = false;
+        let rearmTimer = null;
+
+        function newToken() {
+            if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+            return 'm-' + Date.now() + '-' + Math.random().toString(36).slice(2, 12);
+        }
+
+        // Same token on a retry, deliberately: if the earlier POST did land, the
+        // server recognises it and drops the repeat instead of double-sending.
+        function rearm() {
+            sending = false;
+            clearTimeout(rearmTimer);
+            if (btn) btn.disabled = false;
+        }
+
+        function composerIsEmpty() {
+            const body = (document.getElementById('messageBodyInput') || {}).value || '';
+            if (body.trim()) return false;
+            return !['imageFileInput', 'docFileInput', 'audioFileInput'].some(id => {
+                const f = document.getElementById(id);
+                return f && f.files && f.files.length;
+            });
+        }
+
+        tokenField.value = newToken();
+
+        form.addEventListener('submit', function (event) {
+            if (sending || composerIsEmpty()) {
+                event.preventDefault();
+                return;
+            }
+            sending = true;
+            if (btn) btn.disabled = true;
+            // The page normally navigates away long before this fires. It only
+            // matters when the send never completes (offline, dead server) —
+            // then the composer comes back rather than staying dead forever.
+            rearmTimer = setTimeout(rearm, 15000);
+        });
+
+        // Back-button restores from bfcache with the old disabled button.
+        window.addEventListener('pageshow', function (e) {
+            if (e.persisted) {
+                rearm();
+                tokenField.value = newToken();
+            }
+        });
+    })();
+
+    const AI_STATES = ['on', 'off', 'paused', 'unavailable'];
+    let aiBadgeState = null;
+
+    // Seconds until the takeover pause lifts. Derived from the absolute instant the
+    // server sent, so the label keeps counting down between 3s polls.
+    function aiSecondsLeft(state) {
+        if (!state || !state.resumes_at) return null;
+        return Math.max(0, Math.round((new Date(state.resumes_at) - new Date()) / 1000));
+    }
+
+    // Paints the badge from a state object. Every state change goes through here —
+    // the poll, the toggle response, and the countdown all share one renderer so
+    // they can't disagree about what the badge says.
+    function renderAiBadge(state) {
+        const btn = document.getElementById('aiToggleBtn');
+        if (!btn || !state) return;
+        AI_STATES.forEach(s => btn.classList.toggle(s, s === state.state));
+        btn.dataset.state = state.state;
+        btn.dataset.resumable = state.resumable ? '1' : '0';
+
+        aiBadgeState = state;
+        let label = state.label;
+        const left = aiSecondsLeft(state);
+        if (state.state === 'paused' && left > 0) {
+            label += ` · ${Math.ceil(left / 60)}m`;
+        }
+        document.getElementById('aiToggleLabel').textContent = label;
+        btn.title = state.resumable && state.state === 'paused'
+            ? state.reason + ' Click to hand it back to the AI now.'
+            : state.reason;
+        // 'unavailable' is a Chatbot-page setting, not something this chat can fix.
+        btn.disabled = state.state === 'unavailable';
+
+        // The composer and the lock bar are two views of this one state: the bot
+        // owns the chat, or the agent does. Never both.
+        const bar = document.getElementById('aiHandoffBar');
+        const form = document.getElementById('sendMessageForm');
+        const handback = document.getElementById('composerHandback');
+        const aiOwns = state.state === 'on';
+        if (bar) bar.hidden = !aiOwns;
+        if (form) form.hidden = aiOwns;
+        if (handback) handback.hidden = aiOwns || !state.resumable || state.state === 'off';
+    }
+
+    // Reads the state the polled fragment carried in and repaints the badge, so a
+    // takeover pause visibly counts down and clears itself without a reload.
+    function syncAiBadgeFromFragment() {
+        const data = document.getElementById('aiStateData');
+        if (!data) return;
+        renderAiBadge({
+            state: data.dataset.state,
+            label: data.dataset.label,
+            reason: data.dataset.reason,
+            resumes_at: data.dataset.resumesAt || null,
+            resumable: data.dataset.resumable === '1',
+        });
+    }
+
+    // Ticks the "Human · 3m" label down between polls. The authoritative flip back
+    // to 'on' still comes from the server on the next fetch.
+    setInterval(function () {
+        if (aiBadgeState && aiBadgeState.state === 'paused') renderAiBadge(aiBadgeState);
+    }, 1000);
+
+    // ── AI failure alert actions ──────────────────────────────────────────────
+    // Delegated from the thread container because the poll rebuilds its contents
+    // every few seconds — handlers bound to the buttons themselves would die with
+    // the first repaint.
+    (function initAlertActions() {
+        const msgArea = document.getElementById('msgArea');
+        if (!msgArea) return;
+
+        // Built from the real routes with a placeholder id, so the CRM's mount
+        // point stays a URLconf detail rather than a string baked into this page.
+        const RETRY_URL = "{% url 'trendycrm:retry_ai_reply' 0 %}";
+        const DISMISS_URL = "{% url 'trendycrm:dismiss_ai_alert' 0 %}";
+        const alertUrl = (template, id) => template.replace(/\/0\//, '/' + id + '/');
+
+        function runAlertAction(btn, url, pending, onDone) {
+            const chip = btn.closest('.sys-event');
+            const buttons = chip ? chip.querySelectorAll('.sys-event-btn') : [btn];
+            const original = btn.innerHTML;
+            buttons.forEach(b => b.disabled = true);
+            btn.innerHTML = pending;
+            alertActionInFlight = true;
+
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            })
+            .then(r => r.json())
+            .then(data => onDone(data, chip))
+            .catch(err => {
+                console.error(err);
+                if (typeof showTrendyToast === 'function') {
+                    showTrendyToast("Couldn't reach the server. Try again.", "error", "Error");
+                }
+            })
+            .finally(() => {
+                alertActionInFlight = false;
+                btn.innerHTML = original;
+                buttons.forEach(b => b.disabled = false);
+            });
+        }
+
+        msgArea.addEventListener('click', function (e) {
+            const retryBtn = e.target.closest('[data-retry-ai]');
+            if (retryBtn) {
+                runAlertAction(
+                    retryBtn,
+                    alertUrl(RETRY_URL, retryBtn.dataset.retryAi),
+                    '<i class="fas fa-spinner fa-spin"></i> Asking the AI…',
+                    function (data, chip) {
+                        const ok = data.status === 'ok';
+                        // On success the alert is already resolved server-side;
+                        // dropping it now means the agent doesn't watch a stale
+                        // warning sit there until the next poll.
+                        if (ok && chip) chip.remove();
+                        if (typeof showTrendyToast === 'function') {
+                            showTrendyToast(data.message, ok ? 'success' : 'error',
+                                            ok ? 'AI replied' : 'Still failing');
+                        }
+                    }
+                );
+                return;
+            }
+
+            const dismissBtn = e.target.closest('[data-dismiss-alert]');
+            if (dismissBtn) {
+                runAlertAction(
+                    dismissBtn,
+                    alertUrl(DISMISS_URL, dismissBtn.dataset.dismissAlert),
+                    'Dismissing…',
+                    function (data, chip) { if (chip) chip.remove(); }
+                );
+            }
+        });
+    })();
+
+    // Claims a bot-run conversation for the current agent and unlocks the composer.
+    function takeOverConversation() {
+        const buttons = document.querySelectorAll('#aiHandoffBar .handoff-btn');
+        buttons.forEach(b => b.disabled = true);
+        fetch("{% url 'trendycrm:take_over_conversation' active_conv.pk %}", {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'ok') throw new Error('Failed');
+            renderAiBadge(data.ai);
+            const input = document.getElementById('messageBodyInput');
+            if (input) input.focus();
+            if (typeof showTrendyToast === 'function') {
+                showTrendyToast("You're now handling this conversation. The AI won't reply.",
+                                "info", "Taken over");
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            if (typeof showTrendyToast === 'function') {
+                showTrendyToast("Could not take over this conversation.", "error", "Error");
+            }
+        })
+        .finally(() => { buttons.forEach(b => b.disabled = false); });
+    }
+
+    function toggleConversationAi() {
+        const btn = document.getElementById('aiToggleBtn');
+        // While paused by a takeover, the useful action is "give it back to the
+        // AI" — not "switch the AI off", which is what a blind toggle would do.
+        const resuming = btn.dataset.state === 'paused' && btn.dataset.resumable === '1';
+        const form = new FormData();
+        if (resuming) form.append('action', 'resume');
+        btn.disabled = true;
+        fetch("{% url 'trendycrm:toggle_conversation_ai' active_conv.pk %}", {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: form,
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'ok') throw new Error(data.message || 'Failed');
+            renderAiBadge(data.ai);
+            if (typeof showTrendyToast === 'function') {
+                showTrendyToast(
+                    data.ai_enabled
+                        ? "The AI will auto-reply to this conversation."
+                        : "The AI will stay silent on this conversation.",
+                    "info", "Auto-reply");
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            if (typeof showTrendyToast === 'function') {
+                showTrendyToast("Could not change the AI setting.", "error", "Error");
+            }
+        })
+        // renderAiBadge owns the disabled flag ('unavailable' must stay disabled),
+        // so only re-enable when the request failed before it could repaint.
+        .finally(() => {
+            if (btn.dataset.state !== 'unavailable') btn.disabled = false;
+        });
+    }
+    {% endif %}
+
+    // Scroll to bottom of messages initially
+    const msgArea = document.getElementById('msgArea');
+    if (msgArea) {
+        msgArea.scrollTop = msgArea.scrollHeight;
+    }
+
+    function toggleIntegrationSelect() {
+        var channel = document.getElementById('newConvChannel').value;
+        var group = document.getElementById('integrationSelectGroup');
+        var select = document.getElementById('newConvIntegration');
+        
+        if (['facebook', 'instagram', 'tiktok', 'whatsapp'].includes(channel)) {
+            group.style.display = 'block';
+            for (var i = 0; i < select.options.length; i++) {
+                var opt = select.options[i];
+                if (opt.value === "") continue;
+                if (opt.getAttribute('data-channel') === channel) {
+                    opt.style.display = '';
+                } else {
+                    opt.style.display = 'none';
+                }
+            }
+            select.value = "";
+        } else {
+            group.style.display = 'none';
+            select.value = "";
+        }
+    }
+
+    // Account filter checkboxes: checking "All Accounts" visually checks every individual
+    // account box too, but they stay enabled and clickable so any one of them can be
+    // deselected on its own. Unchecking one while "All" was checked drops "All" back to
+    // unchecked (since it's no longer a blanket selection) and leaves the rest checked —
+    // a normal "everything except this one" pick. Manually checking every individual box
+    // back up collapses back into the "All" state.
+    function toggleAllAccounts(allCb) {
+        document.querySelectorAll('.account-filter-cb').forEach(cb => { cb.checked = allCb.checked; });
+        updateAccountFilterApplyBtn();
+    }
+    function onAccountCbChange() {
+        const boxes = document.querySelectorAll('.account-filter-cb');
+        const allCb = document.getElementById('page_filter_all');
+        const allChecked = boxes.length > 0 && Array.from(boxes).every(cb => cb.checked);
+        if (allCb) allCb.checked = allChecked;
+        updateAccountFilterApplyBtn();
+    }
+    function updateAccountFilterApplyBtn() {
+        const btn = document.getElementById('accountFilterApplyBtn');
+        if (!btn) return;
+        const allCb = document.getElementById('page_filter_all');
+        if (allCb && allCb.checked) {
+            btn.textContent = 'Apply';
+            return;
+        }
+        const count = document.querySelectorAll('.account-filter-cb:checked').length;
+        btn.textContent = count > 0 ? `Apply (${count})` : 'Apply';
+    }
+    // Filtering by every connected integration id is not the same as "no filter" — it
+    // would drop conversations with no integration attached (e.g. manually created ones).
+    // So when "All Accounts" is still checked at submit time (nothing was individually
+    // excluded), disable the individual boxes just before the browser serializes the
+    // form so only the bare page_filter=all reaches the server.
+    function prepAccountFilterSubmit() {
+        const allCb = document.getElementById('page_filter_all');
+        if (allCb && allCb.checked) {
+            document.querySelectorAll('.account-filter-cb').forEach(cb => { cb.disabled = true; });
+        }
+        return true;
+    }
+
+    // AJAX for Sidebar Features
+    const currentConvId = "{{ active_conv.pk|default:'' }}";
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]') ? document.querySelector('[name=csrfmiddlewaretoken]').value : '{{ csrf_token }}';
+
+    function linkContact(e) {
+        e.preventDefault();
+        if(!currentConvId) return;
+        
+        const contactId = document.getElementById('linkContactId').value;
+        const contactName = document.getElementById('linkContactName').value;
+        
+        const formData = new URLSearchParams();
+        formData.append('csrfmiddlewaretoken', csrfToken);
+        if(contactId) formData.append('contact_id', contactId);
+        if(contactName) formData.append('contact_name', contactName);
+        
+        fetch(`/trendy-crm/conversations/${currentConvId}/link-contact/`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.status === 'ok') {
+                const infoDiv = document.getElementById('sidebarContactInfo');
+                infoDiv.innerHTML = `
+                    <div style="font-weight:600;font-size:0.85rem;margin-bottom:0.5rem;">${data.contact.name}</div>
+                    ${data.contact.email ? `<div style="font-size:0.8rem;color:var(--crm-text-muted);"><i class="fas fa-envelope"></i> ${data.contact.email}</div>` : ''}
+                    ${data.contact.phone ? `<div style="font-size:0.8rem;color:var(--crm-text-muted);margin-top:0.2rem;"><i class="fas fa-phone"></i> ${data.contact.phone}</div>` : ''}
+                    ${data.contact.company ? `<div style="font-size:0.8rem;color:var(--crm-text-muted);margin-top:0.2rem;"><i class="fas fa-building"></i> ${data.contact.company}</div>` : ''}
+                `;
+                infoDiv.style.background = 'white';
+                infoDiv.style.border = '1px solid var(--crm-border)';
+                infoDiv.style.textAlign = 'left';
+                
+                // Hide modal
+                const modalEl = document.getElementById('linkContactModal');
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if(modal) modal.hide();
+                if(typeof showTrendyToast === 'function') showTrendyToast("Contact linked successfully", "success");
+            }
+        });
+    }
+
+    function addLabel(e) {
+        e.preventDefault();
+        if(!currentConvId) return;
+        
+        const name = document.getElementById('newLabelName').value;
+        const color = document.getElementById('newLabelColor').value;
+        
+        const formData = new URLSearchParams();
+        formData.append('csrfmiddlewaretoken', csrfToken);
+        formData.append('name', name);
+        formData.append('color_hex', color);
+        
+        fetch(`/trendy-crm/conversations/${currentConvId}/add-label/`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.status === 'ok') {
+                const container = document.getElementById('labelsContainer');
+                const span = document.createElement('span');
+                span.className = 'badge';
+                span.style.cssText = `background-color:${data.label.color_hex}15;color:${data.label.color_hex};border:1px solid ${data.label.color_hex}30;font-size:0.7rem;border-radius:12px;padding:0.35rem 0.6rem;`;
+                span.innerHTML = `${data.label.name} <i class="fas fa-times ms-1" style="cursor:pointer;opacity:0.6;" onclick="removeLabel(${data.label.id}, this)"></i>`;
+                container.appendChild(span);
+                
+                // Update the main filter dropdown on the left side instantly
+                const noLabelsMsg = document.getElementById('noLabelsMsg');
+                if (noLabelsMsg) noLabelsMsg.remove();
+                
+                const filterMenu = document.getElementById('labelFilterDropdownMenu');
+                if (filterMenu) {
+                    // Check if this label already exists in the dropdown (to prevent duplicates if they assign an existing label)
+                    const existing = filterMenu.querySelector(`a[href*="label_filter=${data.label.id}"]`);
+                    if (!existing) {
+                        const li = document.createElement('li');
+                        const url = `?label_filter=${data.label.id}{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if search_query %}&q={{ search_query }}&search_type={{ search_type }}{% endif %}`;
+                        li.innerHTML = `
+                            <a class="dropdown-item d-flex align-items-center gap-2 " href="${url}" style="border-radius:8px;padding:0.4rem 0.5rem;margin-bottom:0.2rem;">
+                                <span style="width:12px;height:12px;border-radius:50%;background:${data.label.color_hex};display:inline-block;"></span>
+                                <span style="font-weight:500;">${data.label.name}</span>
+                            </a>
+                        `;
+                        const divider = filterMenu.querySelector('hr.dropdown-divider');
+                        if (divider && divider.parentElement) {
+                            filterMenu.insertBefore(li, divider.parentElement);
+                        } else {
+                            filterMenu.appendChild(li);
+                        }
+                    }
+                }
+                
+                document.getElementById('newLabelName').value = '';
+                // Close dropdown if using bootstrap
+                document.dispatchEvent(new Event('click'));
+            }
+        });
+    }
+    
+    function removeLabel(labelId, el) {
+        if(!currentConvId) return;
+        const formData = new URLSearchParams();
+        formData.append('csrfmiddlewaretoken', csrfToken);
+        formData.append('label_id', labelId);
+        
+        fetch(`/trendy-crm/conversations/${currentConvId}/remove-label/`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.status === 'ok') {
+                el.parentElement.remove();
+            }
+        });
+    }
+
+    // Attachment picker (image / file) preview
+    function handleFileSelect(inputEl, type) {
+        const file = inputEl.files[0];
+        if (!file) return;
+
+        // Only one attachment travels with a message — clear the others.
+        ['imageFileInput', 'docFileInput', 'audioFileInput'].forEach(id => {
+            if (id !== inputEl.id) document.getElementById(id).value = '';
+        });
+
+        const previewBar = document.getElementById('attachPreviewBar');
+        const thumb = document.getElementById('attachPreviewThumb');
+        const nameEl = document.getElementById('attachPreviewName');
+
+        nameEl.textContent = file.name;
+        if (type === 'image') {
+            const reader = new FileReader();
+            reader.onload = e => { thumb.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;">`; };
+            reader.readAsDataURL(file);
+        } else {
+            thumb.innerHTML = '<i class="fas fa-file-alt" style="color:var(--crm-text-muted);"></i>';
+        }
+        previewBar.style.display = 'flex';
+    }
+
+    function clearAttachment() {
+        ['imageFileInput', 'docFileInput', 'audioFileInput'].forEach(id => { document.getElementById(id).value = ''; });
+        document.getElementById('attachPreviewBar').style.display = 'none';
+    }
+
+    // Voice message recording — supports Messenger-style pause/resume via
+    // MediaRecorder's native pause()/resume(), which keep appending to the
+    // same chunk list so a paused-then-resumed recording stays one clip.
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let recordingTimerInterval = null;
+    let accumulatedElapsedMs = 0;   // time recorded before the current running segment
+    let segmentStartTime = null;    // when the current running segment began (null while paused)
+    let discardRecording = false;   // true when stop() was triggered by the trash/cancel button
+
+    function currentElapsedMs() {
+        return accumulatedElapsedMs + (segmentStartTime ? (Date.now() - segmentStartTime) : 0);
+    }
+
+    function setComposerLockedForRecording(locked) {
+        // While recording, only the mic/pause/cancel controls stay usable — this
+        // stops a mid-recording send/attach from leaving the mic stream open
+        // forever (submit never called mediaRecorder.stop()) or silently
+        // clobbering the in-progress voice note when it finally auto-sends.
+        document.getElementById('attachImageBtn').disabled = locked;
+        document.getElementById('attachFileBtn').disabled = locked;
+        document.getElementById('sendMsgBtn').disabled = locked;
+        document.getElementById('messageBodyInput').disabled = locked;
+    }
+
+    function renderRecordingTimer() {
+        const elapsed = Math.floor(currentElapsedMs() / 1000);
+        const m = Math.floor(elapsed / 60);
+        const s = String(elapsed % 60).padStart(2, '0');
+        const el = document.getElementById('recordingTimer');
+        if (el) el.textContent = `${m}:${s}`;
+    }
+
+    function toggleVoiceRecording() {
+        if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
+            mediaRecorder.stop();
+            return;
+        }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            if (typeof showTrendyToast === 'function') showTrendyToast("Voice recording isn't supported in this browser.", "error");
+            return;
+        }
+
+        // Only one attachment travels per message — starting a recording
+        // supersedes any image/file already staged in the composer.
+        clearAttachment();
+
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                recordedChunks = [];
+                accumulatedElapsedMs = 0;
+                const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported('audio/webm')) ? 'audio/webm' : '';
+                mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+
+                mediaRecorder.onstop = () => {
+                    stream.getTracks().forEach(t => t.stop());
+                    clearInterval(recordingTimerInterval);
+                    segmentStartTime = null;
+
+                    const micBtn = document.getElementById('micBtn');
+                    micBtn.classList.remove('recording', 'paused');
+                    micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+
+                    const pauseBtn = document.getElementById('pauseResumeBtn');
+                    pauseBtn.style.display = 'none';
+                    pauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
+                    pauseBtn.title = 'Pause recording';
+
+                    const cancelBtn = document.getElementById('cancelRecordingBtn');
+                    cancelBtn.style.display = 'none';
+
+                    const recTimer = document.getElementById('recordingTimer');
+                    if (recTimer) recTimer.remove();
+
+                    setComposerLockedForRecording(false);
+
+                    if (discardRecording) {
+                        discardRecording = false;
+                        recordedChunks = [];
+                        if (typeof showTrendyToast === 'function') showTrendyToast("Recording discarded", "info");
+                        return;
+                    }
+
+                    if (recordedChunks.length === 0) return;
+
+                    const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                    const ext = (mediaRecorder.mimeType || '').includes('mp4') ? 'm4a' : 'webm';
+                    const file = new File([blob], `voice-note-${Date.now()}.${ext}`, { type: blob.type });
+
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    document.getElementById('audioFileInput').files = dt.files;
+                    document.getElementById('imageFileInput').value = '';
+                    document.getElementById('docFileInput').value = '';
+
+                    // Voice notes send immediately, like most chat apps.
+                    document.getElementById('sendMessageForm').requestSubmit();
+                };
+
+                mediaRecorder.start();
+                segmentStartTime = Date.now();
+                discardRecording = false;
+                setComposerLockedForRecording(true);
+
+                const micBtn = document.getElementById('micBtn');
+                micBtn.classList.add('recording');
+                micBtn.innerHTML = '<i class="fas fa-stop"></i>';
+
+                document.getElementById('pauseResumeBtn').style.display = 'flex';
+                document.getElementById('cancelRecordingBtn').style.display = 'flex';
+
+                const timerSpan = document.createElement('span');
+                timerSpan.id = 'recordingTimer';
+                timerSpan.style.cssText = 'font-size:0.75rem;color:#ef4444;font-weight:600;flex-shrink:0;';
+                timerSpan.textContent = '0:00';
+                document.getElementById('cancelRecordingBtn').insertAdjacentElement('afterend', timerSpan);
+
+                recordingTimerInterval = setInterval(renderRecordingTimer, 500);
+            })
+            .catch(err => {
+                console.error('Microphone access denied or failed:', err);
+                if (typeof showTrendyToast === 'function') showTrendyToast("Microphone access denied.", "error");
+            });
+    }
+
+    function togglePauseRecording() {
+        if (!mediaRecorder) return;
+        const pauseBtn = document.getElementById('pauseResumeBtn');
+        const micBtn = document.getElementById('micBtn');
+
+        if (mediaRecorder.state === 'recording') {
+            mediaRecorder.pause();
+            accumulatedElapsedMs += Date.now() - segmentStartTime;
+            segmentStartTime = null;
+            clearInterval(recordingTimerInterval);
+
+            micBtn.classList.remove('recording');
+            micBtn.classList.add('paused');
+            pauseBtn.innerHTML = '<i class="fas fa-play"></i>';
+            pauseBtn.title = 'Resume recording';
+        } else if (mediaRecorder.state === 'paused') {
+            mediaRecorder.resume();
+            segmentStartTime = Date.now();
+            recordingTimerInterval = setInterval(renderRecordingTimer, 500);
+
+            micBtn.classList.remove('paused');
+            micBtn.classList.add('recording');
+            pauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
+            pauseBtn.title = 'Pause recording';
+        }
+    }
+
+    function cancelVoiceRecording() {
+        if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+        discardRecording = true;
+        mediaRecorder.stop();
+    }
+
+    function assignConversationTo(employeeId, employeeName) {
+        if(!currentConvId) return;
+
+        const formData = new URLSearchParams();
+        formData.append('csrfmiddlewaretoken', csrfToken);
+        formData.append('employee_id', employeeId);
+
+        fetch(`/trendy-crm/conversations/${currentConvId}/assign/`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.status === 'ok') {
+                const badge = document.getElementById('assignBadge');
+                if(data.assigned) {
+                    badge.className = 'status-badge assign-badge-btn assigned';
+                    badge.innerHTML = `<i class="fas fa-user-check"></i> ${data.assigned.name}`;
+                } else {
+                    badge.className = 'status-badge assign-badge-btn unassigned';
+                    badge.innerHTML = `<i class="fas fa-user-slash"></i> Unassigned`;
+                }
+
+                const unassignRow = document.getElementById('unassignRow');
+                if(unassignRow) unassignRow.style.display = data.assigned ? '' : 'none';
+
+                const modalEl = document.getElementById('assignConvModal');
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if(modal) modal.hide();
+
+                if(typeof showTrendyToast === 'function') {
+                    showTrendyToast(data.assigned ? `Conversation assigned to ${data.assigned.name}` : "Conversation unassigned", "success");
+                }
+            }
+        })
+        .catch(err => console.error('Failed to assign conversation:', err));
+    }
+
+    function toggleResolve() {
+        if(!currentConvId) return;
+
+        const formData = new URLSearchParams();
+        formData.append('csrfmiddlewaretoken', csrfToken);
+
+        fetch(`/trendy-crm/conversations/${currentConvId}/resolve/`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.status === 'ok') {
+                const resolveBtn = document.getElementById('resolveBtn');
+                resolveBtn.className = `status-badge resolve-badge-btn ${data.conv_status}`;
+                resolveBtn.innerHTML = data.conv_status === 'resolved'
+                    ? '<i class="fas fa-rotate-left"></i> Reopen'
+                    : '<i class="fas fa-check"></i> Resolve';
+
+                const headerBadge = document.getElementById('headerStatusBadge');
+                if(headerBadge) {
+                    headerBadge.className = `status-badge ${data.conv_status}`;
+                    headerBadge.textContent = data.conv_status_display;
+                }
+
+                if(typeof showTrendyToast === 'function') {
+                    showTrendyToast(`Conversation marked as ${data.conv_status_display}`, "success");
+                }
+            }
+        })
+        .catch(err => console.error('Failed to update conversation status:', err));
+    }
+
+    function addNote() {
+        if(!currentConvId) return;
+        const text = document.getElementById('noteText').value;
+        if(!text.trim()) return;
+        
+        const formData = new URLSearchParams();
+        formData.append('csrfmiddlewaretoken', csrfToken);
+        formData.append('text', text);
+        
+        const btn = document.querySelector('#newNoteBox button.btn-crm-primary');
+        const oldText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+        
+        fetch(`/trendy-crm/conversations/${currentConvId}/add-note/`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            btn.innerHTML = oldText;
+            if(data.status === 'ok') {
+                const container = document.getElementById('notesContainer');
+                
+                // Remove empty message if present
+                const noNotesMsg = document.getElementById('noNotesMsg');
+                if(noNotesMsg) noNotesMsg.remove();
+                
+                const noteDiv = document.createElement('div');
+                noteDiv.style.cssText = "background:#fff9c4;padding:0.75rem;border-radius:8px;font-size:0.8rem;color:#5a4a00;border-left:3px solid #fbc02d;";
+                noteDiv.innerHTML = `
+                    <div style="font-weight:600;margin-bottom:0.25rem;display:flex;justify-content:space-between;">
+                        <span>${data.note.author_name}</span>
+                        <span style="font-size:0.65rem;font-weight:400;opacity:0.8;">${data.note.created_at}</span>
+                    </div>
+                    <div>${data.note.text.replace(/\\n/g, '<br>')}</div>
+                `;
+                
+                // Prepend to top
+                container.insertBefore(noteDiv, container.firstChild);
+                
+                // Reset form
+                document.getElementById('noteText').value = '';
+                document.getElementById('newNoteBox').style.display = 'none';
+            }
+        });
+    }
+</script>
+{% endblock %}
+
+<!-- Link Contact Modal -->
+<div class="modal fade" id="linkContactModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius:12px;border:none;">
+            <div class="modal-header" style="border-bottom:1px solid var(--crm-border);">
+                <h5 class="modal-title" style="font-weight:700;font-size:1.1rem;color:var(--crm-text);">Link Contact</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form onsubmit="linkContact(event)">
+                <div class="modal-body" style="padding:1.5rem;">
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;">Select Existing Contact</label>
+                        <select class="form-select" id="linkContactId" style="border-radius:8px;font-size:0.9rem;" onchange="document.getElementById('linkContactName').disabled = this.value !== '';">
+                            <option value="">-- Or Create New --</option>
+                            {% for c in contacts %}
+                            <option value="{{ c.pk }}">{{ c.name }} {% if c.email %}({{ c.email }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;">New Contact Name</label>
+                        <input type="text" id="linkContactName" class="form-control" style="border-radius:8px;font-size:0.9rem;" placeholder="e.g. John Doe">
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top:1px solid var(--crm-border);">
+                    <button type="button" class="btn btn-crm-outline" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-crm-primary">Save & Link</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Assign Conversation Modal -->
+<div class="modal fade" id="assignConvModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius:12px;border:none;">
+            <div class="modal-header" style="border-bottom:1px solid var(--crm-border);">
+                <h5 class="modal-title" style="font-weight:700;font-size:1.1rem;color:var(--crm-text);">Assign conversation to</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="padding:0.75rem 1rem;max-height:400px;overflow-y:auto;">
+                <div id="unassignRow" style="{% if not active_conv.assigned_to %}display:none;{% endif %}">
+                    <div class="assign-row" onclick="assignConversationTo('', 'Unassigned')">
+                        <div style="width:34px;height:34px;border-radius:50%;background:#fee2e2;color:#991b1b;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                            <i class="fas fa-user-slash" style="font-size:0.8rem;"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight:600;font-size:0.85rem;color:#dc3545;">Unassign</div>
+                            <div style="font-size:0.72rem;color:var(--crm-text-muted);">Remove current assignee</div>
+                        </div>
+                    </div>
+                    <hr style="margin:0.4rem 0;">
+                </div>
+
+                {% for emp in employees %}
+                <div class="assign-row" onclick="assignConversationTo('{{ emp.pk }}', '{{ emp.full_name|escapejs }}')">
+                    {% if emp.profile_image %}
+                    <img src="{{ emp.profile_image.url }}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+                    {% else %}
+                    <div class="conv-avatar" style="width:34px;height:34px;font-size:0.8rem;">{{ emp.full_name|first|upper }}</div>
+                    {% endif %}
+                    <div>
+                        <div style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">{{ emp.full_name }}</div>
+                        <div style="font-size:0.72rem;color:var(--crm-text-muted);">{{ emp.designation.name|default:"Employee" }}</div>
+                    </div>
+                </div>
+                {% empty %}
+                <div style="font-size:0.8rem;color:var(--crm-text-muted);text-align:center;padding:1.5rem 1rem;">
+                    No active employees with login access found.<br>Add one from the HRM module first.
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Label Global Modal -->
+<div class="modal fade" id="newLabelGlobalModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content" style="border-radius:12px;border:none;">
+            <div class="modal-header" style="border-bottom:1px solid var(--crm-border);">
+                <h5 class="modal-title" style="font-weight:700;font-size:1.1rem;color:var(--crm-text);">Create New Label</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'trendycrm:create_label_global' %}">
+                {% csrf_token %}
+                <div class="modal-body" style="padding:1.5rem;">
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;">Label Name</label>
+                        <input type="text" name="name" class="form-control" style="border-radius:8px;font-size:0.9rem;" placeholder="e.g. VIP, Urgent" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;">Color</label>
+                        <input type="color" name="color_hex" class="form-control form-control-color w-100" value="#7c3aed" title="Choose your color" style="height:40px;border-radius:8px;">
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top:1px solid var(--crm-border);">
+                    <button type="button" class="btn btn-crm-outline" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-crm-primary">Create Label</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- New Conversation Modal -->
+<div class="modal fade" id="newConvModal" tabindex="-1" aria-labelledby="newConvModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius:12px;border:none;">
+            <div class="modal-header" style="border-bottom:1px solid var(--crm-border);">
+                <h5 class="modal-title" id="newConvModalLabel" style="font-weight:700;font-size:1.1rem;color:var(--crm-text);">New Conversation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'trendycrm:create_conversation' %}">
+                {% csrf_token %}
+                <div class="modal-body" style="padding:1.5rem;">
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">Contact</label>
+                        <select class="form-select" name="contact_id" style="border-radius:8px;font-size:0.9rem;" onchange="document.getElementById('newContactInput').style.display = this.value ? 'none' : 'block';">
+                            <option value="">-- Create New Contact --</option>
+                            {% for c in contacts %}
+                            <option value="{{ c.pk }}">{{ c.name }} {% if c.email %}({{ c.email }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3" id="newContactInput">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">New Contact Name</label>
+                        <input type="text" name="contact_name" class="form-control" style="border-radius:8px;font-size:0.9rem;" placeholder="e.g. John Doe">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">Channel</label>
+                        <select class="form-select" name="channel" id="newConvChannel" style="border-radius:8px;font-size:0.9rem;" required onchange="toggleIntegrationSelect()">
+                            <option value="web">Web Chat</option>
+                            <option value="facebook">Facebook</option>
+                            <option value="instagram">Instagram</option>
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="tiktok">TikTok</option>
+                            <option value="email">Email</option>
+                            <option value="sms">SMS</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3" id="integrationSelectGroup" style="display:none;">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">Select Account (Optional)</label>
+                        <select class="form-select" name="integration_id" id="newConvIntegration" style="border-radius:8px;font-size:0.9rem;">
+                            <option value="">-- Let system choose --</option>
+                            {% for integ in connected_integrations %}
+                                <option value="{{ integ.pk }}" data-channel="{{ integ.channel_type }}">{{ integ.account_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" style="font-weight:600;font-size:0.85rem;color:var(--crm-text);">First Message (optional)</label>
+                        <textarea name="first_message" class="form-control" rows="3" style="border-radius:8px;font-size:0.9rem;" placeholder="Type your initial message..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top:1px solid var(--crm-border);">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" style="border-radius:8px;font-weight:600;">Cancel</button>
+                    <button type="submit" class="btn-crm-primary">Start Conversation</button>
+                </div>
+</form>
+        </div>
+    </div>
+</div>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const searchRow = document.getElementById('convSearchRow');
+            const headerRow = document.getElementById('convHeaderRow');
+            if (sessionStorage.getItem('searchOpen') === 'true' || '{{ search_query }}' !== '') {
+                searchRow.style.display = 'block';
+                headerRow.style.display = 'none';
+            } else {
+                searchRow.style.display = 'none';
+                headerRow.style.display = 'flex';
+            }
+        });
+
+        function toggleSearchUI(isCloseBtn = false) {
+            const headerRow = document.getElementById('convHeaderRow');
+            const searchRow = document.getElementById('convSearchRow');
+            if (searchRow.style.display === 'none') {
+                searchRow.style.display = 'block';
+                headerRow.style.display = 'none';
+                searchRow.querySelector('input[name="q"]').focus();
+                sessionStorage.setItem('searchOpen', 'true');
+            } else {
+                searchRow.style.display = 'none';
+                headerRow.style.display = 'flex';
+                sessionStorage.setItem('searchOpen', 'false');
+                if (isCloseBtn && '{{ search_query }}' !== '') {
+                    window.location.href = "?{% for pf in page_filters %}&page_filter={{ pf }}{% endfor %}{% if read_status %}&read_status={{ read_status }}{% endif %}{% if label_filter %}&label_filter={{ label_filter }}{% endif %}";
+                }
+            }
+        }
+    </script>
+{% endblock %}

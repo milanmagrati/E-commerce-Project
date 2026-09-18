@@ -22,6 +22,45 @@ from django.db import transaction
 logger = logging.getLogger(__name__)
 
 
+def _release_prior_allocation(item, product):
+    """Roll this OrderItem's existing reservation off the product counters.
+
+    allocate_order() *overwrites* the item's own reserved_qty/backordered_qty
+    but *accumulates* onto the product's, so allocating the same order twice --
+    a re-confirmation, a retried checkout, a re-run after an edit -- reserved
+    the stock twice and leaked reserved_qty that nothing ever gave back. That
+    stock then reads as unavailable forever, quietly pushing later orders into
+    backorder. Releasing the previous allocation first makes re-allocation
+    idempotent.
+    """
+    from dashboard.models import Product
+
+    prev_reserved = item.reserved_qty or 0
+    prev_backordered = item.backordered_qty or 0
+    if not prev_reserved and not prev_backordered:
+        return
+
+    if product.is_bundle:
+        for comp in product.bundle_components.select_related('component_product').all():
+            cp = Product.objects.select_for_update().get(pk=comp.component_product.pk)
+            cp.reserved_qty = max(cp.reserved_qty - prev_reserved * comp.quantity_required, 0)
+            cp.save(update_fields=['reserved_qty'])
+
+    product.reserved_qty = max(product.reserved_qty - prev_reserved, 0)
+    product.backordered_qty = max(product.backordered_qty - prev_backordered, 0)
+    product.save(update_fields=['reserved_qty', 'backordered_qty'])
+
+    item.reserved_qty = 0
+    item.backordered_qty = 0
+    item.save(update_fields=['reserved_qty', 'backordered_qty'])
+
+    logger.info(
+        f"_release_prior_allocation: order={item.order.order_number} "
+        f"product={product.name} released reserved={prev_reserved} "
+        f"backordered={prev_backordered} before re-allocating"
+    )
+
+
 def _allocate_bundle(item, product):
     """
     Handle stock reservation for a bundle product.
@@ -99,6 +138,9 @@ def allocate_order(order):
             # Lock the product row for the duration of this transaction
             product = Product.objects.select_for_update().get(pk=product.pk)
 
+            # Make re-allocation idempotent (see _release_prior_allocation).
+            _release_prior_allocation(item, product)
+
             if product.is_bundle:
                 _allocate_bundle(item, product)
                 continue
@@ -147,16 +189,28 @@ def restock_product(product, qty):
 
         remaining = qty
 
-        # Find all backordered line-items for this product, oldest first
-        backordered_items = (
+        from dashboard.models import OrderItem as DashboardOrderItem
+
+        # Find all backordered line-items for this product
+        store_backordered = list(
             OrderItem.objects
             .filter(product=product, backordered_qty__gt=0)
             .select_related('order')
-            .order_by('order__created_at', 'pk')
+            .select_for_update()
+        )
+        
+        dash_backordered = list(
+            DashboardOrderItem.objects
+            .filter(product=product, backordered_qty__gt=0)
+            .select_related('order')
             .select_for_update()
         )
 
-        for item in backordered_items:
+        # Combine and sort oldest first (FIFO by order created_at)
+        all_backordered = store_backordered + dash_backordered
+        all_backordered.sort(key=lambda x: (x.order.created_at, x.pk))
+
+        for item in all_backordered:
             if remaining <= 0:
                 break
 
@@ -194,7 +248,8 @@ def ship_order_item(item):
     Called when an order item is shipped / dispatched.
 
     Decreases both product.stock and product.reserved_qty by item.reserved_qty.
-    Resets the item's reserved_qty to 0.
+    Resets the item's reserved_qty to 0. Also deducts stock from ProductBatches
+    in FIFO order (oldest expiry first) if they exist.
 
     Args:
         item: store.models.OrderItem instance
@@ -208,6 +263,11 @@ def ship_order_item(item):
         product = Product.objects.select_for_update().get(pk=item.product.pk)
 
         shipped = item.reserved_qty
+        
+        # 1. Deduct from batches (FIFO)
+        _deduct_from_batches_fifo(product, shipped)
+        
+        # 2. Update product counters
         product.stock = max(0, product.stock - shipped)
         product.reserved_qty = max(0, product.reserved_qty - shipped)
         product.save(update_fields=['stock', 'reserved_qty'])
@@ -219,6 +279,40 @@ def ship_order_item(item):
         logger.info(
             f"ship_order_item: order={item.order.order_number} product={product.name} "
             f"shipped={shipped} stock_now={product.stock}"
+        )
+
+
+def _deduct_from_batches_fifo(product, qty_to_deduct):
+    """
+    Helper to deduct quantity from ProductBatches in FIFO order
+    (oldest expiry date first, then oldest created_at).
+    """
+    if qty_to_deduct <= 0:
+        return
+        
+    from django.db.models import F
+        
+    # Get batches with available stock, ordered by FIFO rules
+    batches = list(product.batches.filter(quantity__gt=0).order_by(
+        F('expiry_date').asc(nulls_last=True),
+        'created_at'
+    ).select_for_update())
+    
+    remaining_to_deduct = qty_to_deduct
+    
+    for batch in batches:
+        if remaining_to_deduct <= 0:
+            break
+            
+        deduct_from_batch = min(batch.quantity, remaining_to_deduct)
+        batch.quantity -= deduct_from_batch
+        batch.save(update_fields=['quantity'])
+        
+        remaining_to_deduct -= deduct_from_batch
+        
+        logger.info(
+            f"FIFO batch deduction: product={product.name} batch={batch.batch_number} "
+            f"deducted={deduct_from_batch} remaining_in_batch={batch.quantity}"
         )
 
 
@@ -261,13 +355,88 @@ def cancel_order_item(item):
         )
 
 
+def restore_order_stock(order, force=False):
+    """
+    Restores stock for a dispatched order that is being cancelled, deleted, or moved to trash.
+    Correctly handles simple, variable, and bundle products.
+
+    Only gives stock back if it was actually taken. Order stock is deducted in
+    exactly one place -- the dispatch scan in dashboard.views.dispatch_management
+    -- which records a successful DispatchItem for the order. An order can reach
+    order_status='dispatched' by several other routes (a manual status change, the
+    bulk status action, an order edit, a logistics status sync) with no deduction
+    behind it, and every caller here decides to restore purely from that status.
+    Restoring then invents inventory that never left the shelf, and repeating the
+    cycle (dispatched -> processing -> dispatched -> cancelled) inflates it again
+    each time.
+
+    Pass force=True only for a caller that knows stock was deducted without a
+    dispatch record behind it.
+
+    Returns True if stock was restored, False if there was nothing to give back.
+    """
+    from dashboard.models import Product, ProductVariation, DispatchItem
+
+    if not force and not DispatchItem.objects.filter(
+        order=order, dispatch_status='success'
+    ).exists():
+        logger.info(
+            f"restore_order_stock: skipped order={order.order_number} — no successful "
+            f"dispatch on record, so its stock was never deducted"
+        )
+        return False
+    
+    with transaction.atomic():
+        for item in order.items.all():
+            if item.product_variation:
+                variation = ProductVariation.objects.select_for_update().get(pk=item.product_variation.pk)
+                variation.stock += item.quantity
+                if variation.stock > 0:
+                    variation.status = 'active'
+                variation.save(update_fields=['stock', 'status'])
+            elif item.product:
+                product = Product.objects.select_for_update().get(pk=item.product.pk)
+                
+                if product.is_bundle:
+                    # Restore stock for bundle components
+                    components = product.bundle_components.select_related('component_product').all()
+                    for comp in components:
+                        comp_product = Product.objects.select_for_update().get(pk=comp.component_product.pk)
+                        restored_qty = comp.quantity_required * item.quantity
+                        comp_product.stock += restored_qty
+                        
+                        threshold = comp_product.low_stock_threshold or 0
+                        if comp_product.stock <= 0:
+                            comp_product.stock_status = 'out_of_stock'
+                        elif threshold > 0 and comp_product.stock <= threshold:
+                            comp_product.stock_status = 'low_stock'
+                        else:
+                            comp_product.stock_status = 'in_stock'
+                            
+                        comp_product.save(update_fields=['stock', 'stock_status'])
+                else:
+                    # Restore stock for simple product
+                    product.stock += item.quantity
+                    threshold = product.low_stock_threshold or 0
+                    if product.stock <= 0:
+                        product.stock_status = 'out_of_stock'
+                    elif threshold > 0 and product.stock <= threshold:
+                        product.stock_status = 'low_stock'
+                    else:
+                        product.stock_status = 'in_stock'
+                    product.save(update_fields=['stock', 'stock_status'])
+
+        logger.info(f"restore_order_stock: Restored stock for dispatched order={order.order_number}")
+        return True
+
+
 def clear_reservation_on_dispatch(product, quantity):
     """
     Called by the dashboard dispatch view when stock is deducted on dispatch.
 
-    The dispatch view already handles the stock deduction itself, so this
-    function only decrements reserved_qty and backordered_qty to keep the
-    counters accurate.
+    The dispatch view already handles the main stock deduction itself, so this
+    function decrements reserved_qty and backordered_qty to keep the
+    counters accurate. Also deducts from FIFO batches.
 
     Args:
         product: dashboard.models.Product instance
@@ -278,7 +447,10 @@ def clear_reservation_on_dispatch(product, quantity):
     with transaction.atomic():
         product = Product.objects.select_for_update().get(pk=product.pk)
 
-        # First, clear reserved_qty (these are filled units)
+        # 1. Deduct from FIFO batches
+        _deduct_from_batches_fifo(product, quantity)
+
+        # 2. Clear reserved_qty (these are filled units)
         reserved_to_clear = min(product.reserved_qty, quantity)
         product.reserved_qty = max(0, product.reserved_qty - reserved_to_clear)
 
@@ -291,23 +463,25 @@ def clear_reservation_on_dispatch(product, quantity):
 
         product.save(update_fields=['reserved_qty', 'backordered_qty'])
 
-        # Also clean up store OrderItem records for this product
+        # Also clean up store and dashboard OrderItem records for this product
         # that belong to dispatched/delivered orders
-        _cleanup_store_order_items_for_product(product)
+        _cleanup_order_items_for_product(product)
 
 
-def _cleanup_store_order_items_for_product(product):
+def _cleanup_order_items_for_product(product):
     """
-    Zero out reserved_qty and backordered_qty on store.OrderItem records
-    for orders that have been dispatched or delivered, since these
-    counters are no longer relevant once the order is fulfilled.
+    Zero out reserved_qty and backordered_qty on both store and dashboard 
+    OrderItem records for orders that have been dispatched or delivered, 
+    since these counters are no longer relevant once the order is fulfilled.
     """
-    from store.models import OrderItem
+    from store.models import OrderItem as StoreOrderItem
+    from dashboard.models import OrderItem as DashboardOrderItem
     from django.db.models import Q
 
     try:
-        stale_items = (
-            OrderItem.objects
+        # Cleanup Store Orders
+        stale_store_items = (
+            StoreOrderItem.objects
             .filter(
                 product=product,
                 order__status__in=('delivered', 'shipped', 'cancelled'),
@@ -316,10 +490,23 @@ def _cleanup_store_order_items_for_product(product):
                 Q(reserved_qty__gt=0) | Q(backordered_qty__gt=0)
             )
         )
+        stale_store_items.update(reserved_qty=0, backordered_qty=0)
 
-        stale_items.update(reserved_qty=0, backordered_qty=0)
+        # Cleanup Dashboard Orders
+        stale_dash_items = (
+            DashboardOrderItem.objects
+            .filter(
+                product=product,
+                order__order_status__in=('delivered', 'cancelled'),
+            )
+            .filter(
+                Q(reserved_qty__gt=0) | Q(backordered_qty__gt=0)
+            )
+        )
+        stale_dash_items.update(reserved_qty=0, backordered_qty=0)
+
     except Exception as e:
-        logger.warning(f"_cleanup_store_order_items_for_product: {e}")
+        logger.warning(f"_cleanup_order_items_for_product: {e}")
 
 
 def release_order_reservations(dashboard_order):
@@ -430,19 +617,25 @@ def reset_stale_counters():
 
         fixed_count = 0
         for product in products:
-            # Only count items from active (non-cancelled, non-delivered) orders
-            active_items = OrderItem.objects.filter(
+            # Sum from store.OrderItem
+            store_active_items = OrderItem.objects.filter(
                 product=product,
                 order__status__in=['pending', 'confirmed']
             )
+            store_reserved = store_active_items.aggregate(total=Sum('reserved_qty'))['total'] or 0
+            store_backordered = store_active_items.aggregate(total=Sum('backordered_qty'))['total'] or 0
 
-            actual_reserved = active_items.aggregate(
-                total=Sum('reserved_qty')
-            )['total'] or 0
+            # Sum from dashboard.models.OrderItem
+            from dashboard.models import OrderItem as DashboardOrderItem
+            dash_active_items = DashboardOrderItem.objects.filter(
+                product=product,
+                order__order_status__in=['pending', 'processing', 'confirmed', 'dispatched']
+            )
+            dash_reserved = dash_active_items.aggregate(total=Sum('reserved_qty'))['total'] or 0
+            dash_backordered = dash_active_items.aggregate(total=Sum('backordered_qty'))['total'] or 0
 
-            actual_backordered = active_items.aggregate(
-                total=Sum('backordered_qty')
-            )['total'] or 0
+            actual_reserved = store_reserved + dash_reserved
+            actual_backordered = store_backordered + dash_backordered
 
             if (product.reserved_qty != actual_reserved or
                     product.backordered_qty != actual_backordered):

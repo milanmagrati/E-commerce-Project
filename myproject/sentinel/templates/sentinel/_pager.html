@@ -1,0 +1,34 @@
+{% comment %}Shared paginator. Expects page_obj and (optionally) querystring.{% endcomment %}
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="sv-pager">
+    <span>
+        Showing <strong>{{ page_obj.start_index }}</strong>–<strong>{{ page_obj.end_index }}</strong>
+        of <strong>{{ page_obj.paginator.count }}</strong>
+    </span>
+    <div class="sv-pager-links">
+        {% if page_obj.has_previous %}
+        <a href="?page=1{% if querystring %}&{{ querystring }}{% endif %}" title="First"><i class="fas fa-angles-left"></i></a>
+        <a href="?page={{ page_obj.previous_page_number }}{% if querystring %}&{{ querystring }}{% endif %}"><i class="fas fa-angle-left"></i></a>
+        {% else %}
+        <span class="is-disabled"><i class="fas fa-angles-left"></i></span>
+        <span class="is-disabled"><i class="fas fa-angle-left"></i></span>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if num == page_obj.number %}
+                <span class="is-current">{{ num }}</span>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                <a href="?page={{ num }}{% if querystring %}&{{ querystring }}{% endif %}">{{ num }}</a>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if querystring %}&{{ querystring }}{% endif %}"><i class="fas fa-angle-right"></i></a>
+        <a href="?page={{ page_obj.paginator.num_pages }}{% if querystring %}&{{ querystring }}{% endif %}" title="Last"><i class="fas fa-angles-right"></i></a>
+        {% else %}
+        <span class="is-disabled"><i class="fas fa-angle-right"></i></span>
+        <span class="is-disabled"><i class="fas fa-angles-right"></i></span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

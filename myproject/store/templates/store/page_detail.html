@@ -1,0 +1,157 @@
+{% extends 'store/base.html' %}
+{% load static %}
+
+{% block title %}{{ page.title }} | {{ COMPANY_NAME }}{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="dynamic-page-header">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <h1 class="page-title text-center">{{ page.title }}</h1>
+                <div class="page-divider mx-auto"></div>
+                <p class="page-subtitle text-muted text-center">Last updated: {{ page.updated_at|date:"F d, Y" }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Page Content -->
+<div class="dynamic-page-content-wrapper">
+    <div class="container pb-5 mb-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-10 col-xl-8">
+                <div class="page-content-card p-0">
+                    <iframe id="dynamicPageFrame" class="dynamic-content-frame" title="{{ page.title }}" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{ page.content|json_script:"dynamic-page-content-data" }}
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // The page content is rendered inside a sandboxed iframe rather than
+        // inline in this document. Admins have full control over the HTML/CSS/JS
+        // they paste for a page (including plain selectors like `body{}` or `*{}`
+        // straight from a ChatGPT-generated template) - rendered inline, those
+        // rules would apply to the whole storefront (navbar, search bar, footer),
+        // not just the page content. The iframe boundary contains them so pasted
+        // content can never again break the surrounding site chrome.
+        var dataEl = document.getElementById('dynamic-page-content-data');
+        var frame = document.getElementById('dynamicPageFrame');
+        var rawContent = dataEl ? JSON.parse(dataEl.textContent) : '';
+
+        var frameDoc = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+            '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+            '<style>' +
+            'body{margin:0;padding:4rem;box-sizing:border-box;white-space:pre-wrap;' +
+            'font-family:\'Inter\',system-ui,-apple-system,sans-serif;font-size:1.125rem;' +
+            'line-height:1.85;color:#374151;}' +
+            'h1,h2,h3,h4{color:#111827;margin-top:3rem;margin-bottom:1.25rem;font-weight:700;letter-spacing:-0.02em;}' +
+            'h1:first-child,h2:first-child{margin-top:0;}' +
+            'h2{font-size:1.875rem;border-bottom:1px solid #e5e7eb;padding-bottom:0.5rem;}' +
+            'h3{font-size:1.5rem;}' +
+            'p{margin-bottom:1.5rem;}' +
+            'ul,ol{margin-bottom:2rem;padding-left:1.5rem;}' +
+            'li{margin-bottom:0.75rem;padding-left:0.5rem;}' +
+            'a{color:#F85606;text-decoration:none;font-weight:600;border-bottom:2px solid transparent;}' +
+            'a:hover{color:#d94a05;border-bottom-color:currentColor;}' +
+            'strong,b{color:#111827;font-weight:700;}' +
+            'blockquote{border-left:4px solid #F85606;padding:1.5rem 1.5rem 1.5rem 2rem;margin:2.5rem 0;' +
+            'color:#4b5563;font-style:italic;background:#f3f4f6;border-radius:0 8px 8px 0;font-size:1.25rem;}' +
+            '</style></head><body>' +
+            (rawContent || '<p style="color:#6b7280;text-align:center;padding:3rem 0;">This page has no content yet.</p>') +
+            '</body></html>';
+
+        frame.setAttribute('srcdoc', frameDoc);
+
+        function resizeFrame() {
+            try {
+                var h = frame.contentWindow.document.documentElement.scrollHeight;
+                frame.style.height = Math.max(h, 200) + 'px';
+            } catch (e) {
+                frame.style.height = '600px';
+            }
+        }
+
+        frame.addEventListener('load', function () {
+            resizeFrame();
+            // Content can change its own height after load (animations, images,
+            // dynamically shown/hidden sections) - keep the iframe sized to fit.
+            try {
+                new ResizeObserver(resizeFrame).observe(frame.contentWindow.document.body);
+            } catch (e) {
+                // ResizeObserver unsupported or blocked - the initial size still stands.
+            }
+        });
+    });
+</script>
+
+<style>
+    /* Header Styles */
+    .dynamic-page-header {
+        padding: 5rem 0 3rem;
+        background-color: #ffffff;
+    }
+    .page-title {
+        font-size: 2.75rem;
+        font-weight: 800;
+        color: #111827;
+        margin-bottom: 1.5rem;
+        letter-spacing: -0.03em;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        text-align: center;
+    }
+    .page-divider {
+        height: 4px;
+        width: 60px;
+        background: var(--primary-color, #F85606);
+        margin: 0 auto 1.5rem;
+        border-radius: 2px;
+    }
+    .page-subtitle {
+        font-size: 1rem;
+        color: #6b7280;
+        font-weight: 500;
+        text-align: center;
+    }
+
+    /* Content Wrapper */
+    .dynamic-page-content-wrapper {
+        background-color: #f9fafb;
+        padding-top: 3rem;
+        min-height: 50vh;
+    }
+
+    /* Card Styles */
+    .page-content-card {
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+        border: 1px solid rgba(229, 231, 235, 0.5);
+        overflow: hidden;
+    }
+
+    @media (max-width: 768px) {
+        .page-content-card {
+            border-radius: 12px;
+        }
+        .page-title {
+            font-size: 2rem;
+        }
+    }
+
+    /* Sandboxed content iframe: contains any CSS/JS the page author pasted
+       (including a full ChatGPT-generated stylesheet with `body{}`/`*{}` resets)
+       so it can only style its own content, never the surrounding storefront. */
+    .dynamic-content-frame {
+        width: 100%;
+        min-height: 200px;
+        border: 0;
+        display: block;
+    }
+</style>
+{% endblock %}

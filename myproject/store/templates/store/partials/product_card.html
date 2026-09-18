@@ -6,6 +6,11 @@
 <div class="product-card" data-product-id="{{ product.id }}">
     <a href="{% url 'store:product_detail' slug=product.slug %}" class="product-card-link">
         <div class="product-card-img">
+            {% if product.has_variations %}
+            <span class="product-card-badge is-options">Options</span>
+            {% elif product.is_bundle %}
+            <span class="product-card-badge is-bundle">Bundle</span>
+            {% endif %}
             {% if img_url %}
             <img src="{{ img_url }}" alt="{{ product.name }}" loading="lazy">
             {% else %}
@@ -33,10 +38,38 @@
             <span class="review-count">({{ rev_count }})</span>
         </div>
         <div class="product-card-price">
-            <span class="price-current">Rs. {{ product.price }}</span>
+            <span class="price-current">{% product_price_display product %}</span>
         </div>
     </a>
 
+    {% comment %}
+    The quantity-break ladder, same rungs and same order as the product page —
+    a card that teased only the deepest rung advertised the hardest offer to
+    reach and then disagreed with the page it links to. Simple products only:
+    a variable product prices per option, so its ladder is drawn on the
+    product page where an option has actually been picked.
+    {% endcomment %}
+    {% product_bulk_ladder product as bulk_tiers %}
+    {% if bulk_tiers %}
+    <div class="product-card-bulk" role="group" aria-label="Quantity offers">
+        {% for tier in bulk_tiers %}
+        <a href="{% url 'store:product_detail' slug=product.slug %}?qty={{ tier.min_qty }}"
+           class="product-card-bulk-tier"
+           title="Take {{ tier.min_qty }} and pay {{ tier.unit_price_display }} each">
+            <span class="product-card-bulk-qty">{{ tier.min_qty }}pcs</span>
+            <span class="product-card-bulk-save">{% if tier.badge_lead %}<span class="product-card-bulk-word">{{ tier.badge_lead }} </span>{% endif %}{{ tier.badge_value }}</span>
+            <span class="product-card-bulk-each">{{ tier.unit_price_display }}<span class="product-card-bulk-word"> each</span></span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if product.has_variations or product.is_bundle %}
+    <a href="{% url 'store:product_detail' slug=product.slug %}" class="product-card-cart-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-11M12 6V3M20 21v-4M20 13V3M1 14h6M9 6h6M17 17h6"/></svg>
+        Select Options
+    </a>
+    {% elif product.storefront_available %}
     <form method="POST" action="{% url 'store:add_to_cart' product_id=product.id %}" class="add-to-cart-form">
         {% csrf_token %}
         <input type="hidden" name="quantity" value="1">
@@ -45,4 +78,7 @@
             Add to Cart
         </button>
     </form>
+    {% else %}
+    <button type="button" class="product-card-cart-btn is-disabled" disabled>Out of Stock</button>
+    {% endif %}
 </div>

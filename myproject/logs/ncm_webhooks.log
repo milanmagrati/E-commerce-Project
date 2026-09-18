@@ -1,0 +1,21 @@
+[INFO] 2026-07-23 15:21:22 webhook_handler.process_webhook:279 Webhook 3e08af0d6f007bfb51ebd1b2f40d9a184ce4845f63f561dfb56a90a13c7f1896: 1 updated, 0 failed
+[INFO] 2026-07-23 15:21:22 webhook_handler.process_webhook:279 Webhook 73bc0aed0501a612d6c3f51fcaad8a08144d572192c145bf5f9bc38a482f7816: 1 updated, 0 failed
+[INFO] 2026-07-23 15:21:22 webhook_handler.process_webhook:279 Webhook 3d448000dfcf1f21b06861bff57c961842b39e06d56e549321eb0bf1abd1415f: 1 updated, 0 failed
+[INFO] 2026-07-23 15:21:22 webhook_handler.process_webhook:279 Webhook b5a6b072cff0a9e895fced1aa7fbc937f00fc2d35bb378b4be21711903853de8: 0 updated, 1 failed
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:413 ======================================================================
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:414 NCM WEBHOOK RECEIVED
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:415 ======================================================================
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:416 Client IP: 127.0.0.1
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:417 Method: POST
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:418 Content-Type: application/json
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:419 User-Agent: N/A
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:420 Query String: 
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:431 Webhook verification passed
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:435 Payload: {
+  "orderid": "X",
+  "status": "Delivered"
+}
+[ERROR] 2026-08-03 15:53:45 webhook_handler.process_webhook:304 Webhook processing error: Missing order_id(s) in payload
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:440 ======================================================================
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:441 Webhook processing completed: Webhook processing failed: Missing order_id(s) in payload
+[INFO] 2026-08-03 15:53:45 views.ncm_webhook:442 ======================================================================

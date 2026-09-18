@@ -82,7 +82,7 @@
             <div class="status-info">
                 <h6>ORDER STATUS</h6>
                 <!-- ✅ NEW: Display status_setup name if available -->
-                <p class="status-value">
+                <p class="status-value" id="orderStatusValue">
                     {% if order.status_setup %}
                     {{ order.status_setup.name|replace:"_: "|upper }}
                     {% else %}
@@ -100,7 +100,7 @@
             </div>
             <div class="status-info">
                 <h6>PAYMENT STATUS</h6>
-                <span class="payment-badge payment-badge-{{ order.payment_status|default:'pending' }}">
+                <span class="payment-badge payment-badge-{{ order.payment_status|default:'pending' }}" id="paymentStatusBadge">
                     {% if order.payment_status_setup %}
                     {{ order.payment_status_setup.name|replace:"_: "|upper }}
                     {% else %}
@@ -235,7 +235,7 @@
                 <small class="text-muted d-block mb-1">Created By</small>
                 <strong class="creator-text">
                     <i class="fas fa-user-circle"></i>
-                    {{ order.created_by.get_full_name|default:order.created_by.username }}
+                    {% if order.created_by %}{{ order.created_by.get_full_name|default:order.created_by.username }}{% else %}Unknown{% endif %}
                 </strong>
             </div>
         </div>
@@ -636,7 +636,7 @@
                                 <span class="ncm-detail-label">
                                     <i class="fas fa-info-circle"></i> NCM Status:
                                 </span>
-                                <span class="badge bg-primary">{{ order.ncm_status|default:"Unknown" }}</span>
+                                <span class="badge bg-primary" id="ncmStatusBadge">{{ order.ncm_status|default:"Unknown" }}</span>
                             </div>
                             <div class="ncm-detail-row">
                                 <span class="ncm-detail-label">
@@ -690,6 +690,9 @@
                         <i class="fas fa-truck"></i> {{ order.get_ncm_delivery_type_display|default:"Door to Door" }}
                     </div>
                 </div>
+
+                <!-- NCM Status History Container (dynamically loaded) -->
+                <div id="ncmStatusHistoryContainer" class="mt-3"></div>
 
                 {% else %}
                 <!-- ❌ Order NOT in NCM -->
@@ -1055,6 +1058,16 @@
                         </div>
                     </div>
 
+                    {% if order.vat_pan %}
+                    <div class="detail-row">
+                        <i class="fas fa-file-invoice text-warning"></i>
+                        <div class="flex-grow-1">
+                            <small class="text-muted">VAT / PAN</small>
+                            <p class="mb-0" style="font-family:Consolas,Menlo,monospace;font-weight:700;letter-spacing:.05em;">{{ order.vat_pan }}</p>
+                        </div>
+                    </div>
+                    {% endif %}
+
                     {% if order.landmark %}
                     <div class="detail-row">
                         <i class="fas fa-landmark text-warning"></i>
@@ -1244,7 +1257,12 @@
                                 </span>
                                 <span class="activity-time">
                                     <i class="fas fa-clock"></i>
-                                    {{ log.created_at|date:"M d, Y h:i A" }}
+                                    {{ log.effective_at|date:"M d, Y h:i A" }}
+                                    {% if log.event_at %}
+                                    <span class="activity-synced-note"
+                                        title="Reported by NCM as {{ log.event_at|date:'M d, Y h:i A' }}; recorded here {{ log.created_at|date:'M d, Y h:i A' }}">
+                                        · synced {{ log.created_at|date:"M d" }}</span>
+                                    {% endif %}
                                 </span>
                             </div>
                             <div class="activity-description">
@@ -1256,67 +1274,87 @@
                                 <strong>{{ log.user.get_full_name|default:log.user.username }}</strong>
                             </div>
                             {% endif %}
-                            {% if log.field_name %}
+                            {% comment %}
+                            Only render the field-change block when there is an actual
+                            value to show — a bare "Field: ncm_status" chip (which is
+                            what redirect logs produce, since they store old_value='')
+                            tells the reader nothing. Each side renders independently
+                            so one-sided changes aren't dropped entirely.
+                            {% endcomment %}
+                            {% if log.old_value or log.new_value %}
                             <div class="activity-field-change">
+                                {% if log.field_name %}
                                 <small>
                                     <strong>Field:</strong> <code>{{ log.field_name }}</code>
                                 </small>
-                                {% if log.old_value and log.new_value %}
+                                {% endif %}
                                 <div class="field-values mt-1">
+                                    {% if log.old_value %}
                                     <div class="value-row">
                                         <span class="value-label old-value">
                                             <i class="fas fa-arrow-left"></i> Old:
                                         </span>
                                         <span class="value-text">{{ log.old_value }}</span>
                                     </div>
+                                    {% endif %}
+                                    {% if log.new_value %}
                                     <div class="value-row">
                                         <span class="value-label new-value">
                                             <i class="fas fa-arrow-right"></i> New:
                                         </span>
                                         <span class="value-text">{{ log.new_value }}</span>
                                     </div>
+                                    {% endif %}
                                 </div>
-                                {% endif %}
                             </div>
                             {% endif %}
 
-                            <!-- ✅ NEW: Display Old Customer Details for Redirected Orders -->
-                            {% if log.action_type == 'redirected' and log.metadata %}
-                            <div
-                                class="activity-redirection-details mt-2 p-2 border-start border-3 border-warning bg-light">
+                            <!-- Old customer snapshot captured when the order was redirected.
+                                 The view normalizes the two historical metadata key styles
+                                 into log.old_customer_snapshot (None when nothing was saved). -->
+                            {% if log.old_customer_snapshot %}
+                            {% with old=log.old_customer_snapshot %}
+                            <div class="activity-redirection-details mt-2">
                                 <div class="redirection-section">
                                     <h6 class="mb-2 text-warning">
                                         <i class="fas fa-history me-1"></i> Old Customer Details (Before Redirection)
                                     </h6>
                                     <div class="old-customer-details">
-                                        {% if log.metadata.customer_name %}
+                                        {% if old.name %}
                                         <div class="detail-row">
-                                            <span class="detail-label"><i class="fas fa-user me-1"></i> Name:</span>
-                                            <span class="detail-value">{{ log.metadata.customer_name }}</span>
+                                            <span class="detail-label"><i class="fas fa-user"></i> Name</span>
+                                            <span class="detail-value">{{ old.name }}</span>
                                         </div>
                                         {% endif %}
-                                        {% if log.metadata.customer_phone %}
+                                        {% if old.phone %}
                                         <div class="detail-row">
-                                            <span class="detail-label"><i class="fas fa-phone me-1"></i> Phone:</span>
-                                            <span class="detail-value">{{ log.metadata.customer_phone }}</span>
+                                            <span class="detail-label"><i class="fas fa-phone"></i> Phone</span>
+                                            <span class="detail-value">{{ old.phone }}</span>
                                         </div>
                                         {% endif %}
-                                        {% if log.metadata.shipping_address %}
+                                        {% if old.email %}
                                         <div class="detail-row">
-                                            <span class="detail-label"><i class="fas fa-map-marker-alt me-1"></i>
-                                                Address:</span>
-                                            <span class="detail-value">{{ log.metadata.shipping_address }}</span>
+                                            <span class="detail-label"><i class="fas fa-envelope"></i> Email</span>
+                                            <span class="detail-value">{{ old.email }}</span>
                                         </div>
                                         {% endif %}
-                                        {% if log.metadata.branch_city %}
+                                        {% if old.branch %}
                                         <div class="detail-row">
-                                            <span class="detail-label"><i class="fas fa-city me-1"></i> Branch:</span>
-                                            <span class="detail-value">{{ log.metadata.branch_city }}</span>
+                                            <span class="detail-label"><i class="fas fa-city"></i> Branch</span>
+                                            <span class="detail-value">{{ old.branch }}</span>
+                                        </div>
+                                        {% endif %}
+                                        {% if old.address %}
+                                        <div class="detail-row">
+                                            <span class="detail-label"><i class="fas fa-map-marker-alt"></i>
+                                                Address</span>
+                                            <span class="detail-value">{{ old.address }}</span>
                                         </div>
                                         {% endif %}
                                     </div>
                                 </div>
                             </div>
+                            {% endwith %}
                             {% endif %}
                         </div>
                     </div>
@@ -2846,6 +2884,9 @@
     .activity-content {
         flex-grow: 1;
         padding-top: 5px;
+        /* Without this, flex children default to min-width:auto and long values
+           overflow the narrow timeline column instead of wrapping */
+        min-width: 0;
     }
 
     .activity-header {
@@ -2874,6 +2915,14 @@
         display: flex;
         align-items: center;
         gap: 5px;
+    }
+
+    /* Shown when the provider's event time differs from when we recorded it,
+       so a late webhook doesn't look like it happened at sync time. */
+    .activity-synced-note {
+        font-size: 0.72rem;
+        color: #cbd5e1;
+        cursor: help;
     }
 
     .activity-description {
@@ -2932,6 +2981,9 @@
         display: flex;
         align-items: flex-start;
         gap: 8px;
+        /* The timeline column is narrow — let the value drop to its own line
+           rather than being squeezed to a few characters wide */
+        flex-wrap: wrap;
     }
 
     .value-label {
@@ -2954,11 +3006,13 @@
 
     .value-text {
         flex-grow: 1;
+        min-width: 0;
         background: white;
         padding: 4px 8px;
         border-radius: 4px;
         border: 1px solid #e5e7eb;
-        word-break: break-word;
+        overflow-wrap: break-word;
+        word-break: normal;
         font-family: 'Courier New', monospace;
     }
 
@@ -3516,15 +3570,16 @@
 
     /* ==================== REDIRECTION DETAILS STYLES ==================== */
     .activity-redirection-details {
-        background-color: #fffbeb !important;
-        border-left: 4px solid #fbbf24 !important;
+        background-color: #fffbeb;
+        border-left: 4px solid #fbbf24;
         border-radius: 8px;
-        padding: 14px !important;
+        padding: 12px;
         margin-top: 12px;
+        min-width: 0;
     }
 
     .redirection-section h6 {
-        font-size: 0.9rem;
+        font-size: 0.78rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.05em;
@@ -3532,46 +3587,51 @@
         margin-bottom: 12px;
     }
 
+    /* The activity timeline lives in a narrow column, so size the columns off the
+       available space (auto-fit) rather than the viewport — a hard 2-column grid
+       here squeezed each cell to a few pixels and broke values one letter per line. */
     .old-customer-details {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
+        /* min(190px, 100%) so a container narrower than 190px shrinks the cell
+           instead of overflowing horizontally */
+        grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+        gap: 10px;
     }
 
-    @media (max-width: 768px) {
-        .old-customer-details {
-            grid-template-columns: 1fr;
-        }
-    }
-
-    .detail-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
+    .activity-redirection-details .detail-row {
+        /* Label above value: nothing competes for horizontal space */
+        display: block;
         font-size: 0.85rem;
-        padding: 8px;
+        padding: 8px 10px;
         background: white;
         border-radius: 6px;
         border-left: 3px solid #f59e0b;
+        min-width: 0;
     }
 
-    .detail-label {
+    .activity-redirection-details .detail-label {
+        display: block;
         font-weight: 700;
         color: #7c2d12;
         white-space: nowrap;
-        min-width: 90px;
-        flex-shrink: 0;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        margin-bottom: 2px;
     }
 
-    .detail-label i {
+    .activity-redirection-details .detail-label i {
         color: #d97706;
         margin-right: 4px;
     }
 
-    .detail-value {
+    .activity-redirection-details .detail-value {
+        display: block;
         color: #4b5563;
-        word-break: break-word;
-        flex: 1;
+        /* break-word (not break-all): wrap between words, and only split a word
+           when it cannot fit on a line by itself */
+        overflow-wrap: break-word;
+        word-break: normal;
     }
 </style>
 
@@ -3924,21 +3984,65 @@
         }
     });
 
+    // Holds the in-flight sync request, so the page-load sync and a manual
+    // button click never fire two overlapping NCM requests for the same order
+    // (that race was what made the first "Sync Status" click fail and the
+    // second one succeed). A click arriving mid-sync now waits for the running
+    // request and reports its result, rather than being turned away - the page
+    // load starts a sync of its own, so "turned away" would otherwise be what
+    // a user got for clicking during the first second on the page.
+    let ncmSyncPromise = null;
+
     // ✅ AJAX NCM STATUS SYNC FUNCTION
-    function syncNCMStatusAJAX(orderId) {
+    // `silent=true` is the automatic sync that runs on page load/refresh: no
+    // button spinner, no toast. Neither path reloads the page - both patch the
+    // visible status badges/history in place via applyNCMStatusPatch().
+    // Returns a promise so callers can sequence work after the sync.
+    function syncNCMStatusAJAX(orderId, silent = false) {
         const syncBtn = document.getElementById('syncStatusBtn');
         const syncBtnText = document.getElementById('syncBtnText');
 
-        // Disable button and show loading state
-        syncBtn.disabled = true;
-        syncBtnText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+        function setButtonBusy(busy) {
+            if (silent || !syncBtn || !syncBtnText) return;
+            syncBtn.disabled = busy;
+            syncBtnText.innerHTML = busy
+                ? '<i class="fas fa-spinner fa-spin"></i> Syncing...'
+                : '<i class="fas fa-sync-alt"></i> Sync Status';
+        }
 
-        // Send AJAX request to sync status
-        fetch(`/ncm/api/order/${orderId}/sync/`, {
+        // Join the sync already running instead of starting a second one.
+        if (ncmSyncPromise) {
+            setButtonBusy(true);
+            return ncmSyncPromise.then(data => {
+                setButtonBusy(false);
+                if (!silent && data && data.success) {
+                    showNotification('success', data.message || 'Status is up to date');
+                }
+                return data;
+            });
+        }
+
+        // This runs on every page load now, not just on a click, so a page
+        // without a CSRF input must fail quietly rather than throw on load.
+        const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (!csrfInput) {
+            console.warn('No CSRF token on this page; skipping NCM status sync.');
+            setButtonBusy(false);
+            return Promise.resolve(null);
+        }
+
+        setButtonBusy(true);
+
+        // ?throttle=1 on the page-load sync only: it makes a rapid series of
+        // refreshes reuse the last result instead of hitting NCM each time.
+        // A deliberate button click is never throttled.
+        const url = `/ncm/api/order/${orderId}/sync/` + (silent ? '?throttle=1' : '');
+
+        ncmSyncPromise = fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                'X-CSRFToken': csrfInput.value
             }
         })
             .then(response => {
@@ -3949,26 +4053,179 @@
             })
             .then(data => {
                 if (data.success) {
-                    // Show success message
-                    showNotification('success', data.message || 'Status updated successfully');
-
-                    // Always reload when user explicitly clicks sync,
-                    // so display fields (status_setup, order_status) are always fresh
-                    setTimeout(() => {
-                        location.reload();
-                    }, 1000);
-                } else {
+                    // Patch whenever the server reports a change - including on
+                    // the page-load sync, which is the whole point: opening or
+                    // refreshing an order must show NCM's current status, not
+                    // whatever was last written to the database.
+                    if (data.changed) {
+                        // On the page-load sync the history is loaded once,
+                        // afterwards, by the DOMContentLoaded handler below -
+                        // so don't also load it from here or the page opens
+                        // with two overlapping history requests (each of which
+                        // costs three NCM calls server-side).
+                        applyNCMStatusPatch(data, { skipHistory: silent });
+                    }
+                    if (!silent) {
+                        showNotification('success', data.message || 'Status updated successfully');
+                    }
+                } else if (!silent) {
                     showNotification('error', data.message || 'Failed to update status');
-                    syncBtn.disabled = false;
-                    syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
                 }
+                return data;
             })
             .catch(error => {
                 console.error('Error syncing status:', error);
-                showNotification('error', 'Failed to sync status. Please try again.');
-                syncBtn.disabled = false;
-                syncBtnText.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Status';
+                if (!silent) {
+                    showNotification('error', 'Failed to sync status. Please try again.');
+                }
+                return null;
+            })
+            .finally(() => {
+                ncmSyncPromise = null;
+                setButtonBusy(false);
             });
+
+        return ncmSyncPromise;
+    }
+
+    // ✅ LOAD NCM STATUS HISTORY DYNAMICALLY
+    // NCM rate-limits per account at roughly three calls a second. The server
+    // waits and retries on its own, but a busy account can still come back
+    // throttled - and that is a "try again in a second", not a failure worth
+    // showing someone. Retry it here instead, a couple of times, before the
+    // panel admits defeat.
+    const NCM_HISTORY_THROTTLE_RETRIES = 2;
+
+    function loadNCMStatusHistory(ncmOrderId, attempt) {
+        if (!ncmOrderId) return;
+
+        const container = document.getElementById('ncmStatusHistoryContainer');
+        if (!container) return;
+
+        const tryNumber = attempt || 0;
+        container.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin text-primary"></i> Loading Status History...</div>';
+
+        fetch(`/api/ncm-rtv/${ncmOrderId}/detail/`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.status_history && data.status_history.length > 0) {
+                    const statusHistory = data.status_history;
+                    let html = '<div style="background:#fff; border-radius:14px; border:1px solid #e2e8f0; overflow:hidden; margin-bottom:1rem;">';
+                    html += '<div style="background:linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); color:#fff; padding:0.85rem 1.1rem; font-weight:700; font-size:0.88rem;"><i class="fas fa-history me-2"></i>Status History (' + statusHistory.length + ')</div>';
+                    html += '<div style="padding:1rem 1.1rem; max-height:240px; overflow-y:auto;">';
+                    statusHistory.forEach(function (sh, idx) {
+                        var isLast = idx === statusHistory.length - 1;
+                        html += '<div style="display:flex; gap:0.75rem; padding-bottom:' + (isLast ? '0' : '0.75rem') + '; position:relative;">';
+                        if (!isLast) html += '<div style="position:absolute; left:12px; top:26px; bottom:0; width:2px; background:#e2e8f0;"></div>';
+                        html += '<div style="width:26px; height:26px; border-radius:50%; background:' + (idx === 0 ? 'linear-gradient(135deg, #667eea, #764ba2)' : '#e2e8f0') + '; display:flex; align-items:center; justify-content:center; flex-shrink:0; z-index:1;"><i class="fas fa-circle" style="font-size:0.35rem; color:' + (idx === 0 ? '#fff' : '#94a3b8') + ';"></i></div>';
+                        html += '<div style="flex:1;"><div style="font-weight:700; font-size:0.82rem; color:#1e293b;">' + escapeHtml(sh.status) + '</div>';
+                        if (sh.timestamp_display || sh.timestamp) html += '<div style="font-size:0.75rem; color:#94a3b8;">' + escapeHtml(sh.timestamp_display || sh.timestamp) + '</div>';
+                        if (sh.remarks) html += '<div style="font-size:0.78rem; color:#64748b; margin-top:0.15rem;">' + escapeHtml(sh.remarks) + '</div>';
+                        html += '</div></div>';
+                    });
+                    html += '</div></div>';
+                    container.innerHTML = html;
+                } else if (data.status_history_throttled && tryNumber < NCM_HISTORY_THROTTLE_RETRIES) {
+                    // Rate limited, not broken. Wait out NCM's one-second
+                    // window and ask again rather than making someone click
+                    // a Retry button to do exactly the same thing.
+                    setTimeout(function () {
+                        loadNCMStatusHistory(ncmOrderId, tryNumber + 1);
+                    }, 1200 * (tryNumber + 1));
+                } else if (data.status_history_error) {
+                    // NCM could not be reached / refused the request. Saying
+                    // "no status history" here would be a lie, and it hid a
+                    // real fault for a long time.
+                    renderHistoryFailure(container, ncmOrderId, data.status_history_error);
+                } else {
+                    container.innerHTML = '<div class="alert alert-light border border-gray-200 text-muted" style="margin-bottom:0;"><i class="fas fa-info-circle me-1"></i> No status history found.</div>';
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching NCM status history:', error);
+                renderHistoryFailure(container, ncmOrderId, 'Could not reach the server.');
+            });
+    }
+
+    // Failure state for the status history panel: says what went wrong and
+    // offers a retry, instead of silently looking like an empty timeline.
+    function renderHistoryFailure(container, ncmOrderId, reason) {
+        container.innerHTML =
+            '<div class="alert alert-warning d-flex align-items-center justify-content-between" style="margin-bottom:0; gap:0.75rem;">' +
+            '<span><i class="fas fa-exclamation-triangle me-1"></i> Could not load status history from NCM. ' +
+            escapeHtml(String(reason || '')) + '</span>' +
+            '<button type="button" class="btn btn-sm btn-outline-dark" id="retryNcmHistoryBtn">' +
+            '<i class="fas fa-redo me-1"></i>Retry</button>' +
+            '</div>';
+        const retryBtn = document.getElementById('retryNcmHistoryBtn');
+        if (retryBtn) {
+            retryBtn.addEventListener('click', function () {
+                loadNCMStatusHistory(ncmOrderId);
+            });
+        }
+    }
+
+    {% if order.ncm_order_id %}
+    // Opening (or refreshing) an order syncs it from NCM first, then draws the
+    // status history from the result.
+    //
+    // Before this, the page rendered whatever was in the database and nothing
+    // ever refreshed it in the background, so the NCM Status badge could sit on
+    // a status NCM had moved past days earlier - and no amount of pressing F5
+    // would change it. The only way to see the truth was to click "Sync Status"
+    // by hand, on every order, one at a time.
+    //
+    // The history load is chained onto the sync rather than fired alongside it
+    // so the two don't race, and so the history reflects the status we just
+    // wrote.
+    document.addEventListener('DOMContentLoaded', function() {
+        const ncmOrderId = {{ order.ncm_order_id }};
+        syncNCMStatusAJAX({{ order.id }}, true)
+            .finally(function() { loadNCMStatusHistory(ncmOrderId); });
+    });
+    {% endif %}
+
+    // ✅ PATCH THE VISIBLE STATUS BADGES/HISTORY IN PLACE (no page reload)
+    // Used by both the NCM sync response (syncNCMStatusAJAX) and the local-DB
+    // poller (checkOrderChanges/notifyStatusChange) so any code path that
+    // learns about a status change - whether from a live NCM call or from
+    // the background cron job (sync_all_ncm_orders) writing to the DB while
+    // this tab is open - ends up here instead of calling location.reload().
+    function applyNCMStatusPatch(data, options) {
+        const skipHistory = !!(options && options.skipHistory);
+        const statusEl = document.getElementById('orderStatusValue');
+        if (statusEl && data.status_display) {
+            statusEl.textContent = data.status_display;
+        }
+
+        const payEl = document.getElementById('paymentStatusBadge');
+        if (payEl && data.payment_status_css) {
+            payEl.className = 'payment-badge payment-badge-' + data.payment_status_css;
+            if (data.payment_status_display) {
+                payEl.textContent = data.payment_status_display;
+            }
+        }
+
+        const ncmBadge = document.getElementById('ncmStatusBadge');
+        if (ncmBadge && data.ncm_status) {
+            ncmBadge.textContent = data.ncm_status;
+        }
+
+        {% if order.ncm_order_id %}
+        if (!skipHistory) {
+            loadNCMStatusHistory({{ order.ncm_order_id }});
+        }
+        {% endif %}
+
+        // Keep the local-DB poller's baseline in sync so it doesn't
+        // immediately re-fire a duplicate "changed" notification for a
+        // change that was just displayed.
+        if (typeof lastOrderState !== 'undefined') {
+            if (data.status !== undefined) lastOrderState.status = data.status;
+            if (data.ncm_status !== undefined) lastOrderState.ncm_status = data.ncm_status;
+            if (data.payment_status !== undefined) lastOrderState.payment_status = data.payment_status;
+            if (data.delivered_at !== undefined) lastOrderState.delivered_at = data.delivered_at;
+        }
     }
 
     // ✅ NOTIFICATION HELPER FUNCTION
@@ -4045,7 +4302,11 @@
     }
 
     /**
-     * Check if order status has changed and notify user
+     * Check if order status has changed and notify user. This is the
+     * read-only local-DB poller (fetchOrderStatus -> api_get_order_status,
+     * no NCM call) - it's what surfaces changes written by the background
+     * cron job (sync_all_ncm_orders) while this tab is open, so it patches
+     * the DOM in place rather than reloading.
      */
     function checkOrderChanges(data) {
         const currentState = {
@@ -4056,20 +4317,22 @@
             cod_collected: data.cod_collected
         };
 
+        let anyChanged = false;
+
         // Check for status changes
         if (lastOrderState.status !== currentState.status) {
             notifyStatusChange('Order Status', lastOrderState.status, currentState.status);
-            lastOrderState.status = currentState.status;
+            anyChanged = true;
         }
 
         if (lastOrderState.ncm_status !== currentState.ncm_status) {
             notifyStatusChange('NCM Delivery Status', lastOrderState.ncm_status, currentState.ncm_status);
-            lastOrderState.ncm_status = currentState.ncm_status;
+            anyChanged = true;
         }
 
         if (lastOrderState.payment_status !== currentState.payment_status) {
             notifyStatusChange('Payment Status', lastOrderState.payment_status, currentState.payment_status, 'info');
-            lastOrderState.payment_status = currentState.payment_status;
+            anyChanged = true;
         }
 
         if (lastOrderState.delivered_at !== currentState.delivered_at && currentState.delivered_at) {
@@ -4081,16 +4344,23 @@
             alertify.notify(`✅ COD Amount Collected: रू ${currentState.cod_collected}`, 'success', 5);
             lastOrderState.cod_collected = currentState.cod_collected;
         }
+
+        if (anyChanged) {
+            applyNCMStatusPatch(data);
+        }
     }
 
     /**
-     * Notify user about status changes with alertify
+     * Notify user about status changes with alertify (toast only - the
+     * caller, checkOrderChanges, is responsible for patching the DOM).
      */
     function notifyStatusChange(fieldName, oldValue, newValue, type = 'success') {
         const statusMessages = {
             'in_transit': '📍 In Transit - Order is on the way to delivery',
             'delivered': '✅ Delivered - Order has been successfully delivered',
             'return': '↩️ Return - Order has been returned',
+            'return_processing': '🚚 Return Processing - Item is on its way back to the vendor',
+            'return_arrived': '🏬 Return Arrived - Item is waiting at the courier\'s return branch and can no longer be redirected',
             'return_initiated': '↩️ Return Initiated - Return process started',
             'processing': '⏳ Processing - Order is being processed',
             'pending': '⏸️ Pending - Awaiting confirmation',
@@ -4112,21 +4382,18 @@
         } else {
             alertify.notify(message, 'info', 5);
         }
-
-        // Reload the page after short delay for status to update in UI
-        setTimeout(() => {
-            location.reload();
-        }, 2000);
     }
 
     /**
      * Start auto-sync process
      */
     function startAutoSync() {
-        // Initial fetch
-        fetchOrderStatus();
-
-        // Set interval for periodic fetching
+        // This timer only reads the local database - no NCM call happens here.
+        // Keeping NCM status fresh is the background sync's job
+        // (ncm/scheduler.py, cadence set in Settings -> API Sync Settings),
+        // which runs independently of whoever is looking at this page. The
+        // timer's job is just to surface what that sync wrote, without a reload.
+        stopAutoSync();
         autoSyncTimer = setInterval(() => {
             fetchOrderStatus();
         }, autoSyncInterval);
@@ -4156,6 +4423,18 @@
         window.addEventListener('beforeunload', function () {
             stopAutoSync();
         });
+    });
+
+    // An admin changing "Live Page Refresh" in Settings should reach tabs that
+    // are already open. The heartbeat in base.html reports the current value,
+    // so re-arm on it rather than waiting for someone to reload.
+    window.addEventListener('ncm-sync-intervals', function (e) {
+        const seconds = e.detail && e.detail.page_refresh_interval;
+        if (!seconds) return;
+        const ms = seconds * 1000;
+        if (ms === autoSyncInterval) return;
+        autoSyncInterval = ms;
+        if (autoSyncTimer) startAutoSync();
     });
 
     // Allow user to manually start/stop auto-sync
@@ -4211,11 +4490,11 @@
     /**
      * Format date/time for display
      */
-    function formatCommentTime(dateString) {
-        if (!dateString) return '';
+    function formatCommentTime(dateString, displayString) {
+        if (!dateString) return displayString || '';
         try {
             const d = new Date(dateString);
-            if (isNaN(d.getTime())) return dateString;
+            if (isNaN(d.getTime())) return displayString || dateString;
 
             const now = new Date();
             const diffMs = now - d;
@@ -4228,10 +4507,13 @@
             if (diffHours < 24) return `${diffHours}h ago`;
             if (diffDays < 7) return `${diffDays}d ago`;
 
+            // Absolute dates come pre-formatted in Nepal time from the server;
+            // toLocale* here would render in the viewer's own timezone.
+            if (displayString) return displayString;
             return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
                 ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
         } catch (e) {
-            return dateString;
+            return displayString || dateString;
         }
     }
 
@@ -4261,7 +4543,7 @@
         const roleClass = role === 'ncm' ? 'role-ncm' : (role === 'system' ? 'role-system' : 'role-admin');
         const roleLabel = role === 'ncm' ? 'NCM Staff' : (role === 'system' ? 'System' : 'You');
         const initial = author.charAt(0).toUpperCase();
-        const timeDisplay = formatCommentTime(time);
+        const timeDisplay = formatCommentTime(time, comment.created_at_display);
 
         const div = document.createElement('div');
         div.className = 'ncm-comment-item';

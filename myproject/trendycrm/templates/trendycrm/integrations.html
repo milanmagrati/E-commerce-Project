@@ -1,0 +1,474 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Integrations — Trendy CRM{% endblock %}
+{% block topbar_title %}Integrations{% endblock %}
+
+{% block extra_style %}
+.integrations-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 1.25rem;
+    min-height: calc(100vh - 60px - 3rem);
+}
+@media(max-width:768px){ .integrations-layout{ grid-template-columns:1fr; } }
+
+.integ-sidebar {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid rgba(124,58,237,0.08);
+    box-shadow: var(--crm-card-shadow);
+    padding: 0.75rem 0;
+    align-self: start;
+}
+
+.integ-sidebar-header {
+    padding: 0.5rem 1rem 0.75rem;
+    border-bottom: 1px solid var(--crm-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.integ-sidebar-title { font-weight: 700; font-size: 0.88rem; color: var(--crm-text); }
+.integ-channel-count { font-size: 0.73rem; color: var(--crm-text-muted); }
+
+.integ-search {
+    margin: 0.6rem 0.75rem;
+    position: relative;
+}
+.integ-search input {
+    width: 100%;
+    border: 1.5px solid var(--crm-border);
+    border-radius: 7px;
+    padding: 0.4rem 0.75rem 0.4rem 2rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    color: var(--crm-text);
+    outline: none;
+}
+.integ-search input:focus { border-color: var(--crm-primary); }
+.integ-search-icon {
+    position: absolute; left: 0.6rem; top: 50%; transform: translateY(-50%);
+    color: var(--crm-text-muted); font-size: 0.75rem;
+}
+
+.integ-group-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--crm-text-muted);
+    padding: 0.6rem 1rem 0.2rem;
+}
+
+.integ-channel-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 1rem;
+    cursor: pointer;
+    transition: background 0.15s;
+    text-decoration: none;
+    color: inherit;
+    border-left: 3px solid transparent;
+}
+.integ-channel-item:hover { background: var(--crm-hover); }
+.integ-channel-item.active {
+    background: var(--crm-active-bg);
+    border-left-color: var(--crm-primary);
+    color: var(--crm-primary);
+}
+
+.integ-channel-icon {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+.integ-channel-name { font-size: 0.82rem; font-weight: 500; flex: 1; }
+
+/* Right panel */
+.integ-detail-panel {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid rgba(124,58,237,0.08);
+    box-shadow: var(--crm-card-shadow);
+    padding: 0;
+    overflow: hidden;
+    align-self: start;
+}
+
+.integ-detail-header {
+    padding: 1.1rem 1.5rem;
+    border-bottom: 1px solid var(--crm-border);
+}
+
+.integ-detail-breadcrumb {
+    font-size: 0.75rem;
+    color: var(--crm-text-muted);
+    margin-bottom: 0.5rem;
+}
+.integ-detail-breadcrumb a { color: var(--crm-primary); text-decoration: none; font-weight: 500; }
+
+.integ-detail-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.integ-detail-big-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
+}
+
+.integ-detail-body { padding: 1.5rem; }
+
+.no-account-box {
+    text-align: center;
+    padding: 2.5rem;
+    border: 2px dashed var(--crm-border);
+    border-radius: 12px;
+    margin-bottom: 1.25rem;
+}
+.no-account-icon {
+    width: 60px; height: 60px;
+    background: #f9f7ff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem;
+    color: var(--crm-accent);
+    margin: 0 auto 1rem;
+}
+
+.permissions-card {
+    background: #f9f7ff;
+    border: 1px solid rgba(124,58,237,0.1);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+}
+.perm-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.45rem 0;
+}
+.perm-check { color: #059669; font-size: 0.9rem; margin-top: 1px; flex-shrink: 0; }
+.perm-name { font-size: 0.82rem; font-weight: 600; color: var(--crm-text); }
+.perm-desc { font-size: 0.76rem; color: var(--crm-text-muted); }
+
+.connected-badge {
+    background: #d1fae5;
+    color: #065f46;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+{% endblock %}
+
+{% block crm_content %}
+<div class="integrations-layout">
+    <!-- Left Sidebar -->
+    <div class="integ-sidebar">
+        <div class="integ-sidebar-header">
+            <div>
+                <div class="integ-sidebar-title">Integrations</div>
+                <div class="integ-channel-count">{{ connected_channel_count }}/{{ channels_with_meta|length }} connected</div>
+            </div>
+        </div>
+
+        <div class="integ-search">
+            <i class="fas fa-search integ-search-icon"></i>
+            <input type="text" id="integSearchInput" placeholder="Search integrations" oninput="filterIntegrations(this.value)">
+        </div>
+
+        <div class="integ-group-label">MESSAGING CHANNELS ({{ channels_with_meta|length }})</div>
+
+        {% for ch in channels_with_meta %}
+        <a href="?channel={{ ch.channel_type }}"
+           class="integ-channel-item {% if ch.is_active %}active{% endif %}"
+           data-name="{{ ch.meta.label|lower }}">
+            <div class="integ-channel-icon" style="background:{{ ch.meta.color }}22;">
+                <i class="{{ ch.meta.prefix|default:'fab' }} {{ ch.meta.icon }}" style="color:{{ ch.meta.color }};"></i>
+            </div>
+            <div class="integ-channel-name">{{ ch.meta.label }}</div>
+            {% if ch.is_connected %}
+            <div style="width:7px;height:7px;border-radius:50%;background:#059669;flex-shrink:0;"></div>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+
+    <!-- Right Detail Panel -->
+    {% if active_integrations %}
+    <div class="integ-detail-panel">
+        <div class="integ-detail-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+                <div class="integ-detail-breadcrumb">
+                    <a href="{% url 'trendycrm:integrations' %}">Integrations</a> › {{ active_meta.label }}
+                </div>
+                <div class="integ-detail-title">
+                    <div class="integ-detail-big-icon" style="background:{{ active_meta.color }}22;">
+                        <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}" style="color:{{ active_meta.color }};font-size:1.3rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-weight:700;font-size:1rem;color:var(--crm-text);">{{ active_meta.label }}</div>
+                        <div style="font-size:0.78rem;color:var(--crm-text-muted);">
+                            {% if active_key == 'instagram' %}Manage Direct Messages, comments and story mentions from your omnichannel inbox.
+                            {% elif active_key == 'whatsapp' %}Send & receive WhatsApp messages from your business number.
+                            {% elif active_key == 'facebook' %}Manage Facebook Messenger conversations in one unified inbox.
+                            {% elif active_key == 'tiktok' %}Connect your TikTok account for identity/profile access.
+                            {% elif active_key == 'gmail' %}Manage Gmail conversations and auto-reply to emails.
+                            {% elif active_key == 'outlook' %}Connect your Outlook mailbox for unified email management.
+                            {% elif active_key == 'zoho_mail' %}Handle Zoho Mail conversations from your CRM inbox.
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            {% if connected_integrations %}
+            <div>
+                {% if active_key == 'facebook' or active_key == 'instagram' or active_key == 'tiktok' or active_key == 'whatsapp' %}
+                <button type="button"
+                   onclick="window.location.href='{{ fb_oauth_url }}';"
+                   class="btn-crm-primary" style="display:inline-flex; align-items:center; gap:0.5rem; border:none; cursor:pointer;">
+                    <i class="fas fa-plus"></i> Connect another
+                </button>
+                {% else %}
+                <button type="button" class="btn-crm-primary" onclick="document.getElementById('connectModal').style.display='flex'">
+                    <i class="fas fa-plus"></i> Connect another
+                </button>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="integ-detail-body">
+            {% if active_key == 'tiktok' %}
+            <div style="display:flex; gap:0.6rem; align-items:flex-start; background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:0.85rem 1rem; margin-bottom:1.25rem;">
+                <i class="fas fa-circle-info" style="color:#b45309; margin-top:2px;"></i>
+                <div style="font-size:0.78rem; color:#92400e; line-height:1.4;">
+                    <strong>TikTok DMs/comments aren't available here yet.</strong>
+                    TikTok's public Developer API (Login Kit) only grants profile and video-list
+                    access — it does not offer a general messaging API like Meta's Graph API.
+                    Live DM/comment sync requires TikTok Shop Partner (Customer Service API)
+                    approval. Connecting below authenticates your TikTok identity only.
+                </div>
+            </div>
+            {% endif %}
+            {% if connected_integrations %}
+                {% for integ in connected_integrations %}
+                <!-- Connected State -->
+                <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;padding:1.1rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:0.75rem;">
+                        <div style="position:relative;">
+                            <div style="width: 40px; height: 40px; border-radius: 50%; background-color: #f3f4f6; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                               <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}" style="color:var(--crm-primary); font-size: 1.2rem;"></i>
+                            </div>
+                            <!-- Status badge -->
+                            <div style="position:absolute; bottom:-2px; right:-2px; background:white; border-radius:50%; padding:2px; display:flex; align-items:center; justify-content:center;">
+                                {% if integ.status == 'error' %}
+                                 <i class="fas fa-exclamation-circle" style="color:#ef4444; font-size:14px; background:white; border-radius:50%;"></i>
+                                {% else %}
+                                 <i class="fas fa-check-circle" style="color:#10b981; font-size:14px; background:white; border-radius:50%;"></i>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div>
+                            <div style="font-weight:600;font-size:0.9rem;color:#111827;">{{ integ.parsed_name }}</div>
+                            <div style="display:flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:#6b7280; margin-top:0.2rem;">
+                                {% if integ.status == 'error' %}
+                                <span style="width:6px; height:6px; border-radius:50%; background-color:#ef4444;"></span>
+                                <span style="color:#ef4444;">Reconnect required</span>
+                                {% else %}
+                                <span style="width:6px; height:6px; border-radius:50%; background-color:#10b981;"></span>
+                                <span style="color:#10b981;">Active</span>
+                                {% endif %}
+                                {% if integ.parsed_id %}
+                                <span style="color:#9ca3af;">&middot;</span>
+                                <span>{{ integ.parsed_id }}</span>
+                                {% endif %}
+                            </div>
+                            {% if integ.status == 'error' %}
+                            <div style="font-size:0.72rem; color:#b91c1c; margin-top:0.35rem; max-width:32rem; line-height:1.4;">
+                                Meta rejected this page's access token, so messages can't be sent or synced.
+                                Click <strong>Reconnect</strong> and make sure this page is ticked in Facebook's page picker.
+                                {% if integ.meta.token_error %}
+                                <div style="color:#7f1d1d; margin-top:0.2rem;">{{ integ.meta.token_error }}</div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% if integ.status == 'error' and fb_oauth_url %}
+                    <button type="button" onclick="window.location.href='{{ fb_oauth_url }}';"
+                        class="btn-crm-primary" style="border:none; cursor:pointer; margin-left:auto; margin-right:0.5rem; white-space:nowrap;">
+                        <i class="fas fa-rotate-right" style="margin-right:0.4rem;"></i>Reconnect
+                    </button>
+                    {% endif %}
+                    <div style="position: relative;" class="dropdown">
+                        <button type="button" class="btn-crm-outline" style="border:none; background:transparent; padding:0.5rem; color:#6b7280; cursor:pointer; font-size:1.2rem;" onclick="const menu = this.nextElementSibling; menu.style.display = menu.style.display === 'block' ? 'none' : 'block';">
+                            <i class="fas fa-ellipsis-h"></i>
+                        </button>
+                        <div style="display:none; position:absolute; right:0; top:100%; background:white; border:1px solid #e5e7eb; border-radius:0.5rem; box-shadow:0 4px 6px -1px rgba(0, 0, 0, 0.1); z-index:10; min-width: 140px; overflow:hidden; padding:0.5rem 0; margin-top:0.25rem;">
+                             <button type="button" style="width:100%; text-align:left; padding:0.5rem 1rem; border:none; background:transparent; cursor:pointer; font-size:0.8rem; color:#374151; display:flex; align-items:center; gap:0.5rem;" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'" onclick="openSettingsModal('{{ integ.account_name }}', '{{ integ.access_token }}')">
+                                 <i class="fas fa-cog" style="color:#6b7280; width:14px;"></i> Settings
+                             </button>
+                             <form method="post" action="{% url 'trendycrm:integration_disconnect' integ.pk %}" style="margin:0;">
+                                {% csrf_token %}
+                                <button type="submit" style="width:100%; text-align:left; padding:0.5rem 1rem; border:none; background:transparent; cursor:pointer; font-size:0.8rem; color:#ef4444; display:flex; align-items:center; gap:0.5rem;" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'" onclick="return confirm('Disconnect {{ integ.parsed_name }}? If this is not the only connected account for this channel, its synced posts and comments will be permanently deleted.')">
+                                    <i class="fas fa-unlink" style="color:#ef4444; width:14px;"></i> Disconnect
+                                </button>
+                             </form>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+            <!-- Not Connected State -->
+            <div class="no-account-box">
+                <div class="no-account-icon">
+                    <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}"></i>
+                </div>
+                <div style="font-weight:600;font-size:0.9rem;color:var(--crm-text);margin-bottom:0.3rem;">No account connected</div>
+                <div style="font-size:0.8rem;color:var(--crm-text-muted);margin-bottom:1.2rem;">
+                    Connect your professional {{ active_meta.label }} account to start receiving messages in Trendy CRM.
+                </div>
+                {% if active_key == 'facebook' or active_key == 'instagram' or active_key == 'tiktok' or active_key == 'whatsapp' %}
+                <button type="button"
+                   onclick="window.location.href='{{ fb_oauth_url }}';"
+                   class="btn-crm-primary" style="display:inline-flex; align-items:center; gap:0.5rem; border:none; cursor:pointer;">
+                    <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}"></i> Connect {{ active_meta.label }}
+                </button>
+                {% else %}
+                <button type="button" class="btn-crm-primary" onclick="document.getElementById('connectModal').style.display='flex'">
+                    <i class="fas fa-plug"></i> Connect {{ active_meta.label }}
+                </button>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- Permissions -->
+            {% if active_perms %}
+            <div class="permissions-card">
+                <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
+                    <i class="fas fa-shield-alt" style="color:var(--crm-primary);font-size:0.9rem;"></i>
+                    <span style="font-weight:700;font-size:0.85rem;color:var(--crm-text);">Required permissions</span>
+                </div>
+                <div style="font-size:0.75rem;color:var(--crm-primary);margin-bottom:0.75rem;">Requested during connection</div>
+                {% for perm_name, perm_desc in active_perms %}
+                <div class="perm-item">
+                    <i class="fas fa-check-circle perm-check"></i>
+                    <div>
+                        <div class="perm-name">{{ perm_name }}</div>
+                        <div class="perm-desc">{{ perm_desc }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Connect Modal -->
+<div id="connectModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:white; padding:2rem; border-radius:12px; width:450px; max-width:90%; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
+        <div style="font-weight:700; font-size:1.1rem; margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;">
+            <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}" style="color:{{ active_meta.color }};"></i> Connect {{ active_meta.label }}
+        </div>
+        <form method="post" action="{% url 'trendycrm:integration_connect' active_key %}">
+            {% csrf_token %}
+            
+            {% if active_key == 'facebook' or active_key == 'instagram' %}
+            <!-- Modal not typically used for FB/Insta anymore due to direct connection, but keeping inputs just in case manual fallback is needed -->
+            {% endif %}
+
+            {% if webhook_url %}
+            <div style="margin-bottom:1rem; padding: 0.75rem; background:#f3f4f6; border-radius:6px; font-size:0.75rem;">
+                <strong>Webhook URL:</strong><br>
+                <span style="user-select:all; color:var(--crm-primary);">{{ webhook_url }}</span>
+                <div style="margin-top:0.3rem; color:var(--crm-text-muted);">Use this URL in your {{ active_meta.label }} developer console.</div>
+            </div>
+            {% endif %}
+
+            <div style="margin-bottom:1rem;">
+                <label style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:0.3rem;">Account Name / Email / Page ID</label>
+                <input type="text" name="account_name" required class="form-control" style="width:100%; padding:0.5rem; border:1px solid var(--crm-border); border-radius:6px; font-family:inherit; font-size:0.85rem;" placeholder="e.g. @trendy_store">
+            </div>
+            <div style="margin-bottom:1rem;">
+                <label style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:0.3rem;">Access Token / API Key</label>
+                <input type="password" name="access_token" required class="form-control" style="width:100%; padding:0.5rem; border:1px solid var(--crm-border); border-radius:6px; font-family:inherit; font-size:0.85rem;">
+            </div>
+            
+            {% if active_key == 'whatsapp' or active_key == 'facebook' or active_key == 'instagram' %}
+            <div style="margin-bottom:1.5rem;">
+                <label style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:0.3rem;">Webhook Verify Token (Optional)</label>
+                <input type="text" name="verify_token" class="form-control" style="width:100%; padding:0.5rem; border:1px solid var(--crm-border); border-radius:6px; font-family:inherit; font-size:0.85rem;" placeholder="e.g. secret_token_123">
+            </div>
+            {% endif %}
+
+            <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1.5rem;">
+                <button type="button" class="btn-crm-outline" onclick="document.getElementById('connectModal').style.display='none'">Cancel</button>
+                <button type="submit" class="btn-crm-primary">Save & Connect</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Settings Modal -->
+{% if connected_integrations %}
+<div id="settingsModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:white; padding:2rem; border-radius:12px; width:450px; max-width:90%; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
+        <div style="font-weight:700; font-size:1.1rem; margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;">
+            <i class="{{ active_meta.prefix|default:'fab' }} {{ active_meta.icon }}" style="color:{{ active_meta.color }};"></i> {{ active_meta.label }} Settings
+        </div>
+        
+        {% if webhook_url %}
+        <div style="margin-bottom:1rem; padding: 0.75rem; background:#f3f4f6; border-radius:6px; font-size:0.75rem;">
+            <strong>Webhook URL:</strong><br>
+            <span style="user-select:all; color:var(--crm-primary);">{{ webhook_url }}</span>
+        </div>
+        {% endif %}
+
+        <div style="margin-bottom:1rem;">
+            <label style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:0.3rem;">Account Name</label>
+            <input type="text" id="settingsAccountName" readonly class="form-control" style="width:100%; padding:0.5rem; border:1px solid var(--crm-border); border-radius:6px; font-family:inherit; font-size:0.85rem; background:#f9fafb; color:var(--crm-text-muted);">
+        </div>
+        
+        <div style="margin-bottom:1.5rem;">
+            <label style="display:block; font-size:0.8rem; font-weight:600; margin-bottom:0.3rem;">Access Token</label>
+            <input type="password" id="settingsAccessToken" readonly class="form-control" style="width:100%; padding:0.5rem; border:1px solid var(--crm-border); border-radius:6px; font-family:inherit; font-size:0.85rem; background:#f9fafb; color:var(--crm-text-muted);">
+            <div style="font-size:0.7rem; color:var(--crm-text-muted); margin-top:0.3rem;">To update credentials, please disconnect and reconnect the channel.</div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1.5rem;">
+            <button type="button" class="btn-crm-outline" onclick="document.getElementById('settingsModal').style.display='none'">Close</button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+function filterIntegrations(q) {
+    document.querySelectorAll('.integ-channel-item').forEach(item => {
+        const name = item.dataset.name || '';
+        item.style.display = name.includes(q.toLowerCase()) ? '' : 'none';
+    });
+}
+function openSettingsModal(accountName, accessToken) {
+    document.getElementById('settingsAccountName').value = accountName;
+    document.getElementById('settingsAccessToken').value = accessToken;
+    document.getElementById('settingsModal').style.display = 'flex';
+}
+</script>
+{% endblock %}

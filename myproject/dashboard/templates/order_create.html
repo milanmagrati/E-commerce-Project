@@ -2505,6 +2505,9 @@
                 Create Order - POS
             </h4>
             <div class="d-flex gap-2">
+                <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#ourProductsModal">
+                    <i class="fas fa-box"></i> Our products
+                </button>
                 <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#searchOrdersModal">
                     <i class="fas fa-search"></i> Search Orders
                 </button>
@@ -2645,9 +2648,10 @@
                             placeholder="email@example.com">
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Landmark</label>
-                        <input type="text" name="landmark" id="customerLandmark" class="form-control"
-                            placeholder="Landmark">
+                        <label class="form-label">VAT / PAN</label>
+                        <input type="text" name="vat_pan" id="customerVatPan" class="form-control"
+                            placeholder="VAT / PAN No." maxlength="60"
+                            title="Buyer's VAT or PAN number — printed on the invoice when filled in">
                     </div>
                 </div>
 
@@ -3128,6 +3132,57 @@
     </div>
 </div>
 
+<!-- ✨ OUR PRODUCTS MODAL -->
+<div class="modal fade" id="ourProductsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
+                <h5 class="modal-title" style="color: white; font-weight: 700;">
+                    <i class="fas fa-box"></i> Our Products
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" style="filter: invert(1);"></button>
+            </div>
+            <div class="modal-body" style="background: #f8f9fa;">
+                <!-- Search Input -->
+                <div class="mb-3">
+                    <input type="text" id="ourProductsSearchInput" class="form-control" style="border: 2px solid #10b981; border-radius: 8px; padding: 12px 15px; font-size: 0.95rem; transition: all 0.3s ease;" 
+                           placeholder="Search products by name or SKU..." autocomplete="off">
+                </div>
+
+                <!-- Stats -->
+                <div class="d-flex justify-content-between mb-3 px-2">
+                    <div style="font-weight: 600; color: #4b5563;">
+                        <i class="fas fa-list"></i> <span id="ourProductsResultCount">0</span> products found
+                    </div>
+                </div>
+
+                <!-- Products Table -->
+                <div class="table-responsive" style="border: 1px solid #e2e8f0; border-radius: 8px; background: white;">
+                    <table class="table table-hover mb-0" style="width: 100%;">
+                        <thead style="background: #f1f5f9; position: sticky; top: 0; z-index: 10;">
+                            <tr>
+                                <th style="width: 20%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569;">Product Name</th>
+                                <th style="width: 25%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569;">Product Description</th>
+                                <th style="width: 30%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569; text-align: left;">Times</th>
+                                <th style="width: 10%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569; text-align: right;">Price</th>
+                                <th style="width: 15%; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #475569; text-align: right;">Offer Price</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ourProductsListContainer">
+                            <tr>
+                                <td colspan="3" class="text-center py-4" style="color: #64748b;">
+                                    <i class="fas fa-spinner fa-spin mb-2" style="font-size: 1.5rem;"></i>
+                                    <p class="mb-0">Loading products...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ✨ SEARCH ORDERS MODAL -->
 <div class="modal fade" id="searchOrdersModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -3322,6 +3377,291 @@
             // Fallback if audio context not supported
             console.log('Audio context not available');
         }
+    }
+
+    // ✨ OUR PRODUCTS FUNCTIONALITY
+    function initializeOurProducts() {
+        const searchInput = document.getElementById('ourProductsSearchInput');
+        const listContainer = document.getElementById('ourProductsListContainer');
+        const resultCount = document.getElementById('ourProductsResultCount');
+        let searchTimeout = null;
+        let isLoading = false;
+
+        function fetchProducts() {
+            if (isLoading) return;
+            isLoading = true;
+
+            const query = searchInput.value.trim();
+            const params = new URLSearchParams();
+            if (query) params.set('q', query);
+
+            listContainer.innerHTML = '<tr><td colspan="3" class="text-center py-4" style="color: #64748b;"><i class="fas fa-spinner fa-spin mb-2" style="font-size: 1.5rem;"></i><p class="mb-0">Searching products...</p></td></tr>';
+
+            fetch('{% url "api_search_products" %}?' + params.toString(), {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(r => r.json())
+            .then(data => {
+                isLoading = false;
+                if (!data.success) {
+                    listContainer.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-danger"><i class="fas fa-exclamation-circle mb-2" style="font-size: 1.5rem;"></i><p class="mb-0">Error loading products</p></td></tr>';
+                    return;
+                }
+
+                resultCount.textContent = data.count;
+
+                if (data.products.length === 0) {
+                    listContainer.innerHTML = '<tr><td colspan="3" class="text-center py-4" style="color: #64748b;"><i class="fas fa-box-open mb-2" style="font-size: 1.5rem; opacity: 0.5;"></i><p class="mb-0">No products found</p></td></tr>';
+                    return;
+                }
+
+                function highlightTerm(text, term) {
+                    if (!term || !text) return text || '';
+                    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp('(' + escaped + ')', 'gi');
+                    return String(text).replace(regex, '<mark style="background:#fef08a;color:#1a1a2e;padding:0 2px;border-radius:2px;font-weight:700;">$1</mark>');
+                }
+
+                listContainer.innerHTML = '';
+                const searchTerm = searchInput.value.trim();
+
+                data.products.forEach(p => {
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = p.description || '';
+                    const textDesc = tempDiv.textContent || tempDiv.innerText || '';
+                    const safeDesc = textDesc.replace(/"/g, '&quot;');
+
+                    const highlightedName = highlightTerm(p.name, searchTerm);
+                    const highlightedSku = highlightTerm(p.sku, searchTerm);
+                    const highlightedDesc = highlightTerm(textDesc, searchTerm);
+
+                    const tr = document.createElement('tr');
+                    tr.style.cursor = 'pointer';
+                    const canEditPrice = ('{{ request.user.role }}' === 'administrator' || {{ request.user.is_superuser|yesno:"true,false" }} || {{ request.user.can_access_offer_price|yesno:"true,false" }});
+                    tr.innerHTML = `
+                        <td style="vertical-align: middle;">
+                            <div class="d-flex align-items-center gap-2">
+                                ${p.image ? `<img src="${p.image}" alt="${p.name}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid #e2e8f0;">` : `<div style="width: 40px; height: 40px; background: #e2e8f0; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #94a3b8;"><i class="fas fa-image"></i></div>`}
+                                <div>
+                                    <div style="font-weight: 600; color: #1e293b;">${highlightedName}</div>
+                                    ${p.sku ? `<div style="font-size: 0.75rem; color: #64748b;"><i class="fas fa-barcode"></i> ${highlightedSku}</div>` : ''}
+                                </div>
+                            </div>
+                        </td>
+                        <td style="vertical-align: middle;">
+                            <div class="product-desc-wrapper" style="position: relative;">
+                                <div class="product-desc-text" style="font-size: 0.85rem; color: #475569; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5;" title="${safeDesc || 'No description available.'}">${highlightedDesc || '<em style="color: #cbd5e1;">No description available.</em>'}</div>
+                                ${textDesc.length > 120 ? `<button type="button" class="btn btn-link p-0 text-decoration-none read-more-btn" style="font-size: 0.75rem; font-weight: 600; color: #10b981; margin-top: 4px;">Read more <i class="fas fa-chevron-down ms-1" style="font-size: 0.65rem;"></i></button>` : ''}
+                            </div>
+                        </td>
+                        <td style="vertical-align: middle; text-align: left;">
+                            <div class="times-input-wrapper" style="position: relative; width: 100%;">
+                                <textarea class="form-control form-control-sm times-input" placeholder="Write here..." style="width: 100%; min-height: 50px; resize: vertical; padding-right: 32px; border: 1px solid #e2e8f0; border-radius: 6px; transition: border-color 0.2s;" onclick="event.stopPropagation()"></textarea>
+                                <button type="button" class="btn save-times-btn" title="Save Text" style="position: absolute; bottom: 6px; right: 6px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; border-radius: 4px; width: 24px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; box-shadow: 0 2px 5px rgba(16, 185, 129, 0.3); transition: all 0.2s ease; z-index: 2;" onclick="event.stopPropagation()">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </div>
+                        </td>
+                        <td style="vertical-align: middle; text-align: right; font-weight: 600; color: #475569; font-size: 0.95rem;">
+                            रू ${parseFloat(p.price).toFixed(2)}
+                        </td>
+                        <td style="vertical-align: middle; text-align: right;">
+                            <div class="d-flex align-items-center justify-content-end gap-1" onclick="event.stopPropagation()">
+                                <input type="number" class="form-control form-control-sm offer-price-input" value="${parseFloat(p.price).toFixed(2)}" min="0" step="0.01" style="width: 110px; text-align: right; font-weight: 600; color: #10b981;" ${canEditPrice ? '' : 'readonly'}>
+                                ${canEditPrice ? `<button type="button" class="btn btn-success btn-sm save-offer-price-btn" title="Save price" data-product-id="${p.id}" style="padding: 2px 7px; font-size: 0.7rem; white-space: nowrap;">
+                                    <i class="fas fa-save"></i>
+                                </button>` : ''}
+                            </div>
+                        </td>
+                    `;
+                    
+                    const addAction = () => {
+                        const timesInput = tr.querySelector('.times-input');
+                        const offerPriceInput = tr.querySelector('.offer-price-input');
+                        const timesValue = timesInput ? timesInput.value.trim() : '';
+                        const qty = 1; // Quantity defaults to 1 since times is now a text field
+                        let offerPrice = p.price;
+                        if (offerPriceInput && !isNaN(parseFloat(offerPriceInput.value))) {
+                            offerPrice = parseFloat(offerPriceInput.value);
+                        }
+                        
+                        let finalName = p.name;
+                        if (timesValue) {
+                            finalName = finalName + ' (' + timesValue + ')';
+                        }
+                        
+                        addToCart(p.id, finalName, offerPrice, null, p.sku, qty, false);
+                        showToastNotification('✅ ' + finalName + ' added to cart!', 'success');
+                        if (typeof ourProductsModal !== 'undefined') {
+                            ourProductsModal.hide();
+                        }
+                    };
+
+                    tr.addEventListener('click', addAction);
+
+                    // Save times input to localStorage
+                    const timesInput = tr.querySelector('.times-input');
+                    const saveTimesBtn = tr.querySelector('.save-times-btn');
+                    
+                    if (timesInput) {
+                        const savedValue = localStorage.getItem('pos_times_' + p.id);
+                        if (savedValue) {
+                            timesInput.value = savedValue;
+                        }
+                        
+                        // Reset button visual state on input (no auto-save)
+                        timesInput.addEventListener('input', (e) => {
+                            if (saveTimesBtn) {
+                                saveTimesBtn.innerHTML = '<i class="fas fa-save"></i>';
+                                saveTimesBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                            }
+                        });
+                        
+                        // Button click save animation
+                        if (saveTimesBtn) {
+                            saveTimesBtn.addEventListener('click', (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                localStorage.setItem('pos_times_' + p.id, timesInput.value);
+                                
+                                // Success animation
+                                saveTimesBtn.innerHTML = '<i class="fas fa-check"></i>';
+                                saveTimesBtn.style.background = 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)';
+                                saveTimesBtn.style.transform = 'scale(1.1)';
+                                
+                                setTimeout(() => {
+                                    saveTimesBtn.innerHTML = '<i class="fas fa-save"></i>';
+                                    saveTimesBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                                    saveTimesBtn.style.transform = 'scale(1)';
+                                }, 1500);
+                            });
+                            
+                            // Hover effects
+                            saveTimesBtn.addEventListener('mouseenter', () => {
+                                saveTimesBtn.style.transform = 'scale(1.1)';
+                            });
+                            saveTimesBtn.addEventListener('mouseleave', () => {
+                                saveTimesBtn.style.transform = 'scale(1)';
+                            });
+                        }
+                    }
+
+                    // Save offer price button
+                    const saveBtn = tr.querySelector('.save-offer-price-btn');
+                    if (saveBtn) {
+                        saveBtn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const offerInput = tr.querySelector('.offer-price-input');
+                            const newPrice = offerInput ? offerInput.value : null;
+                            if (!newPrice || isNaN(parseFloat(newPrice)) || parseFloat(newPrice) < 0) {
+                                saveBtn.innerHTML = '<i class="fas fa-times"></i>';
+                                saveBtn.classList.replace('btn-success', 'btn-danger');
+                                setTimeout(() => {
+                                    saveBtn.innerHTML = '<i class="fas fa-save"></i>';
+                                    saveBtn.classList.replace('btn-danger', 'btn-success');
+                                }, 1500);
+                                return;
+                            }
+                            // Show spinner
+                            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                            saveBtn.disabled = true;
+                            const productId = saveBtn.dataset.productId;
+                            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+                            fetch(`/api/product/${productId}/update-price/`, {
+                                method: 'POST',
+                                headers: {
+                                    'X-CSRFToken': csrfToken,
+                                    'Content-Type': 'application/x-www-form-urlencoded',
+                                },
+                                body: `price=${encodeURIComponent(newPrice)}`
+                            })
+                            .then(r => r.json())
+                            .then(data => {
+                                saveBtn.disabled = false;
+                                if (data.success) {
+                                    // Update in-memory price so next add-to-cart uses new price
+                                    p.price = parseFloat(data.new_price);
+                                    saveBtn.innerHTML = '<i class="fas fa-check"></i>';
+                                    saveBtn.classList.replace('btn-success', 'btn-success');
+                                    showToastNotification('✅ Price updated to रू ' + parseFloat(data.new_price).toFixed(2), 'success');
+                                    setTimeout(() => { saveBtn.innerHTML = '<i class="fas fa-save"></i>'; }, 2000);
+                                } else {
+                                    saveBtn.innerHTML = '<i class="fas fa-times"></i>';
+                                    saveBtn.classList.replace('btn-success', 'btn-danger');
+                                    showToastNotification('❌ ' + (data.error || 'Failed to save price'), 'danger');
+                                    setTimeout(() => {
+                                        saveBtn.innerHTML = '<i class="fas fa-save"></i>';
+                                        saveBtn.classList.replace('btn-danger', 'btn-success');
+                                    }, 2000);
+                                }
+                            })
+                            .catch(() => {
+                                saveBtn.disabled = false;
+                                saveBtn.innerHTML = '<i class="fas fa-times"></i>';
+                                saveBtn.classList.replace('btn-success', 'btn-danger');
+                                showToastNotification('❌ Network error. Please try again.', 'danger');
+                                setTimeout(() => {
+                                    saveBtn.innerHTML = '<i class="fas fa-save"></i>';
+                                    saveBtn.classList.replace('btn-danger', 'btn-success');
+                                }, 2000);
+                            });
+                        });
+                    }
+
+                    const inputs = tr.querySelectorAll('input');
+                    inputs.forEach(input => {
+                        input.addEventListener('keypress', (e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                addAction();
+                            }
+                        });
+                    });
+
+                    const readMoreBtn = tr.querySelector('.read-more-btn');
+                    if (readMoreBtn) {
+                        readMoreBtn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const descText = tr.querySelector('.product-desc-text');
+                            if (descText.style.webkitLineClamp === '3') {
+                                descText.style.webkitLineClamp = 'unset';
+                                readMoreBtn.innerHTML = 'Show less <i class="fas fa-chevron-up ms-1" style="font-size: 0.65rem;"></i>';
+                            } else {
+                                descText.style.webkitLineClamp = '3';
+                                readMoreBtn.innerHTML = 'Read more <i class="fas fa-chevron-down ms-1" style="font-size: 0.65rem;"></i>';
+                            }
+                        });
+                    }
+
+                    tr.addEventListener('mouseenter', () => tr.style.background = '#f1f5f9');
+                    tr.addEventListener('mouseleave', () => tr.style.background = 'transparent');
+                    listContainer.appendChild(tr);
+                });
+            })
+            .catch(err => {
+                isLoading = false;
+                console.error('Products error:', err);
+                listContainer.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-danger"><i class="fas fa-exclamation-triangle mb-2" style="font-size: 1.5rem;"></i><p class="mb-0">Failed to fetch products</p></td></tr>';
+            });
+        }
+
+        document.getElementById('ourProductsModal').addEventListener('show.bs.modal', function () {
+            if (searchInput.value === '') {
+                fetchProducts();
+            }
+            setTimeout(() => searchInput.focus(), 500);
+        });
+
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(fetchProducts, 400);
+        });
     }
 
     // ✨ SEARCH ORDERS FUNCTIONALITY
@@ -4852,7 +5192,7 @@
                 customerEmail: getValueSafe('customerEmailInput'),
                 branchCity: getValueSafe('branchCity'),
                 customerAddress: getValueSafe('customerAddress'),
-                customerLandmark: getValueSafe('customerLandmark'),
+                customerVatPan: getValueSafe('customerVatPan'),
                 createdBy: getValueSafe('createdBy'),
                 discount: getValueSafe('discount'),
                 shipping: getValueSafe('shipping'),
@@ -4916,7 +5256,7 @@
             // Also sync the city search input with the branch city
             setValueSafe('citySearchInput', formData.branchCity);
             setValueSafe('customerAddress', formData.customerAddress);
-            setValueSafe('customerLandmark', formData.customerLandmark);
+            setValueSafe('customerVatPan', formData.customerVatPan);
             if (formData.createdBy) setValueSafe('createdBy', formData.createdBy);
             setValueSafe('discount', formData.discount || '0');
             setValueSafe('shipping', formData.shipping || '0');
@@ -5029,7 +5369,7 @@
         // Also clear the city search input
         setValueSafe('citySearchInput', '');
         setValueSafe('customerAddress', '');
-        setValueSafe('customerLandmark', '');
+        setValueSafe('customerVatPan', '');
         setValueSafe('createdBy', '{{ request.user.id }}');
         setValueSafe('discount', '0');
         setValueSafe('shipping', '0');
@@ -5077,7 +5417,7 @@
     function setupAutoSave() {
         const formInputs = [
             'customerName', 'customerEmailInput', 'branchCity', 'customerAddress', 
-            'customerLandmark', 'createdBy', 'discount', 'shipping', 
+            'customerVatPan', 'createdBy', 'discount', 'shipping', 
             'orderNotes', 'customerPhone', 'taxPercent', 'inOutSelect'
         ];
 
@@ -5118,7 +5458,7 @@
                     document.getElementById('customerEmailInput').value = data.customer.email || '';
                     document.getElementById('customerPhone').value = data.customer.phone || '';
                     document.getElementById('customerAddress').value = data.customer.address || '';
-                    document.getElementById('customerLandmark').value = data.customer.landmark || '';
+                    document.getElementById('customerVatPan').value = data.customer.vat_pan || '';
                     
                     if (data.customer.branch_city) {
                         // Set both branchCity and citySearchInput
@@ -5355,9 +5695,13 @@
             if (input) { input.focus(); input.select(); }
         });
         searchOrdersModal = new bootstrap.Modal(document.getElementById('searchOrdersModal'));
+        ourProductsModal = new bootstrap.Modal(document.getElementById('ourProductsModal'));
 
         // ✨ Initialize Search Orders
         initializeSearchOrders();
+
+        // ✨ Initialize Our Products
+        initializeOurProducts();
 
         // ✨ Initialize NCM Branches Search
         initializeNcmBranchesSearch();
@@ -6806,4 +7150,142 @@ const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/200
     });
 </script>
 
+{% if follow_up_data %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Wait for POS UI components and loadFormData() to complete first
+        setTimeout(function() {
+
+            // ─── STEP 0: Clear stale localStorage draft so previous cart/customer
+            //            data doesn't bleed into this follow-up order ───────────────
+            if (typeof clearFormData === 'function') clearFormData();
+            if (typeof hideFloatingButton === 'function') hideFloatingButton();
+            // Also wipe the in-memory cart so the restored draft items are gone
+            cart = [];
+            if (typeof updateCart === 'function') updateCart();
+
+            // ─── 1. Customer Name ────────────────────────────────────────────────
+            const customerName = document.getElementById('customerName');
+            if (customerName) {
+                customerName.value = "{{ follow_up_data.name|escapejs }}";
+                customerName.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+
+            // ─── 2. Customer Phone ───────────────────────────────────────────────
+            const customerPhone = document.getElementById('customerPhone');
+            if (customerPhone) {
+                customerPhone.value = "{{ follow_up_data.phone|escapejs }}";
+                customerPhone.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+
+            // ─── 3. Remarks → Order Notes ────────────────────────────────────────
+            {% if follow_up_data.remarks %}
+            const orderNotes = document.getElementById('orderNotes');
+            if (orderNotes) {
+                orderNotes.value = "{{ follow_up_data.remarks|escapejs }}";
+            }
+            {% endif %}
+
+            // ─── 4. Hidden followup_id ───────────────────────────────────────────
+            const form = document.getElementById('orderForm');
+            if (form && !form.querySelector('input[name="followup_id"]')) {
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'followup_id';
+                hiddenInput.value = '{{ follow_up_data.id }}';
+                form.appendChild(hiddenInput);
+            }
+
+            // ─── 5. Order Source (lead_source → order_from) ──────────────────────
+            {% if follow_up_data.lead_source %}
+            const orderFromSelect = document.querySelector('select[name="order_from"]');
+            if (orderFromSelect) {
+                const searchLower = "{{ follow_up_data.lead_source|escapejs }}".toLowerCase();
+                let matchedFrom = false;
+                for (let opt of orderFromSelect.options) {
+                    if (opt.text.toLowerCase() === searchLower || opt.value.toLowerCase() === searchLower) {
+                        orderFromSelect.value = opt.value;
+                        matchedFrom = true;
+                        break;
+                    }
+                }
+                if (matchedFrom) {
+                    orderFromSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (typeof syncSearchableSelectUI === 'function') {
+                        syncSearchableSelectUI('select[name="order_from"]', orderFromSelect.value);
+                    }
+                }
+            }
+            {% endif %}
+
+            // ─── 6. Status → statusSetup select (match by option text name) ──────
+            {% if follow_up_data.status %}
+            const statusSetupEl = document.getElementById('statusSetup');
+            if (statusSetupEl) {
+                const followUpStatus = "{{ follow_up_data.status|escapejs }}".toLowerCase().trim();
+                let statusMatched = false;
+                for (let opt of statusSetupEl.options) {
+                    if (opt.text.toLowerCase().trim() === followUpStatus) {
+                        statusSetupEl.value = opt.value;
+                        statusMatched = true;
+                        // Mark as user-changed so draft doesn't overwrite it
+                        if (typeof userChangedSetups !== 'undefined') {
+                            userChangedSetups.statusSetup = true;
+                        }
+                        break;
+                    }
+                }
+                // If no exact match found, keep the default selected
+            }
+            {% endif %}
+
+            // ─── 7. Product → Cart (clean slate — old cart already cleared) ──────
+            {% with all_products=follow_up_data.get_all_products %}
+                {% if all_products %}
+                    if (typeof addToCart === 'function') {
+                        {% for prod in all_products %}
+                            var productPrice_{{ forloop.counter }} = parseFloat("{{ prod.price|default:'0' }}") || 0;
+                            addToCart(
+                                {{ prod.id }},
+                                "{{ prod.name|escapejs }}",
+                                productPrice_{{ forloop.counter }},
+                                null,   // varId
+                                '',     // sku
+                                1,      // qty
+                                false,  // isCustom
+                                '',     // variantName
+                                '{{ prod.product_type|default:"simple" }}'
+                            );
+                        {% endfor %}
+                    }
+                {% endif %}
+            {% endwith %}
+
+            {% with all_variants=follow_up_data.product_variations.all %}
+                {% if all_variants %}
+                    if (typeof addToCart === 'function') {
+                        {% for var in all_variants %}
+                            var varPrice_{{ forloop.counter }} = parseFloat("{{ var.price|default:'0' }}") || 0;
+                            addToCart(
+                                {{ var.product.id }},
+                                "{{ var.product.name|escapejs }}",
+                                varPrice_{{ forloop.counter }},
+                                {{ var.id }},   // varId
+                                "{{ var.sku|escapejs }}",     // sku
+                                1,      // qty
+                                false,  // isCustom
+                                "{{ var.variation_name|escapejs }}",     // variantName
+                                'variable'
+                            );
+                        {% endfor %}
+                    }
+                {% endif %}
+            {% endwith %}
+
+        }, 900); // after loadFormData() finishes
+    });
+</script>
+{% endif %}
+
 {% endblock %}
+

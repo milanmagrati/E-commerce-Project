@@ -73,6 +73,10 @@
     .badge-late     { background: #fef3c7; color: #92400e; }
     .badge-half_day { background: #dbeafe; color: #1e3a8a; }
     .badge-on_leave { background: #ede9fe; color: #4c1d95; }
+    .badge-incomplete { background: #ffedd5; color: #9a3412; }
+    .row-incomplete-punch, .row-incomplete-punch td { background: #fff7ed !important; }
+    .row-incomplete-punch:hover, .row-incomplete-punch:hover td { background: #ffedd5 !important; }
+    .row-incomplete-punch { box-shadow: inset 3px 0 0 #f97316; }
     .emp-avatar {
         width: 32px;
         height: 32px;
@@ -281,9 +285,17 @@
     .pv-day-metric:last-child { border-right:none; }
 
     /* Week view */
-    .pv-week-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+    .pv-week-wrap { overflow-x: auto; padding-bottom: 8px; }
+    .pv-week-scroll-inner { min-width: 700px; }
+    .pv-week-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; min-width: 700px; }
+    .pv-week-hdr-row { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; margin-bottom:6px; }
+    .pv-week-hdr {
+        text-align:center; font-size:0.68rem; font-weight:800; text-transform:uppercase;
+        letter-spacing:0.05em; color:#4338ca; padding:4px 0 6px;
+    }
+    .pv-week-hdr.wknd { color:#be185d; }
     .pv-week-day {
-        border-radius:10px; border:1.5px solid #e2e8f0;
+        border-radius:10px; border:1.5px solid #e2e8f0; position:relative;
         padding:0.7rem 0.4rem; text-align:center; transition:transform 0.12s;
     }
     .pv-week-day:hover { transform:translateY(-2px); }
@@ -291,6 +303,11 @@
     .pv-week-day .day-lbl { font-size:0.68rem; font-weight:700; text-transform:uppercase; color:#94a3b8; }
     .pv-week-day .day-num { font-size:1.2rem; font-weight:700; color:#1e293b; margin:4px 0; }
     .pv-week-day .day-status { font-size:0.68rem; font-weight:600; border-radius:12px; padding:2px 7px; display:inline-block; }
+    .pv-week-day .nep-badge {
+        position:absolute; top:6px; right:8px;
+        font-size:0.78rem; font-weight:800; line-height:1;
+    }
+    .pv-week-day-pad { visibility:hidden; border:none; background:transparent; padding:0; }
 
     /* Month calendar */
     .pv-cal-wrap {
@@ -299,11 +316,12 @@
         border:2px solid #c7d2fe;
         box-shadow:0 6px 28px rgba(79,70,229,0.14);
         padding:1.3rem 1.4rem 1.2rem;
-        overflow:hidden;
+        overflow-x: auto;
     }
     .pv-cal-nav {
         display:flex; align-items:center; justify-content:space-between;
         margin-bottom:18px; padding:0 4px;
+        min-width: 700px;
     }
     .pv-cal-nav-btn {
         width:40px; height:40px; border-radius:50%; border:none;
@@ -326,6 +344,7 @@
         gap:1px; background:#c7d2fe;
         border:2px solid #a5b4fc; border-radius:10px; overflow:hidden;
         margin-bottom:2px;
+        min-width: 700px;
     }
     .pv-cal-head {
         text-align:center; font-size:0.78rem; font-weight:800; color:#fff;
@@ -350,8 +369,9 @@
     .pv-cal-cell.today .cal-num { color:#4338ca !important; }
     .pv-cal-cell.wknd-cell { background:#fdf2f8; }
     .pv-cal-cell .cal-num {
-        font-weight:900; font-size:1.05rem; line-height:1;
-        margin-bottom:6px; color:#111827;
+        position:absolute; top:6px; right:8px;
+        font-weight:900; font-size:0.78rem; line-height:1;
+        color:#111827;
     }
     .pv-cal-cell.wknd-cell .cal-num { color:#9d174d; }
     .pv-cal-cell.empty .cal-num { color:#d1d5db; }
@@ -376,12 +396,14 @@
     .pv-status-no_record{ background:#fff; }
     .pv-status-weekend  { background:#fdf2f8; }
     .pv-status-holiday  { background:#fefce8; }
+    .pv-status-incomplete { background:#fff7ed; }
     /* Status chip colors */
     .cal-chip-present  { background:#16a34a; color:#fff; }
     .cal-chip-absent   { background:#dc2626; color:#fff; }
     .cal-chip-late     { background:#d97706; color:#fff; }
     .cal-chip-half_day { background:#2563eb; color:#fff; }
     .cal-chip-on_leave { background:#7c3aed; color:#fff; }
+    .cal-chip-incomplete { background:#ea580c; color:#fff; }
     .cal-chip-weekend  { background:#db2777; color:#fff; }
     .cal-chip-holiday  { background:#ca8a04; color:#fff; }
     /* Calendar legend */
@@ -409,7 +431,194 @@
         animation: fadeInPop 0.15s ease;
     }
     @keyframes fadeInPop { from{opacity:0;transform:scale(0.9)} to{opacity:1;transform:scale(1)} }
+
+    /* Select2 integration tweaks for input group */
+    .select2-container--default .select2-selection--single {
+        height: 31px !important;
+        border: 1px solid #dee2e6;
+        border-left: 0;
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+        display: flex;
+        align-items: center;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        line-height: normal !important;
+        font-size: 0.875rem;
+        padding-left: 4px;
+        color: #495057;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 29px !important;
+    }
+    /* Fix input group width */
+    .input-group > .select2-container {
+        flex: 1 1 auto;
+        width: 1% !important;
+    }
+    .select2-container .select2-dropdown {
+        font-size: 0.875rem;
+    }
+
+    /* ── Bikram Sambat (BS) calendar controls ────────────────────────────── */
+    .cal-mode-switch {
+        display: inline-flex;
+        background: #eef2ff;
+        border: 1px solid #dfe4fb;
+        border-radius: 8px;
+        padding: 2px;
+        gap: 2px;
+        flex: 0 0 auto;
+    }
+    .cal-mode-switch button {
+        border: none;
+        background: transparent;
+        color: #6b7280;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        padding: 3px 10px;
+        border-radius: 6px;
+        line-height: 1.35;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+    }
+    .cal-mode-switch button:hover { color: #4f46e5; }
+    .cal-mode-switch button.active {
+        background: #fff;
+        color: #4f46e5;
+        box-shadow: 0 1px 3px rgba(79, 70, 229, 0.22);
+    }
+
+    /* Read-only text input that opens the BS popover */
+    .np-field { position: relative; flex: 1 1 auto; min-width: 0; }
+    .np-field .np-input {
+        padding-right: 26px;
+        cursor: pointer;
+        background: #fff;
+        font-weight: 600;
+        color: #334155;
+    }
+    .np-field .np-input:focus {
+        border-color: #a5b4fc;
+        box-shadow: 0 0 0 0.15rem rgba(99, 102, 241, 0.18);
+    }
+    .np-field .np-input::placeholder { font-weight: 400; color: #adb5bd; }
+    .np-field > .np-cal-icon {
+        position: absolute;
+        right: 9px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #a5b4fc;
+        font-size: 0.72rem;
+        pointer-events: none;
+    }
+
+    /* Popover */
+    .np-pop {
+        position: fixed;
+        /* Above this page's modal overlay (1055) and the day popup (9999). */
+        z-index: 10050;
+        width: 292px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 12px 34px rgba(15, 23, 42, 0.18);
+        padding: 10px;
+        font-size: 0.78rem;
+        max-height: calc(100vh - 20px);
+        overflow-y: auto;
+    }
+    .np-pop.np-pop-month { width: 268px; }
+    .np-pop-head { display: flex; align-items: center; gap: 5px; margin-bottom: 8px; }
+    .np-pop-head .np-nav {
+        width: 26px; height: 26px; flex: 0 0 26px;
+        border: 1px solid #e9edf5; background: #f8fafc; color: #4f46e5;
+        border-radius: 7px; cursor: pointer; line-height: 1; font-size: 0.95rem;
+        display: flex; align-items: center; justify-content: center;
+        transition: background 0.15s, border-color 0.15s;
+    }
+    .np-pop-head .np-nav:hover { background: #eef2ff; border-color: #c7d2fe; }
+    .np-pop-head .np-sel {
+        flex: 1 1 auto; min-width: 0; height: 26px;
+        border: 1px solid #e9edf5; border-radius: 7px; background: #fff;
+        font-size: 0.74rem; font-weight: 700; color: #1e293b;
+        padding: 0 4px; cursor: pointer;
+    }
+    .np-pop-head .np-sel:focus { outline: none; border-color: #a5b4fc; }
+
+    .np-wdrow, .np-dgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+    .np-wd {
+        text-align: center; font-size: 0.62rem; font-weight: 700;
+        color: #94a3b8; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 0 4px;
+    }
+    .np-wd.sat { color: #db2777; }
+    .np-cell {
+        border: 1px solid transparent; background: transparent; border-radius: 7px;
+        padding: 3px 0 2px; cursor: pointer; line-height: 1.05;
+        display: flex; flex-direction: column; align-items: center; gap: 1px;
+        transition: background 0.12s, border-color 0.12s;
+    }
+    .np-cell b { font-size: 0.8rem; font-weight: 700; color: #1e293b; }
+    .np-cell i { font-size: 0.55rem; font-style: normal; color: #94a3b8; }
+    .np-cell.sat b { color: #db2777; }
+    .np-cell:hover { background: #eef2ff; border-color: #c7d2fe; }
+    .np-cell.now { border-color: #6366f1; }
+    .np-cell.sel { background: #6366f1; border-color: #6366f1; }
+    .np-cell.sel b, .np-cell.sel i { color: #fff; }
+    .np-cell.np-pad { pointer-events: none; background: transparent; border-color: transparent; }
+
+    .np-mgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+    .np-mcell {
+        border: 1px solid #eef1f6; background: #fff; border-radius: 8px;
+        padding: 6px 2px; cursor: pointer; line-height: 1.15;
+        display: flex; flex-direction: column; align-items: center; gap: 1px;
+        transition: background 0.12s, border-color 0.12s;
+    }
+    .np-mcell b { font-size: 0.72rem; font-weight: 700; color: #1e293b; }
+    .np-mcell i { font-size: 0.62rem; font-style: normal; color: #94a3b8; }
+    .np-mcell:hover { background: #eef2ff; border-color: #c7d2fe; }
+    .np-mcell.now { border-color: #6366f1; }
+    .np-mcell.sel { background: #6366f1; border-color: #6366f1; }
+    .np-mcell.sel b, .np-mcell.sel i { color: #fff; }
+
+    .np-pop-foot {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px; margin-top: 8px; padding-top: 7px; border-top: 1px solid #f1f5f9;
+    }
+    .np-hint { font-size: 0.62rem; color: #94a3b8; }
+    .np-today {
+        border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca;
+        border-radius: 7px; font-size: 0.66rem; font-weight: 700;
+        padding: 3px 10px; cursor: pointer; white-space: nowrap;
+    }
+    .np-today:hover { background: #e0e7ff; }
+
+    /* Range rows (custom from – to) */
+    .np-range { display: flex; align-items: center; gap: 5px; min-width: 0; }
+    .np-range .np-dash { color: #94a3b8; font-size: 0.75rem; flex: 0 0 auto; }
+    #pvBsWrap .np-field .np-input,
+    #pvAdWrap .form-control { min-width: 0; }
+    #esBsCustomWrap .np-field, #esBsMonthWrap .np-field { max-width: 160px; }
+    #esBsCustomWrap .np-input, #esBsMonthWrap .np-input {
+        font-size: 0.75rem; padding: 3px 22px 3px 8px; border-radius: 6px; border-color: #d1d5db;
+    }
+
+    /* BS chip on report headers */
+    .bs-tag {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: #ede9fe; color: #5b21b6; border-radius: 20px;
+        padding: 1px 9px; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.02em;
+    }
+
+    @media (max-width: 575.98px) {
+        .np-pop { width: calc(100vw - 24px); max-width: 320px; }
+        .np-range { flex-wrap: nowrap; }
+        #esBsCustomWrap .np-field, #esBsMonthWrap .np-field { max-width: none; }
+    }
 </style>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 {% endblock %}
 
 {% block content %}
@@ -488,6 +697,15 @@
             </div>
         </div>
         <div class="col-6 col-md-4 col-xl-2">
+            <div class="stat-box report-card h-100" style="background:#fff7ed;">
+                <div class="stat-icon" style="background:#ffedd5; color:#ea580c;"><i class="fas fa-exclamation-triangle"></i></div>
+                <div>
+                    <div class="stat-value" style="color:#ea580c;">{{ stats.incomplete|default:"0" }}</div>
+                    <div class="stat-label">Incomplete Punch</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
             <div class="stat-box report-card h-100" style="background:#f8fafc;">
                 <div class="stat-icon" style="background:#e2e8f0; color:#475569;"><i class="fas fa-database"></i></div>
                 <div>
@@ -521,6 +739,11 @@
             <!-- Filter Controls — single compact row -->
             <div class="px-4 py-2" style="background:linear-gradient(135deg,#f8faff 0%,#f0f4ff 100%);border-bottom:1px solid #e2e8f0;">
                 <div class="d-flex align-items-center flex-wrap gap-2">
+                    <!-- Calendar system: AD (Gregorian) or BS (Bikram Sambat) -->
+                    <div class="cal-mode-switch" role="group" aria-label="Calendar system">
+                        <button type="button" id="esCalAd" class="active" onclick="esSetCalendar('ad')" title="Gregorian calendar">AD</button>
+                        <button type="button" id="esCalBs" onclick="esSetCalendar('bs')" title="Bikram Sambat (Nepali) calendar">BS</button>
+                    </div>
                     <!-- Quick period buttons -->
                     <div class="d-flex es-quick-btns" style="background:#e8ebf0;padding:3px;border-radius:8px;gap:2px;">
                         <button type="button" class="es-qbtn" data-period="today" onclick="esSetQuickPeriod('today')">Today</button>
@@ -535,6 +758,25 @@
                         <span style="color:#94a3b8;font-size:0.72rem;">–</span>
                         <input type="date" class="form-control form-control-sm" id="esSummaryTo"
                                value="" style="border-radius:6px;border-color:#d1d5db;font-size:0.75rem;padding:3px 6px;max-width:130px;">
+                    </div>
+                    <!-- Nepali month picker (BS mode, hidden by default) -->
+                    <div id="esBsMonthWrap" class="np-range" style="display:none !important;">
+                        <div class="np-field">
+                            <input type="text" class="form-control form-control-sm" id="esBsMonth" placeholder="Nepali month">
+                            <i class="fas fa-calendar-alt np-cal-icon"></i>
+                        </div>
+                    </div>
+                    <!-- Nepali custom range (BS mode, hidden by default) -->
+                    <div id="esBsCustomWrap" class="np-range" style="display:none !important;">
+                        <div class="np-field">
+                            <input type="text" class="form-control form-control-sm" id="esBsFrom" placeholder="From (BS)">
+                            <i class="fas fa-calendar-day np-cal-icon"></i>
+                        </div>
+                        <span class="np-dash">&ndash;</span>
+                        <div class="np-field">
+                            <input type="text" class="form-control form-control-sm" id="esBsTo" placeholder="To (BS)">
+                            <i class="fas fa-calendar-day np-cal-icon"></i>
+                        </div>
                     </div>
                     <!-- Department chip -->
                     <div class="es-chip-trigger" id="esDeptChip" onclick="esOpenDeptModal()">
@@ -666,12 +908,53 @@
                         <button type="button" class="btn flex-fill active" id="pvBtnDay" onclick="setPeriod('day')">Day</button>
                         <button type="button" class="btn flex-fill" id="pvBtnWeek" onclick="setPeriod('week')">Week</button>
                         <button type="button" class="btn flex-fill" id="pvBtnMonth" onclick="setPeriod('month')">Month</button>
+                        <button type="button" class="btn flex-fill" id="pvBtnCustom" onclick="setPeriod('custom')">Custom</button>
                     </div>
                 </div>
                 <div class="col-12 col-md-3">
-                    <label class="form-label text-muted small mb-1" id="pvDateLabel"><i class="fas fa-calendar-alt me-1"></i>Select Date</label>
-                    <input type="date" class="form-control form-control-sm" id="pvDateInput" value="">
-                    <input type="month" class="form-control form-control-sm d-none" id="pvMonthInput" value="">
+                    <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
+                        <label class="form-label text-muted small mb-0" id="pvDateLabel"><i class="fas fa-calendar-alt me-1"></i>Select Date</label>
+                        <div class="cal-mode-switch" role="group" aria-label="Calendar system">
+                            <button type="button" id="pvCalAd" class="active" onclick="pvSetCalendar('ad')" title="Gregorian calendar">AD</button>
+                            <button type="button" id="pvCalBs" onclick="pvSetCalendar('bs')" title="Bikram Sambat (Nepali) calendar">BS</button>
+                        </div>
+                    </div>
+                    <!-- Gregorian inputs -->
+                    <div id="pvAdWrap">
+                        <div id="pvSingleDateWrap">
+                            <input type="date" class="form-control form-control-sm" id="pvDateInput" value="">
+                            <input type="month" class="form-control form-control-sm d-none" id="pvMonthInput" value="">
+                        </div>
+                        <div id="pvCustomDateWrap" class="d-flex align-items-center gap-1 d-none">
+                            <input type="date" class="form-control form-control-sm" id="pvCustomFrom" value="">
+                            <span class="text-muted" style="font-size:0.8rem;">&ndash;</span>
+                            <input type="date" class="form-control form-control-sm" id="pvCustomTo" value="">
+                        </div>
+                    </div>
+                    <!-- Bikram Sambat inputs -->
+                    <div id="pvBsWrap" class="d-none">
+                        <div id="pvBsSingleWrap">
+                            <div class="np-field" id="pvBsDateField">
+                                <input type="text" class="form-control form-control-sm" id="pvBsDate" placeholder="Select Nepali date">
+                                <i class="fas fa-calendar-day np-cal-icon"></i>
+                            </div>
+                            <div class="np-field d-none" id="pvBsMonthField">
+                                <input type="text" class="form-control form-control-sm" id="pvBsMonth" placeholder="Select Nepali month">
+                                <i class="fas fa-calendar-alt np-cal-icon"></i>
+                            </div>
+                        </div>
+                        <div id="pvBsCustomWrap" class="np-range d-none">
+                            <div class="np-field">
+                                <input type="text" class="form-control form-control-sm" id="pvBsFrom" placeholder="From (BS)">
+                                <i class="fas fa-calendar-day np-cal-icon"></i>
+                            </div>
+                            <span class="np-dash">&ndash;</span>
+                            <div class="np-field">
+                                <input type="text" class="form-control form-control-sm" id="pvBsTo" placeholder="To (BS)">
+                                <i class="fas fa-calendar-day np-cal-icon"></i>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-12 col-md-2">
                     <button type="button" class="btn btn-primary btn-sm w-100" onclick="generatePeriodView()"
@@ -695,9 +978,16 @@
             <div class="col-12 col-md-3">
                 <label class="form-label text-muted small mb-1">Search Employee</label>
                 <div class="input-group input-group-sm">
-                    <span class="input-group-text bg-white"><i class="fas fa-search text-muted fa-xs"></i></span>
-                    <input type="text" class="form-control border-start-0 ps-1" name="search"
-                           placeholder="Name or Employee ID..." value="{{ search }}">
+                    <span class="input-group-text bg-white" style="border-right:0;"><i class="fas fa-search text-muted fa-xs"></i></span>
+                    <select class="form-select border-start-0 ps-1 select2-search" name="search">
+                        <option value=""></option>
+                        {% if search %}
+                        <option value="{{ search }}" selected>{{ search }}</option>
+                        {% endif %}
+                        {% for emp in employees %}
+                        <option value="{{ emp.full_name }} ({{ emp.employee_id }})">{{ emp.full_name }} ({{ emp.employee_id }})</option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
             <div class="col-6 col-md-2">
@@ -777,13 +1067,16 @@
                 </thead>
                 <tbody>
                     {% for rec in records %}
-                    <tr class="att-row-clickable"
+                    <tr class="att-row-clickable{% if rec.is_incomplete_punch %} row-incomplete-punch{% endif %}"
+                        data-id="{{ rec.id }}"
                         data-emp-name="{{ rec.employee.full_name }}"
                         data-emp-id="{{ rec.employee.employee_id }}"
                         data-dept="{{ rec.employee.department.name|default:'—' }}"
                         data-date="{{ rec.date|date:'d M Y' }}"
-                        data-checkin="{% if rec.clock_in %}{{ rec.clock_in|time:'H:i' }}{% else %}—{% endif %}"
-                        data-checkout="{% if rec.clock_out %}{{ rec.clock_out|time:'H:i' }}{% else %}—{% endif %}"
+                        data-checkin="{% if rec.clock_in %}{{ rec.clock_in|time:'g:i A' }}{% else %}—{% endif %}"
+                        data-checkout="{% if rec.clock_out %}{{ rec.clock_out|time:'g:i A' }}{% else %}—{% endif %}"
+                        data-checkin-raw="{% if rec.clock_in %}{{ rec.clock_in|time:'H:i' }}{% endif %}"
+                        data-checkout-raw="{% if rec.clock_out %}{{ rec.clock_out|time:'H:i' }}{% endif %}"
                         data-working-hrs="{% if rec.working_hours %}{{ rec.working_hours }}h{% else %}—{% endif %}"
                         data-ot-hrs="{% if rec.overtime_hours and rec.overtime_hours > 0 %}{{ rec.overtime_hours }}h{% else %}—{% endif %}"
                         data-shift="{{ rec.shift.name|default:'—' }}"
@@ -791,7 +1084,8 @@
                         data-status-display="{{ rec.get_status_display }}"
                         data-is-late="{% if rec.is_late_arrival %}1{% else %}0{% endif %}"
                         data-is-early="{% if rec.is_early_departure %}1{% else %}0{% endif %}"
-                        data-is-holiday="{% if rec.is_holiday %}1{% else %}0{% endif %}">
+                        data-is-holiday="{% if rec.is_holiday %}1{% else %}0{% endif %}"
+                        data-is-incomplete="{% if rec.is_incomplete_punch %}1{% else %}0{% endif %}">
                         <td class="text-muted">{{ forloop.counter|add:records.start_index|add:"-1" }}</td>
                         <td>
                             <div class="d-flex align-items-center gap-2">
@@ -804,8 +1098,8 @@
                         </td>
                         <td>{{ rec.employee.department.name|default:"—" }}</td>
                         <td>{{ rec.date|date:"d M Y" }}</td>
-                        <td>{% if rec.clock_in %}{{ rec.clock_in|time:"H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-                        <td>{% if rec.clock_out %}{{ rec.clock_out|time:"H:i" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>{% if rec.clock_in %}{{ rec.clock_in|time:"g:i A" }}{% elif rec.is_incomplete_punch %}<span class="text-danger fw-semibold">Missing</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>{% if rec.clock_out %}{{ rec.clock_out|time:"g:i A" }}{% elif rec.is_incomplete_punch %}<span class="text-danger fw-semibold">Missing</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                         <td>
                             {% if rec.working_hours %}
                             <span class="fw-semibold">{{ rec.working_hours }}h</span>
@@ -818,6 +1112,11 @@
                         </td>
                         <td>{{ rec.shift.name|default:"—" }}</td>
                         <td>
+                            {% if rec.is_incomplete_punch %}
+                            <span class="badge-status badge-incomplete">
+                                <i class="fas fa-exclamation-triangle" style="font-size:0.5rem;"></i> Incomplete
+                            </span>
+                            {% else %}
                             <span class="badge-status badge-{{ rec.status }}">
                                 {% if rec.status == 'present' %}<i class="fas fa-circle" style="font-size:0.5rem;"></i>{% endif %}
                                 {% if rec.status == 'absent' %}<i class="fas fa-circle" style="font-size:0.5rem;"></i>{% endif %}
@@ -826,6 +1125,7 @@
                                 {% if rec.status == 'on_leave' %}<i class="fas fa-circle" style="font-size:0.5rem;"></i>{% endif %}
                                 {{ rec.get_status_display }}
                             </span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if rec.is_late_arrival %}
@@ -833,6 +1133,12 @@
                             {% endif %}
                             {% if rec.is_early_departure %}
                             <span class="badge bg-info text-dark" style="font-size:0.68rem;" title="Early Departure"><i class="fas fa-chevron-left fa-xs"></i></span>
+                            {% endif %}
+                            {% if rec.status == 'half_day' %}
+                            <span class="badge" style="font-size:0.68rem;background:#dbeafe;color:#1e3a8a;" title="Half Day"><i class="fas fa-hourglass-half fa-xs"></i></span>
+                            {% endif %}
+                            {% if rec.is_incomplete_punch %}
+                            <span class="badge" style="font-size:0.68rem;background:#ffedd5;color:#9a3412;cursor:pointer;" title="Incomplete Punch — click row to fix"><i class="fas fa-exclamation-triangle fa-xs"></i></span>
                             {% endif %}
                             {% if rec.is_holiday %}
                             <span class="badge bg-secondary" style="font-size:0.68rem;" title="Holiday"><i class="fas fa-star fa-xs"></i></span>
@@ -951,10 +1257,43 @@
                 <div id="attModalFlags"></div>
               </div>
             </div>
+            <div class="col-12" id="attIncompleteNotice" style="display:none;">
+              <div class="d-flex align-items-center gap-2" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:0.7rem 0.9rem;">
+                <i class="fas fa-exclamation-triangle" style="color:#ea580c;"></i>
+                <div style="font-size:0.8rem;color:#9a3412;">
+                  Clock In or Clock Out is missing for this day. Use <strong>Fix Attendance</strong> below to set it manually.
+                </div>
+              </div>
+            </div>
+            <div class="col-12" id="attEditSection" style="display:none;">
+              <div class="detail-card" style="background:#fff7ed;border:1px solid #fed7aa;">
+                <div class="detail-label mb-2"><i class="fas fa-edit me-1"></i>Set Missing Time</div>
+                <div class="row g-2">
+                  <div class="col-6">
+                    <label class="form-label small text-muted mb-1">Clock In</label>
+                    <input type="time" class="form-control form-control-sm" id="attEditClockIn">
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label small text-muted mb-1">Clock Out</label>
+                    <input type="time" class="form-control form-control-sm" id="attEditClockOut">
+                  </div>
+                </div>
+                <div id="attEditError" class="text-danger small mt-2" style="display:none;"></div>
+                <div class="d-flex gap-2 mt-3">
+                  <button type="button" class="btn btn-sm btn-primary px-3" id="attEditSaveBtn" onclick="attSaveFix()">
+                    <i class="fas fa-save me-1"></i>Save
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary px-3" onclick="attToggleEditSection(false)">Cancel</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
       <div class="modal-footer border-0 pt-0 pb-3 px-4 justify-content-end">
+        <button type="button" class="btn btn-sm px-4" id="attModalEditBtn" style="display:none;background:#ffedd5;color:#9a3412;border:none;border-radius:8px;font-weight:600;" onclick="attToggleEditSection(true)">
+          <i class="fas fa-wrench me-1"></i>Fix Attendance
+        </button>
         <button type="button" class="btn btn-sm px-4" data-bs-dismiss="modal"
                 style="background:#f1f5f9;color:#475569;border:none;border-radius:8px;font-weight:600;">Close</button>
       </div>
@@ -966,8 +1305,434 @@
 
 {% block extra_js %}
 <script>
+/* ── Bikram Sambat (BS) calendar ───────────────────────────────────────────
+   Self-contained AD⇄BS converter plus date / month picker popovers. Kept inline
+   with the template (rather than under static/) so it needs no collectstatic
+   step. Month-length table covers BS 2000–2100; the anchor the whole table
+   hangs off is BS 2000-01-01 = AD 1943-04-14. */
+window.NP = (function () {
+    const M = {
+  2000:[30,32,31,32,31,30,30,30,29,30,29,31],
+  2001:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2002:[31,31,32,32,31,30,30,29,30,29,30,30],
+  2003:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2004:[30,32,31,32,31,30,30,30,29,30,29,31],
+  2005:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2006:[31,31,32,32,31,30,30,29,30,29,30,30],
+  2007:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2008:[31,31,31,32,31,31,29,30,30,29,29,31],
+  2009:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2010:[31,31,32,32,31,30,30,29,30,29,30,30],
+  2011:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2012:[31,31,31,32,31,31,29,30,30,29,30,30],
+  2013:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2014:[31,31,32,32,31,30,30,29,30,29,30,30],
+  2015:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2016:[31,31,31,32,31,31,29,30,30,29,30,30],
+  2017:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2018:[31,32,31,32,31,30,30,29,30,29,30,30],
+  2019:[31,32,31,32,31,30,30,30,29,30,29,31],
+  2020:[31,31,31,32,31,31,30,29,30,29,30,30],
+  2021:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2022:[31,32,31,32,31,30,30,30,29,29,30,30],
+  2023:[31,32,31,32,31,30,30,30,29,30,29,31],
+  2024:[31,31,31,32,31,31,30,29,30,29,30,30],
+  2025:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2026:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2027:[30,32,31,32,31,30,30,30,29,30,29,31],
+  2028:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2029:[31,31,32,31,32,30,30,29,30,29,30,30],
+  2030:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2031:[30,32,31,32,31,30,30,30,29,30,29,31],
+  2032:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2033:[31,31,32,32,31,30,30,29,30,29,30,30],
+  2034:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2035:[30,32,31,32,31,31,29,30,30,29,29,31],
+  2036:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2037:[31,31,32,32,31,30,30,29,30,29,30,30],
+  2038:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2039:[31,31,31,32,31,31,29,30,30,29,30,30],
+  2040:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2041:[31,31,32,32,31,30,30,29,30,29,30,30],
+  2042:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2043:[31,31,31,32,31,31,29,30,30,29,30,30],
+  2044:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2045:[31,32,31,32,31,30,30,29,30,29,30,30],
+  2046:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2047:[31,31,31,32,31,31,30,29,30,29,30,30],
+  2048:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2049:[31,32,31,32,31,30,30,30,29,29,30,30],
+  2050:[31,32,31,32,31,30,30,30,29,30,29,31],
+  2051:[31,31,31,32,31,31,30,29,30,29,30,30],
+  2052:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2053:[31,32,31,32,31,30,30,30,29,29,30,30],
+  2054:[31,32,31,32,31,30,30,30,29,30,29,31],
+  2055:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2056:[31,31,32,31,32,30,30,29,30,29,30,30],
+  2057:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2058:[30,32,31,32,31,30,30,30,29,30,29,31],
+  2059:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2060:[31,31,32,32,31,30,30,29,30,29,30,30],
+  2061:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2062:[31,31,31,32,31,31,29,30,29,30,29,31],
+  2063:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2064:[31,31,32,32,31,30,30,29,30,29,30,30],
+  2065:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2066:[31,31,31,32,31,31,29,30,30,29,29,31],
+  2067:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2068:[31,31,32,32,31,30,30,29,30,29,30,30],
+  2069:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2070:[31,31,31,32,31,31,29,30,30,29,30,30],
+  2071:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2072:[31,32,31,32,31,30,30,29,30,29,30,30],
+  2073:[31,32,31,32,31,30,30,30,29,29,30,31],
+  2074:[31,31,31,32,31,31,30,29,30,29,30,30],
+  2075:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2076:[31,32,31,32,31,30,30,30,29,29,30,30],
+  2077:[31,32,31,32,31,30,30,30,29,30,29,31],
+  2078:[31,31,31,32,31,31,30,29,30,29,30,30],
+  2079:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2080:[31,32,31,32,31,30,30,30,29,29,30,30],
+  2081:[31,32,31,32,31,30,30,30,29,30,29,31],
+  2082:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2083:[31,31,32,31,31,31,30,29,30,29,30,30],
+  2084:[31,31,32,31,31,30,30,30,29,30,30,30],
+  2085:[31,32,31,32,30,31,30,30,29,30,30,30],
+  2086:[30,32,31,32,31,30,30,30,29,30,30,30],
+  2087:[31,31,32,31,31,31,30,29,30,30,30,30],
+  2088:[30,31,32,32,30,31,30,30,29,30,30,30],
+  2089:[30,32,31,32,31,30,30,30,29,30,30,30],
+  2090:[30,32,31,32,31,30,30,30,29,30,30,30],
+  2091:[31,31,32,31,31,31,30,30,29,30,30,30],
+  2092:[30,31,32,32,31,30,30,30,29,30,30,30],
+  2093:[30,32,31,32,31,30,30,30,29,30,30,30],
+  2094:[31,31,32,31,31,30,30,30,29,30,30,30],
+  2095:[31,31,32,31,31,31,30,29,30,30,30,30],
+  2096:[30,31,32,32,31,30,30,29,30,29,30,30],
+  2097:[31,32,31,32,31,30,30,30,29,30,30,30],
+  2098:[31,31,32,31,31,31,29,30,29,30,29,31],
+  2099:[31,31,32,31,31,31,30,29,29,30,30,30],
+  2100:[31,32,31,32,30,31,30,29,30,29,30,30]
+    };
+    const MIN_Y = 2000, MAX_Y = 2100;
+    const EPOCH_UTC = Date.UTC(1943, 3, 14);      // BS 2000/01/01
+    const EPOCH_WD  = new Date(EPOCH_UTC).getUTCDay();
+    const DAY_MS = 86400000;
+    const MONTHS    = ['Baishakh','Jestha','Ashadh','Shrawan','Bhadra','Ashwin',
+                       'Kartik','Mangsir','Poush','Magh','Falgun','Chaitra'];
+    const MONTHS_NP = ['बैशाख','जेठ','असार','साउन','भदौ','असोज',
+                       'कार्तिक','मंसिर','पुस','माघ','फागुन','चैत'];
+    const WD_SHORT  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+    // Days elapsed from BS 2000/01/01 to the first day of each BS year.
+    const YEAR_OFF = (function () {
+        const o = {};
+        let acc = 0;
+        for (let y = MIN_Y; y <= MAX_Y; y++) { o[y] = acc; acc += M[y].reduce(function (a, b) { return a + b; }, 0); }
+        return o;
+    })();
+    const TOTAL_DAYS = YEAR_OFF[MAX_Y] + M[MAX_Y].reduce(function (a, b) { return a + b; }, 0);
+
+    function pad(n) { return String(n).padStart(2, '0'); }
+    function inRange(y) { return y >= MIN_Y && y <= MAX_Y; }
+    function daysInMonth(y, m) { return M[y] ? M[y][m - 1] : 30; }
+
+    function bsToIndex(y, m, d) {
+        if (!inRange(y) || m < 1 || m > 12) return null;
+        let n = YEAR_OFF[y];
+        for (let i = 1; i < m; i++) n += M[y][i - 1];
+        return n + Math.min(d || 1, daysInMonth(y, m)) - 1;
+    }
+    function indexToBs(n) {
+        if (n === null || n === undefined || isNaN(n) || n < 0 || n >= TOTAL_DAYS) return null;
+        let y = MIN_Y;
+        while (y < MAX_Y && n >= YEAR_OFF[y + 1]) y++;
+        let rest = n - YEAR_OFF[y], m = 1;
+        while (rest >= M[y][m - 1]) { rest -= M[y][m - 1]; m++; }
+        return { y: y, m: m, d: rest + 1 };
+    }
+    function adIsoToIndex(iso) {
+        const p = String(iso || '').split('-').map(Number);
+        if (p.length !== 3 || p.some(isNaN)) return null;
+        return Math.round((Date.UTC(p[0], p[1] - 1, p[2]) - EPOCH_UTC) / DAY_MS);
+    }
+    function indexToAdIso(n) {
+        const t = new Date(EPOCH_UTC + n * DAY_MS);
+        return t.getUTCFullYear() + '-' + pad(t.getUTCMonth() + 1) + '-' + pad(t.getUTCDate());
+    }
+
+    function fromAdIso(iso) { return indexToBs(adIsoToIndex(iso)); }
+    function adIsoOfDate(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+    function fromAdDate(d) { return fromAdIso(adIsoOfDate(d)); }
+    function toAdIso(y, m, d) { const i = bsToIndex(y, m, d); return i === null ? null : indexToAdIso(i); }
+    // Never null: a clock outside the table's span clamps to the nearest
+    // supported day, so every caller can read .y/.m/.d without a guard. One
+    // unguarded deref here would take out the whole page script at init.
+    function todayBs() {
+        const n = adIsoToIndex(adIsoOfDate(new Date()));
+        return indexToBs(Math.min(Math.max(n === null ? 0 : n, 0), TOTAL_DAYS - 1));
+    }
+    function weekdayOf(y, m, d) { const i = bsToIndex(y, m, d); return i === null ? 0 : ((i % 7) + EPOCH_WD) % 7; }
+
+    function monthRange(y, m) { return { from: toAdIso(y, m, 1), to: toAdIso(y, m, daysInMonth(y, m)) }; }
+    function addMonths(y, m, delta) {
+        const t = (y * 12 + (m - 1)) + delta;
+        const ny = Math.floor(t / 12), nm = (t % 12) + 1;
+        return inRange(ny) ? { y: ny, m: nm } : null;
+    }
+    function npDigits(n) {
+        const g = ['०','१','२','३','४','५','६','७','८','९'];
+        return String(n).replace(/[0-9]/g, function (c) { return g[c]; });
+    }
+    function monthName(m, nepali) { return (nepali ? MONTHS_NP : MONTHS)[m - 1] || ''; }
+    function monthLabel(y, m) { return monthName(m) + ' ' + y; }
+    function label(bs) { return bs ? monthName(bs.m) + ' ' + bs.d + ', ' + bs.y : ''; }
+    function labelIso(iso) { const bs = fromAdIso(iso); return bs ? label(bs) : (iso || ''); }
+
+    /* Compact range label, e.g. "Bhadra 1 – 32, 2083". */
+    function rangeLabel(fromIso, toIso) {
+        const a = fromAdIso(fromIso), b = fromAdIso(toIso);
+        if (!a || !b) return (fromIso || '') + ' to ' + (toIso || '');
+        if (a.y === b.y && a.m === b.m && a.d === b.d) return label(a);
+        if (a.y === b.y && a.m === b.m) return monthName(a.m) + ' ' + a.d + ' – ' + b.d + ', ' + a.y;
+        if (a.y === b.y) return monthName(a.m) + ' ' + a.d + ' – ' + monthName(b.m) + ' ' + b.d + ', ' + a.y;
+        return label(a) + ' – ' + label(b);
+    }
+
+    /* ── Popover picker ──────────────────────────────────────────────────── */
+    let pop = null, activeInput = null;
+
+    function opts(input) { return (input && input._npOpts) || { mode: 'date' }; }
+    function close() { if (pop) pop.style.display = 'none'; activeInput = null; }
+
+    function ensurePop() {
+        if (pop) return pop;
+        pop = document.createElement('div');
+        pop.className = 'np-pop';
+        pop.style.display = 'none';
+        document.body.appendChild(pop);
+        document.addEventListener('mousedown', function (e) {
+            if (!pop || pop.style.display === 'none') return;
+            if (pop.contains(e.target) || e.target === activeInput) return;
+            close();
+        });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+        window.addEventListener('resize', close);
+        window.addEventListener('scroll', function () { if (activeInput) position(activeInput); }, true);
+        return pop;
+    }
+
+    function position(input) {
+        const r = input.getBoundingClientRect();
+        const w = pop.offsetWidth || 300, h = pop.offsetHeight || 320;
+        let left = r.left;
+        if (left + w > window.innerWidth - 10) left = Math.max(8, window.innerWidth - w - 10);
+        let top = r.bottom + 6;
+        if (top + h > window.innerHeight - 10) top = Math.max(8, r.top - h - 6);
+        pop.style.left = Math.max(8, left) + 'px';
+        pop.style.top = top + 'px';
+    }
+
+    function getValue(input) {
+        if (!input || !input.dataset.npY) return null;
+        return { y: +input.dataset.npY, m: +input.dataset.npM, d: +(input.dataset.npD || 1) };
+    }
+    function setValue(input, bs, silent) {
+        if (!input) return;
+        const o = opts(input);
+        if (!bs) {
+            delete input.dataset.npY; delete input.dataset.npM; delete input.dataset.npD;
+            input.value = ''; input.removeAttribute('title');
+        } else {
+            const d = o.mode === 'month' ? 1 : Math.min(bs.d || 1, daysInMonth(bs.y, bs.m));
+            input.dataset.npY = bs.y; input.dataset.npM = bs.m; input.dataset.npD = d;
+            input.value = o.mode === 'month' ? monthLabel(bs.y, bs.m) : label({ y: bs.y, m: bs.m, d: d });
+            const r = monthRange(bs.y, bs.m);
+            input.title = o.mode === 'month' ? ('AD ' + r.from + ' → ' + r.to) : ('AD ' + toAdIso(bs.y, bs.m, d));
+        }
+        if (!silent && typeof o.onPick === 'function') o.onPick(getValue(input), input);
+    }
+    /* AD ISO of the current value; month mode resolves to the BS month's first day. */
+    function adOf(input) {
+        const v = getValue(input);
+        return v ? toAdIso(v.y, v.m, v.d) : null;
+    }
+    /* AD {from,to}; month mode spans the whole BS month, date mode is a single day. */
+    function adRangeOf(input) {
+        const v = getValue(input);
+        if (!v) return null;
+        if (opts(input).mode === 'month') return monthRange(v.y, v.m);
+        const iso = toAdIso(v.y, v.m, v.d);
+        return { from: iso, to: iso };
+    }
+
+    function attach(input, o) {
+        if (!input) return;
+        input._npOpts = Object.assign({ mode: 'date' }, o || {});
+        input.readOnly = true;
+        input.classList.add('np-input');
+        input.setAttribute('autocomplete', 'off');
+        input.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        input.addEventListener('click', function () { open(input); });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(input); }
+        });
+        if (input._npOpts.value) setValue(input, input._npOpts.value, true);
+    }
+
+    function open(input) {
+        ensurePop();
+        if (activeInput === input && pop.style.display !== 'none') { close(); return; }
+        activeInput = input;
+        const cur = getValue(input) || todayBs();
+        pop._view = { y: cur.y, m: cur.m };
+        pop.classList.toggle('np-pop-month', opts(input).mode === 'month');
+        render();
+        pop.style.display = 'block';
+        position(input);
+    }
+
+    function render() {
+        if (!activeInput) return;
+        const mode = opts(activeInput).mode;
+        const v = pop._view;
+        const sel = getValue(activeInput);
+        const tb = todayBs();
+        let years = '';
+        for (let y = MIN_Y; y <= MAX_Y; y++) {
+            years += '<option value="' + y + '"' + (y === v.y ? ' selected' : '') + '>' + y + '</option>';
+        }
+
+        if (mode === 'month') {
+            let cells = '';
+            for (let m = 1; m <= 12; m++) {
+                const on = sel && sel.y === v.y && sel.m === m;
+                const isNow = tb && tb.y === v.y && tb.m === m;
+                cells += '<button type="button" class="np-mcell' + (on ? ' sel' : '') + (isNow ? ' now' : '') +
+                         '" data-m="' + m + '"><b>' + MONTHS[m - 1] + '</b><i>' + MONTHS_NP[m - 1] + '</i></button>';
+            }
+            pop.innerHTML =
+                '<div class="np-pop-head">' +
+                    '<button type="button" class="np-nav" data-nav="-12" title="Previous year">&#8249;</button>' +
+                    '<select class="np-sel np-year" aria-label="BS year">' + years + '</select>' +
+                    '<button type="button" class="np-nav" data-nav="12" title="Next year">&#8250;</button>' +
+                '</div>' +
+                '<div class="np-mgrid">' + cells + '</div>' +
+                '<div class="np-pop-foot"><span class="np-hint">Bikram Sambat month</span>' +
+                    '<button type="button" class="np-today">This Month</button></div>';
+        } else {
+            const dim = daysInMonth(v.y, v.m);
+            const lead = weekdayOf(v.y, v.m, 1);
+            let cells = '';
+            for (let i = 0; i < lead; i++) cells += '<span class="np-cell np-pad"></span>';
+            for (let d = 1; d <= dim; d++) {
+                const adIso = toAdIso(v.y, v.m, d);
+                const adDay = adIso ? +adIso.split('-')[2] : '';
+                const wd = weekdayOf(v.y, v.m, d);
+                const on = sel && sel.y === v.y && sel.m === v.m && sel.d === d;
+                const isNow = tb && tb.y === v.y && tb.m === v.m && tb.d === d;
+                cells += '<button type="button" class="np-cell' + (on ? ' sel' : '') + (isNow ? ' now' : '') +
+                         (wd === 6 ? ' sat' : '') + '" data-d="' + d + '" title="AD ' + adIso + '">' +
+                         '<b>' + d + '</b><i>' + adDay + '</i></button>';
+            }
+            const hdr = WD_SHORT.map(function (w, i) {
+                return '<span class="np-wd' + (i === 6 ? ' sat' : '') + '">' + w + '</span>';
+            }).join('');
+            const months = MONTHS.map(function (n, i) {
+                return '<option value="' + (i + 1) + '"' + (i + 1 === v.m ? ' selected' : '') + '>' + n + '</option>';
+            }).join('');
+            pop.innerHTML =
+                '<div class="np-pop-head">' +
+                    '<button type="button" class="np-nav" data-nav="-1" title="Previous month">&#8249;</button>' +
+                    '<select class="np-sel np-month" aria-label="BS month">' + months + '</select>' +
+                    '<select class="np-sel np-year" aria-label="BS year">' + years + '</select>' +
+                    '<button type="button" class="np-nav" data-nav="1" title="Next month">&#8250;</button>' +
+                '</div>' +
+                '<div class="np-wdrow">' + hdr + '</div>' +
+                '<div class="np-dgrid">' + cells + '</div>' +
+                '<div class="np-pop-foot"><span class="np-hint">big&nbsp;=&nbsp;BS · small&nbsp;=&nbsp;AD</span>' +
+                    '<button type="button" class="np-today">Today</button></div>';
+        }
+        wire();
+    }
+
+    function wire() {
+        pop.querySelectorAll('.np-nav').forEach(function (b) {
+            b.onclick = function () {
+                const nx = addMonths(pop._view.y, pop._view.m, +b.dataset.nav);
+                if (nx) { pop._view = nx; render(); position(activeInput); }
+            };
+        });
+        const ys = pop.querySelector('.np-year');
+        if (ys) ys.onchange = function () { pop._view.y = +ys.value; render(); position(activeInput); };
+        const ms = pop.querySelector('.np-month');
+        if (ms) ms.onchange = function () { pop._view.m = +ms.value; render(); position(activeInput); };
+        pop.querySelectorAll('.np-cell[data-d]').forEach(function (b) {
+            b.onclick = function () {
+                const input = activeInput;
+                const view = { y: pop._view.y, m: pop._view.m, d: +b.dataset.d };
+                close();
+                setValue(input, view);
+            };
+        });
+        pop.querySelectorAll('.np-mcell').forEach(function (b) {
+            b.onclick = function () {
+                const input = activeInput;
+                const view = { y: pop._view.y, m: +b.dataset.m, d: 1 };
+                close();
+                setValue(input, view);
+            };
+        });
+        const t = pop.querySelector('.np-today');
+        if (t) t.onclick = function () {
+            const input = activeInput;
+            close();
+            setValue(input, todayBs());
+        };
+    }
+
+    return {
+        MONTHS: MONTHS, MONTHS_NP: MONTHS_NP, MIN_Y: MIN_Y, MAX_Y: MAX_Y,
+        daysInMonth: daysInMonth, fromAdIso: fromAdIso, fromAdDate: fromAdDate,
+        toAdIso: toAdIso, todayBs: todayBs, monthRange: monthRange, addMonths: addMonths,
+        npDigits: npDigits, monthName: monthName, monthLabel: monthLabel,
+        label: label, labelIso: labelIso, rangeLabel: rangeLabel, weekdayOf: weekdayOf,
+        attach: attach, setValue: setValue, getValue: getValue, adOf: adOf, adRangeOf: adRangeOf,
+        close: close
+    };
+})();
+
 const PV_API_URL = "{% url 'hrm:employee_period_attendance' %}";
+const ATT_CSRF = '{{ csrf_token }}';
+let currentAttRecordId = null;
 let pvCurrentPeriod = 'day';
+let pvCalendar = 'ad';    // calendar system driving the Period View pickers
+let pvRenderBs = false;   // whether the results currently on screen are BS-framed
+
+// Caption for one day, led by whichever calendar the results were framed in.
+// Returns { main, sub } so callers can render the secondary line where it fits.
+function pvDayCaption(iso, adDisplay) {
+    const bs = NP.fromAdIso(iso);
+    const ad = adDisplay || iso;
+    if (!bs) return { main: ad, sub: '' };
+    if (pvRenderBs) return { main: NP.label(bs) + ' BS', sub: ad };
+    return { main: ad, sub: NP.label(bs) + ' BS' };
+}
+
+// Day-number block shared by the week / custom cards and the month cells.
+// In BS mode the Bikram Sambat day is the headline and the AD day is the small
+// badge; in AD mode it is the other way round (BS in Devanagari digits).
+function pvDayNumHtml(iso, color, variant) {
+    const bs = NP.fromAdIso(iso);
+    const adDay = Number(String(iso).split('-')[2]);
+    const big = (pvRenderBs && bs) ? bs.d : adDay;
+    const small = pvRenderBs ? adDay : (bs ? NP.npDigits(bs.d) : '');
+    const cls = variant === 'month' ? 'cal-num' : 'nep-badge';
+    const bigStyle = variant === 'month'
+        ? 'font-size:1.3rem;font-weight:800;color:#4f46e5;margin-bottom:6px;'
+        : 'font-size:1.55rem;font-weight:800;color:#4f46e5;margin:4px 0;';
+    return `<span class="${cls}" style="color:${color};">${small}</span><div style="${bigStyle}">${big}</div>`;
+}
 
 // ── XSS-safe text escaper ─────────────────────────────────────────────────────
 function esc(s) { const t = document.createElement('span'); t.appendChild(document.createTextNode(s == null ? '' : String(s))); return t.innerHTML; }
@@ -987,23 +1752,44 @@ function togglePeriodPanel() {
 // ── Period toggle ─────────────────────────────────────────────────────────────
 function setPeriod(p) {
     pvCurrentPeriod = p;
-    ['day','week','month'].forEach(x => {
-        document.getElementById('pvBtn' + x.charAt(0).toUpperCase() + x.slice(1)).classList.toggle('active', x === p);
+    ['day','week','month','custom'].forEach(x => {
+        const btn = document.getElementById('pvBtn' + x.charAt(0).toUpperCase() + x.slice(1));
+        if (btn) btn.classList.toggle('active', x === p);
     });
-    const dateInp  = document.getElementById('pvDateInput');
-    const monthInp = document.getElementById('pvMonthInput');
-    const lbl      = document.getElementById('pvDateLabel');
-    if (p === 'month') {
-        dateInp.classList.add('d-none');
-        monthInp.classList.remove('d-none');
-        lbl.innerHTML = '<i class="fas fa-calendar-alt me-1"></i>Select Month';
-    } else {
-        dateInp.classList.remove('d-none');
-        monthInp.classList.add('d-none');
-        lbl.innerHTML = p === 'week'
-            ? '<i class="fas fa-calendar-alt me-1"></i>Any Date in Week'
-            : '<i class="fas fa-calendar-alt me-1"></i>Select Date';
-    }
+    const isCustom = p === 'custom';
+    const isMonth  = p === 'month';
+    // Both input sets are kept in sync so switching AD <-> BS never leaves a
+    // stale picker on screen.
+    const toggle = (id, hidden) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('d-none', hidden);
+    };
+    toggle('pvSingleDateWrap', isCustom);
+    toggle('pvCustomDateWrap', !isCustom);
+    toggle('pvDateInput', isMonth);
+    toggle('pvMonthInput', !isMonth);
+    toggle('pvBsSingleWrap', isCustom);
+    toggle('pvBsCustomWrap', !isCustom);
+    toggle('pvBsDateField', isMonth);
+    toggle('pvBsMonthField', !isMonth);
+
+    const lbl = document.getElementById('pvDateLabel');
+    const icon = '<i class="fas fa-calendar-alt me-1"></i>';
+    lbl.innerHTML = icon + (isCustom ? 'Select Range'
+                          : isMonth  ? 'Select Month'
+                          : p === 'week' ? 'Any Date in Week'
+                          : 'Select Date');
+}
+
+// ── Calendar system toggle (Period View) ──────────────────────────────────────
+function pvSetCalendar(mode) {
+    pvCalendar = mode;
+    document.getElementById('pvCalAd').classList.toggle('active', mode === 'ad');
+    document.getElementById('pvCalBs').classList.toggle('active', mode === 'bs');
+    document.getElementById('pvAdWrap').classList.toggle('d-none', mode !== 'ad');
+    document.getElementById('pvBsWrap').classList.toggle('d-none', mode !== 'bs');
+    NP.close();
+    setPeriod(pvCurrentPeriod);
 }
 
 // ── Initialise date inputs to today / current month ───────────────────────────
@@ -1017,8 +1803,30 @@ function _localDateStr(d) {
     const today = new Date();
     const ymd = _localDateStr(today);
     const ym  = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const customFrom = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
     document.getElementById('pvDateInput').value  = ymd;
     document.getElementById('pvMonthInput').value = ym;
+    if (document.getElementById('pvCustomFrom')) document.getElementById('pvCustomFrom').value = customFrom;
+    if (document.getElementById('pvCustomTo')) document.getElementById('pvCustomTo').value = ymd;
+
+    // Bikram Sambat pickers — seeded to the current BS date / month so BS mode
+    // is usable the moment it is switched on.
+    const tb = NP.todayBs();
+    NP.attach(document.getElementById('pvBsDate'),  { mode: 'date'  });
+    NP.attach(document.getElementById('pvBsMonth'), { mode: 'month' });
+    NP.attach(document.getElementById('pvBsFrom'),  { mode: 'date'  });
+    NP.attach(document.getElementById('pvBsTo'),    { mode: 'date'  });
+    NP.setValue(document.getElementById('pvBsDate'),  tb, true);
+    NP.setValue(document.getElementById('pvBsMonth'), tb, true);
+    NP.setValue(document.getElementById('pvBsFrom'),  { y: tb.y, m: tb.m, d: 1 }, true);
+    NP.setValue(document.getElementById('pvBsTo'),    tb, true);
+
+    NP.attach(document.getElementById('esBsMonth'), {
+        mode: 'month',
+        onPick: function () { if (esSyncBsMonth()) generateEmpSummary(); },
+    });
+    NP.attach(document.getElementById('esBsFrom'), { mode: 'date', onPick: function () { esSyncBsCustom(); } });
+    NP.attach(document.getElementById('esBsTo'),   { mode: 'date', onPick: function () { esSyncBsCustom(); } });
 })();
 
 // ── Generate ──────────────────────────────────────────────────────────────────
@@ -1026,16 +1834,46 @@ function generatePeriodView() {
     const empId = document.getElementById('pvEmployee').value;
     if (!empId) { alert('Please select an employee.'); return; }
     const period = pvCurrentPeriod;
+    const bs = pvCalendar === 'bs';
     let refDate;
-    if (period === 'month') {
-        const mv = document.getElementById('pvMonthInput').value;
-        refDate = mv ? mv + '-01' : _localDateStr(new Date());
+    let refDateTo = '';
+    // Everything downstream speaks AD, so a BS selection is converted here and
+    // the API, the export and the summary maths stay untouched.
+    if (period === 'custom') {
+        const dFrom = bs ? NP.adOf(document.getElementById('pvBsFrom'))
+                         : document.getElementById('pvCustomFrom').value;
+        const dTo   = bs ? NP.adOf(document.getElementById('pvBsTo'))
+                         : document.getElementById('pvCustomTo').value;
+        if (!dFrom || !dTo) {
+            alert(bs ? 'Please select both start and end Nepali dates.' : 'Please select both start and end dates.');
+            return;
+        }
+        if (dFrom > dTo) { alert('Start date cannot be after end date.'); return; }
+        refDate = dFrom;
+        refDateTo = dTo;
+    } else if (period === 'month') {
+        if (bs) {
+            // A BS month straddles two AD months, so its exact range is sent.
+            const r = NP.adRangeOf(document.getElementById('pvBsMonth'));
+            if (!r) { alert('Please select a Nepali month.'); return; }
+            refDate = r.from;
+            refDateTo = r.to;
+        } else {
+            const mv = document.getElementById('pvMonthInput').value;
+            refDate = mv ? mv + '-01' : _localDateStr(new Date());
+        }
     } else {
-        refDate = document.getElementById('pvDateInput').value || _localDateStr(new Date());
+        refDate = (bs ? NP.adOf(document.getElementById('pvBsDate'))
+                      : document.getElementById('pvDateInput').value) || _localDateStr(new Date());
     }
+    pvRenderBs = bs;
     document.getElementById('pvResults').style.display = 'none';
     document.getElementById('pvLoading').style.display  = 'block';
-    fetch(`${PV_API_URL}?employee_id=${encodeURIComponent(empId)}&period=${encodeURIComponent(period)}&ref_date=${encodeURIComponent(refDate)}`)
+    
+    let url = `${PV_API_URL}?employee_id=${encodeURIComponent(empId)}&period=${encodeURIComponent(period)}&ref_date=${encodeURIComponent(refDate)}`;
+    if (refDateTo) url += `&ref_date_to=${encodeURIComponent(refDateTo)}`;
+
+    fetch(url)
         .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
         .then(data => {
             document.getElementById('pvLoading').style.display = 'none';
@@ -1058,6 +1896,7 @@ const STATUS_COLORS = {
     on_leave: { bg:'#ede9fe', color:'#4c1d95', dot:'#8b5cf6', label:'On Leave'},
     weekend:  { bg:'#fdf2f8', color:'#9d174d', dot:'#db2777', label:'Weekend' },
     holiday:  { bg:'#fefce8', color:'#854d0e', dot:'#ca8a04', label:'Holiday' },
+    incomplete: { bg:'#ffedd5', color:'#9a3412', dot:'#ea580c', label:'Incomplete Punch'},
 };
 function statusBadge(status, label) {
     const s = STATUS_COLORS[status] || { bg:'#f1f5f9', color:'#64748b', dot:'#94a3b8' };
@@ -1072,6 +1911,7 @@ function renderPeriodView(data) {
     if (data.period === 'day')   html += renderDayView(data);
     if (data.period === 'week')  html += renderWeekView(data);
     if (data.period === 'month') html += renderMonthView(data);
+    if (data.period === 'custom') html += renderCustomView(data);
     const el = document.getElementById('pvResults');
     el.innerHTML = html;
     el.style.display = 'block';
@@ -1081,6 +1921,7 @@ function renderPeriodView(data) {
 function renderEmpHeader(data) {
     const e = data.employee;
     const ini = esc((e.full_name || '?').charAt(0).toUpperCase());
+    const adRange = data.date_from_display + (data.period !== 'day' ? ' – ' + data.date_to_display : '');
     return `
     <div class="pv-emp-header d-flex align-items-center gap-3">
         <div class="pv-emp-avatar">${ini}</div>
@@ -1089,8 +1930,9 @@ function renderEmpHeader(data) {
             <div style="color:rgba(255,255,255,0.75);font-size:0.78rem;">${esc(e.employee_id)} &nbsp;·&nbsp; ${esc(e.department)} &nbsp;·&nbsp; ${esc(e.designation)}</div>
         </div>
         <div class="text-end">
-            <div style="color:rgba(255,255,255,0.65);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">${esc(data.period.charAt(0).toUpperCase()+data.period.slice(1))} View</div>
-            <div style="color:#fff;font-size:0.83rem;font-weight:600;margin-top:2px;">${esc(data.date_from_display)}${data.period!=='day' ? ' &ndash; '+esc(data.date_to_display) : ''}</div>
+            <div style="color:rgba(255,255,255,0.65);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;">${esc(data.period.charAt(0).toUpperCase()+data.period.slice(1))} View${pvRenderBs ? ' &middot; BS' : ''}</div>
+            <div style="color:#fff;font-size:0.83rem;font-weight:600;margin-top:2px;">${esc(pvRenderBs ? NP.rangeLabel(data.date_from, data.date_to) : adRange)}</div>
+            ${pvRenderBs ? `<div style="color:rgba(255,255,255,0.62);font-size:0.7rem;margin-top:1px;">${esc(adRange)}</div>` : ''}
         </div>
     </div>`;
 }
@@ -1113,10 +1955,11 @@ function renderSummaryBar(data) {
                     <th rowspan="2">Day<br>Off</th>
                     <th rowspan="2">Night<br>Off</th>
                     <th rowspan="2">Present<br>Days</th>
+                    <th rowspan="2" style="color:#2563eb;">Half<br>Day</th>
                     <th rowspan="2">Present On<br>Holiday</th>
                     <th rowspan="2">Present On Day Off<br>/Night Off/Weekend</th>
                     <th rowspan="2">Absent<br>Days</th>
-                    <th rowspan="2">Misc<br>Days</th>
+                    <th rowspan="2" style="color:#9a3412;" title="Incomplete punch — clocked in but never out (or the reverse). Not counted as Absent.">Misc<br>Days</th>
                     <th class="pv-th-group" colspan="2">Leave Days</th>
                     <th rowspan="2">Worked<br>Hours</th>
                     <th rowspan="2">OT<br>Hours</th>
@@ -1143,10 +1986,11 @@ function renderSummaryBar(data) {
                     <td>${d.day_off}</td>
                     <td>${d.night_off}</td>
                     <td style="color:#16a34a;font-weight:700;">${d.present_days}</td>
+                    <td style="color:#2563eb;font-weight:600;">${d.half_day}</td>
                     <td>${d.present_on_holiday}</td>
                     <td>${d.present_on_off}</td>
                     <td style="color:#ef4444;font-weight:700;">${d.absent_days}</td>
-                    <td>${d.misc_days}</td>
+                    <td style="color:#9a3412;font-weight:600;" title="Incomplete punch days">${d.misc_days}</td>
                     <td style="color:#16a34a;font-weight:600;">${d.leave_paid}</td>
                     <td style="color:#ef4444;font-weight:600;">${d.leave_unpaid}</td>
                     <td style="color:#6366f1;font-weight:600;">${d.worked_hours}</td>
@@ -1193,7 +2037,8 @@ function renderDayView(data) {
             <div style="background:${sc.bg};border-radius:12px;padding:2rem;display:inline-block;">
                 <i class="fas ${icon} mb-2" style="font-size:2rem;color:${sc.color};display:block;"></i>
                 <div style="font-weight:700;font-size:1rem;color:${sc.color};">${dayLabel}</div>
-                <div style="font-size:0.82rem;color:#64748b;margin-top:4px;">${dayName}, ${dateDisp}</div>
+                <div style="font-size:0.82rem;color:#64748b;margin-top:4px;">${dayName}, ${esc(pvDayCaption(iso, dateDisp).main)}</div>
+                ${pvDayCaption(iso, dateDisp).sub ? `<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px;">${esc(pvDayCaption(iso, dateDisp).sub)}</div>` : ''}
             </div>
         </div>`;
     }
@@ -1201,6 +2046,8 @@ function renderDayView(data) {
     let flags = '';
     if (rec.is_late_arrival)   flags += `<span class="badge bg-warning text-dark me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;"><i class="fas fa-chevron-right fa-xs me-1"></i>Late Arrival</span>`;
     if (rec.is_early_departure)flags += `<span class="badge bg-info text-dark me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;"><i class="fas fa-chevron-left fa-xs me-1"></i>Early Departure</span>`;
+    if (rec.status === 'half_day') flags += `<span class="badge me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;background:#dbeafe;color:#1e3a8a;"><i class="fas fa-hourglass-half fa-xs me-1"></i>Half Day</span>`;
+    if (rec.is_incomplete) flags += `<span class="badge me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;background:#ffedd5;color:#9a3412;"><i class="fas fa-exclamation-triangle fa-xs me-1"></i>Incomplete Punch</span>`;
     if (rec.is_holiday)        flags += `<span class="badge bg-secondary me-1 px-2 py-1" style="font-size:0.72rem;border-radius:7px;"><i class="fas fa-star fa-xs me-1"></i>Holiday</span>`;
     return `
     <div class="p-4">
@@ -1208,7 +2055,8 @@ function renderDayView(data) {
             <div style="background:${sc.bg};padding:1.2rem 1.5rem;border-bottom:1px solid #e9ecef;">
                 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div>
-                        <div style="font-size:1.05rem;font-weight:700;color:#1e293b;">${rec.day_name}, ${rec.date_display}</div>
+                        <div style="font-size:1.05rem;font-weight:700;color:#1e293b;">${rec.day_name}, ${esc(pvDayCaption(rec.date, rec.date_display).main)}</div>
+                        ${pvDayCaption(rec.date, rec.date_display).sub ? `<div style="font-size:0.72rem;color:#94a3b8;margin-top:1px;">${esc(pvDayCaption(rec.date, rec.date_display).sub)}</div>` : ''}
                         <div style="font-size:0.8rem;color:#64748b;margin-top:2px;">${rec.shift || 'No Shift Assigned'}</div>
                     </div>
                     ${statusBadge(rec.status, rec.status_display)}
@@ -1250,7 +2098,9 @@ function renderWeekView(data) {
     const weekendNums = data.weekend_nums || [5, 6];
     const holidayDates = new Set(data.holiday_dates || []);
     const jsWeekendDays = new Set(weekendNums.map(n => (n + 1) % 7));
-    const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    // Indexed by Date.getDay() so the label always matches the actual date,
+    // rather than assuming the range happens to start on a Monday.
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     let cards = '';
     for (let i = 0; i < 7; i++) {
         const d = new Date(start); d.setDate(start.getDate() + i);
@@ -1261,12 +2111,13 @@ function renderWeekView(data) {
         const jsDay = d.getDay();
         const isWknd = jsWeekendDays.has(jsDay);
         const isHol = holidayDates.has(iso);
-        const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+        const dayNumHtml = (color) => pvDayNumHtml(iso, color, 'week');
+
         if (rec) {
             const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.bg};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
-                <div class="day-lbl">${dayNames[i]}</div>
-                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">${esc(rec.status_display)}</span>
                 <div style="font-size:0.65rem;color:${sc.color};opacity:0.8;margin-top:4px;">${rec.clock_in || '–'} › ${rec.clock_out || '–'}</div>
                 <div style="font-size:0.68rem;font-weight:700;color:${sc.color};margin-top:2px;">${rec.working_hours ? rec.working_hours + 'h' : ''}</div>
@@ -1274,33 +2125,153 @@ function renderWeekView(data) {
         } else if (isWknd) {
             const sc = STATUS_COLORS.weekend;
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
-                <div class="day-lbl">${dayNames[i]}</div>
-                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Weekend</span>
             </div>`;
         } else if (isHol) {
             const sc = STATUS_COLORS.holiday;
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
-                <div class="day-lbl">${dayNames[i]}</div>
-                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Holiday</span>
             </div>`;
         } else if (isPast) {
             const sc = STATUS_COLORS.absent;
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
-                <div class="day-lbl">${dayNames[i]}</div>
-                <div class="day-num" style="color:${sc.color};">${d.getDate()}</div>
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
                 <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Absent</span>
             </div>`;
         } else {
-            cards += `<div class="pv-week-day no-record${isTd ? ' today' : ''}">
-                <div class="day-lbl">${dayNames[i]}</div>
-                <div class="day-num">${d.getDate()}</div>
+            cards += `<div class="pv-week-day no-record"${isTd ? ' style="outline:2px solid #6366f1;outline-offset:2px;"' : ''}>
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml('#1e293b')}
                 <span class="day-status" style="background:#f1f5f9;color:#94a3b8;">—</span>
             </div>`;
         }
     }
-    return `<div class="p-4"><div class="pv-week-grid">${cards}</div></div>`;
+    return `<div class="p-4"><div class="pv-week-wrap"><div class="pv-week-grid">${cards}</div></div></div>`;
+}
+
+// ── Custom view ───────────────────────────────────────────────────────────────
+function renderCustomView(data) {
+    const byDate = {};
+    data.records.forEach(r => { byDate[r.date] = r; });
+    const [_fy, _fm, _fd] = data.date_from.split('-').map(Number);
+    const [_ty, _tm, _td] = data.date_to.split('-').map(Number);
+    const start = new Date(_fy, _fm - 1, _fd);
+    const end = new Date(_ty, _tm - 1, _td);
+    const totalDays = Math.round((end - start) / 86400000) + 1;
+
+    // Nepali + English month-range title (e.g. "Ashadh - Ashwin 2083 | July - September 2026")
+    const engMonthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const ndFrom = NP.fromAdIso(data.date_from), ndTo = NP.fromAdIso(data.date_to);
+    let nepPart = '';
+    if (ndFrom && ndTo) {
+        nepPart = (ndFrom.y !== ndTo.y)
+            ? `${NP.monthName(ndFrom.m)} ${ndFrom.y} – ${NP.monthName(ndTo.m)} ${ndTo.y}`
+            : (ndFrom.m === ndTo.m)
+                ? `${NP.monthName(ndFrom.m)} ${ndFrom.y}`
+                : `${NP.monthName(ndFrom.m)} – ${NP.monthName(ndTo.m)} ${ndFrom.y}`;
+    }
+    const engFromYr = start.getFullYear(), engToYr = end.getFullYear();
+    const engPart = (start.getMonth() === end.getMonth() && engFromYr === engToYr)
+        ? `${engMonthNames[start.getMonth()]} ${engFromYr}`
+        : (engFromYr === engToYr)
+            ? `${engMonthNames[start.getMonth()]} – ${engMonthNames[end.getMonth()]} ${engFromYr}`
+            : `${engMonthNames[start.getMonth()]} ${engFromYr} – ${engMonthNames[end.getMonth()]} ${engToYr}`;
+    const rangeTitle = !nepPart ? engPart
+        : pvRenderBs ? `${nepPart} (BS) | ${engPart}`
+        : `${nepPart} | ${engPart}`;
+
+    const today = _localDateStr(new Date());
+    const weekendNums = data.weekend_nums || [5, 6];
+    const holidayDates = new Set(data.holiday_dates || []);
+    const jsWeekendDays = new Set(weekendNums.map(n => (n + 1) % 7));
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const dayHdrs = dayNames.map((d, i) =>
+        `<div class="pv-week-hdr${i===0||i===6?' wknd':''}">${d}</div>`).join('');
+    let cards = '';
+
+    // limit custom view rendering if it's too large, e.g., > 100 days
+    const maxDays = Math.min(totalDays, 90);
+
+    // Pad the grid so the first column of every row is always Sunday
+    const leadingBlanks = start.getDay(); // 0=Sun..6=Sat
+    for (let i = 0; i < leadingBlanks; i++) {
+        cards += `<div class="pv-week-day pv-week-day-pad" aria-hidden="true"></div>`;
+    }
+
+    for (let i = 0; i < maxDays; i++) {
+        const d = new Date(start); d.setDate(start.getDate() + i);
+        const iso = _localDateStr(d);
+        const rec = byDate[iso];
+        const isTd = iso === today;
+        const isPast = iso < today;
+        const jsDay = d.getDay();
+        const isWknd = jsWeekendDays.has(jsDay);
+        const isHol = holidayDates.has(iso);
+        const dayNumHtml = (color) => pvDayNumHtml(iso, color, 'week');
+
+        if (rec) {
+            const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.bg};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">${esc(rec.status_display)}</span>
+                <div style="font-size:0.65rem;color:${sc.color};opacity:0.8;margin-top:4px;">${rec.clock_in || '–'} › ${rec.clock_out || '–'}</div>
+                <div style="font-size:0.68rem;font-weight:700;color:${sc.color};margin-top:2px;">${rec.working_hours ? rec.working_hours + 'h' : ''}</div>
+            </div>`;
+        } else if (isWknd) {
+            const sc = STATUS_COLORS.weekend;
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Weekend</span>
+            </div>`;
+        } else if (isHol) {
+            const sc = STATUS_COLORS.holiday;
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Holiday</span>
+            </div>`;
+        } else if (isPast) {
+            const sc = STATUS_COLORS.absent;
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml(sc.color)}
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">Absent</span>
+            </div>`;
+        } else {
+            cards += `<div class="pv-week-day no-record"${isTd ? ' style="outline:2px solid #6366f1;outline-offset:2px;"' : ''}>
+                <div class="day-lbl">${dayNames[jsDay]}</div>
+                ${dayNumHtml('#1e293b')}
+                <span class="day-status" style="background:#f1f5f9;color:#94a3b8;">—</span>
+            </div>`;
+        }
+    }
+    
+    // Pad trailing cells so the final row also completes a full 7-column week
+    const totalCells = leadingBlanks + maxDays;
+    const trailingBlanks = (7 - (totalCells % 7)) % 7;
+    for (let i = 0; i < trailingBlanks; i++) {
+        cards += `<div class="pv-week-day pv-week-day-pad" aria-hidden="true"></div>`;
+    }
+
+    let html = `<div class="p-4"><div class="pv-week-wrap"><div class="pv-week-scroll-inner">
+        ${rangeTitle ? `<div class="pv-cal-nav" style="justify-content:center;">
+            <span class="pv-cal-month-title"><i class="fas fa-calendar-alt"></i>${rangeTitle}</span>
+        </div>` : ''}
+        <div class="pv-week-hdr-row">${dayHdrs}</div>
+        <div class="pv-week-grid" style="grid-template-columns:repeat(7,1fr);">${cards}</div>
+    </div></div>`;
+    if (totalDays > maxDays) {
+        html += `<div class="text-center mt-3 text-muted" style="font-size:0.8rem;">Showing first ${maxDays} days. Please use a smaller date range or view summary report for the rest.</div>`;
+    }
+    html += `</div>`;
+    return html;
 }
 
 // ── Month view ────────────────────────────────────────────────────────────────
@@ -1308,7 +2279,6 @@ function renderMonthView(data) {
     const byDate = {};
     data.records.forEach(r => { byDate[r.date] = r; });
     const year      = data.year;
-    const month     = data.month; // 1-indexed
     const totalDays = data.month_days;
     const firstDay  = data.month_first_weekday; // 0=Mon
     const today     = _localDateStr(new Date());
@@ -1319,28 +2289,32 @@ function renderMonthView(data) {
     const dayHdrs = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) =>
         `<div class="pv-cal-head${i===0||i===6?' wknd':''}">${d}</div>`).join('');
 
-    // Build month nav data attribute so prev/next can re-query
-    const prevMonth = month === 1 ? `${year-1}-12` : `${year}-${String(month-1).padStart(2,'0')}`;
-    const nextMonth = month === 12 ? `${year+1}-01` : `${year}-${String(month+1).padStart(2,'0')}`;
-
     // Convert Python weekday (0=Mon…6=Sun) to Sun-first column (Sun→0, Mon→1…Sat→6)
     const firstDaySun = (firstDay + 1) % 7;
 
     // Convert Python weekend_nums to JS Date.getDay() format (0=Sun..6=Sat)
     const jsWeekendDays = new Set(weekendNums.map(n => (n + 1) % 7));
 
+    // Walk the range the server resolved rather than an AD year/month pair — a
+    // BS month runs 29-32 days and straddles two AD months, so its cells cannot
+    // be built from a calendar month.
+    const [_my, _mm, _md] = data.date_from.split('-').map(Number);
+    const monthStart = new Date(_my, _mm - 1, _md);
+
     let cells = '';
     for (let i = 0; i < firstDaySun; i++) cells += '<div class="pv-cal-cell empty"></div>';
 
-    for (let d = 1; d <= totalDays; d++) {
-        const iso = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    for (let i = 0; i < totalDays; i++) {
+        const cellDate = new Date(monthStart); cellDate.setDate(monthStart.getDate() + i);
+        const iso = _localDateStr(cellDate);
         const rec = byDate[iso];
         const isTd = iso === today;
-        const col = (firstDaySun + d - 1) % 7;  // 0=Sun, 6=Sat
-        const jsDay = new Date(year, month - 1, d).getDay(); // 0=Sun..6=Sat
+        const jsDay = cellDate.getDay(); // 0=Sun..6=Sat
         const isWknd = jsWeekendDays.has(jsDay);
         const isHol = holidayDates.has(iso);
         const isPast = iso < today;
+        const numHtml = (color) => pvDayNumHtml(iso, color, 'month');
+
         if (rec) {
             const ci  = rec.clock_in  || '–';
             const wh  = rec.working_hours ? rec.working_hours + 'h' : '';
@@ -1354,33 +2328,47 @@ function renderMonthView(data) {
                           data-is-late="${rec.is_late_arrival?'1':'0'}"
                           data-is-early="${rec.is_early_departure?'1':'0'}"
                           data-is-holiday="${rec.is_holiday?'1':'0'}"
+                          data-is-incomplete="${rec.is_incomplete?'1':'0'}"
                           data-notes="${esc(rec.notes||'')}"
                           onclick="pvShowCalPopup(event,this)">
-                <span class="cal-num">${d}</span>
+                ${numHtml('inherit')}
                 <span class="cal-status-chip cal-chip-${rec.status}">${lbl}</span>
                 <span class="cal-time"><i class="fas fa-sign-in-alt fa-xs me-1"></i>${ci}</span>
                 ${wh ? `<span class="cal-hours">${wh}</span>` : ''}
             </div>`;
         } else if (isWknd) {
             cells += `<div class="pv-cal-cell pv-status-weekend wknd-cell${isTd?' today':''}">
-                <span class="cal-num" style="color:#9d174d;">${d}</span>
+                ${numHtml('#9d174d')}
                 <span class="cal-status-chip cal-chip-weekend">Weekend</span>
             </div>`;
         } else if (isHol) {
             cells += `<div class="pv-cal-cell pv-status-holiday${isTd?' today':''}">
-                <span class="cal-num" style="color:#854d0e;">${d}</span>
+                ${numHtml('#854d0e')}
                 <span class="cal-status-chip cal-chip-holiday">Holiday</span>
             </div>`;
         } else if (isPast) {
             cells += `<div class="pv-cal-cell pv-status-absent${isTd?' today':''}">
-                <span class="cal-num">${d}</span>
+                ${numHtml('inherit')}
                 <span class="cal-status-chip cal-chip-absent">Absent</span>
             </div>`;
         } else {
             cells += `<div class="pv-cal-cell pv-status-no_record${isTd?' today':''}">
-                <span class="cal-num">${d}</span>
+                ${numHtml('inherit')}
             </div>`;
         }
+    }
+
+    // Header: whichever calendar the user picked leads, the other trails.
+    const bsFirst = NP.fromAdIso(data.date_from);
+    let titleHtml;
+    if (pvRenderBs && bsFirst) {
+        titleHtml = `${NP.monthName(bsFirst.m)} ${bsFirst.y}`
+            + ` <span style="opacity:0.75;font-weight:600;">${NP.monthName(bsFirst.m, true)} ${NP.npDigits(bsFirst.y)}</span>`
+            + ` <span style="opacity:0.6;font-weight:500;">| ${esc(data.date_from_display)} – ${esc(data.date_to_display)}</span>`;
+    } else {
+        titleHtml = bsFirst
+            ? `${NP.monthName(bsFirst.m)} ${NP.npDigits(bsFirst.y)} | ${data.month_name} ${year}`
+            : `${data.month_name} ${year}`;
     }
 
     // Legend
@@ -1395,13 +2383,13 @@ function renderMonthView(data) {
     return `
     <div class="pv-cal-wrap">
         <div class="pv-cal-nav">
-            <button class="pv-cal-nav-btn" onclick="pvNavMonth('${prevMonth}')" title="Previous month">
+            <button class="pv-cal-nav-btn" onclick="pvNavMonth(-1)" title="Previous month">
                 <i class="fas fa-chevron-left fa-xs"></i>
             </button>
             <span class="pv-cal-month-title">
-                <i class="fas fa-calendar-alt"></i>${data.month_name} ${year}
+                <i class="fas fa-calendar-alt"></i>${titleHtml}
             </span>
-            <button class="pv-cal-nav-btn" onclick="pvNavMonth('${nextMonth}')" title="Next month">
+            <button class="pv-cal-nav-btn" onclick="pvNavMonth(1)" title="Next month">
                 <i class="fas fa-chevron-right fa-xs"></i>
             </button>
         </div>
@@ -1411,8 +2399,25 @@ function renderMonthView(data) {
 }
 
 // ── Calendar month navigation ─────────────────────────────────────────────────
-function pvNavMonth(ym) {
-    document.getElementById('pvMonthInput').value = ym;
+function pvNavMonth(delta) {
+    // The arrows belong to the calendar the visible grid was drawn in. If the
+    // AD/BS switch was flipped after generating, bring it back in line first so
+    // a step lands in the next month of the calendar the user is looking at.
+    if (pvRenderBs !== (pvCalendar === 'bs')) pvSetCalendar(pvRenderBs ? 'bs' : 'ad');
+    if (pvCalendar === 'bs') {
+        const el = document.getElementById('pvBsMonth');
+        const cur = NP.getValue(el) || NP.todayBs();
+        const nx = NP.addMonths(cur.y, cur.m, delta);
+        if (!nx) return;   // outside the supported BS range
+        NP.setValue(el, nx, true);
+    } else {
+        const el = document.getElementById('pvMonthInput');
+        let [y, m] = (el.value || '').split('-').map(Number);
+        if (!y || !m) { const t = new Date(); y = t.getFullYear(); m = t.getMonth() + 1; }
+        m += delta;
+        if (m < 1) { m = 12; y -= 1; } else if (m > 12) { m = 1; y += 1; }
+        el.value = `${y}-${String(m).padStart(2,'0')}`;
+    }
     generatePeriodView();
 }
 
@@ -1424,6 +2429,8 @@ function pvShowCalPopup(evt, el) {
     let flags = '';
     if (d.isLate    === '1') flags += `<span class="badge me-1 mb-1" style="background:#fef3c7;color:#92400e;font-size:0.7rem;"><i class="fas fa-clock fa-xs me-1"></i>Late Arrival</span>`;
     if (d.isEarly   === '1') flags += `<span class="badge me-1 mb-1" style="background:#dbeafe;color:#1e3a8a;font-size:0.7rem;"><i class="fas fa-door-open fa-xs me-1"></i>Early Departure</span>`;
+    if (d.status === 'half_day') flags += `<span class="badge me-1 mb-1" style="background:#dbeafe;color:#1e3a8a;font-size:0.7rem;"><i class="fas fa-hourglass-half fa-xs me-1"></i>Half Day</span>`;
+    if (d.isIncomplete === '1') flags += `<span class="badge me-1 mb-1" style="background:#ffedd5;color:#9a3412;font-size:0.7rem;"><i class="fas fa-exclamation-triangle fa-xs me-1"></i>Incomplete Punch</span>`;
     if (d.isHoliday === '1') flags += `<span class="badge me-1 mb-1" style="background:#e0e7ff;color:#3730a3;font-size:0.7rem;"><i class="fas fa-star fa-xs me-1"></i>Holiday</span>`;
 
     let popup = document.getElementById('pvCalDayPopup');
@@ -1441,8 +2448,8 @@ function pvShowCalPopup(evt, el) {
             <i class="fas fa-calendar-day" style="color:#fff;font-size:0.85rem;"></i>
         </div>
         <div>
-            <div style="font-weight:700;font-size:0.88rem;color:#fff;">${d.date}</div>
-            <div style="font-size:0.72rem;color:rgba(255,255,255,0.85);">${d.statusDisplay}</div>
+            <div style="font-weight:700;font-size:0.88rem;color:#fff;">${esc(pvDayCaption(d.date, d.date).main)}</div>
+            <div style="font-size:0.72rem;color:rgba(255,255,255,0.85);">${pvDayCaption(d.date, d.date).sub ? esc(pvDayCaption(d.date, d.date).sub) + ' &middot; ' : ''}${d.statusDisplay}</div>
         </div>
         <button onclick="document.getElementById('pvCalDayPopup').style.display='none'"
                 style="margin-left:auto;background:rgba(255,255,255,0.25);border:none;border-radius:6px;
@@ -1672,22 +2679,93 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+// ── Detail Report: calendar system (AD / BS) ────────────────────────
+// The BS pickers are only a front-end for the AD range the report already
+// speaks: they write into #esSummaryFrom / #esSummaryTo, so the fetch, the
+// export and the summary maths downstream never need to know about BS.
+var esCalendar = 'ad';
+var esActivePeriod = '';
+
+function esHideDateWraps() {
+    ['esCustomDateWrap', 'esBsMonthWrap', 'esBsCustomWrap'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) el.style.setProperty('display', 'none', 'important');
+    });
+}
+function esShowDateWrap(id) {
+    esHideDateWraps();
+    document.getElementById(id).style.setProperty('display', 'flex', 'important');
+}
+
+function esSetCalendar(mode) {
+    if (esCalendar === mode) return;
+    esCalendar = mode;
+    document.getElementById('esCalAd').classList.toggle('active', mode === 'ad');
+    document.getElementById('esCalBs').classList.toggle('active', mode === 'bs');
+    NP.close();
+    // Re-apply the active preset so the matching picker is shown and the AD
+    // range behind it is recomputed for the newly selected calendar.
+    if (esActivePeriod) esSetQuickPeriod(esActivePeriod);
+    else esHideDateWraps();
+}
+
+function esSyncBsMonth() {
+    const v = NP.getValue(document.getElementById('esBsMonth'));
+    if (!v) return false;
+    const r = NP.monthRange(v.y, v.m);
+    document.getElementById('esSummaryFrom').value = r.from;
+    document.getElementById('esSummaryTo').value = r.to;
+    return true;
+}
+// Returns 'ok' | 'incomplete' | 'reversed' so the caller decides what to say.
+function esSyncBsCustom() {
+    const a = NP.adOf(document.getElementById('esBsFrom'));
+    const b = NP.adOf(document.getElementById('esBsTo'));
+    if (!a || !b) return 'incomplete';
+    if (a > b) return 'reversed';
+    document.getElementById('esSummaryFrom').value = a;
+    document.getElementById('esSummaryTo').value = b;
+    return 'ok';
+}
+
 function esSetQuickPeriod(period) {
+    esActivePeriod = period;
     const today = new Date();
     const fmt = d => _localDateStr(d);
-    const customWrap = document.getElementById('esCustomDateWrap');
     // Toggle active state
     document.querySelectorAll('.es-qbtn').forEach(b => b.classList.toggle('active', b.dataset.period === period));
 
     if (period === 'custom') {
         // Show date pickers, don't auto-generate
-        customWrap.style.setProperty('display', 'flex', 'important');
-        document.getElementById('esSummaryFrom').focus();
+        if (esCalendar === 'bs') {
+            esShowDateWrap('esBsCustomWrap');
+            const fromEl = document.getElementById('esBsFrom');
+            if (!NP.getValue(fromEl)) {
+                const tb = NP.todayBs();
+                NP.setValue(fromEl, { y: tb.y, m: tb.m, d: 1 }, true);
+                NP.setValue(document.getElementById('esBsTo'), tb, true);
+            }
+            esSyncBsCustom();
+            fromEl.focus();
+        } else {
+            esShowDateWrap('esCustomDateWrap');
+            document.getElementById('esSummaryFrom').focus();
+        }
         return;
     }
 
-    // Hide custom date pickers for preset periods
-    customWrap.style.setProperty('display', 'none', 'important');
+    if (period === 'month' && esCalendar === 'bs') {
+        // Nepali month: keep the picker on screen so another month is one click away.
+        esShowDateWrap('esBsMonthWrap');
+        const el = document.getElementById('esBsMonth');
+        if (!NP.getValue(el)) NP.setValue(el, NP.todayBs(), true);
+        esSyncBsMonth();
+        generateEmpSummary();
+        return;
+    }
+
+    // Hide the date pickers for the remaining presets
+    esHideDateWraps();
 
     let from, to;
     if (period === 'today') {
@@ -1722,11 +2800,26 @@ function toggleEmpSummary() {
 
 // ── Employee Summary AJAX Generate ────────────────────────────────────────────
 function generateEmpSummary() {
+    // Pull the BS selection across first — the user may have hit Generate
+    // straight after picking a Nepali date, without an onPick sync in between.
+    if (esCalendar === 'bs') {
+        if (esActivePeriod === 'custom') {
+            const st = esSyncBsCustom();
+            if (st === 'incomplete') { alert('Please select both From and To Nepali dates.'); return; }
+            if (st === 'reversed') { alert('Start date cannot be after end date.'); return; }
+        } else if (esActivePeriod === 'month' && !esSyncBsMonth()) {
+            alert('Please select a Nepali month.');
+            return;
+        }
+    }
+
     const dateFrom = document.getElementById('esSummaryFrom').value;
     const dateTo = document.getElementById('esSummaryTo').value;
 
     if (!dateFrom || !dateTo) {
-        alert('Please select both From Date and To Date.');
+        alert(esCalendar === 'bs'
+            ? 'Please choose a Nepali month, or pick a Custom date range first.'
+            : 'Please select both From Date and To Date.');
         return;
     }
 
@@ -1791,9 +2884,13 @@ function resetEmpSummary() {
     document.querySelectorAll('.es-dept-cb').forEach(function(cb) { cb.checked = false; });
     document.getElementById('esSummaryFrom').value = '';
     document.getElementById('esSummaryTo').value = '';
+    NP.setValue(document.getElementById('esBsMonth'), null, true);
+    NP.setValue(document.getElementById('esBsFrom'), null, true);
+    NP.setValue(document.getElementById('esBsTo'), null, true);
+    esActivePeriod = '';
     document.getElementById('esSummaryResults').style.display = 'none';
     document.getElementById('esSummaryEmpty').style.display = 'block';
-    document.getElementById('esCustomDateWrap').style.setProperty('display', 'none', 'important');
+    esHideDateWraps();
     document.querySelectorAll('.es-qbtn').forEach(b => b.classList.remove('active'));
 }
 
@@ -1813,6 +2910,9 @@ function renderEmpSummaryTable(data) {
             <span class="text-muted" style="font-size:0.76rem;">
                 <i class="fas fa-calendar-alt me-1"></i>${esc(data.date_from)} to ${esc(data.date_to)}
             </span>
+            ${esCalendar === 'bs' ? `<span class="bs-tag" title="Bikram Sambat">
+                <i class="fas fa-om" style="font-size:0.6rem;"></i>${esc(NP.rangeLabel(data.date_from, data.date_to))} BS
+            </span>` : ''}
             <span style="background:#c7d2fe;color:#3730a3;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;">
                 ${totalEmps} employee${totalEmps !== 1 ? 's' : ''}
             </span>
@@ -1834,10 +2934,11 @@ function renderEmpSummaryTable(data) {
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#1e293b;padding:6px 8px;">Day<br>Off</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#1e293b;padding:6px 8px;">Night<br>Off</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#16a34a;padding:6px 8px;">Present<br>Days</th>
+                    <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#2563eb;padding:6px 8px;">Half<br>Day</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#059669;padding:6px 8px;">Present On<br>Holiday</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#0d9488;padding:6px 8px;">Present On Day Off<br>/Night Off/Weekend</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#e11d48;padding:6px 8px;">Absent<br>Days</th>
-                    <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#6366f1;padding:6px 8px;">Misc<br>Days</th>
+                    <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#9a3412;padding:6px 8px;" title="Incomplete punch — clocked in but never out (or the reverse). Not counted as Absent.">Misc<br>Days</th>
                     <th colspan="2" class="text-center" style="font-weight:700;font-size:0.7rem;color:#7c3aed;padding:6px 8px;border-bottom:2px solid #a78bfa;">Leave Days</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#2563eb;padding:6px 8px;">Worked<br>Hours</th>
                     <th rowspan="2" class="text-center align-middle" style="font-weight:700;font-size:0.7rem;color:#d97706;padding:6px 8px;">OT<br>Hours</th>
@@ -1856,7 +2957,7 @@ function renderEmpSummaryTable(data) {
             <tbody>`;
 
     data.dept_groups.forEach(grp => {
-        html += `<tr><td colspan="23" style="background:#eef2ff;font-weight:600;font-size:0.78rem;color:#4338ca;padding:7px 12px;text-align:center;">
+        html += `<tr><td colspan="24" style="background:#eef2ff;font-weight:600;font-size:0.78rem;color:#4338ca;padding:7px 12px;text-align:center;">
             <i class="fas fa-building me-1"></i> Department: ${esc(grp.dept_label)}</td></tr>`;
         grp.employees.forEach((emp, idx) => {
             const bg = idx % 2 === 1 ? 'background:#f8fafc;' : '';
@@ -1870,10 +2971,11 @@ function renderEmpSummaryTable(data) {
                 <td class="text-center" style="padding:5px 6px;">${emp.day_off}</td>
                 <td class="text-center" style="padding:5px 6px;">${emp.night_off}</td>
                 <td class="text-center fw-bold" style="padding:5px 6px;color:#16a34a;">${emp.present_days}</td>
+                <td class="text-center fw-semibold" style="padding:5px 6px;color:#2563eb;">${emp.half_day}</td>
                 <td class="text-center" style="padding:5px 6px;color:#059669;">${emp.present_on_holiday}</td>
                 <td class="text-center" style="padding:5px 6px;color:#0d9488;">${emp.present_on_off}</td>
                 <td class="text-center fw-bold" style="padding:5px 6px;color:#e11d48;">${emp.absent}</td>
-                <td class="text-center" style="padding:5px 6px;color:#6366f1;">${emp.misc_days}</td>
+                <td class="text-center fw-semibold" style="padding:5px 6px;color:#9a3412;" title="Incomplete punch days">${emp.misc_days}</td>
                 <td class="text-center" style="padding:5px 6px;color:#16a34a;">${emp.leave_paid}</td>
                 <td class="text-center" style="padding:5px 6px;color:#e11d48;">${emp.leave_unpaid}</td>
                 <td class="text-center fw-semibold" style="padding:5px 6px;color:#2563eb;">${parseFloat(emp.worked_hours).toFixed(1)}</td>
@@ -1901,17 +3003,19 @@ document.querySelectorAll('.att-row-clickable').forEach(function(row) {
         document.getElementById('attModalEmpId').textContent = d.empId;
         document.getElementById('attModalDept').textContent = '\uD83D\uDCCD ' + d.dept;
         const statusEl = document.getElementById('attModalStatusBadge');
+        const isIncomplete = d.isIncomplete === '1';
         const sm = {
-            present:  ['#d1fae5','#065f46'],
-            absent:   ['#fee2e2','#991b1b'],
-            late:     ['#fef3c7','#92400e'],
-            half_day: ['#dbeafe','#1e3a8a'],
-            on_leave: ['#ede9fe','#4c1d95']
+            present:    ['#d1fae5','#065f46'],
+            absent:     ['#fee2e2','#991b1b'],
+            late:       ['#fef3c7','#92400e'],
+            half_day:   ['#dbeafe','#1e3a8a'],
+            on_leave:   ['#ede9fe','#4c1d95'],
+            incomplete: ['#ffedd5','#9a3412']
         };
-        const sc = sm[d.status] || ['#e2e8f0','#475569'];
+        const sc = isIncomplete ? sm.incomplete : (sm[d.status] || ['#e2e8f0','#475569']);
         statusEl.style.background = sc[0];
         statusEl.style.color = sc[1];
-        statusEl.innerHTML = '<i class="fas fa-circle" style="font-size:0.45rem;vertical-align:middle;margin-right:4px;"></i>' + d.statusDisplay;
+        statusEl.innerHTML = '<i class="fas fa-circle" style="font-size:0.45rem;vertical-align:middle;margin-right:4px;"></i>' + (isIncomplete ? 'Incomplete Punch' : d.statusDisplay);
         document.getElementById('attModalCheckin').textContent = d.checkin;
         document.getElementById('attModalCheckout').textContent = d.checkout;
         document.getElementById('attModalWorkingHrs').textContent = d.workingHrs;
@@ -1921,10 +3025,121 @@ document.querySelectorAll('.att-row-clickable').forEach(function(row) {
         let flags = '';
         if (d.isLate === '1') flags += '<span class="badge bg-warning text-dark me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;"><i class="fas fa-chevron-right fa-xs me-1"></i>Late Arrival</span>';
         if (d.isEarly === '1') flags += '<span class="badge bg-info text-dark me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;"><i class="fas fa-chevron-left fa-xs me-1"></i>Early Departure</span>';
+        if (d.status === 'half_day') flags += '<span class="badge me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;background:#dbeafe;color:#1e3a8a;"><i class="fas fa-hourglass-half fa-xs me-1"></i>Half Day</span>';
+        if (isIncomplete) flags += '<span class="badge me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;background:#ffedd5;color:#9a3412;"><i class="fas fa-exclamation-triangle fa-xs me-1"></i>Incomplete Punch</span>';
         if (d.isHoliday === '1') flags += '<span class="badge bg-secondary me-1 py-1 px-2" style="font-size:0.75rem;border-radius:8px;"><i class="fas fa-star fa-xs me-1"></i>Holiday</span>';
         document.getElementById('attModalFlags').innerHTML = flags || '<span class="text-muted" style="font-size:0.83rem;"><i class="fas fa-check-circle me-1 text-success"></i>No flags recorded</span>';
+
+        // Incomplete-punch fix workflow
+        currentAttRecordId = d.id;
+        document.getElementById('attIncompleteNotice').style.display = isIncomplete ? 'block' : 'none';
+        document.getElementById('attModalEditBtn').style.display = isIncomplete ? 'inline-block' : 'none';
+        document.getElementById('attEditClockIn').value = d.checkinRaw || '';
+        document.getElementById('attEditClockOut').value = d.checkoutRaw || '';
+        attToggleEditSection(false);
+
         new bootstrap.Modal(document.getElementById('attDetailModal')).show();
     });
+});
+
+// ── Incomplete-punch fix: toggle inline edit form ─────────────────────────────
+function attToggleEditSection(show) {
+    document.getElementById('attEditSection').style.display = show ? 'block' : 'none';
+    document.getElementById('attEditError').style.display = 'none';
+    const btn = document.getElementById('attEditSaveBtn');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+}
+
+function attSaveFix() {
+    const id = currentAttRecordId;
+    if (!id) return;
+    const clockIn = document.getElementById('attEditClockIn').value;
+    const clockOut = document.getElementById('attEditClockOut').value;
+    const errEl = document.getElementById('attEditError');
+    if (!clockIn && !clockOut) {
+        errEl.textContent = 'Enter at least Clock In or Clock Out.';
+        errEl.style.display = 'block';
+        return;
+    }
+    errEl.style.display = 'none';
+    const btn = document.getElementById('attEditSaveBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    fetch('/hrm/attendance/' + id + '/update/')
+        .then(r => { if (!r.ok) throw new Error('load failed'); return r.json(); })
+        .then(existing => {
+            const bodyParams = new URLSearchParams({
+                clock_in: clockIn,
+                clock_out: clockOut,
+                shift: existing.shift_id || '',
+                is_holiday: existing.is_holiday ? 'true' : 'false',
+                notes: existing.notes || '',
+                status: existing.status || 'present'
+            });
+            return fetch('/hrm/attendance/' + id + '/update/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': ATT_CSRF, 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: bodyParams
+            });
+        })
+        .then(r => r.json())
+        .then(res => {
+            if (res.success) {
+                window.location.reload();
+            } else {
+                errEl.textContent = res.error || 'Failed to update attendance.';
+                errEl.style.display = 'block';
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+            }
+        })
+        .catch(() => {
+            errEl.textContent = 'Network or server error.';
+            errEl.style.display = 'block';
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+        });
+}
+</script>
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Deduplicate options to prevent the custom pre-selected value from appearing twice if it matches an employee
+    var seen = {};
+    $('.select2-search option').each(function() {
+        var val = $(this).val();
+        if (val && seen[val]) {
+            $(this).remove();
+        } else if (val) {
+            seen[val] = true;
+        }
+    });
+
+    $('.select2-search').select2({
+        tags: true,
+        placeholder: "Name or Employee ID...",
+        allowClear: true,
+        width: '100%'
+    }).on('change', function(e) {
+        // Prevent submitting if the change was triggered by the deduplication script
+        if (e.originalEvent || e.type === 'change') {
+            $('#filterForm').submit();
+        }
+    });
+
+    // Restore scroll position if it exists
+    if (sessionStorage.getItem('attReportScroll')) {
+        window.scrollTo(0, parseInt(sessionStorage.getItem('attReportScroll')));
+        sessionStorage.removeItem('attReportScroll');
+    }
+});
+
+// Save scroll position before reload
+$(window).on('beforeunload', function() {
+    sessionStorage.setItem('attReportScroll', window.scrollY);
 });
 </script>
 {% endblock %}

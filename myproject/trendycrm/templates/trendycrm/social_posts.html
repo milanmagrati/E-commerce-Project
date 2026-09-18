@@ -1,0 +1,1287 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Posts & Comments — Trendy CRM{% endblock %}
+{% block topbar_title %}Posts & Comments{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'trendycrm:comment_automations' %}" class="btn-crm-outline btn-sm me-2"
+   style="border-color:#ddd6fe;color:#7c3aed;background:linear-gradient(135deg,#f5f3ff,#ede9fe);font-weight:700;display:inline-flex;align-items:center;gap:.35rem;">
+    <i class="fas fa-bolt" style="color:#7c3aed;"></i> Automate
+</a>
+<a href="{% url 'trendycrm:conversations' %}" class="btn-crm-outline btn-sm me-2">
+    <i class="fas fa-comments"></i> Messages
+</a>
+<button class="btn-crm-primary btn-sm" onclick="location.reload()">
+    <i class="fas fa-sync-alt"></i> Refresh
+</button>
+{% endblock %}
+
+{% block extra_style %}
+/* ── Layout overrides ─────────────────────────────── */
+.crm-content { overflow: hidden !important; padding: 0 !important; }
+.crm-content > * { flex-shrink: 1 !important; }
+
+/* Hide caret on custom dropdowns */
+.no-caret::after { display: none !important; }
+
+/* ── Root wrapper ─────────────────────────────────── */
+.fb-root {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    height: 100%;
+    background: #fff;
+    overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════════
+   LEFT PANEL  —  Post list
+═══════════════════════════════════════════════════ */
+.fb-left {
+    border-right: 1px solid #e4e6ea;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    overflow: hidden;
+}
+
+/* Header */
+.fb-left-head {
+    padding: .75rem 1rem .4rem;
+    border-bottom: 1px solid #e4e6ea;
+    flex-shrink: 0;
+}
+.fb-left-head h6 {
+    margin: 0 0 .45rem;
+    font-weight: 700;
+    font-size: .9rem;
+    color: #050505;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+}
+.fb-left-head h6 i { color: #1877f2; font-size: 1rem; }
+
+/* Search */
+.fb-search {
+    position: relative;
+}
+.fb-search i {
+    position: absolute;
+    left: 10px; top: 50%;
+    transform: translateY(-50%);
+    color: #65676b;
+    font-size: .8rem;
+    pointer-events: none;
+}
+.fb-search input {
+    width: 100%;
+    padding: .42rem .8rem .42rem 2.1rem;
+    border: none;
+    border-radius: 20px;
+    background: #f0f2f5;
+    font-size: .82rem;
+    color: #050505;
+    outline: none;
+    transition: background .2s;
+}
+.fb-search input::placeholder { color: #65676b; }
+.fb-search input:focus { background: #e4e6ea; }
+
+/* Filter tabs under search */
+.fb-left-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid #e4e6ea;
+    padding: 0 .75rem;
+    flex-shrink: 0;
+    overflow-x: auto;
+}
+.fb-left-tabs::-webkit-scrollbar { display: none; }
+.fb-tab {
+    padding: .55rem .6rem;
+    font-size: .73rem;
+    font-weight: 600;
+    color: #65676b;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: color .15s, border-color .15s;
+}
+.fb-tab:hover { color: #1877f2; }
+.fb-tab.on { color: #1877f2; border-bottom-color: #1877f2; }
+
+/* Post list */
+.fb-post-list {
+    flex: 1;
+    overflow-y: auto;
+}
+.fb-post-list::-webkit-scrollbar { width: 4px; }
+.fb-post-list::-webkit-scrollbar-thumb { background: #c4c9d0; border-radius: 2px; }
+
+/* Post item */
+.fb-post-item {
+    display: flex;
+    align-items: flex-start;
+    gap: .7rem;
+    padding: .65rem 1rem;
+    border-bottom: 1px solid #f0f2f5;
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+    transition: background .15s;
+    position: relative;
+}
+.fb-post-item:hover { background: #f0f2f5; }
+.fb-post-item.active { background: #e7f0fd; }
+.fb-post-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: #1877f2;
+    border-radius: 0 2px 2px 0;
+}
+
+/* Thumbnail */
+.fb-post-thumb {
+    width: 52px;
+    height: 52px;
+    border-radius: 6px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+}
+.fb-post-thumb-placeholder {
+    width: 52px; height: 52px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #ede9fe, #c4b5fd);
+    display: flex; align-items: center; justify-content: center;
+    color: #7c3aed; font-size: 1.1rem; flex-shrink: 0;
+}
+
+.fb-post-item-body { flex: 1; min-width: 0; }
+.fb-post-item-title {
+    font-size: .8rem;
+    font-weight: 600;
+    color: #050505;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: .15rem;
+}
+.fb-post-item-sub {
+    font-size: .72rem;
+    color: #65676b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.fb-post-item-meta {
+    font-size: .68rem;
+    color: #8a8d91;
+    flex-shrink: 0;
+    text-align: right;
+}
+.fb-unread-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #1877f2;
+    margin-top: .3rem;
+    margin-left: auto;
+}
+
+/* Empty list */
+.fb-list-empty {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 3rem 1.5rem; text-align: center; color: #65676b;
+}
+.fb-list-empty i { font-size: 2rem; opacity: .3; margin-bottom: .75rem; }
+.fb-list-empty p { font-size: .82rem; }
+
+/* ═══════════════════════════════════════════════════
+   RIGHT PANEL  —  Post detail + comments
+═══════════════════════════════════════════════════ */
+.fb-right {
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    overflow: hidden;
+}
+
+/* ── No selection placeholder ── */
+.fb-no-select {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center; color: #65676b; padding: 3rem;
+}
+.fb-no-select .fb-no-icon {
+    width: 80px; height: 80px; border-radius: 50%;
+    background: #f0f2f5;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem; color: #1877f2; margin-bottom: 1.2rem;
+}
+.fb-no-select h6 { font-weight: 700; color: #050505; margin-bottom: .4rem; }
+.fb-no-select p { font-size: .85rem; max-width: 260px; }
+
+/* ── Post header bar ── */
+.fb-post-bar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: .85rem 1.25rem;
+    border-bottom: 1px solid #e4e6ea;
+    flex-shrink: 0;
+    gap: .75rem;
+}
+.fb-post-bar-left { flex: 1; min-width: 0; }
+.fb-post-bar-title {
+    font-weight: 700;
+    font-size: .92rem;
+    color: #050505;
+    margin-bottom: .2rem;
+    line-height: 1.35;
+}
+.fb-post-bar-meta { font-size: .72rem; color: #65676b; }
+.fb-post-bar-meta span { margin-right: .5rem; }
+
+.fb-post-bar-actions { display: flex; gap: .35rem; flex-shrink: 0; }
+.fb-icon-btn {
+    width: 30px; height: 30px;
+    border: 1px solid #ddd; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; background: #fff; color: #65676b;
+    font-size: .8rem; transition: all .2s;
+}
+.fb-icon-btn:hover { background: #f0f2f5; color: #050505; }
+.fb-boost-btn {
+    padding: .3rem .75rem;
+    background: #1877f2;
+    color: #fff; border: none; border-radius: 6px;
+    font-size: .78rem; font-weight: 700;
+    cursor: pointer; transition: background .2s;
+}
+.fb-boost-btn:hover { background: #166fe5; }
+
+/* ── Scrollable body ── */
+.fb-right-body {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+.fb-right-body::-webkit-scrollbar { width: 5px; }
+.fb-right-body::-webkit-scrollbar-thumb { background: #c4c9d0; border-radius: 3px; }
+
+/* ── Reactions Hover Box ── */
+.fb-reaction-wrapper {
+    position: relative;
+    display: inline-block;
+}
+.fb-reactions-box {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    background: #fff;
+    border-radius: 50px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    padding: 5px 10px;
+    display: none;
+    gap: 10px;
+    z-index: 100;
+    white-space: nowrap;
+    margin-bottom: 5px;
+}
+.fb-reaction-wrapper:hover .fb-reactions-box {
+    display: flex;
+}
+.fb-reactions-box span {
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+.fb-reactions-box span:hover {
+    transform: scale(1.3);
+}
+
+/* ── Post image ── */
+.fb-post-media {
+    width: 100%;
+    height: auto;
+    max-height: 500px;
+    object-fit: contain;
+    background: #242526;
+    display: block;
+    cursor: zoom-in;
+    transition: max-height .3s;
+}
+.fb-post-media.zoom { max-height: 800px; cursor: zoom-out; }
+.fb-post-text-only {
+    background: #f0f2f5;
+    padding: 1.5rem;
+    font-size: 1rem;
+    color: #050505;
+    line-height: 1.6;
+}
+
+/* ── Reactions row ── */
+.fb-reactions-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .45rem 1.25rem;
+    border-bottom: 1px solid #e4e6ea;
+}
+.fb-reactions-left { display: flex; align-items: center; gap: .35rem; font-size: .78rem; color: #65676b; }
+.fb-react-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    font-size: .65rem;
+}
+.fb-react-like { background: #1877f2; color: #fff; }
+.fb-reactions-right { font-size: .78rem; color: #65676b; }
+
+/* ── Action bar ── */
+.fb-action-bar {
+    display: flex;
+    border-bottom: 1px solid #e4e6ea;
+}
+.fb-action {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    gap: .4rem;
+    padding: .5rem;
+    font-size: .82rem; font-weight: 600;
+    color: #65676b;
+    cursor: pointer;
+    transition: background .15s;
+    border: none; background: none;
+}
+.fb-action:hover { background: #f0f2f5; color: #050505; border-radius: 6px; }
+.fb-action i { font-size: .88rem; }
+
+/* ── Sort + filter bar ── */
+.fb-sort-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .5rem 1.25rem;
+    border-bottom: 1px solid #e4e6ea;
+    flex-shrink: 0;
+}
+.fb-sort-bar-tabs { display: flex; gap: .3rem; }
+.fb-sort-chip {
+    padding: .22rem .6rem;
+    border-radius: 20px;
+    font-size: .7rem;
+    font-weight: 600;
+    border: 1px solid #e4e6ea;
+    background: #fff;
+    color: #65676b;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all .2s;
+}
+.fb-sort-chip:hover, .fb-sort-chip.on {
+    background: #1877f2; color: #fff; border-color: #1877f2;
+}
+.fb-sort-right {
+    display: flex; align-items: center; gap: .35rem;
+}
+.fb-sort-select {
+    font-size: .75rem; font-weight: 600;
+    border: none; background: none; color: #050505;
+    cursor: pointer; outline: none;
+}
+
+/* ── Comments feed ── */
+.fb-comments-feed {
+    flex: 1;
+    padding: .75rem 1.25rem 0;
+}
+
+.fb-comment {
+    display: flex;
+    gap: .65rem;
+    margin-bottom: .9rem;
+}
+.fb-comment-ava {
+    width: 34px; height: 34px; border-radius: 50%;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: .75rem; color: #fff;
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+}
+.fb-comment-ava.fb-page-ava { background: linear-gradient(135deg, #1877f2, #0d65d9); }
+
+.fb-comment-body { flex: 1; }
+.fb-comment-bubble {
+    background: #f0f2f5;
+    border-radius: 0 18px 18px 18px;
+    padding: .55rem .85rem;
+    display: inline-block;
+    max-width: 100%;
+}
+.fb-comment-bubble.hidden-c { opacity: .55; border-left: 3px solid #f59e0b; border-radius: 0 18px 18px 0; }
+.fb-comment-name { font-weight: 700; font-size: .8rem; color: #050505; }
+.fb-comment-text { font-size: .82rem; color: #050505; line-height: 1.45; margin: .1rem 0 0; }
+.fb-comment-likes {
+    font-size: .72rem; color: #65676b;
+    display: flex; align-items: center; gap: .25rem; margin-top: .2rem;
+}
+
+.fb-comment-meta {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-top: .3rem;
+    flex-wrap: wrap;
+}
+.fb-comment-time { font-size: .68rem; color: #65676b; }
+.fb-comment-actions { display: flex; gap: .1rem; }
+.fb-comment-actions form { display: inline; }
+.fb-cact {
+    font-size: .72rem;
+    font-weight: 700;
+    color: #65676b;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: .15rem .3rem;
+    border-radius: 4px;
+    text-decoration: none;
+    transition: color .15s, background .15s;
+    display: inline-flex; align-items: center; gap: .2rem;
+}
+.fb-cact:hover { color: #050505; background: #e4e6ea; }
+.fb-cact.del:hover { color: #c00; background: #ffeaea; }
+.fb-cact.done-btn:hover { color: #16a34a; background: #f0fdf4; }
+.fb-cact.sep {
+    color: #c4c9d0; cursor: default; padding: 0;
+    pointer-events: none; font-weight: 400;
+}
+
+/* Nested replies */
+.fb-replies { margin-left: 2.8rem; margin-top: .4rem; }
+.fb-replies .fb-comment-ava { width: 28px; height: 28px; font-size: .65rem; }
+.fb-replies .fb-comment-bubble { background: #e7f0fd; }
+
+/* Reply form */
+.fb-reply-form { display: none; margin-top: .4rem; }
+.fb-reply-row { display: flex; align-items: center; gap: .5rem; }
+.fb-reply-row .fb-comment-ava { width: 28px; height: 28px; font-size: .65rem; flex-shrink: 0; }
+.fb-reply-input-wrap { flex: 1; position: relative; }
+.fb-reply-input {
+    width: 100%;
+    padding: .4rem .75rem;
+    background: #f0f2f5;
+    border: none;
+    border-radius: 20px;
+    font-size: .8rem;
+    color: #050505;
+    outline: none;
+    transition: background .2s;
+}
+.fb-reply-input:focus { background: #e4e6ea; }
+.fb-reply-send {
+    padding: .38rem .7rem;
+    background: #1877f2;
+    color: #fff; border: none; border-radius: 20px;
+    font-size: .75rem; font-weight: 700; cursor: pointer;
+    transition: background .2s;
+}
+.fb-reply-send:hover { background: #0d65d9; }
+
+/* View more comments */
+.fb-view-more {
+    display: block;
+    text-align: left;
+    padding: .4rem 1.25rem .8rem;
+    font-size: .8rem;
+    font-weight: 700;
+    color: #65676b;
+    cursor: pointer;
+    text-decoration: none;
+    background: none;
+    border: none;
+}
+.fb-view-more:hover { color: #1877f2; }
+
+/* No comments */
+.fb-no-comments {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center; padding: 3rem 2rem; color: #65676b;
+}
+.fb-no-comments i { font-size: 2rem; opacity: .2; margin-bottom: .75rem; }
+.fb-no-comments p { font-size: .82rem; }
+
+/* Star button on post item */
+.fb-star-btn {
+    background: none;
+    border: none;
+    color: #c4c9d0;
+    cursor: pointer;
+    font-size: .9rem;
+    padding: 0;
+    margin-top: .4rem;
+    transition: color .2s;
+    opacity: 0; /* hidden by default, shown on hover */
+}
+.fb-post-item:hover .fb-star-btn, .fb-star-btn.on {
+    opacity: 1;
+}
+.fb-star-btn:hover { color: #f59e0b; }
+.fb-star-btn.on { color: #f59e0b; }
+
+/* Heart button on post item */
+.fb-heart-btn {
+    background: none;
+    border: none;
+    color: #c4c9d0;
+    cursor: pointer;
+    font-size: .9rem;
+    padding: 0;
+    margin-top: .4rem;
+    margin-right: .3rem;
+    transition: color .2s;
+    opacity: 0; /* hidden by default, shown on hover */
+}
+.fb-post-item:hover .fb-heart-btn, .fb-heart-btn.on {
+    opacity: 1;
+}
+.fb-heart-btn:hover { color: #ef4444; }
+.fb-heart-btn.on { color: #ef4444; }
+
+/* ── Bottom composer ── */
+.fb-composer {
+    border-top: 1px solid #e4e6ea;
+    padding: .65rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-shrink: 0;
+    background: #fff;
+}
+.fb-composer-ava {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: linear-gradient(135deg, #1877f2, #0d65d9);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: .75rem; font-weight: 700; flex-shrink: 0;
+}
+.fb-composer-wrap { flex: 1; position: relative; }
+.fb-composer-input {
+    width: 100%;
+    padding: .48rem 2.5rem .48rem .9rem;
+    background: #f0f2f5;
+    border: none; border-radius: 20px;
+    font-size: .82rem; color: #050505;
+    outline: none; transition: background .2s;
+}
+.fb-composer-input:focus { background: #e4e6ea; }
+.fb-composer-send {
+    position: absolute; right: 4px; top: 50%;
+    transform: translateY(-50%);
+    width: 28px; height: 28px;
+    border: none; background: #1877f2;
+    border-radius: 50%; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: .75rem; transition: background .2s;
+}
+.fb-composer-send:hover { background: #0d65d9; }
+
+/* Responsive */
+@media (max-width: 760px) {
+    .fb-root { grid-template-columns: 1fr; }
+    .fb-left { display: none; }
+    .fb-right { width: 100%; }
+}
+{% endblock %}
+
+{% block crm_content %}
+<div class="fb-root">
+
+    <!-- ═══════════════════════════════
+         LEFT  —  Post list
+    ═══════════════════════════════ -->
+    <div class="fb-left">
+        <!-- Header + search -->
+        <div class="fb-left-head">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: .45rem;">
+                <h6 style="margin: 0;"><i class="fab fa-facebook"></i> Facebook Comments</h6>
+                <div class="dropdown">
+                    <button class="btn btn-sm no-caret" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="padding: 0; background: none; border: none; color: #65676b;" title="Filter by page">
+                        <i class="fas fa-filter" style="font-size:0.8rem;"></i>
+                    </button>
+                    <form method="GET" action="{% url 'trendycrm:social_posts' %}" class="dropdown-menu dropdown-menu-end shadow" style="border:none;border-radius:8px;padding:0.5rem;min-width:220px;font-size:0.85rem;">
+                        {% if active_post %}<input type="hidden" name="post_id" value="{{ active_post.pk }}">{% endif %}
+                        <input type="hidden" name="post_filter" value="{{ current_post_filter }}">
+                        {% if current_filter %}<input type="hidden" name="filter" value="{{ current_filter }}">{% endif %}
+                        {% if current_sort %}<input type="hidden" name="sort" value="{{ current_sort }}">{% endif %}
+                        
+                        <h6 class="dropdown-header" style="font-size:0.7rem;text-transform:uppercase;color:#8a8d91;margin-bottom:0.25rem;">Filter by page</h6>
+                        <div style="padding: 0.2rem 0.5rem;">
+                            <div class="form-check" style="margin-bottom: 0.4rem;">
+                                <input class="form-check-input" type="checkbox" name="page_filter" value="all" id="page_filter_all" onchange="toggleAllPages(this)" {% if 'all' in page_filters %}checked{% endif %}>
+                                <label class="form-check-label" for="page_filter_all" style="font-weight:600; cursor:pointer;">
+                                    All Pages
+                                </label>
+                            </div>
+                            <hr style="margin: 0.5rem 0;">
+                            {% for integ in integrations %}
+                            <div class="form-check" style="margin-bottom: 0.4rem;">
+                                <input class="form-check-input page-filter-cb" type="checkbox" name="page_filter" value="{{ integ.pk }}" id="page_filter_{{ integ.pk }}" onchange="uncheckAllPages()" {% if integ.pk in page_filters %}checked{% endif %}>
+                                <label class="form-check-label d-flex align-items-center gap-2" for="page_filter_{{ integ.pk }}" style="font-weight:500; cursor:pointer; font-size: 0.8rem;">
+                                    <div style="width:16px;display:flex;justify-content:center;">
+                                        <i class="fab fa-{{ integ.channel_type|default:'facebook' }}" style="color:#1877f2;font-size:0.85rem;"></i>
+                                    </div>
+                                    <span style="white-space:normal;line-height:1.2;">{{ integ.account_name|default:"Unnamed Page" }}</span>
+                                </label>
+                            </div>
+                            {% endfor %}
+                            <button type="submit" class="btn btn-primary btn-sm w-100" style="margin-top: 0.5rem; font-weight: 600;">Apply Filters</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div class="fb-search">
+                <i class="fas fa-search"></i>
+                <input type="text" id="fbSearch" placeholder="Search posts…" oninput="fbSearchPosts(this.value)">
+            </div>
+        </div>
+
+        <!-- Filter tabs -->
+        <div class="fb-left-tabs">
+            <a href="?post_filter=all{% if active_post %}&post_id={{ active_post.pk }}{% endif %}{% for p in page_filters %}{% if p != 'all' %}&page_filter={{ p }}{% endif %}{% endfor %}" 
+               class="fb-tab {% if current_post_filter == 'all' %}on{% endif %}">All comments</a>
+            <a href="?post_filter=unread{% if active_post %}&post_id={{ active_post.pk }}{% endif %}{% for p in page_filters %}{% if p != 'all' %}&page_filter={{ p }}{% endif %}{% endfor %}" 
+               class="fb-tab {% if current_post_filter == 'unread' %}on{% endif %}">Unread</a>
+            <a href="?post_filter=read{% if active_post %}&post_id={{ active_post.pk }}{% endif %}{% for p in page_filters %}{% if p != 'all' %}&page_filter={{ p }}{% endif %}{% endfor %}" 
+               class="fb-tab {% if current_post_filter == 'read' %}on{% endif %}">Read</a>
+            <a href="?post_filter=follow_up{% if active_post %}&post_id={{ active_post.pk }}{% endif %}{% for p in page_filters %}{% if p != 'all' %}&page_filter={{ p }}{% endif %}{% endfor %}" 
+               class="fb-tab {% if current_post_filter == 'follow_up' %}on{% endif %}">Follow up</a>
+        </div>
+
+        <!-- Post list -->
+        <div class="fb-post-list" id="fbPostList">
+            {% for post in posts %}
+            <a href="?post_id={{ post.pk }}&post_filter={{ current_post_filter }}{% if page_filter %}&page_filter={{ page_filter }}{% endif %}"
+               class="fb-post-item {% if active_post and active_post.pk == post.pk %}active{% endif %}"
+               data-q="{{ post.message|default:''|lower }}">
+
+                {% if post.picture_url %}
+                    <img src="{{ post.picture_url }}" class="fb-post-thumb" alt="" loading="lazy">
+                {% else %}
+                    <div class="fb-post-thumb-placeholder"><i class="far fa-file-alt"></i></div>
+                {% endif %}
+
+                <div class="fb-post-item-body">
+                    <div class="fb-post-item-title">{{ post.message|truncatechars:55|default:"(No text)" }}</div>
+                    {% if post.latest_comment_snippet %}
+                    <div class="fb-post-item-sub" style="font-weight: 500; color: #1c1e21; margin-bottom: 3px;">
+                        {{ post.latest_comment_snippet }}
+                    </div>
+                    {% endif %}
+                    <div class="fb-post-item-sub" style="display:flex; align-items:center;">
+                        {% if post.reactions_data %}
+                            {% for react, count in post.reactions_data.items %}
+                                {% if count > 0 %}
+                                    {% if react == 'LIKE' %}<i class="fas fa-thumbs-up" style="color:#1877f2;font-size:.65rem;margin-right:2px;"></i>{% endif %}
+                                    {% if react == 'LOVE' %}<i class="fas fa-heart" style="color:#f33e58;font-size:.65rem;margin-right:2px;"></i>{% endif %}
+                                    {% if react == 'HAHA' %}<i class="fas fa-laugh" style="color:#f7b125;font-size:.65rem;margin-right:2px;"></i>{% endif %}
+                                    {% if react == 'WOW' %}<i class="fas fa-surprise" style="color:#f7b125;font-size:.65rem;margin-right:2px;"></i>{% endif %}
+                                    {% if react == 'SAD' %}<i class="fas fa-sad-tear" style="color:#f7b125;font-size:.65rem;margin-right:2px;"></i>{% endif %}
+                                    {% if react == 'ANGRY' %}<i class="fas fa-angry" style="color:#e9710f;font-size:.65rem;margin-right:2px;"></i>{% endif %}
+                                    {% if react == 'CARE' %}<i class="fas fa-hand-holding-heart" style="color:#f7b125;font-size:.65rem;margin-right:2px;"></i>{% endif %}
+                                {% endif %}
+                            {% endfor %}
+                        {% else %}
+                            <i class="fas fa-thumbs-up" style="color:#1877f2;font-size:.65rem;margin-right:2px;"></i>
+                        {% endif %}
+                        <span style="margin-right:8px;">{{ post.likes_count }}</span>
+                        
+                        <i class="fas fa-comment" style="color:#1877f2;font-size:.65rem;margin-right:2px;"></i> 
+                        <span>{{ post.comments_count }}</span>
+                    </div>
+                </div>
+
+                <div class="fb-post-item-meta" style="display:flex; flex-direction:column; align-items:flex-end;">
+                    <div style="white-space:nowrap;">{{ post.latest_comment_time|date:"M j, h:i A" }}</div>
+                    
+                    <div style="display:flex; align-items:center; margin-top:.2rem;">
+                        <button class="fb-heart-btn {% if post.is_reviewed %}on{% endif %}" 
+                                onclick="event.preventDefault(); fbToggleReview({{ post.pk }}, this)"
+                                title="Reviewed">
+                            <i class="{% if post.is_reviewed %}fas{% else %}far{% endif %} fa-heart"></i>
+                        </button>
+                        <button class="fb-star-btn {% if post.is_starred %}on{% endif %}" 
+                                onclick="event.preventDefault(); fbToggleStar({{ post.pk }}, this)"
+                                title="Follow up" style="margin-top:0;">
+                            <i class="{% if post.is_starred %}fas{% else %}far{% endif %} fa-star"></i>
+                        </button>
+                    </div>
+                    
+                    {% if not post.is_read %}
+                    <div class="fb-unread-dot"></div>
+                    {% endif %}
+                </div>
+            </a>
+            {% empty %}
+            <div class="fb-list-empty">
+                <i class="fas fa-newspaper"></i>
+                <p>No posts found.<br>Connect a Facebook Page in Integrations.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════
+         RIGHT  —  Post detail + comments
+    ═══════════════════════════════ -->
+    <div class="fb-right">
+        {% if active_post %}
+
+        <!-- Post header bar -->
+        <div class="fb-post-bar">
+            <div class="fb-post-bar-left">
+                <div class="fb-post-bar-title">{{ active_post.message|truncatechars:90|default:"(No text)" }}</div>
+                <div class="fb-post-bar-meta">
+                    <span><i class="far fa-heart"></i> {{ active_post.likes_count }} reactions</span>
+                    <span><i class="far fa-comment"></i> {{ active_post.comments_count }} comments</span>
+                    <span><i class="far fa-calendar-alt"></i> {{ active_post.created_time|date:"M j, Y" }}</span>
+                </div>
+            </div>
+            <div class="fb-post-bar-actions">
+                <div class="fb-icon-btn" title="Bookmark"><i class="far fa-bookmark"></i></div>
+                <div class="fb-icon-btn" title="Flag"><i class="fas fa-flag"></i></div>
+                <div class="fb-icon-btn" title="Email"><i class="far fa-envelope"></i></div>
+                <div class="fb-icon-btn" title="Mark done"><i class="fas fa-check"></i></div>
+                <a href="{% url 'trendycrm:social_posts' %}" class="fb-icon-btn" title="Close" style="color:#c00;">
+                    <i class="fas fa-times"></i>
+                </a>
+            </div>
+        </div>
+
+        <!-- Scrollable body -->
+        <div class="fb-right-body">
+
+            <!-- Post image -->
+            {% if active_post.picture_url %}
+                <img src="{{ active_post.picture_url }}" class="fb-post-media" id="fbPostImg" alt="Post"
+                     onclick="this.classList.toggle('zoom')" title="Click to zoom">
+            {% else %}
+                <div class="fb-post-text-only">{{ active_post.message|default:"(No text content)" }}</div>
+            {% endif %}
+
+            <!-- Reactions row -->
+            <div class="fb-reactions-row">
+                <div class="fb-reactions-left">
+                    {% if active_post.reactions_data %}
+                        {% for react, count in active_post.reactions_data.items %}
+                            {% if count > 0 %}
+                                {% if react == 'LIKE' %}<span class="fb-react-icon fb-react-like" style="background:#1877f2;"><i class="fas fa-thumbs-up" style="font-size:.55rem;color:white;"></i></span>{% endif %}
+                                {% if react == 'LOVE' %}<span class="fb-react-icon fb-react-like" style="background:#f33e58;"><i class="fas fa-heart" style="font-size:.55rem;color:white;"></i></span>{% endif %}
+                                {% if react == 'HAHA' %}<span class="fb-react-icon fb-react-like" style="background:#f7b125;"><i class="fas fa-laugh" style="font-size:.55rem;color:white;"></i></span>{% endif %}
+                                {% if react == 'WOW' %}<span class="fb-react-icon fb-react-like" style="background:#f7b125;"><i class="fas fa-surprise" style="font-size:.55rem;color:white;"></i></span>{% endif %}
+                                {% if react == 'SAD' %}<span class="fb-react-icon fb-react-like" style="background:#f7b125;"><i class="fas fa-sad-tear" style="font-size:.55rem;color:white;"></i></span>{% endif %}
+                                {% if react == 'ANGRY' %}<span class="fb-react-icon fb-react-like" style="background:#e9710f;"><i class="fas fa-angry" style="font-size:.55rem;color:white;"></i></span>{% endif %}
+                                {% if react == 'CARE' %}<span class="fb-react-icon fb-react-like" style="background:#f7b125;"><i class="fas fa-hand-holding-heart" style="font-size:.55rem;color:white;"></i></span>{% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        <span class="fb-react-icon fb-react-like"><i class="fas fa-thumbs-up" style="font-size:.55rem"></i></span>
+                    {% endif %}
+                    <span style="margin-left: 6px;">{{ active_post.likes_count }} reactions</span>
+                </div>
+                <div class="fb-reactions-right">
+                    {{ active_post.comments_count }} comments
+                </div>
+            </div>
+
+            <!-- Like / Comment / Share -->
+            <div class="fb-action-bar">
+                <div class="fb-reaction-wrapper">
+                    {% if active_post.reactions_data.my_reaction %}
+                    <button class="fb-action" style="color: #1877f2; font-weight: 600;" onclick="sendReaction({{ active_post.pk }}, '{{ active_post.reactions_data.my_reaction }}', 'post')"><i class="fas fa-thumbs-up"></i> {{ active_post.reactions_data.my_reaction|title }}</button>
+                    {% else %}
+                    <button class="fb-action" onclick="sendReaction({{ active_post.pk }}, 'LIKE', 'post')"><i class="far fa-thumbs-up"></i> Like</button>
+                    {% endif %}
+                    <div class="fb-reactions-box">
+                        <span onclick="sendReaction({{ active_post.pk }}, 'LIKE', 'post')">👍</span>
+                        <span onclick="sendReaction({{ active_post.pk }}, 'LOVE', 'post')">❤️</span>
+                        <span onclick="sendReaction({{ active_post.pk }}, 'HAHA', 'post')">😆</span>
+                        <span onclick="sendReaction({{ active_post.pk }}, 'WOW', 'post')">😮</span>
+                        <span onclick="sendReaction({{ active_post.pk }}, 'SAD', 'post')">😢</span>
+                        <span onclick="sendReaction({{ active_post.pk }}, 'ANGRY', 'post')">😡</span>
+                        <span onclick="sendReaction({{ active_post.pk }}, 'CARE', 'post')">🤗</span>
+                    </div>
+                </div>
+                <button class="fb-action" onclick="document.getElementById('fbReplyInput').focus()"><i class="far fa-comment"></i> Comment</button>
+                <button class="fb-action"><i class="fas fa-share"></i> Share</button>
+            </div>
+
+            <!-- Sort + filter bar -->
+            <div class="fb-sort-bar">
+                <div class="fb-sort-bar-tabs">
+                    <a href="?post_id={{ active_post.pk }}&filter=all&sort={{ current_sort }}{% for p in page_filters %}&page_filter={{ p }}{% endfor %}{% if current_post_filter %}&post_filter={{ current_post_filter }}{% endif %}" class="fb-sort-chip {% if current_filter == 'all' %}on{% endif %}">All</a>
+                    <a href="?post_id={{ active_post.pk }}&filter=unread&sort={{ current_sort }}{% for p in page_filters %}&page_filter={{ p }}{% endfor %}{% if current_post_filter %}&post_filter={{ current_post_filter }}{% endif %}" class="fb-sort-chip {% if current_filter == 'unread' %}on{% endif %}">Open</a>
+                    <a href="?post_id={{ active_post.pk }}&filter=hidden&sort={{ current_sort }}{% for p in page_filters %}&page_filter={{ p }}{% endfor %}{% if current_post_filter %}&post_filter={{ current_post_filter }}{% endif %}" class="fb-sort-chip {% if current_filter == 'hidden' %}on{% endif %}">Hidden</a>
+                    <a href="?post_id={{ active_post.pk }}&filter=spam&sort={{ current_sort }}{% for p in page_filters %}&page_filter={{ p }}{% endfor %}{% if current_post_filter %}&post_filter={{ current_post_filter }}{% endif %}" class="fb-sort-chip {% if current_filter == 'spam' %}on{% endif %}">Spam</a>
+                </div>
+                <div class="fb-sort-right">
+                    <select class="fb-sort-select" onchange="fbSort(this.value)">
+                        <option value="-created_time" {% if current_sort == '-created_time' %}selected{% endif %}>Newest ▼</option>
+                        <option value="created_time" {% if current_sort == 'created_time' %}selected{% endif %}>Oldest ▲</option>
+                        <option value="-like_count" {% if current_sort == '-like_count' %}selected{% endif %}>Most Liked ▼</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Comments feed -->
+            <div class="fb-comments-feed">
+                {% for comment in comments %}
+
+                <!-- ── Main comment ── -->
+                <div class="fb-comment" id="cmt{{ comment.pk }}">
+                    <!-- User avatar: colored initial -->
+                    <div class="fb-comment-ava" style="background: hsl({{ comment.sender_name|length|add:200 }}, 55%, 50%);"
+                         title="{{ comment.sender_name }}">
+                        {{ comment.sender_name|make_list|first|upper }}
+                    </div>
+                    <div class="fb-comment-body">
+                        <div class="fb-comment-bubble {% if comment.visibility_status == 'hidden' %}hidden-c{% endif %}">
+                            <div class="fb-comment-name">{{ comment.sender_name }}</div>
+                            <div class="fb-comment-text">{{ comment.message }}</div>
+                        </div>
+                        {% if comment.like_count > 0 %}
+                        <div class="fb-comment-likes" style="margin-left:.85rem; display:flex; align-items:center;">
+                            {% if comment.reactions_data %}
+                                {% for react, count in comment.reactions_data.items %}
+                                    {% if count > 0 %}
+                                        {% if react == 'LIKE' %}<span class="fb-react-icon fb-react-like" style="width:14px;height:14px;font-size:.5rem;background:#1877f2;"><i class="fas fa-thumbs-up" style="color:white;"></i></span>{% endif %}
+                                        {% if react == 'LOVE' %}<span class="fb-react-icon fb-react-like" style="width:14px;height:14px;font-size:.5rem;background:#f33e58;"><i class="fas fa-heart" style="color:white;"></i></span>{% endif %}
+                                        {% if react == 'HAHA' %}<span class="fb-react-icon fb-react-like" style="width:14px;height:14px;font-size:.5rem;background:#f7b125;"><i class="fas fa-laugh" style="color:white;"></i></span>{% endif %}
+                                        {% if react == 'WOW' %}<span class="fb-react-icon fb-react-like" style="width:14px;height:14px;font-size:.5rem;background:#f7b125;"><i class="fas fa-surprise" style="color:white;"></i></span>{% endif %}
+                                        {% if react == 'SAD' %}<span class="fb-react-icon fb-react-like" style="width:14px;height:14px;font-size:.5rem;background:#f7b125;"><i class="fas fa-sad-tear" style="color:white;"></i></span>{% endif %}
+                                        {% if react == 'ANGRY' %}<span class="fb-react-icon fb-react-like" style="width:14px;height:14px;font-size:.5rem;background:#e9710f;"><i class="fas fa-angry" style="color:white;"></i></span>{% endif %}
+                                        {% if react == 'CARE' %}<span class="fb-react-icon fb-react-like" style="width:14px;height:14px;font-size:.5rem;background:#f7b125;"><i class="fas fa-hand-holding-heart" style="color:white;"></i></span>{% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                <span class="fb-react-icon fb-react-like" style="width:14px;height:14px;font-size:.5rem;background:#1877f2;">
+                                    <i class="fas fa-thumbs-up"></i>
+                                </span>
+                            {% endif %}
+                            <span style="margin-left:4px;font-size:0.8rem;color:#65676b;">{{ comment.like_count }}</span>
+                        </div>
+                        {% endif %}
+                        <div class="fb-comment-meta">
+                            <span class="fb-comment-time">{{ comment.created_time|timesince }} ago</span>
+                            <div class="fb-comment-actions">
+                                <!-- Like -->
+                                <div class="fb-reaction-wrapper" style="display:inline-block;">
+                                    {% if comment.reactions_data.my_reaction %}
+                                    <a href="#" class="fb-cact" style="color: #1877f2; font-weight: 600;" onclick="event.preventDefault();sendReaction({{ comment.pk }}, '{{ comment.reactions_data.my_reaction }}', 'comment')">{{ comment.reactions_data.my_reaction|title }}</a>
+                                    {% else %}
+                                    <a href="#" class="fb-cact" onclick="event.preventDefault();sendReaction({{ comment.pk }}, 'LIKE', 'comment')">Like</a>
+                                    {% endif %}
+                                    <div class="fb-reactions-box" style="bottom: 150%;">
+                                        <span onclick="sendReaction({{ comment.pk }}, 'LIKE', 'comment')">👍</span>
+                                        <span onclick="sendReaction({{ comment.pk }}, 'LOVE', 'comment')">❤️</span>
+                                        <span onclick="sendReaction({{ comment.pk }}, 'HAHA', 'comment')">😆</span>
+                                        <span onclick="sendReaction({{ comment.pk }}, 'WOW', 'comment')">😮</span>
+                                        <span onclick="sendReaction({{ comment.pk }}, 'SAD', 'comment')">😢</span>
+                                        <span onclick="sendReaction({{ comment.pk }}, 'ANGRY', 'comment')">😡</span>
+                                        <span onclick="sendReaction({{ comment.pk }}, 'CARE', 'comment')">🤗</span>
+                                    </div>
+                                </div>
+                                <span class="fb-cact sep">·</span>
+                                <!-- Reply -->
+                                <a href="#" class="fb-cact" onclick="event.preventDefault();fbToggleReply({{ comment.pk }})">
+                                    Reply
+                                </a>
+                                <span class="fb-cact sep">·</span>
+                                <!-- Hide / Unhide -->
+                                {% if comment.visibility_status == 'visible' %}
+                                    <form method="post" action="{% url 'trendycrm:social_action' comment.pk %}">
+                                        {% csrf_token %}<input type="hidden" name="action" value="hide">
+                                        <button class="fb-cact" type="submit">Hide</button>
+                                    </form>
+                                {% else %}
+                                    <form method="post" action="{% url 'trendycrm:social_action' comment.pk %}">
+                                        {% csrf_token %}<input type="hidden" name="action" value="unhide">
+                                        <button class="fb-cact" type="submit">Unhide</button>
+                                    </form>
+                                {% endif %}
+                                <span class="fb-cact sep">·</span>
+                                <!-- Delete -->
+                                <form method="post" action="{% url 'trendycrm:social_action' comment.pk %}" onsubmit="return confirm('Delete this comment?')">
+                                    {% csrf_token %}<input type="hidden" name="action" value="delete">
+                                    <button class="fb-cact del" type="submit">Delete</button>
+                                </form>
+                                {% if comment.workflow_status == 'open' %}
+                                <span class="fb-cact sep">·</span>
+                                <form method="post" action="{% url 'trendycrm:social_action' comment.pk %}">
+                                    {% csrf_token %}<input type="hidden" name="action" value="mark_done">
+                                    <button class="fb-cact done-btn" type="submit">Done</button>
+                                </form>
+                                {% endif %}
+                                <!-- Manual automation fire button -->
+                                <span class="fb-cact sep">·</span>
+                                <button class="fb-cact" style="color:#7c3aed;font-weight:600;"
+                                        onclick="fbFireAuto({{ comment.pk }}, this)"
+                                        title="Fire comment automations now">⚡ Auto</button>
+                            </div>
+                        </div>
+
+                        <!-- Inline reply form -->
+                        <div id="reply{{ comment.pk }}" class="fb-reply-form">
+                            <form method="post" action="{% url 'trendycrm:social_action' comment.pk %}" class="fb-reply-row">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="reply">
+                                <div class="fb-comment-ava" style="width:28px;height:28px;font-size:.62rem;background:linear-gradient(135deg,#1877f2,#0d65d9);flex-shrink:0">
+                                    {{ page_name|make_list|first|upper|default:"P" }}
+                                </div>
+                                <div class="fb-reply-input-wrap">
+                                    <input type="text" name="message" class="fb-reply-input" placeholder="Reply as {{ page_name|default:'Page' }}…" required>
+                                </div>
+                                <button type="submit" class="fb-reply-send"><i class="fas fa-paper-plane"></i></button>
+                            </form>
+                        </div>
+
+                        <!-- Nested replies -->
+                        {% if comment.replies.all %}
+                        <div class="fb-replies">
+                            {% for reply in comment.replies.all %}
+                            <div class="fb-comment" style="margin-bottom:.6rem;">
+                                {% if reply.sender_name|lower == page_name|lower %}
+                                <!-- Page reply — blue branded avatar -->
+                                <div class="fb-comment-ava fb-page-ava" style="width:28px;height:28px;font-size:.62rem;background:linear-gradient(135deg,#1877f2,#0d65d9);" title="{{ reply.sender_name }}">
+                                    {{ reply.sender_name|make_list|first|upper }}
+                                </div>
+                                {% else %}
+                                <div class="fb-comment-ava" style="width:28px;height:28px;font-size:.62rem;background:hsl({{ reply.sender_name|length|add:200 }},55%,50%);" title="{{ reply.sender_name }}">
+                                    {{ reply.sender_name|make_list|first|upper }}
+                                </div>
+                                {% endif %}
+                                <div class="fb-comment-body">
+                                    <div class="fb-comment-bubble {% if reply.visibility_status == 'hidden' %}hidden-c{% endif %}"
+                                         {% if reply.sender_name|lower == page_name|lower %}style="background:#e7f3ff;border-left:3px solid #1877f2;"{% endif %}>
+                                        <div class="fb-comment-name" {% if reply.sender_name|lower == page_name|lower %}style="color:#1877f2;"{% endif %}>
+                                            {{ reply.sender_name }}
+                                            {% if reply.sender_name|lower == page_name|lower %}
+                                            <span style="font-size:.65rem;font-weight:600;color:#7c3aed;margin-left:4px;"
+                                                  title="Auto-reply by Trendy CRM">⚡ Auto</span>
+                                            {% endif %}
+                                        </div>
+                                        <div class="fb-comment-text">{{ reply.message }}</div>
+                                    </div>
+                                    <div class="fb-comment-meta">
+                                        <span class="fb-comment-time">{{ reply.created_time|timesince }} ago</span>
+                                        <div class="fb-comment-actions">
+                                            <form method="post" action="{% url 'trendycrm:social_action' reply.pk %}" onsubmit="return confirm('Delete this reply?')">
+                                                {% csrf_token %}<input type="hidden" name="action" value="delete">
+                                                <button class="fb-cact del" type="submit">Delete</button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                    </div>
+                </div>
+
+                {% empty %}
+                <div class="fb-no-comments">
+                    <i class="far fa-comment-dots"></i>
+                    <p>No comments on this post yet.<br>
+                    {% if current_filter != 'all' %}
+                        <a href="?post_id={{ active_post.pk }}&filter=all{% for p in page_filters %}&page_filter={{ p }}{% endfor %}{% if current_post_filter %}&post_filter={{ current_post_filter }}{% endif %}" style="color:#1877f2">View all comments</a>
+                    {% endif %}
+                    </p>
+                </div>
+                {% endfor %}
+
+                <!-- Spacer before composer -->
+                <div style="height:.5rem;"></div>
+            </div>
+
+        </div><!-- end fb-right-body -->
+
+        <!-- ── Bottom comment composer ── -->
+        <div class="fb-composer">
+            <div class="fb-composer-ava" title="{{ page_name }}">
+                {{ page_name|make_list|first|upper|default:"P" }}
+            </div>
+            <div class="fb-composer-wrap">
+                <input type="text" id="fbComposerInput" class="fb-composer-input"
+                       placeholder="Comment as {{ page_name|default:'your page' }}…"
+                       onkeydown="fbComposerKey(event, {{ active_post.pk }})">
+                <button class="fb-composer-send" onclick="fbComposerSubmit({{ active_post.pk }})" title="Post">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+
+        {% else %}
+        <!-- No post selected -->
+        <div class="fb-no-select">
+            <div class="fb-no-icon"><i class="fab fa-facebook-messenger"></i></div>
+            <h6>Select a Post</h6>
+            <p>Choose a post from the left panel to view and manage its comments.</p>
+        </div>
+        {% endif %}
+    </div><!-- end fb-right -->
+
+</div><!-- end fb-root -->
+{% endblock %}
+
+{% block extra_script %}
+<script>
+// ── Post list search ──────────────────────────────
+function fbSearchPosts(q) {
+    q = (q || '').toLowerCase();
+    document.querySelectorAll('#fbPostList .fb-post-item').forEach(function(el) {
+        el.style.display = (!q || (el.dataset.q || '').includes(q)) ? '' : 'none';
+    });
+}
+
+// ── Sort redirect ─────────────────────────────────
+function fbSort(val) {
+    var url = new URL(window.location.href);
+    url.searchParams.set('sort', val);
+    window.location.href = url.toString();
+}
+
+// ── Toggle inline reply form ──────────────────────
+function fbToggleReply(pk) {
+    var box = document.getElementById('reply' + pk);
+    if (!box) return;
+    var open = box.style.display === 'block';
+    // Close all open reply forms
+    document.querySelectorAll('.fb-reply-form').forEach(function(f) { f.style.display = 'none'; });
+    if (!open) {
+        box.style.display = 'block';
+        var inp = box.querySelector('input[name="message"]');
+        if (inp) inp.focus();
+    }
+}
+
+// ── Fire Comment Automations ──────────────────────
+function fbFireAuto(commentId, btn) {
+    if (!confirm('Fire automations on this comment?')) return;
+    btn.disabled = true;
+    
+    fetch('/trendy-crm/social/comment/' + commentId + '/fire-automation/', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': '{{ csrf_token }}'
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        btn.disabled = false;
+        if (data.status === 'ok') {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert(data.message || 'Error firing automations.');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        btn.disabled = false;
+        alert('Network error.');
+    });
+}
+
+
+// ── Composer: post top-level comment ─────────────
+function fbComposerSubmit(postId) {
+    var input = document.getElementById('fbComposerInput');
+    if (!input || !input.value.trim() || !postId) return;
+    
+    var btn = document.querySelector('.fb-composer-send');
+    if (btn) btn.disabled = true;
+
+    const formData = new FormData();
+    formData.append('action', 'post_comment');
+    formData.append('message', input.value.trim());
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    fetch('/trendy-crm/social/post-action/' + postId + '/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (btn) btn.disabled = false;
+        if (data.status === 'ok') {
+            input.value = '';
+            location.reload(); // Reload to show the new comment
+        } else {
+            alert(data.message || 'Error posting comment.');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if (btn) btn.disabled = false;
+        alert('Network error posting comment.');
+    });
+}
+function fbComposerKey(e, postId) {
+    if (e.key === 'Enter') fbComposerSubmit(postId);
+}
+
+// ── Toggle Reviewed Heart ─────────────────────────
+function fbToggleReview(postId, btn) {
+    const isReviewed = btn.classList.contains('on');
+    const icon = btn.querySelector('i');
+    
+    // Optimistic UI update
+    btn.classList.toggle('on');
+    if (isReviewed) {
+        icon.classList.remove('fas');
+        icon.classList.add('far');
+    } else {
+        icon.classList.remove('far');
+        icon.classList.add('fas');
+    }
+
+    // Send API request
+    const formData = new FormData();
+    formData.append('action', 'toggle_review');
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    fetch('/trendy-crm/social/post-action/' + postId + '/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status !== 'ok') {
+            // Revert on error
+            btn.classList.toggle('on');
+            if (isReviewed) {
+                icon.classList.remove('far');
+                icon.classList.add('fas');
+            } else {
+                icon.classList.remove('fas');
+                icon.classList.add('far');
+            }
+            alert('Error updating reviewed status.');
+        }
+    })
+    .catch(err => console.error(err));
+}
+
+// ── Toggle Follow-up Star ─────────────────────────
+function fbToggleStar(postId, btn) {
+    const isStarred = btn.classList.contains('on');
+    const icon = btn.querySelector('i');
+    
+    // Optimistic UI update
+    btn.classList.toggle('on');
+    if (isStarred) {
+        icon.classList.remove('fas');
+        icon.classList.add('far');
+    } else {
+        icon.classList.remove('far');
+        icon.classList.add('fas');
+    }
+
+    // Send API request
+    const formData = new FormData();
+    formData.append('action', 'toggle_star');
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    fetch('/trendy-crm/social/post-action/' + postId + '/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status !== 'ok') {
+            // Revert on error
+            btn.classList.toggle('on');
+            if (isStarred) {
+                icon.classList.remove('far');
+                icon.classList.add('fas');
+            } else {
+                icon.classList.remove('fas');
+                icon.classList.add('far');
+            }
+            alert('Error updating follow-up status.');
+        }
+    })
+    .catch(err => console.error(err));
+}
+
+// ── Scroll active post into view ─────────────────
+document.addEventListener('DOMContentLoaded', function() {
+    var active = document.querySelector('#fbPostList .fb-post-item.active');
+    if (active) {
+        active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+});
+</script>
+
+<script>
+function sendReaction(id, type, target) {
+    const formData = new FormData();
+    formData.append('action', 'react');
+    formData.append('reaction_type', type);
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    let url = target === 'post' ? '{% url "trendycrm:social_post_action" 0 %}'.replace('0', id) : '{% url "trendycrm:social_action" 0 %}'.replace('0', id);
+
+    fetch(url, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            location.reload();
+        } else {
+            alert(data.message || 'Error sending reaction.');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('Network error sending reaction.');
+    });
+}
+function toggleAllPages(allCb) {
+    if (allCb.checked) {
+        document.querySelectorAll('.page-filter-cb').forEach(cb => cb.checked = false);
+    }
+}
+function uncheckAllPages() {
+    let allCb = document.getElementById('page_filter_all');
+    if (allCb) {
+        allCb.checked = false;
+    }
+}
+</script>
+
+{% endblock %}

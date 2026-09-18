@@ -1,0 +1,517 @@
+{% extends 'base.html' %}
+{% block title %}Resources{% endblock %}
+
+{% block extra_css %}
+<style>
+    .resx-header {
+        background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 55%, #8b5cf6 100%);
+        border-radius: 16px; padding: 1.5rem 2rem; color: #fff;
+        margin-bottom: 1.5rem; position: relative; overflow: hidden;
+    }
+    .resx-header::before {
+        content: ''; position: absolute; top: -60%; right: -8%;
+        width: 220px; height: 220px; background: rgba(255,255,255,.08); border-radius: 50%;
+    }
+    .resx-header h2 { font-weight: 700; margin-bottom: .2rem; position: relative; z-index: 1; }
+    .resx-header p { opacity: .88; margin: 0; font-size: .88rem; position: relative; z-index: 1; }
+    .resx-header-btn {
+        background: rgba(255,255,255,.2); backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,.3); color: #fff;
+        padding: .55rem 1.2rem; border-radius: 12px; font-weight: 600;
+        transition: all .3s; position: relative; z-index: 1;
+        text-decoration: none; display: inline-flex; align-items: center; gap: .5rem;
+    }
+    .resx-header-btn:hover { background: rgba(255,255,255,.35); color: #fff; transform: translateY(-2px); }
+
+    /* ── Layout: Topics panel + content panel ── */
+    .resx-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
+    .topics-panel {
+        width: 260px; flex-shrink: 0;
+        background: #fff; border-radius: 16px; border: 1px solid #f1f5f9;
+        box-shadow: 0 1px 4px rgba(0,0,0,.04);
+        padding: .9rem; position: sticky; top: 1rem;
+    }
+    .topics-panel-heading {
+        font-size: .72rem; font-weight: 800; color: #94a3b8;
+        text-transform: uppercase; letter-spacing: .6px;
+        padding: .3rem .6rem .7rem;
+    }
+    .topic-row-wrapper { position: relative; display: flex; align-items: center; gap: .25rem; }
+    .topic-row {
+        flex: 1; display: flex; align-items: center; gap: .6rem;
+        padding: .55rem .7rem; border-radius: 10px; margin-bottom: .3rem;
+        text-decoration: none; color: #334155; font-weight: 600; font-size: .86rem;
+        border-left: 3px solid transparent; transition: all .18s; min-width: 0;
+        background: color-mix(in srgb, var(--tc, #6366f1) 28%, #fff);
+    }
+    .topic-row:hover { background: color-mix(in srgb, var(--tc, #6366f1) 40%, #fff); color: #1e293b; }
+    .topic-row.active {
+        background: var(--tc, #6366f1); color: #fff;
+        box-shadow: 0 4px 12px color-mix(in srgb, var(--tc, #6366f1) 40%, transparent);
+    }
+    .topic-row.active .topic-count { background: rgba(255,255,255,.25); color: #fff; }
+    .topic-icon {
+        width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center; font-size: .78rem;
+    }
+    .topic-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .topic-count {
+        font-size: .68rem; font-weight: 700; background: #f1f5f9; color: #64748b;
+        padding: .1rem .5rem; border-radius: 20px; flex-shrink: 0;
+    }
+    .topic-row-actions {
+        position: absolute; right: 6px; display: none; gap: .2rem;
+        background: #fff; padding-left: .3rem;
+    }
+    .topic-row-wrapper:hover .topic-row-actions { display: flex; }
+    .topic-row-wrapper.active-wrapper .topic-row-actions { display: none; }
+    .topic-icon-btn {
+        width: 22px; height: 22px; border-radius: 6px; border: none;
+        background: #f1f5f9; color: #64748b; font-size: .65rem;
+        display: flex; align-items: center; justify-content: center; cursor: pointer;
+    }
+    .topic-icon-btn:hover { background: #e2e8f0; color: #334155; }
+    .topic-icon-btn.danger:hover { background: #fee2e2; color: #dc2626; }
+    .add-topic-btn {
+        width: 100%; margin-top: .4rem; border: 1.5px dashed #cbd5e1; background: transparent;
+        color: #6366f1; font-weight: 700; font-size: .8rem; padding: .55rem; border-radius: 10px;
+        cursor: pointer; transition: all .2s;
+    }
+    .add-topic-btn:hover { background: #eef2ff; border-color: #6366f1; }
+
+    .content-panel { flex: 1; min-width: 0; }
+
+    /* Search */
+    .resx-search { position: relative; margin-bottom: 1.25rem; }
+    .resx-search input {
+        width: 100%; border: 1.5px solid #e2e8f0; border-radius: 12px;
+        padding: .7rem 1rem .7rem 2.6rem; font-size: .9rem; background: #fff;
+    }
+    .resx-search input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1); outline: none; }
+    .resx-search i { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #94a3b8; }
+
+    /* Accordion article cards */
+    .article-card {
+        background: #fff; border-radius: 14px; border: 1px solid #f1f5f9;
+        box-shadow: 0 1px 4px rgba(0,0,0,.04); margin-bottom: 1rem; overflow: hidden;
+    }
+    .article-header {
+        display: flex; align-items: flex-start; justify-content: space-between;
+        gap: 1rem; padding: 1.1rem 1.35rem; cursor: pointer; transition: background .15s;
+    }
+    .article-header:hover { background: #fafbff; }
+    .article-topic-label {
+        font-size: .68rem; font-weight: 800; letter-spacing: .5px; margin-bottom: .25rem;
+    }
+    .article-title { font-weight: 700; font-size: .98rem; color: #1e293b; }
+    .article-title .fa-check-circle { font-size: .8rem; margin-left: .35rem; color: #10b981; }
+    .article-subtitle { font-size: .82rem; color: #64748b; margin-top: .25rem; }
+    .article-header-right { display: flex; align-items: center; gap: .5rem; flex-shrink: 0; }
+    .article-icon-btn {
+        width: 30px; height: 30px; border-radius: 8px; border: none;
+        background: #f1f5f9; color: #64748b; display: flex; align-items: center; justify-content: center;
+        text-decoration: none; font-size: .78rem; cursor: pointer; transition: all .2s;
+    }
+    .article-icon-btn:hover { background: #e0e7ff; color: #4f46e5; }
+    .article-icon-btn.danger:hover { background: #fee2e2; color: #dc2626; }
+    .article-chevron { color: #94a3b8; transition: transform .25s; margin-left: .25rem; }
+    .article-header[aria-expanded="true"] .article-chevron { transform: rotate(180deg); }
+
+    .article-body { padding: 0 1.35rem 1.35rem; border-top: 1px solid #f8fafc; }
+    .content-body { font-size: .92rem; color: #334155; line-height: 1.7; padding-top: 1.1rem; }
+    .content-body img { max-width: 100%; border-radius: 10px; }
+    .content-body ol { counter-reset: step; list-style: none; padding-left: 0; margin: 0 0 1rem; }
+    .content-body ol > li {
+        counter-increment: step; position: relative; padding-left: 2.5rem; margin-bottom: .85rem;
+    }
+    .content-body ol > li::before {
+        content: counter(step); position: absolute; left: 0; top: -1px;
+        width: 1.7rem; height: 1.7rem; border-radius: 50%;
+        background: #3b82f6; color: #fff; font-weight: 700; font-size: .78rem;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .content-body ul { padding-left: 1.4rem; margin-bottom: 1rem; }
+
+    .notes-heading, .training-heading {
+        font-size: .72rem; font-weight: 800; color: #94a3b8; letter-spacing: .6px;
+        margin: 1rem 0 .5rem;
+    }
+    .notes-box {
+        background: #fef9e7; border: 1px solid #fbe9b0; border-radius: 12px;
+        padding: .85rem 1.1rem; font-size: .87rem; color: #78560c; line-height: 1.6;
+    }
+    .notes-box::before { content: '💡 '; }
+
+    .no-material { font-style: italic; color: #94a3b8; font-size: .85rem; }
+
+    .attachment-mini { background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 12px; padding: .9rem 1rem; margin-bottom: .75rem; }
+    .attachment-mini-head { display: flex; align-items: center; justify-content: between; gap: .6rem; margin-bottom: .6rem; }
+    .attachment-mini-icon {
+        width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+        font-size: .85rem; flex-shrink: 0;
+    }
+    .ai-audio { background: #ecfeff; color: #0891b2; }
+    .ai-video { background: #fdf4ff; color: #a21caf; }
+    .ai-pdf   { background: #fef2f2; color: #dc2626; }
+    .attachment-mini-name { font-weight: 700; font-size: .83rem; color: #1e293b; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .attachment-mini-dl { color: #64748b; font-size: .8rem; text-decoration: none; flex-shrink: 0; }
+    audio.res-player { width: 100%; }
+    video.res-player { width: 100%; max-height: 380px; border-radius: 10px; background: #000; }
+    .pdf-frame-mini { width: 100%; height: 480px; border: 1px solid #e2e8f0; border-radius: 10px; }
+
+    .article-footer {
+        display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem;
+        margin-top: 1.1rem; padding-top: .9rem; border-top: 1px solid #f8fafc;
+        font-size: .78rem; color: #94a3b8;
+    }
+    .mark-read-btn {
+        border: none; background: #eef2ff; color: #4338ca; font-weight: 700; font-size: .78rem;
+        padding: .4rem 1rem; border-radius: 20px; cursor: pointer; transition: all .2s;
+        display: inline-flex; align-items: center; gap: .4rem;
+    }
+    .mark-read-btn:hover { background: #e0e7ff; }
+    .mark-read-btn.is-read { background: #d1fae5; color: #065f46; }
+    .mark-read-btn.is-read:hover { background: #a7f3d0; }
+
+    .resx-empty {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        padding: 4rem 2rem; color: #94a3b8; text-align: center;
+        background: #fff; border-radius: 16px; border: 1px dashed #e2e8f0;
+    }
+    .resx-empty i { font-size: 2.4rem; margin-bottom: 1rem; opacity: .35; }
+
+    @media (max-width: 860px) {
+        .resx-layout { flex-direction: column; }
+        .topics-panel { width: 100%; position: static; }
+    }
+
+    /* Topic modal */
+    .icon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: .5rem; }
+    .icon-opt {
+        border: 1.5px solid #e2e8f0; border-radius: 10px; padding: .5rem 0; text-align: center;
+        cursor: pointer; transition: all .15s; color: #64748b; font-size: .95rem;
+    }
+    .icon-opt:hover { border-color: #a5b4fc; background: #eef2ff; }
+    .icon-opt.selected { border-color: #6366f1; background: #6366f1; color: #fff; }
+    .color-grid { display: flex; gap: .55rem; flex-wrap: wrap; }
+    .color-opt {
+        width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+        border: 2px solid transparent; transition: all .15s;
+    }
+    .color-opt.selected { border-color: #1e293b; transform: scale(1.12); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="resx-header">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <h2><i class="fas fa-book-open me-2"></i>Resources</h2>
+            <p>Your team's knowledge base — SOPs, training audio, video walkthroughs &amp; documents</p>
+        </div>
+        {% if can_manage %}
+        <a href="{% url 'resources:create' %}{% if active_topic %}?topic={{ active_topic.id }}{% endif %}" class="resx-header-btn">
+            <i class="fas fa-plus"></i> New Article
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+{% if messages %}
+<div class="mb-3">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show border-0" style="border-radius:12px;">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="resx-layout">
+    <!-- Topics sidebar -->
+    <div class="topics-panel">
+        <div class="topics-panel-heading">Topics</div>
+
+        <div class="topic-row-wrapper {% if not active_topic %}active-wrapper{% endif %}">
+            <a href="{% url 'resources:list' %}" class="topic-row {% if not active_topic %}active{% endif %}">
+                <span class="topic-icon" style="background:#e2e8f0;color:#475569;"><i class="fas fa-layer-group"></i></span>
+                <span class="topic-name">All Topics</span>
+                <span class="topic-count">{{ total_count }}</span>
+            </a>
+        </div>
+
+        {% for t in topics %}
+        <div class="topic-row-wrapper {% if active_topic.id == t.id %}active-wrapper{% endif %}" data-color="{{ t.color }}">
+            <a href="?topic={{ t.id }}" class="topic-row {% if active_topic.id == t.id %}active{% endif %}" style="--tc:{{ t.color }}; border-left-color:{{ t.color }};">
+                <span class="topic-icon" style="background:{{ t.color }}22;color:{{ t.color }};"><i class="fas {{ t.icon }}"></i></span>
+                <span class="topic-name">{{ t.name }}</span>
+                <span class="topic-count">{{ t.article_count }}</span>
+            </a>
+            {% if can_manage %}
+            <div class="topic-row-actions">
+                <button type="button" class="topic-icon-btn" title="Edit topic"
+                    onclick="openTopicModal({{ t.id }}, '{{ t.name|escapejs }}', '{{ t.icon }}', '{{ t.color }}')">
+                    <i class="fas fa-pen"></i>
+                </button>
+                <button type="button" class="topic-icon-btn danger" title="Delete topic"
+                    onclick="deleteTopic({{ t.id }}, '{{ t.name|escapejs }}')">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        {% if can_manage %}
+        <button type="button" class="add-topic-btn" onclick="openTopicModal()"><i class="fas fa-plus me-1"></i> Add Topic</button>
+        {% endif %}
+    </div>
+
+    <!-- Articles -->
+    <div class="content-panel">
+        <form method="GET" class="resx-search">
+            {% if active_topic %}<input type="hidden" name="topic" value="{{ active_topic.id }}">{% endif %}
+            <i class="fas fa-search"></i>
+            <input type="text" name="q" value="{{ search_q }}" placeholder="Search articles…" onchange="this.form.submit()">
+        </form>
+
+        {% for r in resources %}
+        <div class="article-card">
+            <div class="article-header" data-bs-toggle="collapse" data-bs-target="#art{{ r.id }}" aria-expanded="false">
+                <div style="min-width:0;">
+                    <div class="article-topic-label" style="color:{{ r.topic.color|default:'#64748b' }};">
+                        {% if r.topic %}{{ r.topic.name|upper }}{% else %}GENERAL{% endif %}
+                    </div>
+                    <div class="article-title">
+                        {{ r.title }}
+                        {% if r.id in read_ids %}<i class="fas fa-check-circle" title="You've read this"></i>{% endif %}
+                    </div>
+                    {% if r.subtitle %}<div class="article-subtitle">{{ r.subtitle }}</div>{% endif %}
+                </div>
+                <div class="article-header-right">
+                    {% if can_manage %}
+                    <a href="{% url 'resources:edit' r.id %}" class="article-icon-btn" title="Edit" onclick="event.stopPropagation()"><i class="fas fa-pen"></i></a>
+                    <button type="button" class="article-icon-btn danger" title="Delete" onclick="event.stopPropagation(); confirmDeleteArticle({{ r.id }}, '{{ r.title|escapejs }}')"><i class="fas fa-trash"></i></button>
+                    {% endif %}
+                    <i class="fas fa-chevron-down article-chevron"></i>
+                </div>
+            </div>
+            <div class="collapse" id="art{{ r.id }}">
+                <div class="article-body">
+                    {% if r.content %}<div class="content-body">{{ r.content|safe }}</div>{% endif %}
+
+                    {% if r.notes %}
+                    <div class="notes-heading">NOTES</div>
+                    <div class="notes-box">{{ r.notes|safe }}</div>
+                    {% endif %}
+
+                    <div class="training-heading">TRAINING MATERIAL</div>
+                    {% if r.files.all %}
+                        {% for f in r.files.all %}
+                        <div class="attachment-mini">
+                            <div class="attachment-mini-head">
+                                <div class="attachment-mini-icon ai-{{ f.file_type }}">
+                                    {% if f.file_type == 'audio' %}<i class="fas fa-headphones"></i>
+                                    {% elif f.file_type == 'video' %}<i class="fas fa-film"></i>
+                                    {% else %}<i class="fas fa-file-pdf"></i>{% endif %}
+                                </div>
+                                <div class="attachment-mini-name">{{ f.original_name }}</div>
+                                <a href="{{ f.file.url }}" download="{{ f.original_name }}" class="attachment-mini-dl"><i class="fas fa-download"></i></a>
+                            </div>
+                            {% if f.file_type == 'audio' %}
+                            <audio class="res-player" controls preload="metadata"><source src="{{ f.file.url }}"></audio>
+                            {% elif f.file_type == 'video' %}
+                            <video class="res-player" controls preload="metadata"><source src="{{ f.file.url }}"></video>
+                            {% elif f.file_type == 'pdf' %}
+                            <iframe class="pdf-frame-mini" src="{{ f.file.url }}" title="{{ f.original_name }}"></iframe>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    <div class="no-material">No material attached yet.</div>
+                    {% endif %}
+
+                    <div class="article-footer">
+                        <span>{{ r.version }} &middot; Updated {{ r.updated_at|date:"Y-m-d" }}</span>
+                        <button type="button" class="mark-read-btn {% if r.id in read_ids %}is-read{% endif %}" onclick="toggleRead({{ r.id }}, this)">
+                            {% if r.id in read_ids %}<i class="fas fa-check"></i> Read{% else %}Mark as read{% endif %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="resx-empty">
+            <i class="fas fa-folder-open"></i>
+            <h5>No articles yet</h5>
+            <p class="mb-3">{% if search_q or active_topic %}Nothing matches this filter.{% else %}Publish your first knowledge-base article to get started.{% endif %}</p>
+            {% if can_manage and not search_q %}
+            <a href="{% url 'resources:create' %}{% if active_topic %}?topic={{ active_topic.id }}{% endif %}" class="resx-header-btn" style="background:linear-gradient(135deg,#0ea5e9,#6366f1);">
+                <i class="fas fa-plus"></i> New Article
+            </a>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Delete article form -->
+<form id="deleteArticleForm" method="POST" style="display:none;">{% csrf_token %}</form>
+
+<!-- Topic create/edit modal -->
+{% if can_manage %}
+<div class="modal fade" id="topicModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius:16px;border:none;">
+            <div class="modal-header" style="border-bottom:1px solid #f1f5f9;">
+                <h5 class="modal-title" id="topicModalTitle">Add Topic</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" style="font-size:.82rem;">Topic Name</label>
+                    <input type="text" id="topicNameInput" class="form-control" placeholder="e.g. Sales, Inventory, Billing/Accounts">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" style="font-size:.82rem;">Icon</label>
+                    <div class="icon-grid" id="iconGrid">
+                        {% for val, label in icon_choices %}
+                        <div class="icon-opt" data-icon="{{ val }}" title="{{ label }}" onclick="selectIcon('{{ val }}')"><i class="fas {{ val }}"></i></div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label fw-semibold" style="font-size:.82rem;">Color</label>
+                    <div class="color-grid" id="colorGrid">
+                        {% for val, label in color_choices %}
+                        <div class="color-opt" data-color="{{ val }}" style="background:{{ val }};" title="{{ label }}" onclick="selectColor('{{ val }}')"></div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid #f1f5f9;">
+                <button type="button" class="cancel-btn" data-bs-dismiss="modal" style="background:#f1f5f9;border:none;padding:.55rem 1.25rem;border-radius:10px;font-weight:600;color:#64748b;">Cancel</button>
+                <button type="button" class="submit-btn" onclick="saveTopic()" style="background:linear-gradient(135deg,#0ea5e9,#6366f1);border:none;color:#fff;padding:.55rem 1.5rem;border-radius:10px;font-weight:600;">Save Topic</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function getCookie(name) {
+        let v = null;
+        document.cookie.split(';').forEach(c => {
+            c = c.trim();
+            if (c.startsWith(name + '=')) v = decodeURIComponent(c.slice(name.length + 1));
+        });
+        return v;
+    }
+
+    function toggleRead(resourceId, btn) {
+        btn.disabled = true;
+        fetch(`/resources/${resourceId}/mark-read/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            if (!data.success) return;
+            if (data.read) {
+                btn.classList.add('is-read');
+                btn.innerHTML = '<i class="fas fa-check"></i> Read';
+            } else {
+                btn.classList.remove('is-read');
+                btn.textContent = 'Mark as read';
+            }
+        })
+        .catch(() => { btn.disabled = false; });
+    }
+
+    function confirmDeleteArticle(id, title) {
+        if (!confirm(`Delete "${title}" and all its attachments? This cannot be undone.`)) return;
+        const form = document.getElementById('deleteArticleForm');
+        form.action = `/resources/${id}/delete/`;
+        form.submit();
+    }
+
+    /* ── Topic modal ── */
+    let editingTopicId = null;
+    let selectedIcon = 'fa-folder';
+    let selectedColor = '#6366f1';
+    const topicModalEl = document.getElementById('topicModal');
+    const topicModal = topicModalEl ? new bootstrap.Modal(topicModalEl) : null;
+
+    function selectIcon(val) {
+        selectedIcon = val;
+        document.querySelectorAll('.icon-opt').forEach(el => el.classList.toggle('selected', el.dataset.icon === val));
+    }
+    function selectColor(val) {
+        selectedColor = val;
+        document.querySelectorAll('.color-opt').forEach(el => el.classList.toggle('selected', el.dataset.color === val));
+    }
+
+    function nextAutoColor() {
+        const used = new Set(Array.from(document.querySelectorAll('.topic-row-wrapper[data-color]')).map(el => el.dataset.color));
+        const palette = Array.from(document.querySelectorAll('#colorGrid .color-opt')).map(el => el.dataset.color);
+        return palette.find(c => !used.has(c)) || palette[0];
+    }
+
+    function openTopicModal(id, name, icon, color) {
+        editingTopicId = id || null;
+        document.getElementById('topicModalTitle').textContent = id ? 'Edit Topic' : 'Add Topic';
+        document.getElementById('topicNameInput').value = name || '';
+        selectIcon(icon || 'fa-folder');
+        selectColor(color || nextAutoColor());
+        topicModal.show();
+    }
+
+    function saveTopic() {
+        const name = document.getElementById('topicNameInput').value.trim();
+        if (!name) { alert('Topic name is required.'); return; }
+        const url = editingTopicId ? `/resources/topics/${editingTopicId}/edit/` : '/resources/topics/create/';
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+            body: JSON.stringify({ name, icon: selectedIcon, color: selectedColor }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert(data.message || 'Failed to save topic.');
+            }
+        })
+        .catch(() => alert('Network error.'));
+    }
+
+    function deleteTopic(id, name) {
+        if (!confirm(`Delete topic "${name}"? Articles inside it will become uncategorized, not deleted.`)) return;
+        fetch(`/resources/topics/${id}/delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) window.location.reload();
+            else alert(data.message || 'Failed to delete topic.');
+        })
+        .catch(() => alert('Network error.'));
+    }
+
+    /* Expand the accordion item deep-linked via #art<id> hash, if present */
+    document.addEventListener('DOMContentLoaded', () => {
+        if (window.location.hash) {
+            const el = document.querySelector(window.location.hash);
+            if (el && el.classList.contains('collapse')) {
+                new bootstrap.Collapse(el, { show: true });
+            }
+        }
+    });
+</script>
+{% endblock %}

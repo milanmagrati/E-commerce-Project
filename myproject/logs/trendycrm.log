@@ -1,0 +1,740 @@
+[WARNING] 2026-08-01 12:15:41 ai_router._call_gemini_rest:95 Gemini rate limited; retrying once in 19s
+[WARNING] 2026-08-01 12:16:01 ai_router._gen_text:358 Gemini 'gemini-pro-latest' failed (Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+Please retry in 57.491933455s.), falling back to gemini-flash-latest.
+[WARNING] 2026-08-01 12:16:03 ai_router._call_gemini_rest:95 Gemini rate limited; retrying once in 57s
+[ERROR] 2026-08-01 12:17:02 ai_router.route_message:846 AI Router failed: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 56.414975966s.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 355, in _gen_text
+    reply = _call_gemini_rest(model, system_prompt, user_message, config['gemini_api_key'],
+                              temperature=temperature, max_tokens=max_tokens)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 100, in _call_gemini_rest
+    raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
+ValueError: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+Please retry in 57.491933455s.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 836, in route_message
+    reply, model_label, notice = _gen_text_with_failover(
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^
+        provider, auto_model, message_text, system_prompt,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        config, chatbot_config, available)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 318, in _gen_text_with_failover
+    reply, label = _gen_text(provider, model_name, user_message, system_prompt,
+                   ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             config, chatbot_config)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 359, in _gen_text
+    reply = _call_gemini_rest(GEMINI_FLASH_MODEL, system_prompt, user_message, config['gemini_api_key'],
+                              temperature=temperature, max_tokens=max_tokens)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 100, in _call_gemini_rest
+    raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
+ValueError: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 56.414975966s.
+[ERROR] 2026-08-01 12:17:02 meta_sync.process_incoming_webhook_message:1237 AI auto-reply not generated | success=False | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.goog)
+[WARNING] 2026-08-01 12:18:23 ai_router._gen_text:371 Gemini 'gemini-pro-latest' failed (Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+Please retry in 35.790755564s.), falling back to gemini-flash-latest.
+[ERROR] 2026-08-01 12:18:26 ai_router.route_message:859 AI Router failed: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 34.179039867s.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 368, in _gen_text
+    reply = _call_gemini_rest(model, system_prompt, user_message, config['gemini_api_key'],
+                              temperature=temperature, max_tokens=max_tokens)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 100, in _call_gemini_rest
+    raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
+ValueError: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+Please retry in 35.790755564s.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 849, in route_message
+    reply, model_label, notice = _gen_text_with_failover(
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^
+        provider, auto_model, message_text, system_prompt,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        config, chatbot_config, available)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 331, in _gen_text_with_failover
+    reply, label = _gen_text(provider, model_name, user_message, system_prompt,
+                   ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             config, chatbot_config)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 372, in _gen_text
+    reply = _call_gemini_rest(GEMINI_FLASH_MODEL, system_prompt, user_message, config['gemini_api_key'],
+                              temperature=temperature, max_tokens=max_tokens)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 100, in _call_gemini_rest
+    raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
+ValueError: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 34.179039867s.
+[ERROR] 2026-08-01 12:18:26 meta_sync.process_incoming_webhook_message:1237 AI auto-reply not generated | success=False | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.goog)
+[ERROR] 2026-08-01 12:24:00 ai_router.route_message:859 AI Router failed: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 59.31735972s.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 849, in route_message
+    reply, model_label, notice = _gen_text_with_failover(
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^
+        provider, auto_model, message_text, system_prompt,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        config, chatbot_config, available)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 331, in _gen_text_with_failover
+    reply, label = _gen_text(provider, model_name, user_message, system_prompt,
+                   ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             config, chatbot_config)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 376, in _gen_text
+    reply = _call_gemini_rest(model, system_prompt, user_message, config['gemini_api_key'],
+                              temperature=temperature, max_tokens=max_tokens)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 100, in _call_gemini_rest
+    raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
+ValueError: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 59.31735972s.
+[ERROR] 2026-08-01 12:24:00 meta_sync.process_incoming_webhook_message:1237 AI auto-reply not generated | success=False | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.goog)
+[ERROR] 2026-08-01 12:24:20 ai_router.route_message:859 AI Router failed: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 38.520062157s.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 849, in route_message
+    reply, model_label, notice = _gen_text_with_failover(
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^
+        provider, auto_model, message_text, system_prompt,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        config, chatbot_config, available)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 331, in _gen_text_with_failover
+    reply, label = _gen_text(provider, model_name, user_message, system_prompt,
+                   ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             config, chatbot_config)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 376, in _gen_text
+    reply = _call_gemini_rest(model, system_prompt, user_message, config['gemini_api_key'],
+                              temperature=temperature, max_tokens=max_tokens)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 100, in _call_gemini_rest
+    raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
+ValueError: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 38.520062157s.
+[ERROR] 2026-08-01 12:24:20 meta_sync.process_incoming_webhook_message:1237 AI auto-reply not generated | success=False | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.goog)
+[ERROR] 2026-08-02 11:31:56 ai_router.route_message:859 AI Router failed: Gemini API error 503: UNAVAILABLE - This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 849, in route_message
+    reply, model_label, notice = _gen_text_with_failover(
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^
+        provider, auto_model, message_text, system_prompt,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        config, chatbot_config, available)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 331, in _gen_text_with_failover
+    reply, label = _gen_text(provider, model_name, user_message, system_prompt,
+                   ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             config, chatbot_config)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 376, in _gen_text
+    reply = _call_gemini_rest(model, system_prompt, user_message, config['gemini_api_key'],
+                              temperature=temperature, max_tokens=max_tokens)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 100, in _call_gemini_rest
+    raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
+ValueError: Gemini API error 503: UNAVAILABLE - This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.
+[ERROR] 2026-08-02 11:31:56 meta_sync.process_incoming_webhook_message:1259 AI auto-reply not generated | success=False | error=Gemini API error 503: UNAVAILABLE - This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.
+[WARNING] 2026-08-02 11:35:04 ai_router._post_gemini:139 Gemini overloaded (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 11:35:04 ai_router._post_gemini:139 Gemini overloaded (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 11:35:04 ai_router._post_gemini:139 Gemini overloaded (HTTP 503); retrying in 5s
+[WARNING] 2026-08-02 11:35:16 ai_router._post_gemini:139 Gemini overloaded (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 11:35:16 ai_router._post_gemini:139 Gemini overloaded (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 11:35:16 ai_router._post_gemini:139 Gemini overloaded (HTTP 503); retrying in 5s
+[ERROR] 2026-08-02 11:35:47 ai_router.route_message:888 AI Router failed: HTTPSConnectionPool(host='generativelanguage.googleapis.com', port=443): Read timed out. (read timeout=30)
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connection.py", line 571, in getresponse
+    httplib_response = super().getresponse()
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\http\client.py", line 1459, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\http\client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\http\client.py", line 297, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\socket.py", line 729, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\ssl.py", line 1304, in recv_into
+    return self.read(nbytes, buffer)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\ssl.py", line 1138, in read
+    return self._sslobj.read(len, buffer)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\util\retry.py", line 490, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\util\util.py", line 39, in reraise
+    raise value
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+        self, url, f"Read timed out. (read timeout={timeout_value})"
+    ) from err
+urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='generativelanguage.googleapis.com', port=443): Read timed out. (read timeout=30)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 844, in route_message
+    reply, model_label, notice = _gen_text_with_failover(
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^
+        provider, model_name, message_text, system_prompt,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        config, chatbot_config, available)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 360, in _gen_text_with_failover
+    reply, label = _gen_text(provider, model_name, user_message, system_prompt,
+                   ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             config, chatbot_config)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 405, in _gen_text
+    reply = _call_gemini_rest(model, system_prompt, user_message, config['gemini_api_key'],
+                              temperature=temperature, max_tokens=max_tokens)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 94, in _call_gemini_rest
+    response = _post_gemini(url, payload)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 127, in _post_gemini
+    response = requests.post(url, json=payload, timeout=timeout)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\api.py", line 134, in post
+    return request("post", url, data=data, json=json, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\api.py", line 71, in request
+    return session.request(method=method, url=url, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\adapters.py", line 742, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='generativelanguage.googleapis.com', port=443): Read timed out. (read timeout=30)
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (HTTP 503); retrying in 5s
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (ConnectionError); retrying in 2s
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (ConnectionError); retrying in 5s
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 11:41:00 ai_router._post_gemini:156 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 5s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:160 Gemini unavailable (ConnectionError); retrying in 2s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:160 Gemini unavailable (ConnectionError); retrying in 5s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 11:41:22 ai_router._post_gemini:158 Gemini still failing (ReadTimeout); retry budget exhausted
+[WARNING] 2026-08-02 11:46:39 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 11:46:45 ai_router._post_gemini:158 Gemini still failing (HTTP 503); retry budget exhausted
+[ERROR] 2026-08-02 11:46:45 ai_router.route_message:934 AI Router failed: Gemini API error 503: UNAVAILABLE - This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 890, in route_message
+    reply, model_label, notice = _gen_text_with_failover(
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^
+        provider, model_name, message_text, system_prompt,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        config, chatbot_config, available)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 406, in _gen_text_with_failover
+    reply, label = _gen_text(provider, model_name, user_message, system_prompt,
+                   ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             config, chatbot_config)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 451, in _gen_text
+    reply = _call_gemini_rest(model, system_prompt, user_message, config['gemini_api_key'],
+                              temperature=temperature, max_tokens=max_tokens)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 108, in _call_gemini_rest
+    raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
+ValueError: Gemini API error 503: UNAVAILABLE - This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.
+[ERROR] 2026-08-02 11:46:45 meta_sync.process_incoming_webhook_message:1259 AI auto-reply not generated | success=False | error=AI provider was overloaded or unreachable and stayed that way through several retries. This normally clears within a minute — resend the reply then, or configure a second provider key so the bot can fail over automatically. (Gemini API error 503: UNAVAILABLE - This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.)
+[WARNING] 2026-08-02 11:59:51 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 5s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:160 Gemini unavailable (ConnectionError); retrying in 2s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:160 Gemini unavailable (ConnectionError); retrying in 5s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:01:12 ai_router._post_gemini:158 Gemini still failing (ReadTimeout); retry budget exhausted
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 5s
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:160 Gemini unavailable (ConnectionError); retrying in 2s
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:160 Gemini unavailable (ConnectionError); retrying in 5s
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:14:28 ai_router._post_gemini:158 Gemini still failing (ReadTimeout); retry budget exhausted
+[INFO] 2026-08-02 12:16:25 meta_sync.process_incoming_webhook_message:1208 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook
+[ERROR] 2026-08-02 12:39:37 meta_sync.sync_meta_conversations:92 Exception occurred while syncing Meta conversations.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connection.py", line 571, in getresponse
+    httplib_response = super().getresponse()
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\http\client.py", line 1459, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\http\client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\http\client.py", line 297, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\socket.py", line 729, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\ssl.py", line 1304, in recv_into
+    return self.read(nbytes, buffer)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\AppData\Local\Python\pythoncore-3.14-64\Lib\ssl.py", line 1138, in read
+    return self._sslobj.read(len, buffer)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\util\retry.py", line 490, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\util\util.py", line 39, in reraise
+    raise value
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\urllib3\connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+        self, url, f"Read timed out. (read timeout={timeout_value})"
+    ) from err
+urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='graph.facebook.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\meta_sync.py", line 77, in sync_meta_conversations
+    response = requests.get(url, params=params, timeout=10)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\api.py", line 87, in get
+    return request("get", url, params=params, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\api.py", line 71, in request
+    return session.request(method=method, url=url, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\.venv\Lib\site-packages\requests\adapters.py", line 742, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='graph.facebook.com', port=443): Read timed out. (read timeout=10)
+[INFO] 2026-08-02 12:41:17 meta_sync.process_incoming_webhook_message:1208 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook
+[INFO] 2026-08-02 12:43:13 meta_sync.process_incoming_webhook_message:1208 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook
+[WARNING] 2026-08-02 12:44:15 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[INFO] 2026-08-02 12:44:30 meta_sync.process_incoming_webhook_message:1208 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:174 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:174 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:174 Gemini unavailable (HTTP 503); retrying in 5s
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:174 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:174 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:174 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:174 Gemini unavailable (ConnectionError); retrying in 2s
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:174 Gemini unavailable (ConnectionError); retrying in 5s
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:174 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:174 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:174 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:50:22 ai_router._post_gemini:172 Gemini still failing (ReadTimeout); retry budget exhausted
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (HTTP 503); retrying in 5s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (ConnectionError); retrying in 2s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (ConnectionError); retrying in 5s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:181 Gemini still failing (ReadTimeout); retry budget exhausted
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 12:56:15 ai_router._post_gemini:183 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 12:56:40 ai_router._post_gemini:183 Gemini unavailable (ReadTimeout); retrying in 2s
+[ERROR] 2026-08-02 12:59:28 ai_router.route_message:962 AI Router failed: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 30.516073758s.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 918, in route_message
+    reply, model_label, notice = _gen_text_with_failover(
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^
+        provider, model_name, message_text, system_prompt,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        config, chatbot_config, available)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 430, in _gen_text_with_failover
+    reply, label = _gen_text(provider, model_name, user_message, system_prompt,
+                   ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             config, chatbot_config)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 479, in _gen_text
+    reply = _call_gemini_rest(model, system_prompt, user_message, config['gemini_api_key'],
+                              temperature=temperature, max_tokens=max_tokens)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 125, in _call_gemini_rest
+    raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
+ValueError: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 30.516073758s.
+[ERROR] 2026-08-02 12:59:28 meta_sync.process_incoming_webhook_message:1226 AI auto-reply not generated | success=False | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.goog)
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 5s
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:160 Gemini unavailable (ConnectionError); retrying in 2s
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:160 Gemini unavailable (ConnectionError); retrying in 5s
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:160 Gemini unavailable (HTTP 503); retrying in 2s
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 5s
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:160 Gemini unavailable (ReadTimeout); retrying in 2s
+[WARNING] 2026-08-02 13:04:41 ai_router._post_gemini:158 Gemini still failing (ReadTimeout); retry budget exhausted
+[ERROR] 2026-08-02 13:05:27 ai_router.route_message:934 AI Router failed: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 32.013743304s.
+Traceback (most recent call last):
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 890, in route_message
+    reply, model_label, notice = _gen_text_with_failover(
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^
+        provider, model_name, message_text, system_prompt,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        config, chatbot_config, available)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 406, in _gen_text_with_failover
+    reply, label = _gen_text(provider, model_name, user_message, system_prompt,
+                   ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             config, chatbot_config)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 451, in _gen_text
+    reply = _call_gemini_rest(model, system_prompt, user_message, config['gemini_api_key'],
+                              temperature=temperature, max_tokens=max_tokens)
+  File "C:\Users\milan\OneDrive\Desktop\E-commerce-Project\myproject\trendycrm\ai_router.py", line 108, in _call_gemini_rest
+    raise ValueError(f"Gemini API error {response.status_code}: {_extract_gemini_error(response)}")
+ValueError: Gemini API error 429: RESOURCE_EXHAUSTED - You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash
+Please retry in 32.013743304s.
+[INFO] 2026-08-03 11:59:51 meta_sync.process_incoming_webhook_message:1208 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook
+[INFO] 2026-08-03 12:00:24 meta_sync.process_incoming_webhook_message:1208 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook
+[INFO] 2026-08-03 12:08:24 meta_sync.process_incoming_webhook_message:1208 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook
+[ERROR] 2026-08-03 12:35:03 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-03 12:35:03 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-03 12:35:03 meta_sync._attempt_ai_reply:1378 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-03 12:35:03 meta_sync._cancel_ai_failure_chip:1147 Cleared AI failure chip on conversation #62 — the AI replied
+[INFO] 2026-08-03 12:35:03 meta_sync._attempt_ai_reply:1298 Dropping AI retry on conversation #62 — the alert was already cleared.
+[ERROR] 2026-08-03 12:35:03 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-03 12:35:03 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-03 12:35:04 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-03 12:35:04 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=Chatbot configuration is missing or inactive
+[ERROR] 2026-08-03 12:35:27 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-03 12:35:28 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-03 12:35:28 meta_sync._attempt_ai_reply:1378 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-03 12:35:28 meta_sync._cancel_ai_failure_chip:1147 Cleared AI failure chip on conversation #63 — the AI replied
+[INFO] 2026-08-03 12:35:28 meta_sync._attempt_ai_reply:1298 Dropping AI retry on conversation #63 — the alert was already cleared.
+[ERROR] 2026-08-03 12:35:28 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-03 12:35:28 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-03 12:35:28 meta_sync._attempt_ai_reply:1378 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-03 12:35:28 meta_sync._cancel_ai_failure_chip:1147 Cleared AI failure chip on conversation #63 — the AI replied
+[ERROR] 2026-08-03 12:35:28 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-03 12:35:28 meta_sync._attempt_ai_reply:1421 AI auto-reply not generated | success=False | attempt=1 | error=Chatbot configuration is missing or inactive
+[INFO] 2026-08-03 12:43:21 meta_sync._attempt_ai_reply:1378 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-04 15:45:18 meta_sync._attempt_ai_reply:1359 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:45:18 meta_sync._attempt_ai_reply:1359 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:45:18 meta_sync._attempt_ai_reply:1359 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:45:18 meta_sync._attempt_ai_reply:1359 No chatbot assigned to channel account: [test] Lead Page (998)
+[ERROR] 2026-08-04 15:45:18 meta_sync.sync_meta_conversations:62 Cannot sync facebook: No access token.
+[ERROR] 2026-08-04 15:45:28 meta_sync._attempt_ai_reply:1473 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-04 15:45:28 meta_sync._attempt_ai_reply:1473 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-04 15:45:28 meta_sync._attempt_ai_reply:1430 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-04 15:45:28 meta_sync._cancel_ai_failure_chip:1199 Cleared AI failure chip on conversation #66 — the AI replied
+[INFO] 2026-08-04 15:45:28 meta_sync._attempt_ai_reply:1350 Dropping AI retry on conversation #66 — the alert was already cleared.
+[ERROR] 2026-08-04 15:45:28 meta_sync._attempt_ai_reply:1473 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-04 15:45:29 meta_sync._attempt_ai_reply:1473 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-04 15:45:29 meta_sync._attempt_ai_reply:1430 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-04 15:45:29 meta_sync._cancel_ai_failure_chip:1199 Cleared AI failure chip on conversation #66 — the AI replied
+[ERROR] 2026-08-04 15:45:29 meta_sync._attempt_ai_reply:1473 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-04 15:45:29 meta_sync._attempt_ai_reply:1473 AI auto-reply not generated | success=False | attempt=1 | error=Chatbot configuration is missing or inactive
+[INFO] 2026-08-04 15:50:54 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:50:54 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:50:54 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:50:54 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:50:54 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[ERROR] 2026-08-04 15:50:54 meta_sync.sync_meta_conversations:62 Cannot sync facebook: No access token.
+[ERROR] 2026-08-04 15:50:55 meta_sync.sync_meta_conversations:62 Cannot sync facebook: No access token.
+[INFO] 2026-08-04 15:51:52 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:51:52 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:51:52 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:51:52 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:51:52 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[ERROR] 2026-08-04 15:51:52 meta_sync.sync_meta_conversations:62 Cannot sync facebook: No access token.
+[ERROR] 2026-08-04 15:51:52 meta_sync.sync_meta_conversations:62 Cannot sync facebook: No access token.
+[INFO] 2026-08-04 15:52:08 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:52:08 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:52:08 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:52:08 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:52:08 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[ERROR] 2026-08-04 15:52:08 meta_sync.sync_meta_conversations:62 Cannot sync facebook: No access token.
+[ERROR] 2026-08-04 15:52:08 meta_sync.sync_meta_conversations:62 Cannot sync facebook: No access token.
+[INFO] 2026-08-04 15:52:27 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:52:27 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:52:27 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:52:27 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-04 15:52:27 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[ERROR] 2026-08-04 15:52:27 meta_sync.sync_meta_conversations:62 Cannot sync facebook: No access token.
+[ERROR] 2026-08-04 15:52:27 meta_sync.sync_meta_conversations:62 Cannot sync facebook: No access token.
+[ERROR] 2026-08-04 15:52:35 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-04 15:52:35 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-04 15:52:35 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-04 15:52:35 meta_sync._cancel_ai_failure_chip:1201 Cleared AI failure chip on conversation #71 — the AI replied
+[INFO] 2026-08-04 15:52:35 meta_sync._attempt_ai_reply:1352 Dropping AI retry on conversation #71 — the alert was already cleared.
+[ERROR] 2026-08-04 15:52:35 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-04 15:52:36 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-04 15:52:36 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-04 15:52:36 meta_sync._cancel_ai_failure_chip:1201 Cleared AI failure chip on conversation #71 — the AI replied
+[ERROR] 2026-08-04 15:52:36 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-04 15:52:36 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=Chatbot configuration is missing or inactive
+[INFO] 2026-08-04 16:00:08 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 11:26:09 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 11:26:09 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 11:26:09 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 11:26:09 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 11:26:09 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 11:26:09 meta_sync._attempt_ai_reply:1361 No chatbot assigned to channel account: [test] Lead Page (998)
+[ERROR] 2026-08-05 11:26:09 meta_sync.sync_meta_conversations:62 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 11:26:10 meta_sync.sync_meta_conversations:62 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 11:26:26 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 11:26:26 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-05 11:26:26 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-05 11:26:26 meta_sync._cancel_ai_failure_chip:1201 Cleared AI failure chip on conversation #75 — the AI replied
+[INFO] 2026-08-05 11:26:26 meta_sync._attempt_ai_reply:1352 Dropping AI retry on conversation #75 — the alert was already cleared.
+[ERROR] 2026-08-05 11:26:26 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 11:26:26 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-05 11:26:26 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-05 11:26:26 meta_sync._cancel_ai_failure_chip:1201 Cleared AI failure chip on conversation #75 — the AI replied
+[ERROR] 2026-08-05 11:26:26 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 11:26:27 meta_sync._attempt_ai_reply:1475 AI auto-reply not generated | success=False | attempt=1 | error=Chatbot configuration is missing or inactive
+[INFO] 2026-08-05 11:26:47 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=greeting | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 11:28:18 meta_sync._attempt_ai_reply:1370 Skipping auto-reply on conversation #8 [paused] — Milan Magrati is handling this conversation, so the AI stays quiet.
+[INFO] 2026-08-05 11:42:42 meta_sync._attempt_ai_reply:1370 Skipping auto-reply on conversation #8 [paused] — Milan Magrati is handling this conversation, so the AI stays quiet.
+[INFO] 2026-08-05 11:43:27 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=greeting | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 11:43:54 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 11:44:33 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 11:45:17 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=general_query | model=gemini-flash-latest (vision) | channel=facebook | attempt=1
+[INFO] 2026-08-05 11:45:51 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=greeting | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 11:47:21 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=greeting | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 11:48:27 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 11:53:55 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=greeting | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 11:54:36 meta_sync._attempt_ai_reply:1432 AI auto-reply sent | intent=greeting | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 13:19:52 meta_sync._attempt_ai_reply:1396 Skipping auto-reply on conversation #79 [off] — The AI is switched off for this conversation.
+[ERROR] 2026-08-05 13:19:53 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[INFO] 2026-08-05 13:19:53 meta_sync._attempt_ai_reply:1396 Skipping auto-reply on conversation #79 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:19:53 meta_sync._attempt_ai_reply:1396 Skipping auto-reply on conversation #80 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:19:53 meta_sync._attempt_ai_reply:1396 Skipping auto-reply on conversation #79 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:20:02 meta_sync._attempt_ai_reply:1387 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:20:02 meta_sync._attempt_ai_reply:1387 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:20:02 meta_sync._attempt_ai_reply:1387 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:20:02 meta_sync._attempt_ai_reply:1387 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:20:02 meta_sync._attempt_ai_reply:1387 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:20:02 meta_sync._attempt_ai_reply:1387 No chatbot assigned to channel account: [test] Lead Page (998)
+[ERROR] 2026-08-05 13:20:02 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 13:20:02 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 13:20:06 meta_sync._attempt_ai_reply:1501 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:20:06 meta_sync._attempt_ai_reply:1501 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-05 13:20:06 meta_sync._attempt_ai_reply:1458 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-05 13:20:06 meta_sync._cancel_ai_failure_chip:1227 Cleared AI failure chip on conversation #82 — the AI replied
+[INFO] 2026-08-05 13:20:06 meta_sync._attempt_ai_reply:1378 Dropping AI retry on conversation #82 — the alert was already cleared.
+[ERROR] 2026-08-05 13:20:06 meta_sync._attempt_ai_reply:1501 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:20:06 meta_sync._attempt_ai_reply:1501 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-05 13:20:06 meta_sync._attempt_ai_reply:1458 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-05 13:20:06 meta_sync._cancel_ai_failure_chip:1227 Cleared AI failure chip on conversation #82 — the AI replied
+[ERROR] 2026-08-05 13:20:06 meta_sync._attempt_ai_reply:1501 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:20:06 meta_sync._attempt_ai_reply:1501 AI auto-reply not generated | success=False | attempt=1 | error=Chatbot configuration is missing or inactive
+[INFO] 2026-08-05 13:25:44 meta_sync._attempt_ai_reply:1396 Skipping auto-reply on conversation #84 [off] — The AI is switched off for this conversation.
+[ERROR] 2026-08-05 13:25:44 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[INFO] 2026-08-05 13:25:45 meta_sync._attempt_ai_reply:1396 Skipping auto-reply on conversation #84 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:25:45 meta_sync._attempt_ai_reply:1396 Skipping auto-reply on conversation #85 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:25:45 meta_sync._attempt_ai_reply:1396 Skipping auto-reply on conversation #84 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:26:30 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #86 [off] — The AI is switched off for this conversation.
+[ERROR] 2026-08-05 13:26:30 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[INFO] 2026-08-05 13:26:30 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #86 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:26:31 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #87 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:26:31 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #86 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:26:32 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:26:32 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:26:32 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:26:32 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:26:32 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:26:32 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[ERROR] 2026-08-05 13:26:32 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 13:26:32 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 13:26:33 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:26:33 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-05 13:26:33 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-05 13:26:33 meta_sync._cancel_ai_failure_chip:1225 Cleared AI failure chip on conversation #89 — the AI replied
+[INFO] 2026-08-05 13:26:33 meta_sync._attempt_ai_reply:1376 Dropping AI retry on conversation #89 — the alert was already cleared.
+[ERROR] 2026-08-05 13:26:33 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:26:33 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-05 13:26:33 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-05 13:26:33 meta_sync._cancel_ai_failure_chip:1225 Cleared AI failure chip on conversation #89 — the AI replied
+[ERROR] 2026-08-05 13:26:33 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:26:33 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=Chatbot configuration is missing or inactive
+[INFO] 2026-08-05 13:34:01 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #91 [off] — The AI is switched off for this conversation.
+[ERROR] 2026-08-05 13:34:01 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 13:34:01 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[INFO] 2026-08-05 13:34:27 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #92 [off] — The AI is switched off for this conversation.
+[ERROR] 2026-08-05 13:34:27 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 13:34:27 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[INFO] 2026-08-05 13:35:34 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #93 [off] — The AI is switched off for this conversation.
+[ERROR] 2026-08-05 13:35:34 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[INFO] 2026-08-05 13:35:34 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #93 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:35:34 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #94 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:35:34 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #93 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:35:35 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:35:35 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:35:35 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:35:35 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:35:35 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:35:36 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[ERROR] 2026-08-05 13:35:36 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 13:35:36 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 13:35:37 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:35:37 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-05 13:35:37 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-05 13:35:37 meta_sync._cancel_ai_failure_chip:1225 Cleared AI failure chip on conversation #96 — the AI replied
+[INFO] 2026-08-05 13:35:37 meta_sync._attempt_ai_reply:1376 Dropping AI retry on conversation #96 — the alert was already cleared.
+[ERROR] 2026-08-05 13:35:37 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:35:37 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-05 13:35:37 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-05 13:35:37 meta_sync._cancel_ai_failure_chip:1225 Cleared AI failure chip on conversation #96 — the AI replied
+[ERROR] 2026-08-05 13:35:37 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:35:37 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=Chatbot configuration is missing or inactive
+[INFO] 2026-08-05 13:39:09 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #98 [off] — The AI is switched off for this conversation.
+[ERROR] 2026-08-05 13:39:09 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[INFO] 2026-08-05 13:39:09 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #98 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:39:09 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #99 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:39:09 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #98 [off] — The AI is switched off for this conversation.
+[INFO] 2026-08-05 13:39:10 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:39:10 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:39:10 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:39:10 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:39:10 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[INFO] 2026-08-05 13:39:10 meta_sync._attempt_ai_reply:1385 No chatbot assigned to channel account: [test] Lead Page (998)
+[ERROR] 2026-08-05 13:39:10 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 13:39:10 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 13:39:11 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:39:11 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-05 13:39:11 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-05 13:39:11 meta_sync._cancel_ai_failure_chip:1225 Cleared AI failure chip on conversation #101 — the AI replied
+[INFO] 2026-08-05 13:39:11 meta_sync._attempt_ai_reply:1376 Dropping AI retry on conversation #101 — the alert was already cleared.
+[ERROR] 2026-08-05 13:39:11 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:39:12 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[INFO] 2026-08-05 13:39:12 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=2
+[INFO] 2026-08-05 13:39:12 meta_sync._cancel_ai_failure_chip:1225 Cleared AI failure chip on conversation #101 — the AI replied
+[ERROR] 2026-08-05 13:39:12 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=AI provider rate limit reached — your API key has used its quota for the moment. Wait a minute and try again, or upgrade the plan. (Gemini API error 429: RESOURCE_EXHAUSTED)
+[ERROR] 2026-08-05 13:39:12 meta_sync._attempt_ai_reply:1499 AI auto-reply not generated | success=False | attempt=1 | error=Chatbot configuration is missing or inactive
+[INFO] 2026-08-05 13:39:14 meta_sync._attempt_ai_reply:1394 Skipping auto-reply on conversation #103 [off] — The AI is switched off for this conversation.
+[ERROR] 2026-08-05 13:39:14 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[ERROR] 2026-08-05 13:39:14 meta_sync.sync_meta_conversations:63 Cannot sync facebook: No access token.
+[INFO] 2026-08-05 13:41:18 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=greeting | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 13:43:00 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=product_issue | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 13:45:17 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=product_issue | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 13:48:06 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 13:49:35 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=spam_noise | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 13:51:22 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=spam_noise | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 13:52:55 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=spam_noise | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 14:00:12 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=product_issue | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 14:01:29 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 14:02:34 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=greeting | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 14:02:39 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=general_query | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 14:04:20 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=product_issue | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 14:05:24 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=product_issue | model=gemini-flash-latest | channel=facebook | attempt=1
+[INFO] 2026-08-05 14:05:59 meta_sync._attempt_ai_reply:1456 AI auto-reply sent | intent=purchase_intent | model=gemini-flash-latest | channel=facebook | attempt=1

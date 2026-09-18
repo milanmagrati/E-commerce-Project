@@ -119,7 +119,9 @@ def create_pnd_shipment(request, order_id):
             'primaryMobileNo': digits_only,
             'destinationBranch': destination_branch,
             'destinationCityArea': (order.shipping_address or destination_branch),
-            'codAmount': float(order.total_amount or 0),
+            # Partial payments have already been collected up front —
+            # amount_due is what is left to take on delivery.
+            'codAmount': float(order.amount_due or 0),
             'orderDescription': _get_package_description(order),
             'vendorTrackingNumber': str(order.order_number),
             'landmark': order.landmark or order.shipping_address or 'N/A',
@@ -156,7 +158,24 @@ def create_pnd_shipment(request, order_id):
             order.pnd_created_at = timezone.now()
             order.pnd_destination_branch = destination_branch
             order.pnd_tracking_url = tracking_url or ''
-            order.status = 'processing'
+            
+            # Update order status to "Pickup Created" from Setup Management
+            try:
+                from dashboard.models import Setup
+                pickup_setup = Setup.objects.filter(setup_type='status', name__iexact='Pickup Created').first()
+                if not pickup_setup:
+                    pickup_setup = Setup.objects.filter(setup_type='status', name__icontains='Pickup Created').first()
+                
+                if pickup_setup:
+                    order.status_setup = pickup_setup
+                    order.order_status = pickup_setup.name
+                    order.status = pickup_setup.name
+                else:
+                    order.order_status = 'Pickup Created'
+                    order.status = 'Pickup Created'
+            except Exception:
+                order.status = 'processing'
+            
             # Save delivery charge from PnD API response
             if delivery_charge:
                 try:

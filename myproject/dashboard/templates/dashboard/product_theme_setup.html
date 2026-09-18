@@ -1,0 +1,581 @@
+{% extends 'base.html' %}
+{% load static %}
+{% comment %}
+Setup → Product Page Theme.
+
+Two things are edited here. The top card picks which design every storefront
+product page uses and holds all of Theme 2's copy; the table below lets one
+product depart from that. A blank box on a product means "inherit", which is
+why the drawer shows the global value as the placeholder rather than copying
+it in — copied text would stop tracking the global the moment it was saved.
+
+Nothing on this page is a checkbox: the whole form posts at once, and a select
+that always submits a value cannot half-save.
+{% endcomment %}
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block extra_css %}
+{% include 'dashboard/partials/product_theme_editor_css.html' %}
+<style>
+    .pt-wrap { max-width: 1400px; margin: 0 auto; padding: 1.75rem 1.25rem 4rem; color: #101828; }
+
+    .pt-header {
+        position: relative; overflow: hidden;
+        background: linear-gradient(135deg, #E8590C 0%, #C2410C 55%, #7C2D12 100%);
+        color: #fff; border-radius: 18px; padding: 1.9rem 2rem; margin-bottom: 1.5rem;
+        box-shadow: 0 18px 40px -18px rgba(232, 89, 12, .6);
+    }
+    .pt-header::after {
+        content: ''; position: absolute; right: -70px; top: -90px;
+        width: 300px; height: 300px; border-radius: 50%;
+        background: rgba(255, 255, 255, .09);
+    }
+    .pt-header-inner { position: relative; z-index: 1; }
+    .pt-eyebrow {
+        display: inline-flex; align-items: center; gap: .45rem;
+        font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+        background: rgba(255, 255, 255, .18); padding: .3rem .7rem; border-radius: 999px;
+        margin-bottom: .7rem;
+    }
+    .pt-header h1 { font-size: 1.75rem; font-weight: 800; margin: 0 0 .35rem; letter-spacing: -.02em; }
+    .pt-header p { margin: 0; opacity: .9; font-size: .93rem; max-width: 72ch; }
+
+    .pt-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .9rem; margin-bottom: 1.5rem; }
+    .pt-stat { background: #fff; border: 1px solid #E4E7EC; border-radius: 14px; padding: 1rem 1.1rem; }
+    .pt-stat .k { font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #667085; }
+    .pt-stat .v { font-size: 1.35rem; font-weight: 800; margin-top: .2rem; }
+
+    .pt-card { background: #fff; border: 1px solid #E4E7EC; border-radius: 14px; margin-bottom: 1.25rem; }
+    .pt-card > h2 {
+        font-size: .95rem; font-weight: 700; margin: 0;
+        padding: 1rem 1.25rem; border-bottom: 1px solid #E4E7EC;
+    }
+    .pt-card-body { padding: 1.25rem; }
+
+    .pt-toolbar { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; padding: 1rem 1.25rem; border-bottom: 1px solid #E4E7EC; }
+    .pt-toolbar input, .pt-toolbar select {
+        padding: .5rem .7rem; border: 1px solid #D0D5DD; border-radius: 9px; font-size: .85rem;
+    }
+
+    .pt-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    .pt-table th {
+        text-align: left; font-size: .7rem; font-weight: 700; letter-spacing: .08em;
+        text-transform: uppercase; color: #667085; padding: .7rem 1.25rem;
+        border-bottom: 1px solid #E4E7EC; background: #F9FAFB;
+    }
+    .pt-table td { padding: .7rem 1.25rem; border-bottom: 1px solid #F2F4F7; vertical-align: middle; }
+    .pt-table tr:hover td { background: #FCFCFD; }
+
+    .pt-pill {
+        display: inline-block; padding: .18rem .6rem; border-radius: 999px;
+        font-size: .72rem; font-weight: 700;
+    }
+    .pt-pill.is-t2 { background: #FDEFE6; color: #C2410C; }
+    .pt-pill.is-t1 { background: #EEF2FF; color: #3730A3; }
+    .pt-pill.is-inherit { background: #F2F4F7; color: #667085; }
+
+    /* Drawer */
+    .pt-drawer { position: fixed; inset: 0; z-index: 1080; display: none; }
+    .pt-drawer.is-open { display: block; }
+    .pt-drawer-veil { position: absolute; inset: 0; background: rgba(16, 24, 40, .45); }
+    .pt-drawer-panel {
+        position: absolute; top: 0; right: 0; bottom: 0; width: min(560px, 100%);
+        background: #fff; display: flex; flex-direction: column; box-shadow: -18px 0 50px rgba(16, 24, 40, .25);
+    }
+    .pt-drawer-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 1rem 1.25rem; border-bottom: 1px solid #E4E7EC;
+    }
+    .pt-drawer-head h3 { font-size: 1rem; font-weight: 700; margin: 0; }
+    .pt-drawer-body { padding: 1.25rem; overflow-y: auto; flex: 1 1 auto; }
+    .pt-drawer-body .pt-field { margin-bottom: 1rem; }
+    .pt-drawer-foot { padding: 1rem 1.25rem; border-top: 1px solid #E4E7EC; display: flex; gap: .6rem; }
+
+    @media (max-width: 720px) {
+        .pt-table thead { display: none; }
+        .pt-table td { display: block; border: 0; padding: .35rem 1rem; }
+        .pt-table tr { display: block; border-bottom: 1px solid #E4E7EC; padding: .6rem 0; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pt-wrap">
+
+    <div class="pt-header">
+        <div class="pt-header-inner">
+            <span class="pt-eyebrow"><i class="fas fa-palette"></i> Storefront</span>
+            <h1>Product Page Theme</h1>
+            <p>
+                Pick the design every storefront product page uses, and write the copy the
+                conversion design renders. Theme&nbsp;1 is the classic product page and is
+                completely untouched by anything on this screen — switching back to it
+                restores exactly the page you had. A single product can depart from the
+                global choice in the table below.
+            </p>
+        </div>
+    </div>
+
+    <div class="pt-stats">
+        <div class="pt-stat"><div class="k">Global design</div><div class="v">{{ stats.global_layout }}</div></div>
+        <div class="pt-stat"><div class="k">Products with own settings</div><div class="v">{{ stats.overrides }}</div></div>
+        <div class="pt-stat"><div class="k">Forced to Theme 2</div><div class="v">{{ stats.on_theme2 }}</div></div>
+        <div class="pt-stat"><div class="k">Forced to Theme 1</div><div class="v">{{ stats.on_theme1 }}</div></div>
+    </div>
+
+    <!-- ═══════════════ Global settings ═══════════════ -->
+    <form method="POST" action="{% url 'product_theme_save' %}">
+        {% csrf_token %}
+        <div class="pt-card">
+            <h2>Global settings</h2>
+            <div class="pt-card-body">
+
+                <div class="pt-sect">
+                    <h3>Design</h3>
+                    <div class="pt-grid">
+                        <div class="pt-field">
+                            <label for="pt-layout">Product page design</label>
+                            <select id="pt-layout" name="layout">
+                                {% for value, label in layout_choices %}
+                                <option value="{{ value }}" {% if setting.layout == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            <span class="pt-help">Applies to every product that has no setting of its own.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-buyaction">Buy now behaviour</label>
+                            <select id="pt-buyaction" name="buy_action">
+                                <option value="modal" {% if setting.buy_action == 'modal' %}selected{% endif %}>Open the one-step COD checkout</option>
+                                <option value="checkout" {% if setting.buy_action == 'checkout' %}selected{% endif %}>Add to cart and go to the checkout page</option>
+                            </select>
+                            <span class="pt-help">Theme 2 only.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-buylabel">Buy button label</label>
+                            <input type="text" id="pt-buylabel" name="buy_label" value="{{ setting.buy_label }}" placeholder="Buy now">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-sect">
+                    <h3>Info rail</h3>
+                    <div class="pt-grid is-wide">
+                        <div class="pt-field">
+                            <label for="pt-highlights">Product highlights</label>
+                            <textarea id="pt-highlights" name="highlights" rows="4" placeholder="One bullet per line">{{ setting.highlights }}</textarea>
+                            <span class="pt-help">One bullet per line.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-paybullets">Payment &amp; offers bullets</label>
+                            <textarea id="pt-paybullets" name="pay_bullets" rows="4" placeholder="One bullet per line">{{ setting.pay_bullets }}</textarea>
+                            <span class="pt-help">One bullet per line.</span>
+                        </div>
+                    </div>
+                    <div class="pt-grid" style="margin-top:1rem;">
+                        <div class="pt-field">
+                            <label for="pt-paychips">Payment chips</label>
+                            <input type="text" id="pt-paychips" name="pay_chips" value="{{ setting.pay_chips }}" placeholder="Prepaid, COD">
+                            <span class="pt-help">Comma separated.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-returnlabel">Return row label</label>
+                            <input type="text" id="pt-returnlabel" name="return_label" value="{{ setting.return_label }}" placeholder="Return policy">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-returnvalue">Return row value</label>
+                            <input type="text" id="pt-returnvalue" name="return_value" value="{{ setting.return_value }}" placeholder="7 Days Replacement">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-warrantylabel">Warranty row label</label>
+                            <input type="text" id="pt-warrantylabel" name="warranty_label" value="{{ setting.warranty_label }}" placeholder="Warranty info">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-warrantyvalue">Warranty row value</label>
+                            <input type="text" id="pt-warrantyvalue" name="warranty_value" value="{{ setting.warranty_value }}" placeholder="1 Year Warranty">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-shippinglabel">Shipping row label</label>
+                            <input type="text" id="pt-shippinglabel" name="shipping_label" value="{{ setting.shipping_label }}" placeholder="Shipping">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-shippingvalue">Shipping row value</label>
+                            <input type="text" id="pt-shippingvalue" name="shipping_value" value="{{ setting.shipping_value }}" placeholder="Delivery charged by district">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-sect">
+                    <h3>Buy box trust row</h3>
+                    <div class="pt-field">
+                        <label for="pt-trust">Trust row (JSON)</label>
+                        <textarea id="pt-trust" name="trust_json" rows="3">{{ setting.trust_json }}</textarea>
+                        <span class="pt-help">
+                            A list of <code>{"icon": "…", "text": "…"}</code>. Icons: delivery,
+                            payment, secure, return, warranty, support. Invalid JSON simply hides
+                            the row rather than breaking the page.
+                        </span>
+                    </div>
+                </div>
+
+                <div class="pt-sect">
+                    <h3>Content blocks</h3>
+                    <p class="pt-help" style="margin:-.4rem 0 .9rem;">
+                        Every block below is blank by default and renders nothing at all when it
+                        is left blank — a store that fills none of them gets a clean product
+                        page, not a column of empty cards.
+                    </p>
+                    <div class="pt-grid">
+                        <div class="pt-field">
+                            <label for="pt-videotitle">Video section title</label>
+                            <input type="text" id="pt-videotitle" name="video_title" value="{{ setting.video_title }}" placeholder="See it in action">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-stepstitle">How-to section title</label>
+                            <input type="text" id="pt-stepstitle" name="steps_title" value="{{ setting.steps_title }}" placeholder="How to use">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-batitle">Before &amp; after section title</label>
+                            <input type="text" id="pt-batitle" name="before_after_title" value="{{ setting.before_after_title }}" placeholder="Real results">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-ingtitle">Ingredients section title</label>
+                            <input type="text" id="pt-ingtitle" name="ingredients_title" value="{{ setting.ingredients_title }}" placeholder="Key ingredients">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-infotitle">Description section title</label>
+                            <input type="text" id="pt-infotitle" name="info_title" value="{{ setting.info_title }}" placeholder="Product information">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-feattitle">Features section title</label>
+                            <input type="text" id="pt-feattitle" name="features_title" value="{{ setting.features_title }}" placeholder="Features">
+                        </div>
+                    </div>
+                    <div class="pt-grid is-wide" style="margin-top:1rem;">
+                        <div class="pt-field">
+                            <label for="pt-videos">Videos</label>
+                            <textarea id="pt-videos" name="videos" rows="4" data-pt-repeater="videos">{{ setting.videos }}</textarea>
+                            <span class="pt-help">
+                                Upload the clips themselves — self-hosted files only, because the
+                                play, mute and expand controls are bound to a real video element and
+                                a YouTube or Vimeo embed cannot take them. Vertical 9:16 is what the
+                                strip is shaped for. A poster is the still shown before playback.
+                            </span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-steps">How to use</label>
+                            <textarea id="pt-steps" name="steps" rows="4" data-pt-repeater="steps">{{ setting.steps }}</textarea>
+                            <span class="pt-help">Numbers come from the order of the rows — drag them with the arrows rather than renumbering by hand.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-ba">Before &amp; after</label>
+                            <textarea id="pt-ba" name="before_after" rows="4" data-pt-repeater="before_after">{{ setting.before_after }}</textarea>
+                            <span class="pt-help">Both halves are required — a before with no after is a photo of a problem.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-ing">Key ingredients</label>
+                            <textarea id="pt-ing" name="ingredients" rows="4" data-pt-repeater="ingredients">{{ setting.ingredients }}</textarea>
+                            <span class="pt-help">Shown as a picture-and-label grid, not as tabs.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-infomedia">Description gallery</label>
+                            <textarea id="pt-infomedia" name="info_media" rows="4" data-pt-repeater="info_media">{{ setting.info_media }}</textarea>
+                            <span class="pt-help">A photo with its own words underneath, repeated &mdash; the shape a product manual actually has. It renders above the written description.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-features">Features / manual</label>
+                            <textarea id="pt-features" name="features" rows="4" data-pt-repeater="features">{{ setting.features }}</textarea>
+                            <span class="pt-help">A ticked list. A row with only a title is a plain feature bullet.</span>
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-stat">Trust stat</label>
+                            <textarea id="pt-stat" name="stat_text" rows="4" placeholder="15 lakh+ women&#10;have already switched">{{ setting.stat_text }}</textarea>
+                            <span class="pt-help">First line is the big figure, the rest is the supporting copy.</span>
+                        </div>
+                    </div>
+                    <div class="pt-grid" style="margin-top:1rem;">
+                        <div class="pt-field">
+                            <label for="pt-statimg">Trust stat image</label>
+                            <input type="text" id="pt-statimg" name="stat_image" value="{{ setting.stat_image }}" data-pt-media="image">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-benefit">Benefit tagline</label>
+                            <input type="text" id="pt-benefit" name="benefit_text" value="{{ setting.benefit_text }}" placeholder="One short promise">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-benefitimg">Benefit image</label>
+                            <input type="text" id="pt-benefitimg" name="benefit_image" value="{{ setting.benefit_image }}" data-pt-media="image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-sect">
+                    <h3>One-step checkout</h3>
+                    <div class="pt-grid">
+                        <div class="pt-field">
+                            <label for="pt-cotitle">Modal title</label>
+                            <input type="text" id="pt-cotitle" name="checkout_title" value="{{ setting.checkout_title }}" placeholder="Checkout">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-placelabel">Place order button</label>
+                            <input type="text" id="pt-placelabel" name="place_label" value="{{ setting.place_label }}" placeholder="Place order">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-codlabel">Payment method label</label>
+                            <input type="text" id="pt-codlabel" name="cod_label" value="{{ setting.cod_label }}" placeholder="Cash on delivery">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-prefix">Phone prefix chip</label>
+                            <input type="text" id="pt-prefix" name="phone_prefix" value="{{ setting.phone_prefix }}" placeholder="+977">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-phonehint">Phone hint</label>
+                            <input type="text" id="pt-phonehint" name="phone_hint" value="{{ setting.phone_hint }}" placeholder="We only call about this order">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-shipfee">Flat delivery fee</label>
+                            <input type="text" id="pt-shipfee" name="ship_fee" value="{{ setting.ship_fee }}" placeholder="Blank = price by district">
+                            <span class="pt-help">
+                                Free text, so <code>Rs. 100</code> works. Leave it blank — the
+                                recommended setting — and delivery is priced by
+                                <a href="{% url 'delivery_charge_setup' %}">Delivery Charge Setup</a>,
+                                which knows the district and the courier branch. A number here
+                                overrides that for every Theme 2 order.
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-sect" style="margin-bottom:0;">
+                    <h3>Landing page footer</h3>
+                    <div class="pt-grid">
+                        <div class="pt-field">
+                            <label for="pt-faddr">Address</label>
+                            <input type="text" id="pt-faddr" name="footer_address" value="{{ setting.footer_address }}">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-fphone">Phone</label>
+                            <input type="text" id="pt-fphone" name="footer_phone" value="{{ setting.footer_phone }}">
+                        </div>
+                        <div class="pt-field">
+                            <label for="pt-fcredit">Credit line</label>
+                            <input type="text" id="pt-fcredit" name="footer_credit" value="{{ setting.footer_credit }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="pt-actions">
+                <button type="submit" class="pt-btn is-primary"><i class="fas fa-save"></i> Save settings</button>
+            </div>
+        </div>
+    </form>
+
+    <!-- ═══════════════ Per-product overrides ═══════════════ -->
+    <div class="pt-card">
+        <h2>Per-product settings</h2>
+        <form method="GET" class="pt-toolbar">
+            <input type="text" name="q" value="{{ search }}" placeholder="Search products…">
+            <select name="only">
+                <option value="">All products</option>
+                <option value="custom" {% if only == 'custom' %}selected{% endif %}>With their own settings</option>
+                <option value="theme2" {% if only == 'theme2' %}selected{% endif %}>Forced to Theme 2</option>
+                <option value="theme1" {% if only == 'theme1' %}selected{% endif %}>Forced to Theme 1</option>
+            </select>
+            <button type="submit" class="pt-btn">Filter</button>
+            {% if search or only %}<a href="{% url 'product_theme_setup' %}" class="pt-btn">Clear</a>{% endif %}
+        </form>
+
+        <div style="overflow-x:auto;">
+        <table class="pt-table">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>Its own choice</th>
+                    <th>Own copy</th>
+                    <th style="text-align:right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in products %}
+                <tr>
+                    <td>
+                        <strong>{{ product.name }}</strong><br>
+                        <a href="/store/products/{{ product.slug }}/" target="_blank" rel="noopener"
+                           style="font-size:.78rem;color:#667085;">/store/products/{{ product.slug }}/</a>
+                    </td>
+                    <td>
+                        {% if product.page_theme and product.page_theme.layout == 'theme2' %}
+                        <span class="pt-pill is-t2">Theme 2</span>
+                        {% elif product.page_theme and product.page_theme.layout == 'theme1' %}
+                        <span class="pt-pill is-t1">Theme 1</span>
+                        {% else %}
+                        <span class="pt-pill is-inherit">Global</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if product.page_theme %}
+                        <span style="font-size:.8rem;color:#667085;">Some fields overridden</span>
+                        {% else %}
+                        <span style="font-size:.8rem;color:#98A2B3;">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align:right;">
+                        <button type="button" class="pt-btn" data-pt-edit="{{ product.id }}"
+                                data-pt-name="{{ product.name }}"
+                                data-pt-json="{% url 'product_theme_product_json' product_id=product.id %}"
+                                data-pt-save="{% url 'product_theme_product_save' product_id=product.id %}">
+                            <i class="fas fa-pen"></i> Edit
+                        </button>
+                        {% if product.page_theme %}
+                        <button type="submit" class="pt-btn is-danger" form="pt-reset-{{ product.id }}">Reset</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" style="color:#667085;">No products match.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+
+        {% if products.has_other_pages %}
+        <div class="pt-actions">
+            {% if products.has_previous %}
+            <a class="pt-btn" href="?page={{ products.previous_page_number }}&q={{ search }}&only={{ only }}">Previous</a>
+            {% endif %}
+            <span style="align-self:center;font-size:.85rem;color:#667085;">
+                Page {{ products.number }} of {{ products.paginator.num_pages }}
+            </span>
+            {% if products.has_next %}
+            <a class="pt-btn" href="?page={{ products.next_page_number }}&q={{ search }}&only={{ only }}">Next</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    {% comment %}
+    Reset posts through its own form per row, kept outside the table so nothing
+    has to nest a form inside another one.
+    {% endcomment %}
+    {% for product in products %}
+    {% if product.page_theme %}
+    <form id="pt-reset-{{ product.id }}" method="POST"
+          action="{% url 'product_theme_product_reset' product_id=product.id %}" hidden>{% csrf_token %}</form>
+    {% endif %}
+    {% endfor %}
+</div>
+
+<!-- ═══════════════ Per-product drawer ═══════════════ -->
+<div class="pt-drawer" id="pt-drawer">
+    <div class="pt-drawer-veil" data-pt-close></div>
+    <div class="pt-drawer-panel">
+        <div class="pt-drawer-head">
+            <h3 data-pt-title>Product settings</h3>
+            <button type="button" class="pt-x" data-pt-close aria-label="Close">&times;</button>
+        </div>
+        <form method="POST" action="" id="pt-drawer-form" style="display:contents;">
+            {% csrf_token %}
+            <div class="pt-drawer-body">
+                <div class="pt-field">
+                    <label for="pt-d-layout">Page design for this product</label>
+                    <select id="pt-d-layout" name="layout">
+                        {% for value, label in product_layout_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% for field in meta_fields %}
+                <div class="pt-field">
+                    <label for="pt-d-{{ field.key }}">{{ field.label }}</label>
+                    {% if field.widget == 'repeater' %}
+                    <textarea id="pt-d-{{ field.key }}" name="{{ field.key }}" rows="{{ field.rows }}"
+                              data-pt-field="{{ field.key }}" data-pt-repeater="{{ field.spec }}"></textarea>
+                    {% elif field.widget == 'image' %}
+                    <input type="text" id="pt-d-{{ field.key }}" name="{{ field.key }}"
+                           data-pt-field="{{ field.key }}" data-pt-media="image">
+                    {% elif field.widget == 'textarea' %}
+                    <textarea id="pt-d-{{ field.key }}" name="{{ field.key }}" rows="{{ field.rows }}"
+                              data-pt-field="{{ field.key }}"></textarea>
+                    {% else %}
+                    <input type="text" id="pt-d-{{ field.key }}" name="{{ field.key }}"
+                           data-pt-field="{{ field.key }}">
+                    {% endif %}
+                    <span class="pt-help">
+                        {% if field.help %}{{ field.help }} {% endif %}Blank inherits the global setting.
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="pt-drawer-foot">
+                <button type="submit" class="pt-btn is-primary">Save this product</button>
+                <button type="button" class="pt-btn" data-pt-close>Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Defined before the editor loads, and on `window` rather than as a
+    // top-level `const` — the latter is a lexical binding the script could not
+    // see.
+    window.PT_SETUP = {
+        csrf: "{{ csrf_token }}",
+        listUrl: "{% url 'product_theme_media_list' %}",
+        uploadUrl: "{% url 'product_theme_media_upload' %}",
+        // The trailing id is substituted client-side; 0 is a placeholder no
+        // row can ever have.
+        deleteUrlBase: "{% url 'product_theme_media_delete' media_id=0 %}"
+    };
+</script>
+{% include 'dashboard/partials/product_theme_editor_js.html' %}
+<script>
+(function () {
+    var drawer = document.getElementById('pt-drawer');
+    var form = document.getElementById('pt-drawer-form');
+    if (!drawer || !form) return;
+
+    function close() { drawer.classList.remove('is-open'); }
+
+    document.querySelectorAll('[data-pt-close]').forEach(function (node) {
+        node.addEventListener('click', close);
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        // The media picker sits on top of the drawer and closes itself on
+        // Escape. Closing the drawer underneath it in the same keystroke
+        // throws away the place the reader was working in.
+        if (document.querySelector('.ptm.is-open')) return;
+        close();
+    });
+
+    document.querySelectorAll('[data-pt-edit]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var id = button.getAttribute('data-pt-edit');
+            drawer.querySelector('[data-pt-title]').textContent =
+                button.getAttribute('data-pt-name') || 'Product settings';
+            form.setAttribute('action', button.getAttribute('data-pt-save'));
+
+            fetch(button.getAttribute('data-pt-json'), {credentials: 'same-origin'})
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    form.querySelector('#pt-d-layout').value = data.layout || '';
+                    Object.keys(data.fields).forEach(function (key) {
+                        var input = form.querySelector('[data-pt-field="' + key + '"]');
+                        if (!input) return;
+                        input.value = data.fields[key] || '';
+                        // The global value is shown as the placeholder, never
+                        // copied in: copied text would stop tracking the
+                        // global the moment it was saved.
+                        var inherited = (data.inherited[key] || '').split('\n')[0];
+                        input.setAttribute('placeholder', inherited ? ('Global: ' + inherited) : '');
+                    });
+                    if (window.ptRefresh) window.ptRefresh(form);
+                    drawer.classList.add('is-open');
+                })
+                .catch(function () { drawer.classList.add('is-open'); });
+        });
+    });
+})();
+</script>
+{% endblock %}

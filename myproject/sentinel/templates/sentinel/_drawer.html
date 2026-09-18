@@ -1,0 +1,191 @@
+{% comment %}
+Slide-in event inspector, shared by the ledger and the dossier. Content is
+fetched from sentinel:api_event and rendered client-side, so opening a row costs
+one small JSON request instead of a full page load.
+{% endcomment %}
+<div class="sv-drawer-backdrop" id="svDrawerBackdrop"></div>
+<aside class="sv-drawer" id="svDrawer" role="dialog" aria-modal="true" aria-labelledby="svDrawerTitle">
+    <div class="sv-drawer-head">
+        <div class="sv-ev-icon sv-tone-slate" id="svDrawerIcon"><i class="fas fa-circle-dot"></i></div>
+        <div style="min-width:0;">
+            <h3 id="svDrawerTitle">Loading…</h3>
+            <div class="sv-feed-meta" id="svDrawerSub"></div>
+        </div>
+        <button class="sv-drawer-close" id="svDrawerClose" aria-label="Close"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="sv-drawer-body" id="svDrawerBody">
+        <div class="sv-empty"><i class="fas fa-spinner fa-spin"></i><p>Retrieving record…</p></div>
+    </div>
+</aside>
+
+<script>
+(function () {
+    const drawer = document.getElementById('svDrawer');
+    const backdrop = document.getElementById('svDrawerBackdrop');
+    const body = document.getElementById('svDrawerBody');
+    const title = document.getElementById('svDrawerTitle');
+    const sub = document.getElementById('svDrawerSub');
+    const iconWrap = document.getElementById('svDrawerIcon');
+    let lastFocus = null;
+
+    function esc(value) {
+        if (value === null || value === undefined || value === '') {
+            return '<em class="sv-null">empty</em>';
+        }
+        return String(value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function open() {
+        lastFocus = document.activeElement;
+        drawer.classList.add('is-open');
+        backdrop.classList.add('is-open');
+        document.body.style.overflow = 'hidden';
+        document.getElementById('svDrawerClose').focus();
+    }
+
+    function close() {
+        drawer.classList.remove('is-open');
+        backdrop.classList.remove('is-open');
+        document.body.style.overflow = '';
+        if (lastFocus) lastFocus.focus();
+    }
+
+    function row(label, value) {
+        if (value === null || value === undefined || value === '') return '';
+        return '<dt>' + esc(label) + '</dt><dd>' + esc(value) + '</dd>';
+    }
+
+    function render(data) {
+        title.textContent = data.action;
+        iconWrap.className = 'sv-ev-icon sv-tone-' + data.tone;
+        iconWrap.innerHTML = '<i class="fas ' + data.icon + '"></i>';
+        sub.innerHTML =
+            '<span class="sv-chip sv-tone-' + data.tone + '">' + esc(data.event_type) + '</span>' +
+            '<span class="sv-risk sv-risk-' + data.risk_band + '"><span class="sv-risk-dot"></span>' +
+            'Risk ' + data.risk_score + '</span>' +
+            '<span>' + esc(data.timestamp) + '</span>';
+
+        let html = '';
+
+        if (data.risk_flags && data.risk_flags.length) {
+            html += '<div class="sv-diff-row" style="border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.07);">' +
+                '<div class="sv-diff-field" style="color:var(--sv-amber);">' +
+                '<i class="fas fa-flag"></i> Why this scored ' + data.risk_score + '</div><ul style="margin:0;padding-left:1.1rem;font-size:.8rem;">' +
+                data.risk_flags.map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') +
+                '</ul></div>';
+        }
+
+        html += '<div class="sv-section-title">Actor</div><dl class="sv-dl">' +
+            row('User', data.actor) + row('Role', data.actor_role) +
+            row('IP address', data.ip_address) +
+            row('Device', data.device_kind) +
+            row('Browser', data.browser) +
+            row('Operating system', data.operating_system) +
+            '</dl>';
+
+        html += '<div class="sv-section-title">Request</div><dl class="sv-dl">' +
+            row('Module', data.module) +
+            row('Method', data.method) +
+            row('Path', data.path) +
+            row('View', data.view_name) +
+            row('Status', data.status_code) +
+            row('Duration', data.duration_ms !== null ? data.duration_ms + ' ms' : null) +
+            row('Recorded', data.timestamp) +
+            '</dl>';
+
+        if (data.object_type) {
+            html += '<div class="sv-section-title">Target record</div><dl class="sv-dl">' +
+                row('Type', data.object_type) + row('ID', data.object_id) +
+                row('Label', data.object_label) + '</dl>';
+        }
+
+        if (data.changes && data.changes.length) {
+            html += '<div class="sv-section-title">Field changes (' + data.changes.length + ')</div><div class="sv-diff">';
+            data.changes.forEach(function (c) {
+                html += '<div class="sv-diff-row"><div class="sv-diff-field">' + esc(c.field) + '</div>' +
+                    '<div class="sv-diff-values">' +
+                    '<span class="sv-diff-old">' + esc(c.old) + '</span>' +
+                    '<i class="fas fa-arrow-right sv-faint"></i>' +
+                    '<span class="sv-diff-new">' + esc(c.new) + '</span>' +
+                    '</div></div>';
+            });
+            html += '</div>';
+        }
+
+        if (data.context && Object.keys(data.context).length) {
+            html += '<div class="sv-section-title">Context</div><div class="sv-code">' +
+                esc(JSON.stringify(data.context, null, 2)) + '</div>';
+        }
+
+        if (data.related && data.related.length) {
+            html += '<div class="sv-section-title">Same session</div>';
+            data.related.forEach(function (r) {
+                html += '<div class="sv-feed-item" style="padding-left:0;padding-right:0;cursor:pointer;" data-sv-event="' + r.id + '">' +
+                    '<div class="sv-ev-icon sv-tone-' + r.tone + '"><i class="fas ' + r.icon + '"></i></div>' +
+                    '<div class="sv-feed-body"><p class="sv-feed-title">' + esc(r.action) + '</p>' +
+                    '<div class="sv-feed-meta">' + esc(r.time) + '</div></div></div>';
+            });
+        }
+
+        if (data.user_agent) {
+            html += '<div class="sv-section-title">Raw user agent</div><div class="sv-code">' +
+                esc(data.user_agent) + '</div>';
+        }
+
+        if (data.session_id) {
+            html += '<div style="margin-top:1.4rem;display:flex;gap:.5rem;flex-wrap:wrap;">' +
+                '<a class="sv-btn sv-btn-sm" href="/sentinel/sessions/' + data.session_id + '/">' +
+                '<i class="fas fa-tower-broadcast"></i> Open full session</a>';
+            if (data.actor_id) {
+                html += '<a class="sv-btn sv-btn-sm" href="/sentinel/people/' + data.actor_id + '/">' +
+                    '<i class="fas fa-user-secret"></i> Open dossier</a>';
+            }
+            html += '</div>';
+        }
+
+        body.innerHTML = html;
+    }
+
+    function load(id) {
+        body.innerHTML = '<div class="sv-empty"><i class="fas fa-spinner fa-spin"></i><p>Retrieving record…</p></div>';
+        title.textContent = 'Loading…';
+        sub.innerHTML = '';
+        open();
+        fetch('/sentinel/api/event/' + id + '/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) {
+                if (!r.ok) throw new Error('Record unavailable (' + r.status + ')');
+                return r.json();
+            })
+            .then(render)
+            .catch(function (err) {
+                title.textContent = 'Unable to load record';
+                body.innerHTML = '<div class="sv-empty"><i class="fas fa-triangle-exclamation"></i>' +
+                    '<h3>Could not retrieve this event</h3><p>' + esc(err.message) + '</p></div>';
+            });
+    }
+
+    // One delegated listener covers the table, the live feed and the drawer's own
+    // "same session" links — including rows injected later by polling.
+    document.addEventListener('click', function (e) {
+        // A cell marked data-no-drawer holds controls of its own (the delete
+        // tickbox) — ticking one must not also open the record.
+        if (e.target.closest('[data-no-drawer]')) { return; }
+        const trigger = e.target.closest('[data-sv-event]');
+        if (trigger) {
+            e.preventDefault();
+            load(trigger.dataset.svEvent);
+        }
+    });
+
+    document.getElementById('svDrawerClose').addEventListener('click', close);
+    backdrop.addEventListener('click', close);
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && drawer.classList.contains('is-open')) close();
+    });
+
+    window.Sentinel = window.Sentinel || {};
+    window.Sentinel.openEvent = load;
+})();
+</script>

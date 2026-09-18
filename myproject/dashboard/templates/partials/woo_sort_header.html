@@ -1,0 +1,24 @@
+{% comment %}
+One sortable column header for the WooCommerce orders table.
+
+Expects `label` (heading text) and `key` (the ascending sort key, e.g. "date"),
+plus `sort` and `querystring_nosort` from the view. Clicking toggles between
+`key` and `-key`; the arrow shows the active direction. Defaults to descending
+on first click for date/total/id, where "biggest first" is what an operator
+actually wants.
+{% endcomment %}
+<th class="woo-sortable">
+    {% if sort == key %}
+        <a href="?{% if querystring_nosort %}{{ querystring_nosort }}&{% endif %}sort=-{{ key }}" class="woo-sort-link active">
+            {{ label }} <i class="fas fa-sort-up"></i>
+        </a>
+    {% elif sort == '-'|add:key %}
+        <a href="?{% if querystring_nosort %}{{ querystring_nosort }}&{% endif %}sort={{ key }}" class="woo-sort-link active">
+            {{ label }} <i class="fas fa-sort-down"></i>
+        </a>
+    {% else %}
+        <a href="?{% if querystring_nosort %}{{ querystring_nosort }}&{% endif %}sort=-{{ key }}" class="woo-sort-link">
+            {{ label }} <i class="fas fa-sort"></i>
+        </a>
+    {% endif %}
+</th>

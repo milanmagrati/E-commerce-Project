@@ -81,9 +81,12 @@ SMS_ENABLED=True
 SMS_API_KEY=your_api_key_here
 SMS_SENDER_ID=EcommerceAdmin
 
-# Real-time Settings
-ORDER_AUTO_SYNC_INTERVAL=60   # Seconds between auto-sync checks
-WEBHOOK_PENDING_CHECK_INTERVAL=30  # Minutes before checking for updates
+# Background NCM sync (optional)
+# Sync cadence is configured in the app at Settings -> API Sync Settings, not here.
+# The sync runs itself whenever staff have a page open. Set this token and point an
+# uptime pinger at https://<site>/ncm/api/heartbeat/?token=... to keep it running
+# overnight as well. Leave unset to disable token access entirely.
+NCM_HEARTBEAT_TOKEN=
 ```
 
 ### 4. Database & Server Run

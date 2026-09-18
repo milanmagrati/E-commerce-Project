@@ -2,49 +2,203 @@
 
 {% block title %}Order #{{ order.order_number }} — Store{% endblock %}
 
+{% block extra_css %}
+<style>
+.od-wrap { max-width: 780px; margin: 26px auto 56px; }
+.od-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 20px 22px;
+    border-radius: 16px 16px 0 0;
+    background: linear-gradient(135deg, #E8F7EE, #D5F0E0);
+    border: 1px solid #C4E9D4;
+    border-bottom: none;
+}
+.od-banner[data-type="inquiry"] {
+    background: linear-gradient(135deg, #EDEFF3, #E2E5EB);
+    border-color: #D5D8DF;
+}
+.od-banner-mark {
+    width: 44px; height: 44px; flex-shrink: 0;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    background: #fff;
+    color: #0A7C3F;
+}
+.od-banner[data-type="inquiry"] .od-banner-mark { color: #34343A; }
+.od-banner h1 { font-size: 18px; font-weight: 800; margin: 0 0 3px; letter-spacing: -0.3px; }
+.od-banner p { font-size: 13px; color: #4A5A50; margin: 0; line-height: 1.5; }
+.od-banner[data-type="inquiry"] p { color: #4A4A55; }
+
+.od-ref-strip {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px;
+    padding: 14px 22px;
+    background: #fff;
+    border: 1px solid #EAEAEA;
+    border-top: none;
+}
+.od-ref { display: flex; align-items: center; gap: 10px; }
+.od-ref-label { font-size: 10.5px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #999; }
+.od-ref-value { font-family: 'Roboto Mono', monospace; font-size: 16px; font-weight: 600; letter-spacing: 1px; }
+.od-badges { display: flex; gap: 7px; flex-wrap: wrap; }
+.od-badge {
+    font-size: 10.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
+    padding: 5px 10px; border-radius: 999px;
+}
+.od-badge.status { background: #FFF3E0; color: #8A5A00; }
+.od-badge.type-confirmed { background: #FDE7E7; color: #A31515; }
+.od-badge.type-inquiry   { background: #ECECEF; color: #34343A; }
+
+.od-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.od-panel {
+    background: #fff;
+    border: 1px solid #EAEAEA;
+    border-top: none;
+    padding: 20px 22px;
+}
+.od-panel + .od-panel { border-left: none; }
+.od-panel h3 {
+    font-size: 11px; font-weight: 800; letter-spacing: 0.7px; text-transform: uppercase;
+    color: #999; margin: 0 0 12px;
+}
+.od-line { display: flex; gap: 10px; font-size: 13.5px; line-height: 1.6; padding: 3px 0; }
+.od-line dt { color: #888; min-width: 78px; flex-shrink: 0; }
+.od-line dd { margin: 0; font-weight: 500; }
+
+.od-items { border-radius: 0 0 16px 16px; }
+.od-item-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; padding: 11px 0; font-size: 13.5px;
+}
+.od-item-row + .od-item-row { border-top: 1px solid #F2F2F2; }
+.od-item-name { font-weight: 600; }
+.od-item-sub { font-size: 12px; color: #888; margin-top: 2px; }
+.od-sum { margin-top: 14px; border-top: 1px solid #EAEAEA; padding-top: 12px; }
+.od-sum-row { display: flex; justify-content: space-between; font-size: 13px; color: #777; padding: 4px 0; }
+.od-sum-row span:last-child { font-weight: 600; color: #333; }
+.od-sum-row.free span:last-child { color: #0A7C3F; font-weight: 800; }
+.od-sum-row.grand {
+    margin-top: 8px; padding-top: 12px; border-top: 1px solid #EAEAEA;
+    font-size: 15px; color: #222; font-weight: 800;
+}
+.od-sum-row.grand span:last-child { font-size: 20px; color: #C21807; letter-spacing: -0.4px; }
+
+.od-foot { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+.od-foot a {
+    padding: 12px 22px; border-radius: 11px; font-size: 13.5px; font-weight: 700;
+    transition: background 0.16s, border-color 0.16s;
+}
+.od-foot .primary { background: #1A1A1A; color: #fff; }
+.od-foot .primary:hover { background: #3A3530; }
+.od-foot .ghost { border: 1.5px solid #E0E0E0; color: #333; }
+.od-foot .ghost:hover { border-color: #bbb; }
+
+@media (max-width: 620px) {
+    .od-grid { grid-template-columns: 1fr; }
+    .od-panel + .od-panel { border-left: 1px solid #EAEAEA; }
+}
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container">
+<div class="container od-wrap">
     <nav class="breadcrumb">
         <a href="{% url 'store:landing' %}">Home</a>
         <span class="sep">/</span>
-        <a href="{% url 'store:order_list' %}">Orders</a>
+        <a href="{% url 'store:order_track' %}">Track Order</a>
         <span class="sep">/</span>
         <span>#{{ order.order_number }}</span>
     </nav>
 
-    <div class="order-detail-page">
-        <div class="order-info-card">
-            <h1>Order #{{ order.order_number }}</h1>
-            <div class="order-badges">
-                <span class="order-status status-{{ order.status }}">{{ order.get_status_display }}</span>
-                <span class="order-type-badge type-{{ order.order_type }}">{{ order.get_order_type_display }}</span>
-            </div>
-            <p class="order-date">Placed on {{ order.created_at|date:"M d, Y h:i A" }}</p>
-            {% if order.full_name %}<p><strong>Name:</strong> {{ order.full_name }}</p>{% endif %}
-
-            <h3>Shipping Address</h3>
-            <p>{{ order.shipping_address }}</p>
-            {% if order.phone %}<p>Phone: {{ order.phone }}</p>{% endif %}
-            {% if order.email %}<p>Email: {{ order.email }}</p>{% endif %}
+    <div class="od-banner" data-type="{{ order.order_type }}">
+        <span class="od-banner-mark">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <div>
+            {% if order.is_inquiry %}
+            <h1>Inquiry received</h1>
+            <p>Our team will call you shortly to answer your questions. Nothing is charged for an inquiry.</p>
+            {% else %}
+            <h1>Order confirmed</h1>
+            <p>Our team will call you to confirm delivery. Pay cash when the parcel arrives.</p>
+            {% endif %}
         </div>
+    </div>
 
-        <div class="order-items-card">
-            <h3>Items</h3>
-            {% for item in order.items.all %}
-            <div class="order-item-row">
-                <div class="order-item-info">
-                    <strong>{{ item.product.name|default:"Deleted Product" }}</strong>
-                    <span>Qty: {{ item.quantity }}</span>
+    <div class="od-ref-strip">
+        <div class="od-ref">
+            <span class="od-ref-label">Ref</span>
+            <span class="od-ref-value">{{ order.order_number }}</span>
+        </div>
+        <div class="od-badges">
+            <span class="od-badge status">{{ order.get_status_display }}</span>
+            <span class="od-badge type-{{ order.order_type }}">{{ order.get_order_type_display }}</span>
+        </div>
+    </div>
+
+    <div class="od-grid">
+        <div class="od-panel">
+            <h3>Delivery to</h3>
+            <dl>
+                {% if order.full_name %}<div class="od-line"><dt>Name</dt><dd>{{ order.full_name }}</dd></div>{% endif %}
+                {% if order.phone %}<div class="od-line"><dt>Mobile</dt><dd>{{ order.phone }}</dd></div>{% endif %}
+                {% if order.email %}<div class="od-line"><dt>Email</dt><dd>{{ order.email }}</dd></div>{% endif %}
+                <div class="od-line"><dt>Address</dt><dd>{{ order.shipping_address }}</dd></div>
+                {% if order.note %}<div class="od-line"><dt>Note</dt><dd>{{ order.note }}</dd></div>{% endif %}
+            </dl>
+        </div>
+        <div class="od-panel">
+            <h3>Courier</h3>
+            <dl>
+                {% if order.district %}<div class="od-line"><dt>District</dt><dd>{{ order.district }}</dd></div>{% endif %}
+                {% if order.courier_branch %}<div class="od-line"><dt>Branch</dt><dd>{{ order.courier_branch }}</dd></div>{% endif %}
+                <div class="od-line"><dt>Payment</dt><dd>Cash on delivery</dd></div>
+                <div class="od-line"><dt>Placed</dt><dd>{{ order.created_at|date:"M d, Y · h:i A" }}</dd></div>
+            </dl>
+        </div>
+    </div>
+
+    <div class="od-panel od-items">
+        <h3>Items</h3>
+        {% for item in order.items.all %}
+        <div class="od-item-row">
+            <div>
+                <div class="od-item-name">{{ item.product.name|default:"Deleted Product" }}</div>
+                <div class="od-item-sub">
+                    Qty {{ item.quantity }} × Rs. {{ item.price|floatformat:0 }}{% if item.selected_variant %} · {{ item.selected_variant }}{% endif %}
                 </div>
-                <span class="order-item-price">Rs. {{ item.line_total }}</span>
             </div>
-            {% endfor %}
-            <hr>
-            <div class="summary-row total">
+            <span>Rs. {{ item.line_total|floatformat:0 }}</span>
+        </div>
+        {% endfor %}
+
+        <div class="od-sum">
+            <div class="od-sum-row">
+                <span>Subtotal</span>
+                <span>Rs. {{ order.subtotal|floatformat:0 }}</span>
+            </div>
+            {% if order.discount_amount %}
+            <div class="od-sum-row free">
+                <span>Discount{% if order.discount_code %} ({{ order.discount_code }}){% endif %}</span>
+                <span>− Rs. {{ order.discount_amount|floatformat:0 }}</span>
+            </div>
+            {% endif %}
+            <div class="od-sum-row {% if not order.delivery_charge %}free{% endif %}">
+                <span>Delivery</span>
+                <span>{% if order.delivery_charge %}Rs. {{ order.delivery_charge|floatformat:0 }}{% else %}FREE{% endif %}</span>
+            </div>
+            <div class="od-sum-row grand">
                 <span>Total</span>
-                <span>Rs. {{ order.total_price }}</span>
+                <span>Rs. {{ order.total_price|floatformat:0 }}</span>
             </div>
         </div>
+    </div>
+
+    <div class="od-foot">
+        <a class="primary" href="{% url 'store:product_list' %}">Continue shopping</a>
+        <a class="ghost" href="{% url 'store:order_track' %}">Track another order</a>
     </div>
 </div>
 {% endblock %}

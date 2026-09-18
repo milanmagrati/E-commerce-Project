@@ -1,7 +1,9 @@
 {% extends 'base.html' %}
 {% load dashboard_extras %}
-{% block title %}{{ action }} Product - Admin Panel{% endblock %}
+{% load static %}
+{% block title %}{{ action }} Product - {{ COMPANY_NAME }}{% endblock %}
 
+{% block messages %}{% endblock %}
 {% block content %}
 <div class="container-fluid py-4">
     <!-- Header -->
@@ -35,19 +37,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Alert Messages -->
-    {% if messages %}
-    <div class="alert-container mb-4">
-        {% for message in messages %}
-        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert" data-message-tag="{{ message.tags }}">
-            <i class="fas fa-{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}exclamation-circle{% else %}info-circle{% endif %}"></i>
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
 
     <!-- Form Errors -->
     {% if form.errors or formset.errors %}
@@ -196,6 +185,46 @@
                 </div>
             </div>
         </div>
+        <!-- Dates & Expiry -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header text-white" style="background: linear-gradient(135deg, #e65100, #ff6d00);">
+                <h5 class="mb-0"><i class="fas fa-calendar-alt"></i> Dates & Expiry</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info border-0 mb-3" style="font-size: 0.85rem;">
+                    <i class="fas fa-info-circle"></i>
+                    Optional fields. Set expiry date to enable automatic expiry alerts and FIFO batch tracking.
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">
+                            <i class="fas fa-industry text-primary"></i> Manufactured Date
+                        </label>
+                        {{ form.manufactured_date }}
+                        <small class="text-muted">When the product was manufactured</small>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">
+                            <i class="fas fa-hourglass-end text-danger"></i> Expiry Date
+                        </label>
+                        {{ form.expiry_date }}
+                        <small class="text-muted">When the product expires</small>
+                    </div>
+                </div>
+                <!-- Dynamic shelf-life info -->
+                <div id="shelfLifeInfo" class="mt-2" style="display: none;">
+                    <div class="d-flex align-items-center gap-3 p-3 rounded" id="shelfLifeContainer">
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="fas fa-clock fa-lg" id="shelfLifeIcon"></i>
+                            <div>
+                                <div class="fw-bold" id="shelfLifeTitle"></div>
+                                <small class="text-muted" id="shelfLifeSubtext"></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Product Images -->
         <div class="card shadow-sm mb-4">
@@ -211,8 +240,14 @@
                         </label>
                         {{ form.image }}
                         {% if product.image %}
-                        <div class="mt-3">
-                            <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-thumbnail" style="max-width: 200px; border-radius: 8px;">
+                        <div class="mt-3 border p-2 rounded position-relative d-inline-block">
+                            <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-thumbnail" style="max-width: 200px; border-radius: 8px;" onerror="this.style.display='none'">
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" name="clear_main_image" id="clearMainImage">
+                                <label class="form-check-label text-danger small fw-bold" for="clearMainImage">
+                                    <i class="fas fa-trash-alt"></i> Delete Main Image
+                                </label>
+                            </div>
                         </div>
                         {% endif %}
 
@@ -235,11 +270,50 @@
                                 <h6>Upload Multiple Images</h6>
                                 <p class="text-muted small mb-3">Drag and drop or click to browse</p>
                                 <input type="file" class="form-control d-none" id="galleryImages" name="gallery_images" multiple accept="image/*">
-                                <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('galleryImages').click()">
-                                    <i class="fas fa-folder-open"></i> Choose Images
-                                </button>
+                                <div class="d-flex justify-content-center gap-2 flex-wrap">
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('galleryImages').click()">
+                                        <i class="fas fa-upload"></i> Upload New
+                                    </button>
+                                    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#mediaPickerModal">
+                                        <i class="fas fa-photo-video"></i> Choose from Existing
+                                    </button>
+                                </div>
                             </div>
                         </div>
+
+                        <input type="hidden" name="existing_media_ids" id="existingMediaIds" value="">
+                        <div id="existingMediaPreviewContainer" class="d-flex flex-wrap gap-2 mt-2"></div>
+
+                        {% if product.images.exists %}
+                        <div class="mt-3">
+                            <label class="form-label small fw-bold text-muted">Existing Gallery Images</label>
+                            <div class="d-flex flex-wrap gap-2">
+                                {% for g_img in product.images.all %}
+                                <div class="border p-2 rounded text-center position-relative {% if product.image and g_img.image.name == product.image.name %}border-primary border-2{% endif %}" style="width: 120px;">
+                                    {% if product.image and g_img.image.name == product.image.name %}
+                                    <span class="badge bg-primary position-absolute top-0 start-50 translate-middle-x mt-1" style="font-size: 0.6rem; z-index: 1;">
+                                        <i class="fas fa-star"></i> Main
+                                    </span>
+                                    {% endif %}
+                                    <img src="{{ g_img.image.url }}" class="img-fluid rounded mb-2" style="height: 80px; width: 100%; object-fit: cover;" onerror="this.style.display='none'">
+
+                                    <div class="form-check text-start mb-1">
+                                        <input class="form-check-input" type="radio" name="make_default_image" id="defaultGallery{{ g_img.id }}" value="{{ g_img.id }}" {% if product.image and g_img.image.name == product.image.name %}checked{% endif %}>
+                                        <label class="form-check-label small text-success" style="font-size: 0.8rem;" for="defaultGallery{{ g_img.id }}">
+                                            Default
+                                        </label>
+                                    </div>
+                                    <div class="form-check text-start">
+                                        <input class="form-check-input" type="checkbox" name="delete_gallery_image" id="deleteGallery{{ g_img.id }}" value="{{ g_img.id }}">
+                                        <label class="form-check-label small text-danger" style="font-size: 0.8rem;" for="deleteGallery{{ g_img.id }}">
+                                            Delete
+                                        </label>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
 
@@ -423,6 +497,8 @@
             </div>
         </div>
 
+        {% include 'dashboard/partials/product_theme_panel.html' %}
+
         <!-- Form Actions -->
         <div class="card shadow-sm">
             <div class="card-body">
@@ -471,6 +547,46 @@
                 <button type="button" class="btn btn-primary" id="saveCategoryBtn">
                     <i class="fas fa-save"></i> Save Category
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Media Library Picker Modal -->
+<div class="modal fade" id="mediaPickerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-photo-video"></i> Choose from Media Library</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <div class="d-flex gap-2 flex-wrap" id="mediaPickerCategoryFilters">
+                        <button type="button" class="btn btn-sm btn-primary media-filter-btn" data-category="">All</button>
+                    </div>
+                    <a href="{% url 'media_library' %}" target="_blank" class="small">
+                        <i class="fas fa-external-link-alt"></i> Manage Media Library
+                    </a>
+                </div>
+                <div id="mediaPickerLoading" class="text-center text-muted py-5">
+                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                    <p class="mt-2 mb-0">Loading images...</p>
+                </div>
+                <div id="mediaPickerEmpty" class="text-center text-muted py-5" style="display:none;">
+                    <i class="fas fa-images fa-2x mb-2"></i>
+                    <p class="mb-0">No images found in this category.</p>
+                </div>
+                <div id="mediaPickerGrid" class="row g-3"></div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <span class="text-muted small"><span id="mediaPickerSelectedCount">0</span> selected</span>
+                <div>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="mediaPickerAddBtn">
+                        <i class="fas fa-check"></i> Add Selected
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -701,6 +817,99 @@
         text-overflow: ellipsis;
     }
 
+    /* Media Picker Modal */
+    .media-picker-item {
+        position: relative;
+        border: 2px solid #dee2e6;
+        border-radius: 10px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .media-picker-item img {
+        width: 100%;
+        height: 100px;
+        object-fit: cover;
+        display: block;
+    }
+
+    .media-picker-item:hover {
+        border-color: #0d6efd;
+    }
+
+    .media-picker-item.selected {
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.25);
+    }
+
+    .media-picker-item .media-picker-check {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.9);
+        border: 2px solid #0d6efd;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #0d6efd;
+        font-size: 12px;
+    }
+
+    .media-picker-item.selected .media-picker-check {
+        background: #0d6efd;
+        color: #fff;
+    }
+
+    .media-picker-item .media-picker-title {
+        font-size: 11px;
+        padding: 3px 6px;
+        background: rgba(0,0,0,0.6);
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .media-filter-btn.active {
+        background-color: #0d6efd !important;
+        color: #fff !important;
+        border-color: #0d6efd !important;
+    }
+
+    .existing-media-thumb {
+        position: relative;
+        width: 90px;
+        border: 2px solid #0d6efd;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .existing-media-thumb img {
+        width: 100%;
+        height: 70px;
+        object-fit: cover;
+        display: block;
+    }
+
+    .existing-media-thumb .remove-btn {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        background: rgba(220, 53, 69, 0.95);
+        border: none;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        color: white;
+        font-size: 10px;
+        line-height: 1;
+        padding: 0;
+    }
+
     /* Bundle Component Styles */
     .text-purple { color: #8b5cf6 !important; }
 
@@ -794,6 +1003,18 @@
     // ========== BULLETPROOF AUTO-SAVE ==========
     const DRAFT_KEY = 'product_form_{{ product.id|default:"new" }}';
     const EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+    // Fields keyed by a *shared* name across multiple dynamically-rendered elements
+    // (one radio/checkbox per gallery image, whose ids change as images are added/
+    // removed) must never go through the generic draft save/restore below: it only
+    // ever targets the FIRST element with a given name, so restoring a stale value
+    // silently corrupts whichever image happens to render first on a later visit.
+    const DRAFT_EXCLUDED_FIELDS = new Set([
+        'existing_media_ids',
+        'make_default_image',
+        'delete_gallery_image',
+        'clear_main_image',
+    ]);
 
     // Build a path-specific key so create/edit forms on different pages don't collide
     function getDraftKey() {
@@ -937,6 +1158,12 @@
             let restoredCount = 0;
             let restoredNonEmptyCount = 0;
             Object.entries(draft.values).forEach(([name, value]) => {
+                // Never restore per-gallery-image fields or the picker's pending
+                // selection — they're either ephemeral/unconfirmed, or shared by name
+                // across multiple dynamically-rendered elements (see
+                // DRAFT_EXCLUDED_FIELDS above), so blindly restoring them by name
+                // would corrupt whichever image happens to render first.
+                if (DRAFT_EXCLUDED_FIELDS.has(name)) return;
                 const field = document.querySelector(`[name="${name}"]`);
                 if (field) {
                     if (field.type === 'checkbox') {
@@ -990,7 +1217,7 @@
         let hasData = false;
 
         document.querySelectorAll('#productForm input, #productForm select, #productForm textarea').forEach(el => {
-            if (!el.name || el.type === 'file' || el.name === 'csrfmiddlewaretoken') return;
+            if (!el.name || el.type === 'file' || el.name === 'csrfmiddlewaretoken' || DRAFT_EXCLUDED_FIELDS.has(el.name)) return;
 
             if (el.type === 'checkbox') {
                 values[el.name] = el.checked;
@@ -1285,7 +1512,7 @@
         });
 
         uploadArea.addEventListener('click', e => {
-            if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') {
+            if (!e.target.closest('button') && e.target.tagName !== 'INPUT') {
                 galleryInput.click();
             }
         });
@@ -1322,6 +1549,166 @@
             reader.readAsDataURL(file);
         });
     }
+
+    // ==================== Media Library Picker ====================
+    (function() {
+        const modalEl = document.getElementById('mediaPickerModal');
+        if (!modalEl) return;
+
+        const grid = document.getElementById('mediaPickerGrid');
+        const loading = document.getElementById('mediaPickerLoading');
+        const empty = document.getElementById('mediaPickerEmpty');
+        const filtersEl = document.getElementById('mediaPickerCategoryFilters');
+        const selectedCountEl = document.getElementById('mediaPickerSelectedCount');
+        const addBtn = document.getElementById('mediaPickerAddBtn');
+        const hiddenInput = document.getElementById('existingMediaIds');
+        const previewContainerExisting = document.getElementById('existingMediaPreviewContainer');
+
+        const assetCache = {}; // id -> {url, title}
+        const pendingSelection = new Set(); // selection made inside the currently-open modal
+        let categoriesLoaded = false;
+
+        // Guarantee a clean slate on every real page view. Browsers can restore
+        // JS-set hidden-field values on back/forward-cache navigation, which would
+        // otherwise silently resubmit a stale, unconfirmed picker selection.
+        function resetPendingSelection() {
+            hiddenInput.value = '';
+            previewContainerExisting.innerHTML = '';
+        }
+        resetPendingSelection();
+        window.addEventListener('pageshow', event => {
+            if (event.persisted) resetPendingSelection();
+        });
+
+        function getIds() {
+            return (hiddenInput.value || '').split(',').filter(Boolean);
+        }
+
+        function setIds(ids) {
+            hiddenInput.value = Array.from(new Set(ids)).join(',');
+        }
+
+        function renderExistingPreview() {
+            previewContainerExisting.innerHTML = '';
+            getIds().forEach(id => {
+                const asset = assetCache[id];
+                if (!asset) return;
+                const div = document.createElement('div');
+                div.className = 'existing-media-thumb';
+                div.innerHTML = `
+                    <img src="${asset.url}" alt="${asset.title || ''}">
+                    <button type="button" class="remove-btn" data-remove-id="${id}" title="Remove">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                previewContainerExisting.appendChild(div);
+            });
+        }
+
+        previewContainerExisting.addEventListener('click', e => {
+            const btn = e.target.closest('[data-remove-id]');
+            if (!btn) return;
+            const id = btn.getAttribute('data-remove-id');
+            setIds(getIds().filter(x => x !== id));
+            renderExistingPreview();
+        });
+
+        function fetchMedia(category) {
+            loading.style.display = '';
+            empty.style.display = 'none';
+            grid.innerHTML = '';
+
+            const url = category ? `{% url 'api_media_list' %}?category=${encodeURIComponent(category)}` : `{% url 'api_media_list' %}`;
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    loading.style.display = 'none';
+
+                    if (!categoriesLoaded) {
+                        categoriesLoaded = true;
+                        data.categories.forEach(cat => {
+                            const btn = document.createElement('button');
+                            btn.type = 'button';
+                            btn.className = 'btn btn-sm btn-outline-primary media-filter-btn';
+                            btn.dataset.category = cat.id;
+                            btn.textContent = cat.name;
+                            filtersEl.appendChild(btn);
+                        });
+                        if (data.uncategorized_count > 0) {
+                            const btn = document.createElement('button');
+                            btn.type = 'button';
+                            btn.className = 'btn btn-sm btn-outline-secondary media-filter-btn';
+                            btn.dataset.category = 'uncategorized';
+                            btn.textContent = 'Uncategorized';
+                            filtersEl.appendChild(btn);
+                        }
+                    }
+
+                    if (!data.assets.length) {
+                        empty.style.display = '';
+                        return;
+                    }
+
+                    data.assets.forEach(asset => {
+                        assetCache[asset.id] = { url: asset.url, title: asset.title };
+                        const col = document.createElement('div');
+                        col.className = 'col-6 col-md-3';
+                        const isSelected = pendingSelection.has(String(asset.id));
+                        col.innerHTML = `
+                            <div class="media-picker-item ${isSelected ? 'selected' : ''}" data-asset-id="${asset.id}">
+                                <div class="media-picker-check"><i class="fas fa-check"></i></div>
+                                <img src="${asset.url}" alt="${asset.title}" loading="lazy">
+                                <div class="media-picker-title">${asset.title || asset.category_name}</div>
+                            </div>
+                        `;
+                        grid.appendChild(col);
+                    });
+                })
+                .catch(() => {
+                    loading.style.display = 'none';
+                    empty.style.display = '';
+                    empty.querySelector('p').textContent = 'Failed to load media library.';
+                });
+        }
+
+        grid.addEventListener('click', e => {
+            const item = e.target.closest('.media-picker-item');
+            if (!item) return;
+            const id = item.getAttribute('data-asset-id');
+            if (pendingSelection.has(id)) {
+                pendingSelection.delete(id);
+                item.classList.remove('selected');
+            } else {
+                pendingSelection.add(id);
+                item.classList.add('selected');
+            }
+            selectedCountEl.textContent = pendingSelection.size;
+        });
+
+        filtersEl.addEventListener('click', e => {
+            const btn = e.target.closest('.media-filter-btn');
+            if (!btn) return;
+            filtersEl.querySelectorAll('.media-filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            fetchMedia(btn.dataset.category);
+        });
+
+        modalEl.addEventListener('show.bs.modal', () => {
+            pendingSelection.clear();
+            getIds().forEach(id => pendingSelection.add(id));
+            selectedCountEl.textContent = pendingSelection.size;
+            filtersEl.querySelectorAll('.media-filter-btn').forEach(b => b.classList.remove('active'));
+            const allBtn = filtersEl.querySelector('[data-category=""]');
+            if (allBtn) allBtn.classList.add('active');
+            fetchMedia('');
+        });
+
+        addBtn.addEventListener('click', () => {
+            setIds(Array.from(pendingSelection));
+            renderExistingPreview();
+            bootstrap.Modal.getInstance(modalEl).hide();
+        });
+    })();
 
     let variationCounter = document.querySelectorAll('.variation-form-item').length;
     const addVariationBtn = document.getElementById('addVariationBtn');
@@ -1630,4 +2017,113 @@
 window._simpleProductOptions = `{% for p in simple_products %}<option value="{{ p.id }}">{{ p.name }} (Stock: {{ p.stock }})</option>{% endfor %}`;
 </script>
 
+<script>
+// Shelf-life calculator for Dates & Expiry section
+(function() {
+    function updateShelfLife() {
+        var mfgInput = document.getElementById('id_manufactured_date');
+        var expInput = document.getElementById('id_expiry_date');
+        var infoDiv = document.getElementById('shelfLifeInfo');
+        var container = document.getElementById('shelfLifeContainer');
+        var icon = document.getElementById('shelfLifeIcon');
+        var title = document.getElementById('shelfLifeTitle');
+        var subtext = document.getElementById('shelfLifeSubtext');
+
+        if (!expInput || !infoDiv) return;
+
+        var expVal = expInput.value;
+        if (!expVal) {
+            infoDiv.style.display = 'none';
+            return;
+        }
+
+        var today = new Date();
+        today.setHours(0,0,0,0);
+        var expDate = new Date(expVal + 'T00:00:00');
+        var diffMs = expDate - today;
+        var diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+        infoDiv.style.display = 'block';
+
+        if (diffDays < 0) {
+            container.style.background = 'linear-gradient(135deg, #fff 0%, #fee2e2 100%)';
+            container.style.borderLeft = '4px solid #ef4444';
+            icon.style.color = '#ef4444';
+            icon.className = 'fas fa-exclamation-triangle fa-lg';
+            title.innerHTML = '<span style="color:#dc2626;">⚠ EXPIRED ' + Math.abs(diffDays) + ' day(s) ago</span>';
+            subtext.textContent = 'This product has passed its expiry date!';
+        } else if (diffDays === 0) {
+            container.style.background = 'linear-gradient(135deg, #fff 0%, #fee2e2 100%)';
+            container.style.borderLeft = '4px solid #ef4444';
+            icon.style.color = '#ef4444';
+            icon.className = 'fas fa-exclamation-circle fa-lg';
+            title.innerHTML = '<span style="color:#dc2626;">⚠ EXPIRES TODAY</span>';
+            subtext.textContent = 'This product expires today!';
+        } else if (diffDays <= 7) {
+            container.style.background = 'linear-gradient(135deg, #fff 0%, #fef3c7 100%)';
+            container.style.borderLeft = '4px solid #f59e0b';
+            icon.style.color = '#f59e0b';
+            icon.className = 'fas fa-exclamation-circle fa-lg';
+            title.innerHTML = '<span style="color:#d97706;">⚠ Expires in ' + diffDays + ' day(s) — CRITICAL</span>';
+            subtext.textContent = 'Product is expiring very soon.';
+        } else if (diffDays <= 30) {
+            container.style.background = 'linear-gradient(135deg, #fff 0%, #fff7ed 100%)';
+            container.style.borderLeft = '4px solid #fb923c';
+            icon.style.color = '#fb923c';
+            icon.className = 'fas fa-clock fa-lg';
+            title.innerHTML = '<span style="color:#ea580c;">Expires in ' + diffDays + ' day(s)</span>';
+            subtext.textContent = 'Consider planning for stock rotation.';
+        } else {
+            container.style.background = 'linear-gradient(135deg, #fff 0%, #d1fae5 100%)';
+            container.style.borderLeft = '4px solid #10b981';
+            icon.style.color = '#10b981';
+            icon.className = 'fas fa-check-circle fa-lg';
+            title.innerHTML = '<span style="color:#059669;">✓ ' + diffDays + ' day(s) until expiry</span>';
+
+            // Show shelf life if manufactured date is set
+            var mfgVal = mfgInput ? mfgInput.value : '';
+            if (mfgVal) {
+                var mfgDate = new Date(mfgVal + 'T00:00:00');
+                var shelfDays = Math.ceil((expDate - mfgDate) / (1000 * 60 * 60 * 24));
+                var elapsedDays = Math.ceil((today - mfgDate) / (1000 * 60 * 60 * 24));
+                var pct = shelfDays > 0 ? Math.round((elapsedDays / shelfDays) * 100) : 0;
+                subtext.textContent = 'Total shelf life: ' + shelfDays + ' days | ' + pct + '% elapsed';
+            } else {
+                subtext.textContent = 'Product has good shelf life remaining.';
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        var mfg = document.getElementById('id_manufactured_date');
+        var exp = document.getElementById('id_expiry_date');
+        if (mfg) mfg.addEventListener('change', updateShelfLife);
+        if (exp) exp.addEventListener('change', updateShelfLife);
+        // Run on load for edit mode
+        setTimeout(updateShelfLife, 200);
+    });
+})();
+</script>
+
+{% endblock %}
+
+{% block extra_css %}
+{% include 'dashboard/partials/product_theme_editor_css.html' %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // On `window`, and before the editor loads: a top-level `const` is a
+    // lexical binding the script cannot see, and it would fetch the string
+    // "undefined" as a URL.
+    window.PT_SETUP = {
+        csrf: "{{ csrf_token }}",
+        listUrl: "{% url 'product_theme_media_list' %}",
+        uploadUrl: "{% url 'product_theme_media_upload' %}",
+        // The trailing id is substituted client-side; 0 is a placeholder no
+        // row can ever have.
+        deleteUrlBase: "{% url 'product_theme_media_delete' media_id=0 %}"
+    };
+</script>
+{% include 'dashboard/partials/product_theme_editor_js.html' %}
 {% endblock %}

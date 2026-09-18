@@ -1,0 +1,464 @@
+{% extends 'base.html' %}
+{% block title %}Holiday Setup - HRM{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12 d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-calendar-alt me-2"></i>Holiday Setup</h2>
+        <button class="btn btn-primary" onclick="openAddModal()">
+            <i class="fas fa-plus me-1"></i>Add Holiday
+        </button>
+    </div>
+</div>
+
+<!-- Stats row -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card">
+            <div class="card-body d-flex justify-content-between align-items-center">
+                <div>
+                    <p class="text-muted mb-1">Total Holidays</p>
+                    <h3 class="mb-0">{{ total_holidays }}</h3>
+                </div>
+                <div class="stat-icon bg-primary"><i class="fas fa-calendar-alt"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card">
+            <div class="card-body d-flex justify-content-between align-items-center">
+                <div>
+                    <p class="text-muted mb-1">Active Holidays</p>
+                    <h3 class="mb-0">{{ holidays.paginator.count }}</h3>
+                </div>
+                <div class="stat-icon bg-success"><i class="fas fa-check-circle"></i></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card">
+            <div class="card-body d-flex justify-content-between align-items-center">
+                <div>
+                    <p class="text-muted mb-1">Paid Holidays</p>
+                    <h3 class="mb-0">—</h3>
+                </div>
+                <div class="stat-icon bg-warning"><i class="fas fa-coins"></i></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search & Filter -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row align-items-center g-2">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search holidays..." value="{{ search_query }}">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-search"></i></button>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <select name="holiday_type" class="form-select" onchange="this.form.submit()">
+                    <option value="">All Types</option>
+                    {% for val, label in holiday_type_choices %}
+                    <option value="{{ val }}" {% if type_filter == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="status" class="form-select" onchange="this.form.submit()">
+                    <option value="">All Status</option>
+                    <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+                    <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+                </select>
+            </div>
+            <div class="col-md-2 ms-auto d-flex align-items-center justify-content-end">
+                <label class="me-2 mb-0 text-nowrap">Per Page:</label>
+                <select name="per_page" class="form-select form-select-sm" style="width:80px;" onchange="this.form.submit()">
+                    <option value="10" {% if per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == '50' %}selected{% endif %}>50</option>
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Table -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Holiday Name</th>
+                        <th>Type</th>
+                        <th>Start Date</th>
+                        <th>End Date</th>
+                        <th>Days</th>
+                        <th>Paid</th>
+                        <th>Apply All</th>
+                        <th>Status</th>
+                        <th class="text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for holiday in holidays %}
+                    <tr>
+                        <td>{{ forloop.counter|add:holidays.start_index|add:"-1" }}</td>
+                        <td>
+                            <strong>{{ holiday.name }}</strong>
+                            {% if holiday.description %}
+                            <br><small class="text-muted">{{ holiday.description|truncatechars:50 }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge
+                                {% if holiday.holiday_type == 'national' %}bg-danger
+                                {% elif holiday.holiday_type == 'religious' %}bg-warning text-dark
+                                {% elif holiday.holiday_type == 'company' %}bg-info
+                                {% else %}bg-secondary{% endif %}">
+                                {{ holiday.get_holiday_type_display }}
+                            </span>
+                        </td>
+                        <td>{{ holiday.start_date|date:"Y-m-d" }}</td>
+                        <td>{{ holiday.end_date|date:"Y-m-d" }}</td>
+                        <td><span class="badge bg-primary">{{ holiday.total_days }} day{{ holiday.total_days|pluralize }}</span></td>
+                        <td>
+                            {% if holiday.is_paid %}
+                            <span class="badge bg-success"><i class="fas fa-check me-1"></i>Paid</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Unpaid</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if holiday.apply_for_all %}
+                            <span class="badge bg-info"><i class="fas fa-users me-1"></i>All Staff</span>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if holiday.is_active %}
+                            <span class="badge bg-success" style="cursor:pointer;" onclick="toggleStatus({{ holiday.id }})" title="Click to toggle">Active</span>
+                            {% else %}
+                            <span class="badge bg-danger" style="cursor:pointer;" onclick="toggleStatus({{ holiday.id }})" title="Click to toggle">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-info me-1" title="View" onclick="viewHoliday({{ holiday.id }})">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning me-1" title="Edit" onclick="editHoliday({{ holiday.id }})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            {% if holiday.apply_for_all %}
+                            <button class="btn btn-sm btn-outline-success me-1" title="Apply to Attendance" onclick="applyHoliday({{ holiday.id }}, '{{ holiday.name|escapejs }}')">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="confirmDelete({{ holiday.id }}, '{{ holiday.name|escapejs }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-5">
+                            <i class="fas fa-calendar-times fa-3x mb-3 d-block opacity-25"></i>
+                            No holidays found. Add your first holiday like Dashain or Tihar.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if holidays %}
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">Showing {{ holidays.start_index }} to {{ holidays.end_index }} of {{ total_holidays }} holidays</small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if holidays.has_previous %}
+                    <li class="page-item"><a class="page-link" href="?page={{ holidays.previous_page_number }}&search={{ search_query }}&per_page={{ per_page }}">Previous</a></li>
+                    {% endif %}
+                    {% for num in holidays.paginator.page_range %}
+                    <li class="page-item {% if holidays.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ per_page }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if holidays.has_next %}
+                    <li class="page-item"><a class="page-link" href="?page={{ holidays.next_page_number }}&search={{ search_query }}&per_page={{ per_page }}">Next</a></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Add/Edit Holiday Modal -->
+<div class="modal fade" id="holidayModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="holidayModalLabel"><i class="fas fa-calendar-plus me-2"></i>Add Holiday</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="holidayForm">
+                    {% csrf_token %}
+                    <input type="hidden" id="holidayId" value="">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label">Holiday Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="holidayName" name="name" placeholder="e.g. Dashain, Tihar, Christmas" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Holiday Type</label>
+                            <select class="form-select" id="holidayType" name="holiday_type">
+                                {% for val, label in holiday_type_choices %}
+                                <option value="{{ val }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Start Date <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" id="holidayStartDate" name="start_date" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">End Date <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" id="holidayEndDate" name="end_date" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" id="holidayDescription" name="description" rows="2" placeholder="Optional description..."></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" id="holidayIsPaid" name="is_paid" checked>
+                                <label class="form-check-label" for="holidayIsPaid">
+                                    <strong>Paid Holiday</strong>
+                                    <br><small class="text-muted">Employees are paid for this holiday day</small>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" id="holidayApplyAll" name="apply_for_all" checked>
+                                <label class="form-check-label" for="holidayApplyAll">
+                                    <strong>Apply for All Staff</strong>
+                                    <br><small class="text-muted">Auto-sync to attendance for all employees</small>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="saveHoliday()"><i class="fas fa-save me-1"></i>Save Holiday</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Holiday Modal -->
+<div class="modal fade" id="viewHolidayModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-calendar-alt me-2"></i>Holiday Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="viewHolidayBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Apply Confirmation Modal -->
+<div class="modal fade" id="applyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-sync-alt me-2"></i>Apply Holiday to Attendance</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Apply <strong id="applyHolidayName"></strong> to attendance records for all active employees?</p>
+                <p class="text-muted mb-0">This will create or mark attendance records as holidays for the specified date range. Existing holidays will not be overwritten.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="confirmApplyBtn"><i class="fas fa-sync-alt me-1"></i>Apply Now</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <strong id="deleteHolidayName"></strong>?</p>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+const holidayModal = new bootstrap.Modal(document.getElementById('holidayModal'));
+
+function openAddModal() {
+    document.getElementById('holidayModalLabel').innerHTML = '<i class="fas fa-calendar-plus me-2"></i>Add Holiday';
+    document.getElementById('holidayForm').reset();
+    document.getElementById('holidayId').value = '';
+    document.getElementById('holidayIsPaid').checked = true;
+    document.getElementById('holidayApplyAll').checked = true;
+    holidayModal.show();
+}
+
+function saveHoliday() {
+    const form = document.getElementById('holidayForm');
+    const id = document.getElementById('holidayId').value;
+    const name = document.getElementById('holidayName').value.trim();
+    if (!name) { showToast('Holiday name is required.', 'error'); return; }
+
+    const formData = new FormData(form);
+    const url = id ? `{% url 'hrm:holiday_list' %}${id}/update/` : `{% url 'hrm:holiday_create' %}`;
+
+    fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                holidayModal.hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else { showToast(data.error || 'Something went wrong.', 'error'); }
+        })
+        .catch(() => showToast('Network error.', 'error'));
+}
+
+function viewHoliday(id) {
+    fetch(`{% url 'hrm:holiday_list' %}${id}/`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const h = data.holiday;
+                document.getElementById('viewHolidayBody').innerHTML = `
+                    <table class="table table-bordered mb-0">
+                        <tr><th style="width:35%">Name</th><td><strong>${h.name}</strong></td></tr>
+                        <tr><th>Type</th><td>${h.holiday_type_display}</td></tr>
+                        <tr><th>Start Date</th><td>${h.start_date}</td></tr>
+                        <tr><th>End Date</th><td>${h.end_date}</td></tr>
+                        <tr><th>Duration</th><td><span class="badge bg-primary">${h.total_days} day(s)</span></td></tr>
+                        <tr><th>Paid</th><td>${h.is_paid ? '<span class="badge bg-success">Paid</span>' : '<span class="badge bg-secondary">Unpaid</span>'}</td></tr>
+                        <tr><th>Apply for All</th><td>${h.apply_for_all ? '<span class="badge bg-info">Yes — All Staff</span>' : 'No'}</td></tr>
+                        <tr><th>Status</th><td><span class="badge bg-${h.is_active ? 'success' : 'danger'}">${h.is_active ? 'Active' : 'Inactive'}</span></td></tr>
+                        <tr><th>Description</th><td>${h.description || '—'}</td></tr>
+                    </table>`;
+                new bootstrap.Modal(document.getElementById('viewHolidayModal')).show();
+            }
+        });
+}
+
+function editHoliday(id) {
+    fetch(`{% url 'hrm:holiday_list' %}${id}/`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const h = data.holiday;
+                document.getElementById('holidayModalLabel').innerHTML = '<i class="fas fa-edit me-2"></i>Edit Holiday';
+                document.getElementById('holidayId').value = h.id;
+                document.getElementById('holidayName').value = h.name;
+                document.getElementById('holidayType').value = h.holiday_type;
+                document.getElementById('holidayStartDate').value = h.start_date;
+                document.getElementById('holidayEndDate').value = h.end_date;
+                document.getElementById('holidayDescription').value = h.description;
+                document.getElementById('holidayIsPaid').checked = h.is_paid;
+                document.getElementById('holidayApplyAll').checked = h.apply_for_all;
+                holidayModal.show();
+            }
+        });
+}
+
+function toggleStatus(id) {
+    fetch(`{% url 'hrm:holiday_list' %}${id}/toggle-status/`, { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) { showToast(data.message, 'success'); setTimeout(() => location.reload(), 600); }
+            else { showToast(data.error, 'error'); }
+        });
+}
+
+let applyId = null;
+function applyHoliday(id, name) {
+    applyId = id;
+    document.getElementById('applyHolidayName').textContent = name;
+    new bootstrap.Modal(document.getElementById('applyModal')).show();
+}
+document.getElementById('confirmApplyBtn').addEventListener('click', function() {
+    if (!applyId) return;
+    this.disabled = true;
+    this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Applying...';
+    fetch(`{% url 'hrm:holiday_list' %}${applyId}/apply/`, { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
+        .then(r => r.json())
+        .then(data => {
+            bootstrap.Modal.getInstance(document.getElementById('applyModal')).hide();
+            if (data.success) { showToast(data.message, 'success'); }
+            else { showToast(data.error, 'error'); }
+            this.disabled = false;
+            this.innerHTML = '<i class="fas fa-sync-alt me-1"></i>Apply Now';
+        })
+        .catch(() => { showToast('Network error.', 'error'); this.disabled = false; });
+});
+
+let deleteId = null;
+function confirmDelete(id, name) {
+    deleteId = id;
+    document.getElementById('deleteHolidayName').textContent = name;
+    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+    if (!deleteId) return;
+    fetch(`{% url 'hrm:holiday_list' %}${deleteId}/delete/`, { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 600);
+            } else { showToast(data.error, 'error'); }
+        });
+});
+
+function showToast(message, type) {
+    const colors = { success: '#10b981', error: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
+    const icons = { success: 'check-circle', error: 'times-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+    const toast = document.createElement('div');
+    toast.style.cssText = `position:fixed;top:20px;right:20px;background:${colors[type]||colors.info};color:white;padding:12px 20px;border-radius:8px;z-index:10050;box-shadow:0 4px 12px rgba(0,0,0,.15);display:flex;align-items:center;gap:8px;font-size:14px;animation:slideIn .3s ease;`;
+    toast.innerHTML = `<i class="fas fa-${icons[type]||icons.info}"></i> ${message}`;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity .3s'; setTimeout(() => toast.remove(), 300); }, 3500);
+}
+</script>
+<style>@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }</style>
+{% endblock %}

@@ -1,0 +1,310 @@
+{% comment %}
+The Theme 2 editing chrome: panel, section, field, button, media picker and
+repeater.
+
+Two screens draw it - Setup > Product Page Theme, and the landing-page panel on
+the product add/edit form - so it lives in one partial they both include.
+
+It is a template rather than a stylesheet on purpose. This project runs with
+DEBUG=False, where WhiteNoise reads the static tree once at start-up: a *new*
+static path 404s until the server is restarted, which is a trap to walk into
+every time a screen like this gains a file. A partial has no such path.
+`product_theme_editor_js.html` is the behaviour that goes with it; the
+two are a pair and neither is much use alone.
+
+One palette throughout, so the two screens cannot drift apart:
+ink #101828 / #344054 / #475467 / #667085 / #98A2B3, lines #EAECF0 / #D0D5DD,
+surfaces #fff / #F9FAFB / #FCFCFD, brand #E8590C / #C2410C on #FFF7F2.
+{% endcomment %}
+<style data-pt-editor-css>
+/* ── Folding ─────────────────────────────────────────────────────────
+   Only a *body* is ever hidden, and the selector says so by name. The header
+   and the section headings carry `is-folded` as well, because that is what
+   turns their caret - so an unscoped fold rule hides the very bar you clicked,
+   and the panel does not collapse, it disappears with nothing left on screen
+   to bring it back.
+
+   Folding only hides: a folded section still holds its inputs in the form and
+   still posts every one of them. */
+.pt-panel-body.is-folded,
+.pt-sect-body.is-folded { display: none !important; }
+
+.pt-caret { transition: transform .18s ease; }
+.pt-panel-head.is-folded .pt-caret,
+.pt-secthead.is-folded .pt-caret { transform: rotate(-90deg); }
+@media (prefers-reduced-motion: reduce) { .pt-caret { transition: none; } }
+
+/* ── The panel on the product form ── */
+.pt-panel { border: 1px solid #EAECF0; border-radius: 14px; overflow: hidden; }
+.pt-panel-head {
+    cursor: pointer; user-select: none; gap: 1rem; padding: .8rem 1.1rem;
+    border: 0; transition: filter .15s ease;
+}
+.pt-panel-head:hover { filter: brightness(1.06); }
+.pt-panel-head:focus-visible { outline: 3px solid rgba(255, 255, 255, .7); outline-offset: -3px; }
+.pt-panel-id { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+.pt-panel-badge {
+    flex: none; width: 34px; height: 34px; border-radius: 9px; font-size: .95rem;
+    background: rgba(255, 255, 255, .18); display: grid; place-items: center;
+}
+.pt-panel-txt { min-width: 0; }
+.pt-panel-title { margin: 0; font-size: 1rem; font-weight: 700; line-height: 1.25; }
+.pt-panel-sub {
+    display: block; margin-top: .1rem; font-size: .74rem; font-weight: 500;
+    letter-spacing: .01em; color: rgba(255, 255, 255, .82);
+}
+.pt-panel-tools { flex: none; display: flex; align-items: center; gap: .45rem; }
+.pt-panel-link, .pt-panel-hint {
+    display: inline-flex; align-items: center; gap: .35rem; padding: .34rem .7rem;
+    border-radius: 8px; font-size: .76rem; font-weight: 600; line-height: 1.3;
+    border: 1px solid rgba(255, 255, 255, .55); background: rgba(255, 255, 255, .12);
+    color: #fff; text-decoration: none; white-space: nowrap;
+}
+.pt-panel-link:hover { background: #fff; color: #C2410C; text-decoration: none; }
+.pt-panel-hint { pointer-events: none; }
+.pt-panel-body {
+    padding: 1.15rem; background: #FCFCFD;
+    display: flex; flex-direction: column; gap: .9rem;
+}
+
+/* The one line of standing advice: optional, and blank means inherit. */
+.pt-note {
+    display: flex; align-items: flex-start; gap: .6rem; margin: 0;
+    padding: .7rem .85rem; border: 1px solid #EAECF0; border-left: 3px solid #E8590C;
+    border-radius: 10px; background: #fff; font-size: .82rem; line-height: 1.5;
+    color: #475467;
+}
+.pt-note i { color: #E8590C; margin-top: .15rem; }
+.pt-note strong { color: #101828; }
+
+/* ── A section ──
+   `--fold` is the panel's card-shaped section, with its heading as the card's
+   top bar. The setup screen's plain `.pt-sect` keeps the older, lighter shape:
+   its headings are labels, not controls, so dressing them as bars would
+   promise a fold that is not there. */
+.pt-sect { margin-bottom: 1.6rem; }
+.pt-sect > h3:not(.pt-secthead) {
+    font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: #667085; margin: 0 0 .85rem;
+}
+.pt-sect--fold {
+    margin: 0; border: 1px solid #EAECF0; border-radius: 12px; background: #fff;
+    overflow: hidden; box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+}
+.pt-secthead {
+    display: flex; align-items: center; gap: .5rem; cursor: pointer; user-select: none;
+    margin: 0; padding: .68rem .9rem; border: 0; border-bottom: 1px solid #EAECF0;
+    background: #F9FAFB; font-size: .71rem; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; color: #475467;
+    transition: background .15s ease, color .15s ease;
+}
+.pt-secthead:hover { background: #F2F4F7; color: #101828; }
+.pt-secthead:focus-visible { outline: 2px solid #E8590C; outline-offset: -2px; }
+.pt-secthead.is-folded { border-bottom-color: transparent; }
+.pt-secthead .pt-caret { font-size: .68rem; color: #98A2B3; width: .8rem; text-align: center; }
+.pt-secthead:hover .pt-caret { color: #E8590C; }
+.pt-sectdot {
+    width: 7px; height: 7px; border-radius: 50%; background: #E8590C;
+    box-shadow: 0 0 0 3px #FFE9DA; margin-left: .2rem;
+}
+/* The affordance, spelled out. It costs one line and saves the reader
+   guessing whether a heading is a heading or a control. */
+.pt-secthint {
+    margin-left: auto; font-size: .68rem; font-weight: 600; letter-spacing: .02em;
+    text-transform: none; color: #98A2B3;
+}
+.pt-secthead:hover .pt-secthint { color: #E8590C; }
+.pt-sect-body { padding: 1rem .9rem 1.1rem; }
+
+/* ── Fields ── */
+.pt-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+    gap: 1.05rem 1.2rem; align-items: start;
+}
+.pt-grid.is-wide { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
+.pt-field { min-width: 0; }
+.pt-field label {
+    display: block; font-size: .72rem; font-weight: 700; letter-spacing: .045em;
+    text-transform: uppercase; color: #475467; margin-bottom: .35rem;
+}
+.pt-field input[type="text"],
+.pt-field select,
+.pt-field textarea {
+    width: 100%; padding: .58rem .75rem; border: 1px solid #D0D5DD; border-radius: 10px;
+    font-size: .875rem; font-family: inherit; color: #101828; background: #fff;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.pt-field textarea { resize: vertical; line-height: 1.55; }
+.pt-field input::placeholder, .pt-field textarea::placeholder { color: #98A2B3; }
+.pt-field input:hover, .pt-field select:hover, .pt-field textarea:hover { border-color: #B7BEC9; }
+.pt-field input:focus, .pt-field select:focus, .pt-field textarea:focus {
+    outline: none; border-color: #E8590C; box-shadow: 0 0 0 3px rgba(232, 89, 12, .14);
+}
+.pt-help {
+    display: block; max-width: 70ch; margin-top: .35rem; font-size: .755rem;
+    color: #667085; line-height: 1.5;
+}
+.pt-help code {
+    padding: .05rem .3rem; border-radius: 5px; background: #F2F4F7; color: #344054;
+    font-size: .95em;
+}
+
+/* ── Buttons ── */
+.pt-actions {
+    display: flex; gap: .6rem; flex-wrap: wrap; padding: 1rem 1.25rem;
+    border-top: 1px solid #EAECF0;
+}
+.pt-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+    padding: .55rem 1.05rem; border-radius: 9px; border: 1px solid #D0D5DD;
+    background: #fff; color: #344054; font-size: .84rem; font-weight: 600;
+    line-height: 1.3; cursor: pointer; text-decoration: none; white-space: nowrap;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.pt-btn:hover { background: #F9FAFB; border-color: #B7BEC9; color: #101828; }
+.pt-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(232, 89, 12, .2); }
+.pt-btn.is-primary { background: #E8590C; border-color: #E8590C; color: #fff; }
+.pt-btn.is-primary:hover { background: #C2410C; border-color: #C2410C; color: #fff; }
+.pt-btn.is-danger { color: #B42318; border-color: #FDA29B; }
+.pt-btn.is-danger:hover { background: #FEF3F2; border-color: #F97066; color: #912018; }
+.pt-x {
+    border: 0; background: none; font-size: 1.5rem; line-height: 1; color: #667085;
+    cursor: pointer; padding: 0 .2rem; border-radius: 6px;
+}
+.pt-x:hover { color: #101828; }
+
+/* ── Media field: preview, URL box, upload, clear ── */
+.ptf {
+    display: grid; grid-template-columns: 46px minmax(0, 1fr) auto auto;
+    gap: .45rem; align-items: center;
+}
+.ptf-thumb {
+    width: 46px; height: 46px; border-radius: 9px; overflow: hidden;
+    background: #F2F4F7; border: 1px solid #EAECF0; display: grid; place-items: center;
+}
+.ptf-thumb img, .ptf-thumb video { width: 100%; height: 100%; object-fit: cover; }
+.ptf-thumb.is-empty::after { content: '—'; color: #C6CCD5; font-size: .9rem; }
+.ptf .ptf-url {
+    width: 100%; padding: .52rem .7rem; border: 1px solid #D0D5DD; border-radius: 9px;
+    font-size: .82rem; font-family: inherit; color: #101828; background: #fff;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.ptf .ptf-url:hover { border-color: #B7BEC9; }
+.ptf .ptf-url:focus {
+    outline: none; border-color: #E8590C; box-shadow: 0 0 0 3px rgba(232, 89, 12, .14);
+}
+.ptf-btn { padding: .45rem .75rem; font-size: .78rem; }
+
+/* ── Repeater ── */
+.ptr { border: 1px solid #EAECF0; border-radius: 12px; background: #F9FAFB; }
+.ptr-rows { padding: .55rem; display: flex; flex-direction: column; gap: .55rem; }
+.ptr-row {
+    display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: .6rem;
+    align-items: start; background: #fff; border: 1px solid #EAECF0;
+    border-radius: 10px; padding: .6rem;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.ptr-row:hover { border-color: #D0D5DD; box-shadow: 0 1px 3px rgba(16, 24, 40, .06); }
+.ptr-row:focus-within { border-color: #F2A76B; box-shadow: 0 0 0 3px rgba(232, 89, 12, .1); }
+.ptr-n {
+    width: 26px; height: 26px; border-radius: 50%; background: #FFE9DA; color: #C2410C;
+    font-size: .74rem; font-weight: 800; display: grid; place-items: center;
+}
+.ptr-body { display: flex; flex-direction: column; gap: .4rem; min-width: 0; }
+.ptr-cell input[type="text"] {
+    width: 100%; padding: .48rem .65rem; border: 1px solid #D0D5DD; border-radius: 8px;
+    font-size: .835rem; font-family: inherit; color: #101828; background: #fff;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.ptr-cell input[type="text"]::placeholder { color: #A3AAB6; }
+.ptr-cell input[type="text"]:hover { border-color: #B7BEC9; }
+.ptr-cell input[type="text"]:focus {
+    outline: none; border-color: #E8590C; box-shadow: 0 0 0 3px rgba(232, 89, 12, .13);
+}
+.ptr-flag {
+    display: inline-flex; align-items: center; gap: .4rem; font-size: .79rem;
+    color: #475467; cursor: pointer;
+}
+.ptr-tools { display: flex; flex-direction: column; gap: .25rem; }
+.ptr-move {
+    width: 26px; height: 24px; border: 1px solid #D0D5DD; background: #fff;
+    border-radius: 6px; cursor: pointer; font-size: .78rem; line-height: 1; color: #667085;
+    display: grid; place-items: center;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.ptr-move:hover { background: #F2F4F7; color: #101828; border-color: #B7BEC9; }
+.ptr-move.is-del { color: #B42318; border-color: #FDA29B; }
+.ptr-move.is-del:hover { background: #FEF3F2; color: #912018; border-color: #F97066; }
+.ptr-empty {
+    margin: .55rem; padding: .95rem; border: 1px dashed #D0D5DD; border-radius: 10px;
+    background: #fff; text-align: center; font-size: .82rem; color: #667085;
+}
+.ptr-foot { display: flex; gap: .5rem; padding: 0 .55rem .55rem; }
+.ptr-foot .pt-btn { padding: .42rem .8rem; font-size: .79rem; }
+/* Raw text and the rows are two views of one value. Both on screen at once is
+   a trap: a keystroke in any cell, or the Add button, rewrites the textarea
+   from the rows and the typing is gone. */
+.ptr.is-raw + textarea { display: block; margin-top: .5rem; }
+.ptr.is-raw .ptr-rows,
+.ptr.is-raw .ptr-add { display: none; }
+
+/* ── Media picker ── */
+.ptm { position: fixed; inset: 0; z-index: 1090; display: none; }
+.ptm.is-open { display: block; }
+.ptm-veil { position: absolute; inset: 0; background: rgba(16, 24, 40, .5); }
+.ptm-panel {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: min(720px, 94vw); max-height: 88vh; overflow-y: auto;
+    background: #fff; border-radius: 14px; box-shadow: 0 24px 70px rgba(16, 24, 40, .3);
+}
+.ptm-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.25rem; border-bottom: 1px solid #EAECF0; position: sticky; top: 0;
+    background: #fff; z-index: 1;
+}
+.ptm-head h3 { margin: 0; font-size: 1rem; font-weight: 700; color: #101828; }
+.ptm-drop {
+    margin: 1.25rem; padding: 1.5rem; border: 2px dashed #D0D5DD; border-radius: 12px;
+    text-align: center; display: flex; flex-direction: column; align-items: center; gap: .6rem;
+    transition: border-color .15s ease, background .15s ease;
+}
+.ptm-drop.is-over { border-color: #E8590C; background: #FFF7F2; }
+.ptm-drop strong { font-size: .9rem; color: #344054; }
+.ptm-limits { font-size: .76rem; color: #667085; }
+.ptm-status { margin: 0 1.25rem; font-size: .82rem; color: #059669; }
+.ptm-status.is-error { color: #B42318; }
+.ptm-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: .7rem; padding: 1.25rem;
+}
+.ptm-card {
+    position: relative; border: 1px solid #EAECF0; border-radius: 10px; overflow: hidden;
+    cursor: pointer; background: #F9FAFB;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.ptm-card:hover { border-color: #E8590C; box-shadow: 0 2px 8px rgba(16, 24, 40, .1); }
+.ptm-card img, .ptm-card video { width: 100%; height: 100px; object-fit: cover; display: block; }
+.ptm-name {
+    display: block; padding: .35rem .5rem; font-size: .72rem; color: #475467;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ptm-del {
+    position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border: 0;
+    border-radius: 50%; background: rgba(16, 24, 40, .65); color: #fff; cursor: pointer;
+    font-size: .9rem; line-height: 1;
+}
+.ptm-del:hover { background: #B42318; }
+.ptm-empty { grid-column: 1 / -1; margin: 0; font-size: .85rem; color: #667085; }
+
+@media (max-width: 720px) {
+    .pt-panel-head { flex-wrap: wrap; gap: .6rem; }
+    .pt-panel-sub { display: none; }
+    .pt-panel-body { padding: .9rem; }
+    .pt-sect-body { padding: .9rem .75rem 1rem; }
+    .pt-grid, .pt-grid.is-wide { grid-template-columns: minmax(0, 1fr); }
+    .ptf { grid-template-columns: 40px minmax(0, 1fr); }
+    .ptf-btn { grid-column: 2; justify-self: start; }
+    .ptr-row { grid-template-columns: 24px minmax(0, 1fr); }
+    .ptr-tools { grid-column: 1 / -1; flex-direction: row; }
+}
+</style>

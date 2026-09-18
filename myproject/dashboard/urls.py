@@ -1,10 +1,19 @@
 
 from django.urls import path
 from . import views
+from . import followup_setup_views
+from . import bulk_discount_views
+from . import delivery_charge_views
+from . import invoice_customizer_views
+from . import bulk_invoice_views
+from . import product_theme_views
+from . import store_label_views
+from . import page_views
 
 
 urlpatterns = [
-    path('', views.dashboard_view, name='dashboard'),
+    path('', views.home_view, name='dashboard'),
+    path('welcome/', views.landing_view, name='landing'),
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
 
@@ -43,10 +52,15 @@ urlpatterns = [
     path('variations/<int:variation_id>/delete/', views.variation_delete, name='variation_delete'),
 
         # Product Images (NEW - Add these lines)
+    path('products/<int:product_id>/delete-main-image/', views.delete_main_product_image, name='delete_main_product_image'),
     path('products/<int:product_id>/upload-images/', views.upload_product_images, name='upload_product_images'),
     path('product-images/<int:image_id>/delete/', views.delete_product_image, name='delete_product_image'),
     path('product-images/<int:image_id>/set-featured/', views.set_featured_image, name='set_featured_image'),
     path('products/<int:product_id>/reorder-images/', views.reorder_product_images, name='reorder_product_images'),
+
+        # Media Library
+    path('media/', views.media_library, name='media_library'),
+    path('api/media/', views.api_media_list, name='api_media_list'),
 
       # Customers
     path('customers/', views.customers_list, name='customers_list'),
@@ -59,11 +73,15 @@ urlpatterns = [
 
     # Orders
     path('orders/', views.orders_list, name='orders_list'),
+    path('orders/woocommerce/', views.woocommerce_orders_list, name='woocommerce_orders'),
+    path('orders/woocommerce/sync/', views.woocommerce_orders_sync, name='woocommerce_orders_sync'),
+    path('orders/woocommerce/export/', views.woocommerce_orders_export, name='woocommerce_orders_export'),
     path('orders/create/', views.order_create, name='order_create'),
     path('orders/<int:order_id>/', views.order_detail, name='order_detail'),
     path('orders/<int:order_id>/edit/', views.order_edit, name='order_edit'),
     path('orders/<int:order_id>/delete/', views.order_delete, name='order_delete'),
     path('orders/<int:order_id>/invoice/', views.order_invoice, name='order_invoice'),
+    path('orders/bulk-invoice/', bulk_invoice_views.orders_bulk_invoice, name='orders_bulk_invoice'),
     path('orders/bulk-action/', views.orders_bulk_action, name='orders_bulk_action'),
     path('orders/bulk-ncm-send/', views.orders_bulk_ncm_send, name='orders_bulk_ncm_send'),
     path('orders/bulk-pnd-send/', views.orders_bulk_pnd_send, name='orders_bulk_pnd_send'),
@@ -80,6 +98,7 @@ urlpatterns = [
 
     # Possible Redirection
     path('orders/possible-redirection/', views.possible_redirection_list, name='possible_redirection_list'),
+    path('api/possible-redirection/refresh-status/', views.possible_redirection_refresh_status, name='possible_redirection_refresh_status'),
     path('orders/redirect-orders/', views.redirect_orders_list, name='redirect_orders_list'),
     path('api/orders/<int:order_id>/redirect-get/', views.redirect_order_get, name='redirect_order_get'),
     path('api/orders/<int:order_id>/get-redirect-details/', views.get_redirect_order_details, name='get_redirect_order_details'),
@@ -112,16 +131,50 @@ urlpatterns = [
     path('orders/on-hold/', views.on_hold_orders_list, name='on_hold_orders_list'),
 
     # Order Follow-Up System
+    path('orders/follow-ups/', views.follow_ups_list, name='follow_ups_list'),
+    path('api/orders/follow-ups/add/', views.add_follow_up, name='add_follow_up'),
+    path('api/orders/follow-ups/<int:pk>/edit/', views.edit_follow_up, name='edit_follow_up'),
+    path('api/orders/follow-ups/<int:pk>/logs/', views.get_follow_up_logs, name='get_follow_up_logs'),
+    path('api/orders/follow-ups/<int:pk>/delete/', views.delete_follow_up, name='delete_follow_up'),
+    path('api/orders/follow-ups/bulk-delete/', views.bulk_delete_follow_ups, name='bulk_delete_follow_ups'),
+    path('api/orders/follow-ups/ids/', views.follow_ups_filtered_ids, name='follow_ups_filtered_ids'),
+    path('orders/follow-ups/export/', views.export_follow_ups, name='export_follow_ups'),
+    path('orders/follow-ups/trash/', views.follow_ups_trash, name='follow_ups_trash'),
+    path('api/orders/follow-ups/<int:pk>/restore/', views.restore_follow_up, name='restore_follow_up'),
+    path('api/orders/follow-ups/<int:pk>/hard-delete/', views.hard_delete_follow_up, name='hard_delete_follow_up'),
     path('orders/<int:order_id>/followup/add/', views.add_order_followup, name='add_order_followup'),
     path('orders/<int:order_id>/followups/', views.get_order_followups, name='get_order_followups'),
     path('orders/<int:order_id>/next-followup/', views.update_order_next_followup, name='update_order_next_followup'),
+    
+    # Real-time AJAX sync endpoints
+    path('api/orders/follow-ups/sync/', views.sync_follow_ups, name='sync_follow_ups'),
+    path('api/orders/follow-ups/presence/', views.update_presence, name='update_presence'),
+
+    # Follow-up Status Setup
+    path('setup/followup-status/', followup_setup_views.followup_setup_management, name='followup_setup_management'),
+    path('setup/followup-status/add/', followup_setup_views.followup_setup_add, name='followup_setup_add'),
+    path('setup/followup-status/<int:setup_id>/edit/', followup_setup_views.followup_setup_edit, name='followup_setup_edit'),
+    path('setup/followup-status/<int:setup_id>/update-color/', followup_setup_views.followup_setup_update_color, name='followup_setup_update_color'),
+    path('setup/followup-status/<int:setup_id>/delete/', followup_setup_views.followup_setup_delete, name='followup_setup_delete'),
+    path('setup/followup-status/<int:setup_id>/toggle-default/', followup_setup_views.followup_setup_toggle_default, name='followup_setup_toggle_default'),
 
 
+
+    # Content Management
+    path('content-management/', views.content_accounts_list, name='content_accounts_list'),
+    path('content-management/trash/', views.content_accounts_trash, name='content_accounts_trash'),
+    path('api/content-management/add/', views.add_content_account, name='add_content_account'),
+    path('api/content-management/update-order/', views.update_content_account_order, name='update_content_account_order'),
+    path('api/content-management/<int:pk>/edit/', views.edit_content_account, name='edit_content_account'),
+    path('api/content-management/<int:pk>/delete/', views.delete_content_account, name='delete_content_account'),
+    path('api/content-management/<int:pk>/restore/', views.restore_content_account, name='restore_content_account'),
+    path('api/content-management/<int:pk>/hard-delete/', views.hard_delete_content_account, name='hard_delete_content_account'),
 
     # API Endpoints
     path('api/customer/<int:customer_id>/', views.api_get_customer, name='api_get_customer'),
     path('api/search-products/', views.api_search_products, name='api_search_products'),
     path('api/product/<int:product_id>/', views.api_get_product, name='api_get_product'),
+    path('api/product/<int:product_id>/update-price/', views.api_update_product_price, name='api_update_product_price'),
     path('api/product/<int:product_id>/variations/', views.api_get_product_variations, name='api_get_product_variations'),
     path('api/bestselling-products/', views.api_bestselling_products, name='api_bestselling_products'),
     path('api/search-orders/', views.api_search_orders, name='api_search_orders'),
@@ -132,8 +185,7 @@ urlpatterns = [
 
 
        # Gallery uploads/deletes
-    path('products/<int:product_id>/gallery/upload/', views.product_gallery_upload, name='product_gallery_upload'),
-    path('product-image/<int:image_id>/delete/', views.delete_product_image, name='delete_product_image'),
+    path('products/<int:product_id>/gallery/upload/', views.upload_product_images, name='product_gallery_upload'),
 
     # Variations CRUD
     path('products/<int:product_id>/variations/create/', views.variation_create, name='variation_create'),
@@ -147,6 +199,9 @@ urlpatterns = [
 
     # View single dispatch detail
     path('dispatch/<int:pk>/', views.dispatch_detail, name='dispatch_detail'),
+
+    # Export a single dispatch batch (?format=xlsx|csv & ?scope=all|success|problems)
+    path('dispatch/<int:pk>/export/', views.dispatch_export, name='dispatch_export'),
 
     # Move dispatch to trash (soft delete)
     path('dispatch/<int:pk>/trash/', views.dispatch_move_to_trash, name='dispatch_move_to_trash'),
@@ -192,9 +247,59 @@ urlpatterns = [
     path('setup/<int:setup_id>/edit/', views.setup_edit, name='setup_edit'),
     path('setup/<int:setup_id>/delete/', views.setup_delete, name='setup_delete'),
     path('setup/<int:setup_id>/toggle-default/', views.setup_toggle_default, name='setup_toggle_default'),
+    path('setup/reorder/', views.setup_reorder, name='setup_reorder'),
+
+    # Delivery Charge Setup — storefront delivery pricing, times and zones
+    path('setup/delivery-charges/', delivery_charge_views.delivery_charge_setup, name='delivery_charge_setup'),
+    path('setup/delivery-charges/save/', delivery_charge_views.delivery_charge_save, name='delivery_charge_save'),
+    path('setup/delivery-charges/<int:rule_id>/delete/', delivery_charge_views.delivery_charge_delete, name='delivery_charge_delete'),
+    path('setup/delivery-charges/<int:rule_id>/toggle/', delivery_charge_views.delivery_charge_toggle, name='delivery_charge_toggle'),
+    path('setup/delivery-charges/bulk-action/', delivery_charge_views.delivery_charge_bulk_action, name='delivery_charge_bulk_action'),
+    path('setup/delivery-charges/settings/', delivery_charge_views.delivery_charge_settings, name='delivery_charge_settings'),
+    path('setup/delivery-charges/sync/', delivery_charge_views.delivery_charge_sync, name='delivery_charge_sync'),
+    path('setup/delivery-charges/export/', delivery_charge_views.delivery_charge_export, name='delivery_charge_export'),
+    path('setup/delivery-charges/branches/', delivery_charge_views.delivery_charge_branches, name='delivery_charge_branches'),
+
+    # Setup → Bulk Discounts (storefront quantity breaks)
+    path('setup/bulk-discounts/', bulk_discount_views.bulk_discount_setup, name='bulk_discount_setup'),
+    path('setup/bulk-discounts/save/', bulk_discount_views.bulk_discount_save, name='bulk_discount_save'),
+    path('setup/bulk-discounts/<int:rule_id>/delete/', bulk_discount_views.bulk_discount_delete, name='bulk_discount_delete'),
+    path('setup/bulk-discounts/<int:rule_id>/toggle/', bulk_discount_views.bulk_discount_toggle, name='bulk_discount_toggle'),
+    path('setup/bulk-discounts/<int:rule_id>/duplicate/', bulk_discount_views.bulk_discount_duplicate, name='bulk_discount_duplicate'),
+    path('setup/bulk-discounts/<int:rule_id>/spread/', bulk_discount_views.bulk_discount_spread, name='bulk_discount_spread'),
+    path('setup/bulk-discounts/bulk-action/', bulk_discount_views.bulk_discount_bulk_action, name='bulk_discount_bulk_action'),
+    path('setup/bulk-discounts/preview/', bulk_discount_views.bulk_discount_preview, name='bulk_discount_preview'),
+    path('setup/bulk-discounts/export/', bulk_discount_views.bulk_discount_export, name='bulk_discount_export'),
+
+    # Invoice Customizer (design of the printable order invoice)
+    # ── Setup → Product Page Theme (storefront product page design) ──
+    path('setup/product-theme/', product_theme_views.product_theme_setup, name='product_theme_setup'),
+    path('setup/product-theme/save/', product_theme_views.product_theme_save, name='product_theme_save'),
+    path('setup/product-theme/media/', product_theme_views.product_theme_media_list, name='product_theme_media_list'),
+    path('setup/product-theme/media/upload/', product_theme_views.product_theme_media_upload, name='product_theme_media_upload'),
+    path('setup/product-theme/media/<int:media_id>/delete/', product_theme_views.product_theme_media_delete, name='product_theme_media_delete'),
+    path('setup/product-theme/<int:product_id>/', product_theme_views.product_theme_product_json, name='product_theme_product_json'),
+    path('setup/product-theme/<int:product_id>/save/', product_theme_views.product_theme_product_save, name='product_theme_product_save'),
+    path('setup/product-theme/<int:product_id>/reset/', product_theme_views.product_theme_product_reset, name='product_theme_product_reset'),
+
+    # ── Setup → Store Button Labels (wording on every storefront button) ──
+    path('setup/store-labels/', store_label_views.store_label_setup, name='store_label_setup'),
+    path('setup/store-labels/save/', store_label_views.store_label_save, name='store_label_save'),
+    path('setup/store-labels/reset/', store_label_views.store_label_reset, name='store_label_reset'),
+
+    path('setup/invoice/', invoice_customizer_views.invoice_customizer, name='invoice_customizer'),
+    path('setup/invoice/preview/', invoice_customizer_views.invoice_preview, name='invoice_preview'),
+    path('setup/invoice/reset/', invoice_customizer_views.invoice_customizer_reset, name='invoice_customizer_reset'),
+    path('setup/invoice/lines/save/', invoice_customizer_views.invoice_element_save, name='invoice_element_save'),
+    path('setup/invoice/lines/reorder/', invoice_customizer_views.invoice_element_reorder, name='invoice_element_reorder'),
+    path('setup/invoice/lines/<int:element_id>/delete/', invoice_customizer_views.invoice_element_delete, name='invoice_element_delete'),
+    path('setup/invoice/lines/<int:element_id>/toggle/', invoice_customizer_views.invoice_element_toggle, name='invoice_element_toggle'),
+    path('setup/invoice/lines/<int:element_id>/move/', invoice_customizer_views.invoice_element_move, name='invoice_element_move'),
 
     # Company Setup (branding & themes)
     path('settings/company/', views.company_setup, name='company_setup'),
+    # Landing Page Setup (public marketing page content)
+    path('settings/landing-page/', views.landing_page_setup, name='landing_page_setup'),
     # Settings Hub (two-panel layout)
     path('settings/', views.settings_hub, name='settings_hub'),
 
@@ -237,6 +342,14 @@ urlpatterns = [
     path('reports/product-sales/', views.product_sales_report, name='product_sales_report'),
     path('reports/product-sales/staff-orders/', views.api_product_staff_orders, name='api_product_staff_orders'),
     path('reports/purchase/', views.purchase_report, name='purchase_report'),
+    path('reports/orders-by-source/', views.orders_by_source_report, name='orders_by_source_report'),
+    path('api/reports/orders-by-source/analytics/', views.orders_by_source_analytics_data, name='orders_by_source_analytics_data'),
+    path('api/reports/orders-by-source/table/', views.orders_by_source_table_data, name='orders_by_source_table_data'),
+    path('reports/rtv/', views.rtv_report, name='rtv_report'),
+    path('reports/followups/', views.follow_up_report, name='follow_up_report'),
+    path('api/reports/followups/<int:pk>/logs/', views.follow_up_report_logs_api, name='follow_up_report_logs_api'),
+    path('api/reports/followups/staff/<int:staff_id>/logs/', views.staff_follow_up_logs_api, name='staff_follow_up_logs_api'),
+    path('api/reports/followups/status/logs/', views.status_follow_up_logs_api, name='status_follow_up_logs_api'),
 
       # ✅ NCM ORDERS MANAGEMENT
     # ncm_orders_list removed - use logistics/orders/?provider=ncm instead
@@ -258,6 +371,8 @@ urlpatterns = [
     # ✅ NCM BULK ORDER LOGS
     # ncm_bulk_logs_list removed - use logistics/bulk-logs/?provider=ncm instead
     path('ncm-bulk-logs/<int:log_id>/', views.ncm_bulk_log_detail, name='ncm_bulk_log_detail'),
+    # Export one batch (?format=xlsx|csv & ?scope=all|success|failed|skipped)
+    path('ncm-bulk-logs/<int:log_id>/export/', views.ncm_bulk_log_export, name='ncm_bulk_log_export'),
     path('ncm-bulk-logs/<int:log_id>/trash/', views.ncm_bulk_log_trash, name='ncm_bulk_log_trash'),
     path('ncm-bulk-logs/bulk-action/', views.ncm_bulk_logs_bulk_action, name='ncm_bulk_logs_bulk_action'),
 
@@ -267,17 +382,25 @@ urlpatterns = [
     # ✅ PND BULK ORDER LOGS
     # pnd_bulk_logs_list removed - use logistics/bulk-logs/?provider=pnd instead
     path('pnd-bulk-logs/<int:log_id>/', views.pnd_bulk_log_detail, name='pnd_bulk_log_detail'),
+    path('pnd-bulk-logs/<int:log_id>/export/', views.pnd_bulk_log_export, name='pnd_bulk_log_export'),
     path('pnd-bulk-logs/<int:log_id>/trash/', views.pnd_bulk_log_trash, name='pnd_bulk_log_trash'),
     path('pnd-bulk-logs/bulk-action/', views.pnd_bulk_logs_bulk_action, name='pnd_bulk_logs_bulk_action'),
 
     # UNIFIED LOGISTICS
     path('logistics/orders/', views.logistics_orders_list, name='logistics_orders_list'),
+    path('logistics/orders/export/', views.export_logistics_orders_excel, name='logistics_orders_export'),
     path('logistics/bulk-logs/', views.logistics_bulk_logs_list, name='logistics_bulk_logs_list'),
+    path('logistics/bulk-logs/export/', views.logistics_bulk_logs_export, name='logistics_bulk_logs_export'),
     path('logistics/bulk-logs/trash/', views.logistics_bulk_logs_trash, name='logistics_bulk_logs_trash'),
     path('logistics/bulk-logs/trash/<str:provider>/<int:log_id>/restore/', views.logistics_bulk_log_restore, name='logistics_bulk_log_restore'),
     path('logistics/bulk-logs/trash/<str:provider>/<int:log_id>/permanent-delete/', views.logistics_bulk_log_permanent_delete, name='logistics_bulk_log_permanent_delete'),
     path('logistics/bulk-logs/trash/bulk-action/', views.logistics_bulk_logs_trash_bulk_action, name='logistics_bulk_logs_trash_bulk_action'),
     path('logistics/bulk-logs/trash/empty/', views.logistics_bulk_logs_empty_trash, name='logistics_bulk_logs_empty_trash'),
+    # Batch control - keep these below the /trash/ routes so "trash" can never
+    # be read as a <str:provider>.
+    path('logistics/bulk-logs/progress/', views.logistics_bulk_log_progress, name='logistics_bulk_log_progress'),
+    path('logistics/bulk-logs/<str:provider>/<int:log_id>/terminate/', views.logistics_bulk_log_terminate, name='logistics_bulk_log_terminate'),
+    path('logistics/bulk-logs/<str:provider>/<int:log_id>/resume/', views.logistics_bulk_log_resume, name='logistics_bulk_log_resume'),
     path('logistics/branches/', views.logistics_branches, name='logistics_branches'),
 
     # Financial Report
@@ -291,6 +414,7 @@ urlpatterns = [
     path('purchases/dashboard/', views.purchase_dashboard, name='purchase_dashboard'),
     path('purchases/create/', views.purchase_create, name='purchase_create'),
     path('purchases/<int:purchase_id>/', views.purchase_detail, name='purchase_detail'),
+    path('purchases/<int:purchase_id>/edit/', views.purchase_edit, name='purchase_edit'),
 
     # Suppliers
     path('suppliers/', views.supplier_list, name='supplier_list'),
@@ -323,7 +447,26 @@ urlpatterns = [
     path('api-integration/<int:config_id>/toggle/', views.api_integration_toggle, name='api_integration_toggle'),
     path('api-integration/<int:config_id>/get/', views.api_integration_get, name='api_integration_get'),
 
+    # ==================== STAFF REPORTS ====================
+    path('staff-reports/', views.staff_reports_list, name='staff_reports_list'),
+    path('api/staff-reports/add/', views.add_staff_report, name='add_staff_report'),
+    path('api/staff-reports/<int:pk>/edit/', views.edit_staff_report, name='edit_staff_report'),
+    path('api/staff-reports/<int:pk>/delete/', views.delete_staff_report, name='delete_staff_report'),
+
     # ==================== MAINTENANCE MODE ====================
-    path('settings/maintenance/toggle/', views.maintenance_toggle, name='maintenance_toggle'),
-    path('settings/maintenance/logs/', views.maintenance_logs, name='maintenance_logs'),
+    path('api/maintenance/toggle/', views.maintenance_toggle, name='maintenance_toggle'),
+    path('api/maintenance/logs/', views.maintenance_logs, name='maintenance_logs'),
+    # ==================== GLOBAL NOTICE ====================
+    # Global Notice API
+    path('api/active-notice/', views.get_active_notice, name='active_notice'),
+    path('api/create-notice/', views.create_notice, name='create_notice'),
+    path('api/update-notice/<int:notice_id>/', views.update_notice, name='update_notice'),
+    path('api/notice-history/', views.get_notice_history, name='notice_history'),
+    path('api/notice/<int:notice_id>/stop/', views.stop_notice, name='stop_notice'),
+
+    # ==================== PAGE SETUP ====================
+    path('pages/', page_views.page_list, name='page_list'),
+    path('pages/add/', page_views.page_create, name='page_create'),
+    path('pages/<int:pk>/edit/', page_views.page_edit, name='page_edit'),
+    path('pages/<int:pk>/delete/', page_views.page_delete, name='page_delete'),
 ]

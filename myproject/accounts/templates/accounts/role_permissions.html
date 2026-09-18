@@ -1,0 +1,867 @@
+{% extends 'base.html' %}
+{% block title %}Accessibility Management - {{ role.display_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .form-section {
+        margin-bottom: 30px;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+
+    .section-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #dee2e6;
+    }
+
+    .section-title i {
+        color: #667eea;
+        margin-right: 8px;
+    }
+
+    .perm-card {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        overflow: hidden;
+        height: 100%;
+        background: white;
+        transition: all 0.3s;
+    }
+
+    .perm-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+
+    .perm-card-header {
+        padding: 12px 15px;
+        color: white;
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    .perm-card-body {
+        padding: 15px;
+    }
+
+    .perm-item {
+        padding: 10px;
+        border-bottom: 1px solid #f0f0f0;
+        display: flex;
+        align-items: center;
+    }
+
+    .perm-item:last-child {
+        border-bottom: none;
+    }
+
+    .perm-item:hover {
+        background: #f8f9fa;
+    }
+
+    .perm-item input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+        cursor: pointer;
+    }
+
+    .perm-item label {
+        margin: 0;
+        cursor: pointer;
+        flex: 1;
+        font-size: 14px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-gradient-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0"><i class="fas fa-shield-alt"></i> Accessibility Management - {{ role.display_name }}</h4>
+                        <a href="{% url 'role_list' %}" class="btn btn-light btn-sm">
+                            <i class="fas fa-arrow-left"></i> Back to Roles
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <form method="POST" id="rolePermissionsForm">
+                        {% csrf_token %}
+                        
+                        <div class="d-flex justify-content-end mb-3">
+                            <button type="button" class="btn btn-outline-primary btn-sm me-2" onclick="checkAllPermissions()">Check All</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="uncheckAllPermissions()">Uncheck All</button>
+                        </div>
+
+                            <div class="row">
+                                <!-- Dashboard Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                            <i class="fas fa-chart-line"></i> Dashboard Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard" id="can_view_dashboard">
+                                                <label for="can_view_dashboard">Dashboard Access</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_total_revenue" id="can_view_total_revenue">
+                                                <label for="can_view_total_revenue">View Total Revenue</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_low_stock_alerts" id="can_view_low_stock_alerts">
+                                                <label for="can_view_low_stock_alerts">Show Low Stock Alert</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_incomplete_attendance" id="can_view_dashboard_incomplete_attendance">
+                                                <label for="can_view_dashboard_incomplete_attendance">Incomplete Attendance Alert</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_sales_overview" id="can_view_dashboard_sales_overview">
+                                                <label for="can_view_dashboard_sales_overview">Sales Overview</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_orders_overview" id="can_view_dashboard_orders_overview">
+                                                <label for="can_view_dashboard_orders_overview">Orders Overview</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dashboard_orders_by_source" id="can_view_dashboard_orders_by_source">
+                                                <label for="can_view_dashboard_orders_by_source">Orders by Source</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Orders Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-primary">
+                                            <i class="fas fa-shopping-cart"></i> Orders Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_orders" id="can_view_orders">
+                                                <label for="can_view_orders">View Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_orders" id="can_create_orders">
+                                                <label for="can_create_orders">Create Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_orders" id="can_edit_orders">
+                                                <label for="can_edit_orders">Edit Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_orders" id="can_delete_orders">
+                                                <label for="can_delete_orders">Delete Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_cancel_orders" id="can_cancel_orders">
+                                                <label for="can_cancel_orders">Cancel Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_on_hold_orders" id="can_view_on_hold_orders">
+                                                <label for="can_view_on_hold_orders">View On Hold Orders</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_orders" id="can_export_orders">
+                                                <label for="can_export_orders">Export to Excel</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_orders_list" id="can_view_orders_list">
+                                                <label for="can_view_orders_list">View All Orders List</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_access_offer_price" id="can_access_offer_price">
+                                                <label for="can_access_offer_price">Access to Offer Price</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Products Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-success">
+                                            <i class="fas fa-box"></i> Products Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_products" id="can_view_products">
+                                                <label for="can_view_products">View Products</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_products" id="can_create_products">
+                                                <label for="can_create_products">Create Products</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_products" id="can_edit_products">
+                                                <label for="can_edit_products">Edit Products</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_products" id="can_delete_products">
+                                                <label for="can_delete_products">Delete Products</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Customers Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-info">
+                                            <i class="fas fa-users"></i> Customers Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_customers" id="can_view_customers">
+                                                <label for="can_view_customers">View Customers</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_customers" id="can_create_customers">
+                                                <label for="can_create_customers">Create Customers</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_customers" id="can_edit_customers">
+                                                <label for="can_edit_customers">Edit Customers</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_customers" id="can_delete_customers">
+                                                <label for="can_delete_customers">Delete Customers</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 🆕 RETURNS MODULE -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-danger">
+                                            <i class="fas fa-undo-alt"></i> Returns Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_returns" id="can_view_returns">
+                                                <label for="can_view_returns">View Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_returns" id="can_create_returns">
+                                                <label for="can_create_returns">Create Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_returns" id="can_edit_returns">
+                                                <label for="can_edit_returns">Edit Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_returns" id="can_delete_returns">
+                                                <label for="can_delete_returns">Delete Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_approve_returns" id="can_approve_returns">
+                                                <label for="can_approve_returns">Approve Returns</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_process_refunds" id="can_process_refunds">
+                                                <label for="can_process_refunds">Process Refunds</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Dispatch Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                                            <i class="fas fa-bullseye"></i> Staff Targets Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_targets" id="can_view_targets">
+                                                <label for="can_view_targets">View All Targets</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_set_targets" id="can_set_targets">
+                                                <label for="can_set_targets">Set Targets</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_targets" id="can_edit_targets">
+                                                <label for="can_edit_targets">Edit Targets</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_targets" id="can_delete_targets">
+                                                <label for="can_delete_targets">Delete Targets</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_own_targets" id="can_view_own_targets">
+                                                <label for="can_view_own_targets">View Own Targets</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Dispatch Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-warning text-dark">
+                                            <i class="fas fa-truck"></i> Dispatch Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_dispatch" id="can_view_dispatch">
+                                                <label for="can_view_dispatch">View Dispatch</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_manage_dispatch" id="can_manage_dispatch">
+                                                <label for="can_manage_dispatch">Manage Dispatch</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_dispatch" id="can_delete_dispatch">
+                                                <label for="can_delete_dispatch">Delete Dispatch</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_scan_barcodes" id="can_scan_barcodes">
+                                                <label for="can_scan_barcodes">Use Barcode Scanner</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Inventory Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-secondary">
+                                            <i class="fas fa-warehouse"></i> Inventory Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_inventory" id="can_view_inventory">
+                                                <label for="can_view_inventory">View Inventory</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_manage_inventory" id="can_manage_inventory">
+                                                <label for="can_manage_inventory">Manage Inventory</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_adjust_stock" id="can_adjust_stock">
+                                                <label for="can_adjust_stock">Adjust Stock</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_inventory_cost" id="can_view_inventory_cost">
+                                                <label for="can_view_inventory_cost">View Inventory Cost</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_toggle_product_price" id="can_toggle_product_price">
+                                                <label for="can_toggle_product_price">Toggle Product Price</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_selling_unit_price" id="can_view_selling_unit_price">
+                                                <label for="can_view_selling_unit_price">Selling Unit Price</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_cost_unit_price" id="can_view_cost_unit_price">
+                                                <label for="can_view_cost_unit_price">Cost Unit Price</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_valuation_selling" id="can_view_valuation_selling">
+                                                <label for="can_view_valuation_selling">Valuation by Selling Price</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_valuation_cost" id="can_view_valuation_cost">
+                                                <label for="can_view_valuation_cost">Valuation by Cost Price</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_toggle_stock_valuation" id="can_toggle_stock_valuation">
+                                                <label for="can_toggle_stock_valuation">Toggle Stock Valuation</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Reports Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-dark">
+                                            <i class="fas fa-chart-bar"></i> Reports Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_reports" id="can_view_reports">
+                                                <label for="can_view_reports">View Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_sales_reports" id="can_view_sales_reports">
+                                                <label for="can_view_sales_reports">Sales Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_daily_sales_reports" id="can_view_daily_sales_reports">
+                                                <label for="can_view_daily_sales_reports">Daily Sales Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_product_sales_reports" id="can_view_product_sales_reports">
+                                                <label for="can_view_product_sales_reports">Product Sales Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_financial_reports" id="can_view_financial_reports">
+                                                <label for="can_view_financial_reports">Financial Reports</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_orders_by_source_report" id="can_view_orders_by_source_report">
+                                                <label for="can_view_orders_by_source_report">Orders by Source Report</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_rtv_report" id="can_view_rtv_report">
+                                                <label for="can_view_rtv_report">RTV Report</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_data" id="can_export_data">
+                                                <label for="can_export_data">Export Data</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_follow_up_report" id="can_view_follow_up_report">
+                                                <label for="can_view_follow_up_report">Can View Follow Up Report</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Purchase Management Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #059669 0%, #047857 100%);">
+                                            <i class="fas fa-file-invoice-dollar"></i> Purchase Management
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_purchases" id="can_view_purchases">
+                                                <label for="can_view_purchases">View Purchases</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_purchases" id="can_create_purchases">
+                                                <label for="can_create_purchases">Create Purchases</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_manage_suppliers" id="can_manage_suppliers">
+                                                <label for="can_manage_suppliers">Manage Suppliers</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_make_supplier_payments" id="can_make_supplier_payments">
+                                                <label for="can_make_supplier_payments">Supplier Payments</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Staff Performance Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);">
+                                            <i class="fas fa-chart-line"></i> Staff Performance
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_staff_performance" id="can_view_staff_performance">
+                                                <label for="can_view_staff_performance">View Staff Performance</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- City Management Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);">
+                                            <i class="fas fa-city"></i> City Management
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_cities" id="can_view_cities">
+                                                <label for="can_view_cities">View Cities</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_add_cities" id="can_add_cities">
+                                                <label for="can_add_cities">Add Cities</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_edit_cities" id="can_edit_cities">
+                                                <label for="can_edit_cities">Edit Cities</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_delete_cities" id="can_delete_cities">
+                                                <label for="can_delete_cities">Delete Cities</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Content Management Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header bg-secondary">
+                                            <i class="fas fa-file-alt"></i> Content Management Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_content_management" id="can_view_content_management">
+                                                <label for="can_view_content_management">View Content Management</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 🆕 NCM LOGISTICS MODULE (CONSOLIDATED) -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);">
+                                            <i class="fas fa-truck"></i> NcM Logistics
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <!-- NCM Orders -->
+                                            <div style="padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #e0e0e0;">
+                                                <small class="d-block mb-2 fw-bold text-muted">NCM Orders</small>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_view_ncm_orders" id="can_view_ncm_orders">
+                                                    <label for="can_view_ncm_orders">View NCM Orders</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_create_ncm_orders" id="can_create_ncm_orders">
+                                                    <label for="can_create_ncm_orders">Create NCM Orders</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_edit_ncm_orders" id="can_edit_ncm_orders">
+                                                    <label for="can_edit_ncm_orders">Edit NCM Orders</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_delete_ncm_orders" id="can_delete_ncm_orders">
+                                                    <label for="can_delete_ncm_orders">Delete NCM Orders</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_export_logistics_orders" id="can_export_logistics_orders">
+                                                    <label for="can_export_logistics_orders">Export Logistics Orders</label>
+                                                </div>
+                                            </div>
+
+                                            <!-- Bulk Logs -->
+                                            <div style="padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #e0e0e0;">
+                                                <small class="d-block mb-2 fw-bold text-muted">Bulk Logs</small>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_view_ncm_bulk_logs" id="can_view_ncm_bulk_logs">
+                                                    <label for="can_view_ncm_bulk_logs">View Bulk Logs</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_manage_ncm_bulk_logs" id="can_manage_ncm_bulk_logs">
+                                                    <label for="can_manage_ncm_bulk_logs">Manage Bulk Logs</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_export_logistics_bulk_logs" id="can_export_logistics_bulk_logs">
+                                                    <label for="can_export_logistics_bulk_logs">Export Bulk Logs</label>
+                                                </div>
+                                            </div>
+
+                                            <!-- NCM Trash -->
+                                            <div style="padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #e0e0e0;">
+                                                <small class="d-block mb-2 fw-bold text-muted">NCM Trash</small>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_view_ncm_trash" id="can_view_ncm_trash">
+                                                    <label for="can_view_ncm_trash">View NCM Trash</label>
+                                                </div>
+                                            </div>
+
+                                            <!-- Sync Orders -->
+                                            <div style="padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #e0e0e0;">
+                                                <small class="d-block mb-2 fw-bold text-muted">Sync Orders</small>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_sync_ncm_orders" id="can_sync_ncm_orders">
+                                                    <label for="can_sync_ncm_orders">Sync NCM Orders</label>
+                                                </div>
+                                            </div>
+
+                                            <!-- NCM Branches -->
+                                            <div style="padding-bottom: 0;">
+                                                <small class="d-block mb-2 fw-bold text-muted">NCM Branches</small>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_view_ncm_branches" id="can_view_ncm_branches">
+                                                    <label for="can_view_ncm_branches">View NCM Branches</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_manage_ncm_branches" id="can_manage_ncm_branches">
+                                                    <label for="can_manage_ncm_branches">Manage NCM Branches</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- HRM Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #e11d48 0%, #be123c 100%);">
+                                            <i class="fas fa-users-cog"></i> HRM Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item" style="border-bottom: 2px solid #e0e0e0;">
+                                                <input type="checkbox" class="form-check-input" name="can_view_hrm" id="can_view_hrm" onchange="toggleHrmSubPermissions(this)">
+                                                <label for="can_view_hrm"><strong>HRM</strong></label>
+                                            </div>
+                                            <div id="hrmSubPermissions" style="opacity: 0.5; pointer-events: none;">
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_hr_management" id="can_view_hrm_hr_management">
+                                                    <label for="can_view_hrm_hr_management">HR Management</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_asset_management" id="can_view_hrm_asset_management">
+                                                    <label for="can_view_hrm_asset_management">Asset Management</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_attendance" id="can_view_hrm_attendance">
+                                                    <label for="can_view_hrm_attendance">Attendance</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_payroll" id="can_view_hrm_payroll">
+                                                    <label for="can_view_hrm_payroll">Payroll Management</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_view_hrm_incomplete_attendance" id="can_view_hrm_incomplete_attendance">
+                                                    <label for="can_view_hrm_incomplete_attendance">Incomplete Attendance Alert</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input hrm-sub-perm" name="can_fix_hrm_incomplete_attendance" id="can_fix_hrm_incomplete_attendance">
+                                                    <label for="can_fix_hrm_incomplete_attendance">Fix Incomplete Attendance</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Todo / Ticketing Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);">
+                                            <i class="fas fa-tasks"></i> Todo / Ticketing Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_access_todo" id="can_access_todo">
+                                                <label for="can_access_todo">Access to Todo/Ticketing</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Sentinel Vault (Audit Trail) Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);">
+                                            <i class="fas fa-shield-halved"></i> Sentinel Vault (Audit Trail)
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_audit_trail" id="can_view_audit_trail">
+                                                <label for="can_view_audit_trail">Access Sentinel Vault</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_all_users_activity" id="can_view_all_users_activity">
+                                                <label for="can_view_all_users_activity">View Everyone's Activity</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_audit_logs" id="can_export_audit_logs">
+                                                <label for="can_export_audit_logs">Export Audit Logs</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_manage_sessions" id="can_manage_sessions">
+                                                <label for="can_manage_sessions">Revoke Sessions &amp; Resolve Alerts</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_configure_audit" id="can_configure_audit">
+                                                <label for="can_configure_audit">Configure Vault Settings</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Resources Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);">
+                                            <i class="fas fa-book-open"></i> Resources Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_resources" id="can_view_resources">
+                                                <label for="can_view_resources">View Resources</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_create_resources" id="can_create_resources">
+                                                <label for="can_create_resources">Create/Edit/Delete Resources</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Follow Up Module -->
+                                <div class="col-lg-6 col-xl-4 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                                            <i class="fas fa-phone-volume"></i> Follow Up Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_access_follow_ups" id="can_access_follow_ups">
+                                                <label for="can_access_follow_ups">Can Access Follow Ups</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_export_follow_ups" id="can_export_follow_ups">
+                                                <label for="can_export_follow_ups">Can Export Follow Ups</label>
+                                            </div>
+                                            <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_setup_follow_up_status" id="can_setup_follow_up_status">
+                                                <label for="can_setup_follow_up_status">Can Setup Follow Up Status</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Pricing Module -->
+                                <div class="col-12 mb-3">
+                                    <div class="perm-card">
+                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                            <i class="fas fa-dollar-sign"></i> Pricing & Discount Module
+                                        </div>
+                                        <div class="perm-card-body">
+                                            <div class="row">
+                                                <div class="col-md-3">
+                                                    <div class="perm-item">
+                                                        <input type="checkbox" class="form-check-input" name="can_view_cost_price" id="can_view_cost_price">
+                                                        <label for="can_view_cost_price">View Cost Price</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <div class="perm-item">
+                                                        <input type="checkbox" class="form-check-input" name="can_edit_prices" id="can_edit_prices">
+                                                        <label for="can_edit_prices">Edit Prices</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <div class="perm-item">
+                                                        <input type="checkbox" class="form-check-input" name="can_give_discounts" id="can_give_discounts">
+                                                        <label for="can_give_discounts">Give Discounts</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label fw-bold small">Max Discount %</label>
+                                                    <input type="number" class="form-control" name="max_discount_percent" id="max_discount_percent" value="0" min="0" max="100" step="0.01" disabled>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        
+                        <div class="d-flex justify-content-between mt-4 pt-3 border-top">
+                            <a href="{% url 'role_list' %}" class="btn btn-secondary btn-lg">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-save"></i> Save Default Permissions
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const savedPermissions = {{ saved_permissions|safe }};
+const savedDiscount = '{{ saved_discount|default:"0.00" }}';
+
+window.addEventListener('DOMContentLoaded', function() {
+    savedPermissions.forEach(perm => {
+        const checkbox = document.getElementById(perm);
+        if (checkbox) checkbox.checked = true;
+    });
+
+    const discountInput = document.getElementById('max_discount_percent');
+    if (discountInput) discountInput.value = savedDiscount;
+
+    updateDiscountInput();
+
+    const hrmMain = document.getElementById('can_view_hrm');
+    if (hrmMain) toggleHrmSubPermissions(hrmMain);
+});
+
+function updateDiscountInput() {
+    const giveDiscounts = document.getElementById('can_give_discounts');
+    const discountInput = document.getElementById('max_discount_percent');
+    if (giveDiscounts && giveDiscounts.checked) {
+        discountInput.disabled = false;
+        if (!discountInput.value || discountInput.value === '0' || discountInput.value === '0.00') {
+            discountInput.value = '10.00';
+        }
+    } else if (discountInput) {
+        discountInput.disabled = true;
+        discountInput.value = '0.00';
+    }
+}
+
+if (document.getElementById('can_give_discounts')) {
+    document.getElementById('can_give_discounts').addEventListener('change', updateDiscountInput);
+}
+
+function checkAllPermissions() {
+    document.querySelectorAll('#rolePermissionsForm input[type="checkbox"]').forEach(cb => {
+        cb.checked = true;
+    });
+    document.getElementById('max_discount_percent').value = '100.00';
+    const hrmSub = document.getElementById('hrmSubPermissions');
+    if (hrmSub) { hrmSub.style.opacity = '1'; hrmSub.style.pointerEvents = 'auto'; }
+    updateDiscountInput();
+}
+
+function uncheckAllPermissions() {
+    document.querySelectorAll('#rolePermissionsForm input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+    });
+    document.getElementById('max_discount_percent').value = '0.00';
+    const hrmSub = document.getElementById('hrmSubPermissions');
+    if (hrmSub) { hrmSub.style.opacity = '0.5'; hrmSub.style.pointerEvents = 'none'; }
+    updateDiscountInput();
+}
+
+function toggleHrmSubPermissions(mainCheckbox) {
+    const subPerms = document.getElementById('hrmSubPermissions');
+    if (!subPerms) return;
+    if (mainCheckbox.checked) {
+        subPerms.style.opacity = '1';
+        subPerms.style.pointerEvents = 'auto';
+    } else {
+        subPerms.style.opacity = '0.5';
+        subPerms.style.pointerEvents = 'none';
+        subPerms.querySelectorAll('.hrm-sub-perm').forEach(cb => cb.checked = false);
+    }
+}
+</script>
+{% endblock %}

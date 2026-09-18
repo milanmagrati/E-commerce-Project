@@ -1,0 +1,132 @@
+{% if ai_state %}
+{% comment %}
+Carries the live AI state out with the polled fragment so the header badge can
+follow it — a takeover pause expires on a timer, with no user action to hook.
+{% endcomment %}
+<div id="aiStateData" data-state="{{ ai_state.state }}" data-label="{{ ai_state.label }}"
+     data-reason="{{ ai_state.reason }}" data-resumes-at="{{ ai_state.resumes_at|default_if_none:'' }}"
+     data-resumable="{{ ai_state.resumable|yesno:'1,0' }}" hidden></div>
+{% endif %}
+{% for msg in chat_messages %}
+    {% if msg.is_system %}
+        {% comment %}
+        `alert_…` kinds are the message types this business invented and marked
+        "alert an agent" — they carry the same weight as the two built-in ones,
+        so they get the same treatment rather than falling through to the plain
+        info chip.
+        {% endcomment %}
+        <div class="sys-event {% if msg.system_level == 'warning' %}sys-warning{% endif %}{% if msg.event_is_retrying %} sys-retrying{% endif %}{% if msg.event_kind == 'lead_detected' %} sys-lead{% elif msg.event_kind == 'complaint_detected' or msg.is_custom_alert %} sys-complaint{% endif %}"
+             data-event-id="{{ msg.pk }}">
+            <i class="fas {% if msg.event_is_retrying %}fa-arrows-rotate fa-spin{% elif msg.event_kind == 'lead_detected' %}fa-fire{% elif msg.event_kind == 'complaint_detected' %}fa-triangle-exclamation{% elif msg.is_custom_alert %}fa-bell{% elif msg.system_level == 'warning' %}fa-triangle-exclamation{% else %}fa-circle-info{% endif %}"></i>
+            <span>{{ msg.body }}</span>
+            <span class="sys-event-time">{{ msg.created_at|date:"h:i A" }}</span>
+            {% comment %}
+            An open failure alert is an unfinished job, so it carries the two ways
+            to finish it. It disappears on its own the moment the AI or an agent
+            answers — these are for when neither has happened yet. Lead/complaint
+            chips have nothing to retry (see EVENT_LEAD_DETECTED comment in
+            models.py), so they only offer Dismiss.
+            {% endcomment %}
+            {% if msg.is_open_event and not msg.event_is_retrying %}
+                <span class="sys-event-actions">
+                    {% if msg.event_kind == 'ai_failure' %}
+                    <button type="button" class="sys-event-btn" data-retry-ai="{{ msg.pk }}">
+                        <i class="fas fa-rotate-right"></i> Retry AI
+                    </button>
+                    {% endif %}
+                    <button type="button" class="sys-event-btn sys-event-btn-quiet" data-dismiss-alert="{{ msg.pk }}">
+                        Dismiss
+                    </button>
+                </span>
+            {% endif %}
+        </div>
+    {% else %}
+    {% ifchanged msg.created_at|date:"Y-m-d" %}
+        <div style="display:flex; align-items:center; gap:0.75rem; margin: 1.25rem 0 0.75rem 0;">
+            <div style="flex:1; height:1px; background:var(--crm-border);"></div>
+            <div style="font-size: 0.72rem; font-weight: 500; color: var(--crm-text-muted); flex-shrink:0;">
+                {{ msg.display_date }}
+            </div>
+            <div style="flex:1; height:1px; background:var(--crm-border);"></div>
+        </div>
+    {% endifchanged %}
+<div style="display:flex;flex-direction:column;align-items:{% if msg.is_outbound %}flex-end{% else %}flex-start{% endif %};">
+    {% if msg.is_ai %}<div class="msg-ai-row">{% endif %}
+    <div class="msg-bubble {% if msg.is_outbound %}msg-outbound{% else %}msg-inbound{% endif %} {% if msg.is_ai %}msg-ai{% endif %} {% if msg.attachment %}has-attachment{% endif %}">
+        {% comment %}
+        Every branch below is gated on msg.attachment having a real file, not just
+        on attachment_type. Inbound messages record the *type* Meta reported but
+        never download the file itself (see upsert_inbound_message), so reading
+        .url on those raises ValueError and 500s the whole thread — one customer
+        photo used to take out the entire conversation view. Those fall through
+        to the placeholder, which at least tells the agent something was sent.
+        {% endcomment %}
+        {% if msg.attachment and msg.attachment_type == 'image' %}
+            <a href="{{ msg.attachment.url }}" target="_blank" rel="noopener">
+                <img src="{{ msg.attachment.url }}" alt="{{ msg.attachment_name }}" style="max-width:min(220px,100%);max-height:220px;border-radius:8px;display:block;{% if msg.body %}margin-bottom:0.4rem;{% endif %}">
+            </a>
+        {% elif msg.attachment and msg.attachment_type == 'audio' %}
+            <audio controls src="{{ msg.attachment.url }}" style="max-width:min(220px,100%);{% if msg.body %}margin-bottom:0.4rem;{% endif %}"></audio>
+        {% elif msg.attachment and msg.attachment_type == 'document' %}
+            <a href="{{ msg.attachment.url }}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:0.5rem;text-decoration:none;color:inherit;{% if msg.body %}margin-bottom:0.4rem;{% endif %}">
+                <i class="fas fa-file-alt" style="font-size:1.1rem;opacity:0.8;"></i>
+                <span style="font-size:0.8rem;text-decoration:underline;word-break:break-all;">{{ msg.attachment_name|default:"Document" }}</span>
+            </a>
+        {% elif msg.attachment_type %}
+            <span style="display:flex;align-items:center;gap:0.4rem;opacity:0.75;font-size:0.78rem;{% if msg.body %}margin-bottom:0.4rem;{% endif %}">
+                <i class="fas {% if msg.attachment_type == 'image' %}fa-image{% elif msg.attachment_type == 'audio' %}fa-microphone{% else %}fa-file-alt{% endif %}"></i>
+                {{ msg.attachment_name|default:msg.attachment_type|title }}
+            </span>
+        {% endif %}
+        {% if msg.body %}{{ msg.body }}{% endif %}
+    </div>
+    {% if msg.is_ai %}
+        <span class="ai-avatar" title="Answered automatically by {{ msg.sender }}">
+            <i class="fas fa-robot"></i>
+        </span>
+        </div>
+        {% if msg.ai_intent %}
+            <div class="ai-chips">
+                <span class="ai-chip"><span class="dot dot-intent"></span>{{ msg.intent_label }}</span>
+                <span class="ai-chip"><span class="dot dot-{{ msg.intent_priority }}"></span>{{ msg.intent_priority|title }}</span>
+            </div>
+        {% endif %}
+    {% elif not msg.is_outbound and msg.ai_intent and msg.intent_priority != 'low' %}
+        {% comment %}
+        The customer's own message carries a chip only when the analysis puts it
+        above routine chatter — a buying signal, a complaint, or a question about
+        an order already placed. Tagging every "hi" with "Greeting · Low" here
+        would bury the intents that actually need an agent; the low-priority
+        reading still shows under the AI's reply below.
+        {% endcomment %}
+        <div class="ai-chips ai-chips-inbound">
+            <span class="ai-chip"><span class="dot dot-intent"></span>{{ msg.intent_label }}</span>
+            <span class="ai-chip"><span class="dot dot-{{ msg.intent_priority }}"></span>{{ msg.intent_priority|title }}</span>
+        </div>
+    {% endif %}
+    <div class="msg-time {% if msg.is_ai %}ai-meta{% endif %}" style="text-align:{% if msg.is_outbound %}right{% else %}left{% endif %};">
+        {% if msg.is_ai %}
+            <span class="ai-tag" title="Sent automatically by {{ msg.sender }}"><i class="fas fa-robot"></i> AI reply</span>
+        {% elif msg.is_outbound %}
+            <span class="agent-tag" title="Sent by {{ msg.sender }}">{{ msg.sender }}</span>
+        {% endif %}
+        {{ msg.created_at|date:"h:i A" }}
+        {% if msg.is_outbound %}
+            <span style="margin-left: 0.25rem;">
+                {% if msg.status == 'sent' %}
+                    <i class="fas fa-check" style="font-size: 0.65rem; color: var(--crm-text-muted);" title="Sent"></i>
+                {% elif msg.status == 'delivered' %}
+                    <i class="fas fa-check-double" style="font-size: 0.65rem; color: var(--crm-text-muted);" title="Delivered"></i>
+                {% elif msg.status == 'read' %}
+                    <i class="fas fa-check-double" style="font-size: 0.65rem; color: #3b82f6;" title="Read"></i>
+                {% elif msg.status == 'failed' %}
+                    <i class="fas fa-exclamation-circle" style="font-size: 0.65rem; color: #ef4444;" title="Failed"></i>
+                {% endif %}
+            </span>
+        {% endif %}
+    </div>
+</div>
+    {% endif %}
+{% empty %}
+<div class="text-center text-muted py-4" style="font-size:0.83rem;">No messages yet. Start the conversation!</div>
+{% endfor %}

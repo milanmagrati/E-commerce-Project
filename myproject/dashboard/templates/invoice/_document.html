@@ -1,0 +1,226 @@
+{% comment %}
+One rendered invoice — everything from the outer container inwards.
+
+Renders from the flat context `dashboard.invoice_config.build_invoice_context`
+returns. Two callers:
+
+* `order_invoice.html` includes it directly, inheriting that context.
+* `order_invoice_bulk.html` repeats it through the `{% invoice_document %}`
+  inclusion tag, handing it one order's context per pass.
+
+Because the tag pushes the same dictionary the direct include inherits, a key
+added to `build_invoice_context` is available to both without touching either
+caller.
+{% endcomment %}
+<div class="invoice-container">
+
+    {% if cfg.show_watermark and cfg.watermark_text %}
+        <div class="watermark">{{ cfg.watermark_text }}</div>
+    {% endif %}
+
+    {% if not hide_actions %}
+    <div class="action-bar">
+        <button class="btn-action btn-print" onclick="window.print()">🖨 Print</button>
+        <button class="btn-action btn-close" onclick="window.close()">✕ Close</button>
+    </div>
+    {% elif is_preview %}
+    <div class="action-bar"><span class="preview-chip">Live preview</span></div>
+    {% endif %}
+
+    {# ── Header ─────────────────────────────────────────────────── #}
+    {% if cfg.show_header %}
+    <div class="invoice-header {% if cfg.header_layout == 'centered' %}header-centered{% endif %}">
+
+        {% if cfg.header_layout == 'meta_left' and cfg.show_meta %}
+            {% include 'invoice/_meta.html' %}
+        {% endif %}
+
+        {% if brand.logo_url and cfg.header_layout == 'brand_left' %}
+            <div class="logo-block"><img src="{{ brand.logo_url }}" alt="{{ brand.name }}"></div>
+        {% endif %}
+
+        <div class="brand-block">
+            <div class="brand-name">{{ brand.name }}</div>
+            {% for line in brand.lines %}
+                <div class="brand-line {% if line.bold %}bold{% endif %}">
+                    {% if line.label %}<span class="lbl">{{ line.label }}</span> {% endif %}{{ line.value|linebreaksbr }}
+                </div>
+            {% endfor %}
+        </div>
+
+        {% if brand.logo_url and cfg.header_layout == 'split' %}
+            <div class="logo-block"><img src="{{ brand.logo_url }}" alt="{{ brand.name }}"></div>
+        {% endif %}
+
+        {% if cfg.header_layout != 'meta_left' and cfg.show_meta %}
+            {% include 'invoice/_meta.html' %}
+        {% endif %}
+    </div>
+    {% if brand.logo_url and cfg.header_layout != 'split' and cfg.header_layout != 'brand_left' %}
+        <div class="logo-block" style="padding: 8px 0;"><img src="{{ brand.logo_url }}" alt="{{ brand.name }}"></div>
+    {% endif %}
+    {% endif %}
+
+    <div class="invoice-body">
+
+        {# ── Bill To / Ship To ──────────────────────────────────── #}
+        {% if cfg.show_bill_to and bill_to_lines or cfg.show_ship_to and ship_to_lines %}
+        <div class="party-grid">
+            {% if cfg.show_bill_to and bill_to_lines %}
+            <div class="party-box">
+                <div class="section-label">{{ cfg.bill_to_title }}</div>
+                {% for line in bill_to_lines %}
+                <div class="party-line {% if line.bold %}bold{% endif %} {% if not line.full_width %}inline{% endif %}">
+                    {% if line.label %}<span class="lbl">{{ line.label }}</span> {% endif %}<span class="val{% if line.mono %} mono{% endif %}">{{ line.value|linebreaksbr }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if cfg.show_ship_to and ship_to_lines %}
+            <div class="party-box">
+                <div class="section-label">{{ cfg.ship_to_title }}</div>
+                {% for line in ship_to_lines %}
+                <div class="party-line {% if line.bold %}bold{% endif %} {% if not line.full_width %}inline{% endif %}">
+                    {% if line.label %}<span class="lbl">{{ line.label }}</span> {% endif %}<span class="val{% if line.mono %} mono{% endif %}">{{ line.value|linebreaksbr }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# ── Items ──────────────────────────────────────────────── #}
+        {% if cfg.show_items %}
+        <table class="items-table">
+            <thead>
+                <tr>
+                    {% for col in columns %}
+                    <th style="text-align: {{ col.align }};{% if col.width %} width: {{ col.width }};{% endif %}">{{ col.label }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    {% for col in columns %}
+                        {% if col.key == 'index' %}
+                            <td style="text-align: center;">{{ row.index }}</td>
+                        {% elif col.key == 'product' %}
+                            <td>
+                                <span class="product-name">{{ row.name }}</span>
+                                {% if row.tag %}<span class="type-tag">{{ row.tag }}</span>{% endif %}
+                                {% if row.variant %}<div class="variant-label">↳ {{ row.variant }}</div>{% endif %}
+                                {% if row.components %}
+                                <ul class="bundle-components">
+                                    {% for comp in row.components %}<li>{{ comp }}</li>{% endfor %}
+                                </ul>
+                                {% endif %}
+                                {% if row.sku %}<div class="product-sku">SKU: {{ row.sku }}</div>{% endif %}
+                            </td>
+                        {% elif col.key == 'qty' %}
+                            <td style="text-align: center;">{{ row.qty }}</td>
+                        {% elif col.key == 'price' %}
+                            <td style="text-align: right;">{{ row.price }}</td>
+                        {% elif col.key == 'total' %}
+                            <td style="text-align: right;">{{ row.total }}</td>
+                        {% endif %}
+                    {% endfor %}
+                </tr>
+                {% empty %}
+                <tr><td colspan="{{ columns|length }}" class="items-empty">{{ cfg.empty_items_text }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if items_note_lines %}
+        <div class="items-note">
+            {% for line in items_note_lines %}
+            <div>{% if line.label %}<span class="lbl">{{ line.label }}</span> {% endif %}{{ line.value|linebreaksbr }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {# ── Totals ─────────────────────────────────────────────── #}
+        {% if cfg.show_totals %}
+        <div class="totals-wrapper">
+            <table class="totals-table">
+                {% for row in totals %}
+                <tr {% if row.grand %}class="grand-row"{% endif %}>
+                    <td class="lbl">{{ row.label }}</td>
+                    <td class="val">{{ row.value }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        {% if amount_words %}
+        <div class="amount-words"><span class="lbl">{{ cfg.label_amount_in_words }}:</span> {{ amount_words }}</div>
+        {% endif %}
+        {% endif %}
+
+    </div><!-- /invoice-body -->
+
+    {# ── Footer ─────────────────────────────────────────────────── #}
+    {% if cfg.show_footer %}
+    <div class="invoice-footer">
+
+        {% if admin_notes %}
+        <div class="note-box">
+            <h5>{{ cfg.admin_notes_title }}</h5>
+            <p>{{ admin_notes|linebreaksbr }}</p>
+        </div>
+        {% endif %}
+
+        {% if customer_notes %}
+        <div class="note-box">
+            <h5>{{ cfg.customer_notes_title }}</h5>
+            <p>{{ customer_notes|linebreaksbr }}</p>
+        </div>
+        {% endif %}
+
+        {% if cfg.show_terms and terms %}
+        <div class="note-box">
+            <h5>{{ cfg.terms_title }}</h5>
+            <ul>{% for term in terms %}<li>{{ term }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+
+        {% if footer_lines %}
+        <div class="footer-lines">
+            {% for line in footer_lines %}
+            <div>{% if line.label %}<span class="lbl">{{ line.label }}</span> {% endif %}{{ line.value|linebreaksbr }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="footer-bottom">
+            {% if cfg.show_payment_method and payment_method_label %}
+            <div class="payment-line">{{ payment_method_label }}</div>
+            {% endif %}
+            {% if partial.active %}
+            <div class="partial-info">Paid: {{ partial.paid }} &nbsp;|&nbsp; Remaining: {{ partial.due }}</div>
+            {% endif %}
+            {% if thank_you %}<div class="thanks">{{ thank_you }}</div>{% endif %}
+            {% if cfg.footer_note %}<div class="footer-note">{{ cfg.footer_note }}</div>{% endif %}
+            {% if cfg.show_printed_by and printed_by %}
+            <div class="printed-by">Printed by {{ printed_by }}</div>
+            {% endif %}
+        </div>
+
+        {% if cfg.show_signature %}
+        <div class="signatures">
+            <div class="sign-box">
+                <div class="sign-line"></div>
+                <div class="sign-label">{{ cfg.signature_left_label }}</div>
+            </div>
+            <div class="sign-box">
+                <div class="sign-line"></div>
+                <div class="sign-label">{{ cfg.signature_right_label }}</div>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+    {% endif %}
+
+</div>

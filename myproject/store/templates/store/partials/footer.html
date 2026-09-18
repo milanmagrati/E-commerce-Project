@@ -24,11 +24,11 @@
             <div class="footer-col">
                 <h4>Customer Care</h4>
                 <ul>
-                    <li><a href="#">Help Center</a></li>
-                    <li><a href="#">How to Buy</a></li>
-                    <li><a href="#">Returns & Refunds</a></li>
-                    <li><a href="#">Order Tracking</a></li>
-                    <li><a href="#">FAQs</a></li>
+                    {% for page in footer_pages %}
+                        {% if forloop.counter <= 5 %}
+                        <li><a href="{% url 'store:dynamic_page' page.slug %}">{{ page.title }}</a></li>
+                        {% endif %}
+                    {% endfor %}
                 </ul>
             </div>
 
@@ -36,11 +36,11 @@
             <div class="footer-col">
                 <h4>Store</h4>
                 <ul>
-                    <li><a href="#">About Us</a></li>
-                    <li><a href="#">Careers</a></li>
-                    <li><a href="#">Terms & Conditions</a></li>
-                    <li><a href="#">Privacy Policy</a></li>
-                    <li><a href="#">Contact Us</a></li>
+                    {% for page in footer_pages %}
+                        {% if forloop.counter > 5 and forloop.counter <= 10 %}
+                        <li><a href="{% url 'store:dynamic_page' page.slug %}">{{ page.title }}</a></li>
+                        {% endif %}
+                    {% endfor %}
                 </ul>
             </div>
 

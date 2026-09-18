@@ -12,6 +12,7 @@ class PNDBulkLog(models.Model):
         ('completed', 'Completed'),
         ('partial', 'Partial Success'),
         ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
     ]
 
     batch_number = models.CharField(max_length=50, unique=True, db_index=True)
@@ -22,6 +23,12 @@ class PNDBulkLog(models.Model):
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='processing')
     destination_branch = models.CharField(max_length=100, default='KATHMANDU VALLEY')
+
+    # See the matching fields on ncm.NCMBulkLog for what these are for.
+    selected_order_ids = models.JSONField(null=True, blank=True)
+    send_options = models.JSONField(null=True, blank=True)
+    cancel_requested = models.BooleanField(default=False)
+    worker_heartbeat_at = models.DateTimeField(null=True, blank=True)
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

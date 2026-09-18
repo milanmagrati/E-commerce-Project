@@ -1,0 +1,101 @@
+{% extends "trendycrm/base_crm.html" %}
+{% load static %}
+
+{% block title %}Tickets — Trendy CRM{% endblock %}
+{% block topbar_title %}Tickets{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn-crm-primary" data-bs-toggle="modal" data-bs-target="#newTicketModal">
+    <i class="fas fa-plus"></i> New Ticket
+</button>
+{% endblock %}
+
+{% block extra_style %}
+.priority-badge {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    padding: 0.18rem 0.55rem; border-radius: 20px;
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+}
+.priority-low { background: #d1fae5; color: #065f46; }
+.priority-medium { background: #fef3c7; color: #92400e; }
+.priority-high { background: #ffedd5; color: #c2410c; }
+.priority-urgent { background: #fee2e2; color: #991b1b; }
+.ticket-status-open { background: #ede9fe; color: #6d28d9; }
+.ticket-status-in_progress { background: #dbeafe; color: #1d4ed8; }
+.ticket-status-resolved { background: #d1fae5; color: #065f46; }
+.ticket-status-closed { background: #f3f4f6; color: #6b7280; }
+{% endblock %}
+
+{% block crm_content %}
+<!-- Summary badges -->
+<div class="d-flex gap-2 mb-3 flex-wrap">
+    <div style="background:white;border:1px solid rgba(124,58,237,0.1);border-radius:8px;padding:0.45rem 0.9rem;font-size:0.8rem;font-weight:600;color:var(--crm-text);">
+        All <span style="background:var(--crm-active-bg);color:var(--crm-primary);padding:1px 7px;border-radius:10px;margin-left:4px;">{{ tickets|length }}</span>
+    </div>
+    <div style="background:white;border:1px solid rgba(124,58,237,0.1);border-radius:8px;padding:0.45rem 0.9rem;font-size:0.8rem;font-weight:600;color:var(--crm-text);">
+        Open <span style="background:#ede9fe;color:#7c3aed;padding:1px 7px;border-radius:10px;margin-left:4px;">{{ tickets|length }}</span>
+    </div>
+</div>
+
+<div class="crm-card">
+    {% if tickets %}
+    <table style="width:100%;border-collapse:collapse;">
+        <thead>
+            <tr style="background:#f9f7ff;">
+                <th style="padding:0.75rem 1.2rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);text-align:left;">#</th>
+                <th style="padding:0.75rem 1.2rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);text-align:left;">Title</th>
+                <th style="padding:0.75rem 1.2rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);text-align:left;">Contact</th>
+                <th style="padding:0.75rem 1.2rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);text-align:left;">Priority</th>
+                <th style="padding:0.75rem 1.2rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);text-align:left;">Status</th>
+                <th style="padding:0.75rem 1.2rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--crm-text-muted);border-bottom:1px solid var(--crm-border);text-align:left;">Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ticket in tickets %}
+            <tr style="border-bottom:1px solid rgba(124,58,237,0.04);transition:background 0.15s;" onmouseover="this.style.background='var(--crm-hover)'" onmouseout="this.style.background=''">
+                <td style="padding:0.85rem 1.2rem;font-size:0.8rem;color:var(--crm-text-muted);">#{{ ticket.pk }}</td>
+                <td style="padding:0.85rem 1.2rem;font-size:0.83rem;color:var(--crm-text);font-weight:600;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ ticket.title }}</td>
+                <td style="padding:0.85rem 1.2rem;font-size:0.83rem;color:var(--crm-text-muted);">{{ ticket.contact.name|default:"—" }}</td>
+                <td style="padding:0.85rem 1.2rem;">
+                    <span class="priority-badge priority-{{ ticket.priority }}">{{ ticket.get_priority_display }}</span>
+                </td>
+                <td style="padding:0.85rem 1.2rem;">
+                    <span class="priority-badge ticket-status-{{ ticket.status }}">{{ ticket.get_status_display }}</span>
+                </td>
+                <td style="padding:0.85rem 1.2rem;font-size:0.78rem;color:var(--crm-text-muted);">{{ ticket.created_at|date:"M d, Y" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="crm-empty-state">
+        <div class="crm-empty-icon">
+            <i class="fas fa-ticket-alt"></i>
+        </div>
+        <div class="crm-empty-title">No tickets yet</div>
+        <div class="crm-empty-desc mb-3">Track customer issues, support requests and bugs using tickets. Create your first ticket to get started.</div>
+        <button class="btn-crm-primary" data-bs-toggle="modal" data-bs-target="#newTicketModal">
+            <i class="fas fa-plus"></i> Create your first ticket
+        </button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- New Ticket Modal -->
+<div class="modal fade" id="newTicketModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius:14px;border:none;box-shadow:0 20px 60px rgba(124,58,237,0.18);">
+            <div class="modal-header" style="border-bottom:1px solid var(--crm-border);padding:1rem 1.4rem;">
+                <h6 class="modal-title" style="font-weight:700;color:var(--crm-text);"><i class="fas fa-ticket-alt me-2" style="color:var(--crm-primary);"></i>New Ticket</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="padding:1.4rem;">
+                <p style="font-size:0.83rem;color:var(--crm-text-muted);">Ticket creation form coming soon. You'll be able to assign priority, contact, and description.</p>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid var(--crm-border);">
+                <button type="button" class="btn-crm-outline" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

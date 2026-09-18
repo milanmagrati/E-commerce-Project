@@ -353,13 +353,18 @@
                         {% for item in backordered_items %}
                         <tr>
                             <td class="ps-3">
-                                <span class="fw-bold text-primary">{{ item.order.order_number }}</span>
+                                <a href="{% url 'order_detail' item.order.id %}" class="fw-bold text-primary text-decoration-none" title="View Order">
+                                    {{ item.order.order_number }}
+                                    <i class="bi bi-box-arrow-up-right" style="font-size: 0.7rem;"></i>
+                                </a>
                             </td>
                             <td>
                                 {% if item.product %}
-                                <span class="bo-product-name-sm">{{ item.product.name }}</span>
+                                <a href="{% url 'product_detail' item.product.id %}" class="bo-product-name-sm text-dark text-decoration-none" title="View Product">
+                                    {{ item.product.name }}
+                                </a>
                                 {% else %}
-                                <span class="text-muted">Deleted Product</span>
+                                <span class="text-muted fst-italic">Deleted Product</span>
                                 {% endif %}
                             </td>
                             <td class="text-center fw-bold">{{ item.quantity }}</td>

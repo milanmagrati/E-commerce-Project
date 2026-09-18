@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+ {% extends 'base.html' %}
 {% load static %}
 
 {% block title %}Staff Performance Analytics | Admin Dashboard{% endblock %}
@@ -1013,35 +1013,110 @@
         box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
     }
 
-    .sp-orders-toolbar .sp-toolbar-btn {
-        padding: 0.5rem 1rem;
-        border: 1.5px solid #6366f1;
-        border-radius: 8px;
+    /* Buttons are deliberately NOT scoped to .sp-orders-toolbar - the same
+       button also appears in the bulk-selection bar, and scoping them left it
+       rendering as a bare browser default. */
+    .sp-toolbar-btn {
+        position: relative;
+        padding: 0.55rem 1.1rem;
+        border: 1px solid transparent;
+        border-radius: 9px;
         background: var(--sp-primary-gradient);
-        color: white;
+        color: #fff;
         font-size: 0.85rem;
         font-weight: 600;
+        letter-spacing: 0.01em;
+        line-height: 1.2;
         cursor: pointer;
-        transition: var(--sp-transition);
         display: inline-flex;
         align-items: center;
-        gap: 0.4rem;
+        gap: 0.5rem;
+        white-space: nowrap;
+        transition: transform 0.15s ease, box-shadow 0.15s ease,
+                    background 0.15s ease, opacity 0.15s ease;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
     }
 
-    .sp-orders-toolbar .sp-toolbar-btn:hover {
+    .sp-toolbar-btn i {
+        font-size: 0.9em;
+        opacity: 0.95;
+    }
+
+    .sp-toolbar-btn:hover {
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        box-shadow: 0 6px 16px rgba(99, 102, 241, 0.32);
     }
 
-    .sp-orders-toolbar .sp-toolbar-btn-reset {
-        background: white;
-        color: #6b7280;
-        border-color: #d1d5db;
+    .sp-toolbar-btn:active {
+        transform: translateY(0);
+        box-shadow: 0 1px 3px rgba(16, 24, 40, 0.16);
     }
 
-    .sp-orders-toolbar .sp-toolbar-btn-reset:hover {
-        background: #f3f4f6;
+    .sp-toolbar-btn:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35);
+    }
+
+    .sp-toolbar-btn:disabled {
+        opacity: 0.6;
+        cursor: progress;
+        transform: none;
         box-shadow: none;
+    }
+
+    /* Export - emerald, the "this produces a file" affordance */
+    .sp-toolbar-btn-export {
+        background: linear-gradient(135deg, #10b981 0%, #059669 55%, #047857 100%);
+        box-shadow: 0 1px 2px rgba(6, 95, 70, 0.2);
+    }
+
+    .sp-toolbar-btn-export:hover {
+        background: linear-gradient(135deg, #059669 0%, #047857 55%, #036347 100%);
+        box-shadow: 0 6px 16px rgba(5, 150, 105, 0.38);
+    }
+
+    .sp-toolbar-btn-export:focus-visible {
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.4);
+    }
+
+    /* The count badge inside "Export Selected (N)" */
+    .sp-btn-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.35rem;
+        height: 1.35rem;
+        padding: 0 0.4rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.24);
+        font-size: 0.78rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .sp-toolbar-btn-reset {
+        background: #fff;
+        color: #4b5563;
+        border-color: #d1d5db;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+    }
+
+    .sp-toolbar-btn-reset:hover {
+        background: #f9fafb;
+        border-color: #9ca3af;
+        color: #1f2937;
+        box-shadow: 0 3px 8px rgba(16, 24, 40, 0.1);
+    }
+
+    .sp-toolbar-btn-reset:focus-visible {
+        box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.28);
+    }
+
+    .sp-orders-toolbar .sp-toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
     }
 
     .sp-orders-toolbar .sp-order-count-label {
@@ -1052,6 +1127,124 @@
 
     .sp-orders-toolbar .sp-order-count-label strong {
         color: #1a1a1a;
+    }
+
+    .sp-order-checkbox {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        accent-color: #6366f1;
+    }
+
+    /* ========== PER-SECTION PAGINATION TOOLBAR ========== */
+    .sp-section-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        padding: 0.7rem 1.5rem;
+        background: #fafbfc;
+        border-bottom: 1px solid #eceff3;
+    }
+
+    .sp-section-toolbar .sp-showing-label {
+        font-size: 0.82rem;
+        color: #6b7280;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .sp-section-toolbar .sp-showing-label strong {
+        color: #1a1a1a;
+    }
+
+    .sp-per-page-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.82rem;
+        color: #6b7280;
+        font-weight: 500;
+    }
+
+    .sp-per-page {
+        padding: 0.35rem 1.9rem 0.35rem 0.65rem;
+        border: 1.5px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #374151;
+        background-color: #fff;
+        /* Chevron drawn inline so the control keeps its look across browsers */
+        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236b7280' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 0.5rem center;
+        background-size: 0.9rem;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        cursor: pointer;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .sp-per-page:hover {
+        border-color: #9ca3af;
+    }
+
+    .sp-per-page:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+
+    .sp-selection-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        padding: 0.75rem 1.5rem;
+        background: #eef2ff;
+        border-bottom: 1px solid #c7d2fe;
+        animation: sp-selection-in 0.15s ease-out;
+    }
+
+    @keyframes sp-selection-in {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .sp-selection-left {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        flex-wrap: wrap;
+        font-size: 0.85rem;
+        color: #3730a3;
+    }
+
+    .sp-selection-left i {
+        color: #6366f1;
+    }
+
+    .sp-selection-left strong {
+        color: #1a1a1a;
+    }
+
+    .sp-selection-link {
+        background: none;
+        border: none;
+        padding: 0;
+        color: #6366f1;
+        font-size: 0.83rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: underline;
+    }
+
+    .sp-selection-link:hover {
+        color: #4338ca;
     }
 
     .sp-order-status-pill {
@@ -1607,6 +1800,15 @@
             <div class="sp-table-header">
                 <h3><i class="fas fa-star me-2"></i>Top Performing Products</h3>
             </div>
+            <div class="sp-paged" data-sp-key="topProducts" data-sp-default="10">
+            <div class="sp-section-toolbar">
+                <span class="sp-showing-label" data-sp-showing></span>
+                <span class="sp-per-page-wrap">
+                    Show
+                    <select class="sp-per-page" data-sp-perpage title="How many rows to show per page"></select>
+                    per page
+                </span>
+            </div>
             <div style="overflow-x: auto;">
                 <table class="sp-table">
                     <thead>
@@ -1651,7 +1853,7 @@
                         <!-- Variant Rows (Hidden by default) -->
                         {% if product.product_type == 'variable' and product.variants %}
                             {% for variant in product.variants %}
-                            <tr class="sp-variant-row" data-product-id="{{ product.product_id }}">
+                            <tr class="sp-variant-row" data-sp-sub data-product-id="{{ product.product_id }}">
                                 <td></td>
                                 <td>
                                     <div class="sp-variant-cell">
@@ -1675,12 +1877,23 @@
                     </tbody>
                 </table>
             </div>
+            <div class="sp-pagination" data-sp-nav style="display: none;"></div>
+            </div>
         </div>
 
         <!-- Staff Performance Ranking -->
         <div class="sp-table-card">
             <div class="sp-table-header">
                 <h3><i class="fas fa-trophy me-2"></i>Staff Performance Ranking</h3>
+            </div>
+            <div class="sp-paged" data-sp-key="staffRanking" data-sp-default="10">
+            <div class="sp-section-toolbar">
+                <span class="sp-showing-label" data-sp-showing></span>
+                <span class="sp-per-page-wrap">
+                    Show
+                    <select class="sp-per-page" data-sp-perpage title="How many rows to show per page"></select>
+                    per page
+                </span>
             </div>
             <div style="overflow-x: auto;">
                 <table class="sp-table sp-ranking-table">
@@ -1758,12 +1971,23 @@
                     </tbody>
                 </table>
             </div>
+            <div class="sp-pagination" data-sp-nav style="display: none;"></div>
+            </div>
         </div>
 
         <!-- Detailed Staff Metrics -->
         <div class="sp-table-card">
             <div class="sp-table-header">
                 <h3><i class="fas fa-chart-bar me-2"></i>Detailed Staff Metrics</h3>
+            </div>
+            <div class="sp-paged" data-sp-key="staffMetrics" data-sp-default="10">
+            <div class="sp-section-toolbar">
+                <span class="sp-showing-label" data-sp-showing></span>
+                <span class="sp-per-page-wrap">
+                    Show
+                    <select class="sp-per-page" data-sp-perpage title="How many rows to show per page"></select>
+                    per page
+                </span>
             </div>
             <div style="overflow-x: auto;">
                 <table class="sp-table">
@@ -1829,6 +2053,8 @@
                     </tbody>
                 </table>
             </div>
+            <div class="sp-pagination" data-sp-nav style="display: none;"></div>
+            </div>
         </div>
 
         <!-- ========== STAFF ORDERS LOG SECTION ========== -->
@@ -1869,15 +2095,48 @@
                         <option value="{{ st }}" {% if selected_orders_status == st %}selected{% endif %}>{{ st|title }}</option>
                         {% endfor %}
                     </select>
+                    <span class="sp-per-page-wrap">
+                        Show
+                        <select class="sp-per-page" id="ordersPerPage" onchange="changeOrdersPerPage(this.value)"
+                                title="How many orders to show per page">
+                            {% for n in staff_orders_per_page_choices %}
+                            <option value="{{ n }}" {% if staff_orders_per_page == n %}selected{% endif %}>{{ n }}</option>
+                            {% endfor %}
+                        </select>
+                        per page
+                    </span>
                     <span class="sp-order-count-label">
                         Showing <strong>{{ staff_orders_page.start_index }}-{{ staff_orders_page.end_index }}</strong> of <strong>{{ staff_orders_page.paginator.count }}</strong>
                     </span>
                 </div>
-                {% if selected_orders_status %}
-                <button class="sp-toolbar-btn sp-toolbar-btn-reset" onclick="clearOrdersFilter()">
-                    <i class="fas fa-times"></i> Clear Filter
+                <div class="sp-toolbar-right">
+                    {% if selected_orders_status %}
+                    <button class="sp-toolbar-btn sp-toolbar-btn-reset" onclick="clearOrdersFilter()">
+                        <i class="fas fa-times"></i> Clear Filter
+                    </button>
+                    {% endif %}
+                    <button class="sp-toolbar-btn sp-toolbar-btn-export" id="spExportAllBtn" onclick="exportStaffOrders()"
+                            title="Download all {{ staff_orders_page.paginator.count }} filtered order{{ staff_orders_page.paginator.count|pluralize }} as an Excel file">
+                        <i class="fas fa-file-excel"></i> Export Excel
+                    </button>
+                </div>
+            </div>
+
+            <!-- Bulk Selection Bar (shown once at least one order is checked) -->
+            <div class="sp-selection-bar" id="spSelectionBar" style="display: none;">
+                <div class="sp-selection-left">
+                    <i class="fas fa-check-square"></i>
+                    <span><strong id="spSelectedCount">0</strong> order<span id="spSelectedPlural">s</span> selected</span>
+                    <button class="sp-selection-link" id="spSelectAllMatchingBtn" onclick="selectAllMatchingFilter()">
+                        Select all {{ staff_orders_page.paginator.count }} matching filter
+                    </button>
+                    <button class="sp-selection-link" onclick="clearSelection()">Clear selection</button>
+                </div>
+                <button class="sp-toolbar-btn sp-toolbar-btn-export" id="spExportSelectedBtn" onclick="exportSelectedOrders()"
+                        title="Download only the selected orders as an Excel file">
+                    <i class="fas fa-file-excel"></i> Export Selected
+                    <span class="sp-btn-count" id="spSelectedCountBtn">0</span>
                 </button>
-                {% endif %}
             </div>
 
             <!-- Orders Table -->
@@ -1885,10 +2144,13 @@
                 <table class="sp-table">
                     <thead>
                         <tr>
-                            <th style="width: 11%;">Order #</th>
+                            <th style="width: 3%; text-align: center;">
+                                <input type="checkbox" class="sp-order-checkbox" id="ordersSelectAllHeader" onclick="event.stopPropagation(); toggleSelectAllOnPage(this);" title="Select all on this page">
+                            </th>
+                            <th style="width: 10%;">Order #</th>
                             <th style="width: 13%;">Created By</th>
-                            <th style="width: 14%;">Customer</th>
-                            <th style="width: 22%;">Items</th>
+                            <th style="width: 13%;">Customer</th>
+                            <th style="width: 21%;">Items</th>
                             <th style="width: 9%; text-align: center;">Status</th>
                             <th style="width: 8%; text-align: center;">Source</th>
                             <th style="width: 11%; text-align: right;">Amount</th>
@@ -1898,6 +2160,9 @@
                     <tbody>
                         {% for order in staff_orders_page %}
                         <tr class="sp-order-row" onclick="toggleOrderDetail(this, 'order-detail-{{ order.id }}')">
+                            <td style="text-align: center;" onclick="event.stopPropagation();">
+                                <input type="checkbox" class="sp-order-checkbox" data-order-id="{{ order.id }}" onchange="toggleOrderCheckbox(this);">
+                            </td>
                             <td>
                                 <span class="sp-row-expand-icon"><i class="fas fa-chevron-right"></i></span>
                                 <a href="{% url 'order_detail' order.id %}" style="color: #6366f1; font-weight: 600; text-decoration: none;" onclick="event.stopPropagation();">
@@ -1961,7 +2226,7 @@
                         </tr>
                         <!-- Expandable Detail Row -->
                         <tr class="sp-order-detail-row" id="order-detail-{{ order.id }}">
-                            <td colspan="8" style="padding: 0;">
+                            <td colspan="9" style="padding: 0;">
                                 <div class="sp-order-detail-panel">
                                     <!-- Top Info Grid -->
                                     <div class="sp-detail-grid">
@@ -2103,7 +2368,7 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="8" class="sp-no-data">
+                            <td colspan="9" class="sp-no-data">
                                 <i class="fas fa-shopping-cart"></i>
                                 <div>No orders found for this period</div>
                             </td>
@@ -2213,6 +2478,15 @@
                     <i class="fas fa-boxes me-2" style="color: #6366f1;"></i>Returned Products Summary
                 </h4>
             </div>
+            <div class="sp-paged" data-sp-key="returnedProducts" data-sp-default="10">
+            <div class="sp-section-toolbar">
+                <span class="sp-showing-label" data-sp-showing></span>
+                <span class="sp-per-page-wrap">
+                    Show
+                    <select class="sp-per-page" data-sp-perpage title="How many rows to show per page"></select>
+                    per page
+                </span>
+            </div>
             <div style="overflow-x: auto;">
                 <table class="sp-table">
                     <thead>
@@ -2266,6 +2540,8 @@
                     </tbody>
                 </table>
             </div>
+            <div class="sp-pagination" data-sp-nav style="display: none;"></div>
+            </div>
             {% endif %}
 
             <!-- Recent Returns Table -->
@@ -2274,6 +2550,15 @@
                 <h4 style="font-size: 1rem; font-weight: 700; color: #333; margin-bottom: 0.75rem;">
                     <i class="fas fa-clock me-2" style="color: #f97316;"></i>Recent Returns
                 </h4>
+            </div>
+            <div class="sp-paged" data-sp-key="recentReturns" data-sp-default="10">
+            <div class="sp-section-toolbar">
+                <span class="sp-showing-label" data-sp-showing></span>
+                <span class="sp-per-page-wrap">
+                    Show
+                    <select class="sp-per-page" data-sp-perpage title="How many rows to show per page"></select>
+                    per page
+                </span>
             </div>
             <div style="overflow-x: auto;">
                 <table class="sp-table">
@@ -2344,6 +2629,8 @@
                         {% endfor %}
                     </tbody>
                 </table>
+            </div>
+            <div class="sp-pagination" data-sp-nav style="display: none;"></div>
             </div>
             {% endif %}
 
@@ -2728,24 +3015,359 @@
     }
 
     // ========== STAFF ORDERS FILTER & PAGINATION ==========
-    function filterStaffOrders() {
+    // Page size is a server round-trip for this table (1000s of rows, so it
+    // can't all live in the DOM the way the smaller sections do).
+    function spOrdersPerPage() {
+        const el = document.getElementById('ordersPerPage');
+        return el ? el.value : '';
+    }
+
+    function spOrdersParams(includeStatus) {
         const params = buildParams();
-        const status = document.getElementById('ordersStatusFilter').value;
-        if (status) params.append('orders_status', status);
-        window.location.href = window.location.pathname + '?' + params.toString() + '#staff-orders-log';
+        if (includeStatus !== false) {
+            const status = document.getElementById('ordersStatusFilter').value;
+            if (status) params.append('orders_status', status);
+        }
+        const perPage = spOrdersPerPage();
+        if (perPage) params.append('orders_per_page', perPage);
+        return params;
+    }
+
+    function filterStaffOrders() {
+        // Status changed - back to page 1, otherwise you can land past the end.
+        window.location.href = window.location.pathname + '?' + spOrdersParams().toString() + '#staff-orders-log';
     }
 
     function clearOrdersFilter() {
+        window.location.href = window.location.pathname + '?' + spOrdersParams(false).toString() + '#staff-orders-log';
+    }
+
+    function changeOrdersPerPage(value) {
         const params = buildParams();
+        const status = document.getElementById('ordersStatusFilter').value;
+        if (status) params.append('orders_status', status);
+        if (value) params.append('orders_per_page', value);
+        // Deliberately no orders_page - a new page size invalidates the old
+        // page number, so start from the top.
         window.location.href = window.location.pathname + '?' + params.toString() + '#staff-orders-log';
     }
 
-    function goToOrdersPage(page) {
+    function downloadStaffOrdersExport(params, btnId) {
+        const btn = btnId ? document.getElementById(btnId) : null;
+        const original = btn ? btn.innerHTML : null;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
+        }
+
+        // Hidden iframe so the download starts without navigating away from the
+        // page (which would lose the expanded rows / scroll position / selection).
+        const frame = document.createElement('iframe');
+        frame.style.display = 'none';
+        frame.src = window.location.pathname + '?' + params.toString();
+        document.body.appendChild(frame);
+
+        setTimeout(function () {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = original;
+                // `original` is a snapshot from click time; if the selection
+                // changed while the spinner was up, re-sync the count badge.
+                spUpdateSelectionUI();
+            }
+            if (typeof alertify !== 'undefined') {
+                alertify.success('Export started - check your downloads');
+            }
+        }, 2500);
+        setTimeout(function () { frame.remove(); }, 120000);
+    }
+
+    function exportStaffOrders() {
+        // Exports every order the current filters match, not just this page,
+        // so page size is irrelevant here and deliberately not sent.
         const params = buildParams();
-        params.append('orders_page', page);
         const status = document.getElementById('ordersStatusFilter').value;
         if (status) params.append('orders_status', status);
+        params.append('orders_export', 'xlsx');
+        downloadStaffOrdersExport(params, 'spExportAllBtn');
+    }
+
+    // ========== BULK SELECTION (checkbox export) ==========
+    // Selection persists in sessionStorage (not the URL) so it survives
+    // pagination and filter changes within the same tab, the way Gmail's
+    // "select all" bar does, without bloating every page-nav URL.
+    const SP_SELECTION_KEY = 'sp_staff_orders_selected_ids';
+
+    function spGetSelection() {
+        try {
+            return new Set(JSON.parse(sessionStorage.getItem(SP_SELECTION_KEY) || '[]'));
+        } catch (e) {
+            return new Set();
+        }
+    }
+
+    function spSaveSelection(set) {
+        sessionStorage.setItem(SP_SELECTION_KEY, JSON.stringify(Array.from(set)));
+        spUpdateSelectionUI();
+    }
+
+    function spUpdateSelectionUI() {
+        const set = spGetSelection();
+        const rowCheckboxes = document.querySelectorAll('.sp-order-row .sp-order-checkbox');
+
+        rowCheckboxes.forEach(function (cb) {
+            cb.checked = set.has(cb.dataset.orderId);
+        });
+
+        const headerCb = document.getElementById('ordersSelectAllHeader');
+        if (headerCb) {
+            const pageIds = Array.from(rowCheckboxes).map(function (cb) { return cb.dataset.orderId; });
+            const allChecked = pageIds.length > 0 && pageIds.every(function (id) { return set.has(id); });
+            headerCb.checked = allChecked;
+            headerCb.indeterminate = !allChecked && pageIds.some(function (id) { return set.has(id); });
+        }
+
+        const count = set.size;
+        const countEl = document.getElementById('spSelectedCount');
+        const countBtnEl = document.getElementById('spSelectedCountBtn');
+        const pluralEl = document.getElementById('spSelectedPlural');
+        if (countEl) countEl.textContent = count;
+        if (countBtnEl) countBtnEl.textContent = count;
+        if (pluralEl) pluralEl.textContent = count === 1 ? '' : 's';
+
+        const bar = document.getElementById('spSelectionBar');
+        if (bar) bar.style.display = count > 0 ? 'flex' : 'none';
+    }
+
+    function toggleOrderCheckbox(cb) {
+        const set = spGetSelection();
+        if (cb.checked) {
+            set.add(cb.dataset.orderId);
+        } else {
+            set.delete(cb.dataset.orderId);
+        }
+        spSaveSelection(set);
+    }
+
+    function toggleSelectAllOnPage(headerCb) {
+        const set = spGetSelection();
+        document.querySelectorAll('.sp-order-row .sp-order-checkbox').forEach(function (cb) {
+            if (headerCb.checked) {
+                set.add(cb.dataset.orderId);
+            } else {
+                set.delete(cb.dataset.orderId);
+            }
+        });
+        spSaveSelection(set);
+    }
+
+    function clearSelection() {
+        sessionStorage.removeItem(SP_SELECTION_KEY);
+        spUpdateSelectionUI();
+    }
+
+    function selectAllMatchingFilter() {
+        // Fetches ids for every order the current filters match (across all
+        // pages), then checks them all — same result as clicking every
+        // checkbox on every page, without the clicking.
+        const params = buildParams();
+        const status = document.getElementById('ordersStatusFilter').value;
+        if (status) params.append('orders_status', status);
+        params.append('orders_ids_only', '1');
+
+        const btn = document.getElementById('spSelectAllMatchingBtn');
+        const original = btn ? btn.textContent : null;
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Selecting...';
+        }
+
+        fetch(window.location.pathname + '?' + params.toString())
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                spSaveSelection(new Set((data.ids || []).map(String)));
+            })
+            .catch(function () {
+                if (typeof alertify !== 'undefined') {
+                    alertify.error('Could not select the matching orders. Please try again.');
+                }
+            })
+            .finally(function () {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = original;
+                }
+            });
+    }
+
+    function exportSelectedOrders() {
+        const set = spGetSelection();
+        if (set.size === 0) return;
+        const params = new URLSearchParams();
+        params.append('orders_export', 'xlsx');
+        params.append('order_ids', Array.from(set).join(','));
+        downloadStaffOrdersExport(params, 'spExportSelectedBtn');
+    }
+
+    function goToOrdersPage(page) {
+        const params = spOrdersParams();
+        params.append('orders_page', page);
         window.location.href = window.location.pathname + '?' + params.toString() + '#staff-orders-log';
+    }
+
+    // ========== REUSABLE CLIENT-SIDE TABLE PAGINATION ==========
+    // The smaller sections (products, staff, returns) already have all their
+    // rows in the DOM, so paging them server-side would mean reloading this
+    // whole expensive analytics page just to show 10 different rows. These
+    // page instantly instead. The Staff Orders Log is the exception - it has
+    // thousands of rows and stays server-paginated above.
+    //
+    // Markup contract: wrap the table in
+    //   <div class="sp-paged" data-sp-key="uniqueKey" data-sp-default="10">
+    // Rows that belong to the row above them (variant rows, detail rows) get
+    // data-sp-sub so a group is never split across a page boundary.
+    const SP_PER_PAGE_OPTIONS = [5, 10, 25, 50, 100];
+
+    function spPagedState(key) {
+        const stored = parseInt(sessionStorage.getItem('sp_pp_' + key), 10);
+        return SP_PER_PAGE_OPTIONS.indexOf(stored) !== -1 || stored === -1 ? stored : null;
+    }
+
+    function spInitPagedTable(container) {
+        const key = container.dataset.spKey;
+        const tbody = container.querySelector('tbody');
+        if (!tbody) return;
+
+        // Group each primary row with the sub-rows that follow it.
+        const groups = [];
+        Array.from(tbody.rows).forEach(function (row) {
+            if (row.hasAttribute('data-sp-sub') && groups.length) {
+                groups[groups.length - 1].push(row);
+            } else {
+                groups.push([row]);
+            }
+        });
+
+        // An {% templatetag openblock %} empty {% templatetag closeblock %} placeholder row isn't real data - don't paginate it.
+        const isEmptyState = groups.length === 1 && groups[0][0].querySelector('.sp-no-data');
+        const total = isEmptyState ? 0 : groups.length;
+
+        const stored = spPagedState(key);
+        const defaultPer = parseInt(container.dataset.spDefault, 10) || 10;
+        let perPage = stored !== null ? stored : defaultPer;
+        let page = 1;
+
+        const showingEl = container.querySelector('[data-sp-showing]');
+        const perPageEl = container.querySelector('[data-sp-perpage]');
+        const navEl = container.querySelector('[data-sp-nav]');
+
+        if (perPageEl) {
+            perPageEl.innerHTML = SP_PER_PAGE_OPTIONS
+                .filter(function (n) { return n <= Math.max(total, SP_PER_PAGE_OPTIONS[0]); })
+                .map(function (n) {
+                    return '<option value="' + n + '"' + (n === perPage ? ' selected' : '') + '>' + n + '</option>';
+                })
+                .join('') + '<option value="-1"' + (perPage === -1 ? ' selected' : '') + '>All</option>';
+
+            perPageEl.addEventListener('change', function () {
+                perPage = parseInt(this.value, 10);
+                sessionStorage.setItem('sp_pp_' + key, String(perPage));
+                page = 1;  // a new page size invalidates the current page number
+                render();
+            });
+        }
+
+        function pageCount() {
+            if (perPage === -1) return 1;
+            return Math.max(1, Math.ceil(total / perPage));
+        }
+
+        function render() {
+            const pages = pageCount();
+            if (page > pages) page = pages;
+
+            const size = perPage === -1 ? total : perPage;
+            const startIdx = (page - 1) * size;
+            const endIdx = perPage === -1 ? total : Math.min(startIdx + size, total);
+
+            if (!isEmptyState) {
+                groups.forEach(function (group, i) {
+                    const visible = i >= startIdx && i < endIdx;
+                    group.forEach(function (row, j) {
+                        if (!visible) {
+                            row.style.display = 'none';
+                            return;
+                        }
+                        // Sub-rows keep their own show/hide behaviour (expand
+                        // toggles); only clear the inline hide we applied.
+                        if (j === 0) {
+                            row.style.display = '';
+                        } else {
+                            row.style.display = '';
+                            if (!row.classList.contains('show')) {
+                                row.style.display = 'none';
+                            }
+                        }
+                    });
+                });
+            }
+
+            if (showingEl) {
+                showingEl.innerHTML = total === 0
+                    ? 'No records'
+                    : 'Showing <strong>' + (startIdx + 1) + '-' + endIdx + '</strong> of <strong>' + total + '</strong>';
+            }
+
+            if (navEl) {
+                navEl.innerHTML = pages <= 1 ? '' : spBuildPageNav(page, pages);
+                navEl.style.display = pages <= 1 ? 'none' : '';
+                Array.from(navEl.querySelectorAll('[data-sp-goto]')).forEach(function (el) {
+                    el.addEventListener('click', function (e) {
+                        e.preventDefault();
+                        page = parseInt(this.dataset.spGoto, 10);
+                        render();
+                        container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    });
+                });
+            }
+        }
+
+        render();
+    }
+
+    function spBuildPageNav(current, pages) {
+        let html = '';
+        const link = function (p, label, title) {
+            return '<a href="javascript:void(0)" class="sp-page-nav" data-sp-goto="' + p +
+                   '" title="' + title + '">' + label + '</a>';
+        };
+
+        if (current > 1) {
+            html += link(1, '<i class="fas fa-angle-double-left"></i>', 'First');
+            html += link(current - 1, '<i class="fas fa-angle-left"></i>', 'Previous');
+        }
+
+        for (let p = 1; p <= pages; p++) {
+            if (p === current) {
+                html += '<span class="sp-page-current">' + p + '</span>';
+            } else if (p > current - 4 && p < current + 4) {
+                html += '<a href="javascript:void(0)" data-sp-goto="' + p + '">' + p + '</a>';
+            } else if (p === 1 || p === pages) {
+                html += '<a href="javascript:void(0)" data-sp-goto="' + p + '">' + p + '</a>';
+            } else if (p === current - 4 || p === current + 4) {
+                html += '<span class="sp-page-ellipsis">...</span>';
+            }
+        }
+
+        if (current < pages) {
+            html += link(current + 1, '<i class="fas fa-angle-right"></i>', 'Next');
+            html += link(pages, '<i class="fas fa-angle-double-right"></i>', 'Last');
+        }
+        return html;
+    }
+
+    function spInitAllPagedTables() {
+        document.querySelectorAll('.sp-paged').forEach(spInitPagedTable);
     }
 
     // ========== TOGGLE PRODUCT VARIANTS ==========
@@ -2766,6 +3388,8 @@
     document.addEventListener('DOMContentLoaded', function() {
         initCharts();
         setupScrollObserver();
+        spUpdateSelectionUI();
+        spInitAllPagedTables();
     });
 </script>
 {% endblock %}

@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import salary_report
 
 app_name = 'hrm'
 
@@ -112,6 +113,16 @@ urlpatterns = [
     path('attendance/create/', views.attendance_create, name='attendance_create'),
     path('attendance/<int:pk>/update/', views.attendance_update, name='attendance_update'),
     path('attendance/<int:pk>/delete/', views.attendance_delete, name='attendance_delete'),
+    path('attendance/incomplete/', views.incomplete_attendance_list_ajax, name='incomplete_attendance_list_ajax'),
+    path('attendance/incomplete/alert-settings/', views.incomplete_attendance_alert_settings, name='incomplete_attendance_alert_settings'),
+    path('attendance/sync-settings/', views.attendance_sync_settings, name='attendance_sync_settings'),
+    path('attendance/<int:pk>/fix-logs/', views.attendance_fix_logs, name='attendance_fix_logs'),
+
+    # Attendance Adjustments (full-page: incomplete + fixed history, edit, soft/hard delete + trash)
+    path('attendance/adjustments/', views.attendance_adjustments, name='attendance_adjustments'),
+    path('attendance/adjustments/list/', views.attendance_adjustments_list_ajax, name='attendance_adjustments_list_ajax'),
+    path('attendance/<int:pk>/restore/', views.attendance_adjustment_restore, name='attendance_adjustment_restore'),
+    path('attendance/<int:pk>/hard-delete/', views.attendance_adjustment_hard_delete, name='attendance_adjustment_hard_delete'),
 
     # Shifts
     path('shifts/', views.shift_list, name='shift_list'),
@@ -149,6 +160,7 @@ urlpatterns = [
     path('biometric-attendance/<str:pin>/<str:date_str>/delete/', views.biometric_attendance_delete, name='biometric_attendance_delete'),
     path('biometric-attendance/<str:pin>/<str:date_str>/sync/', views.biometric_sync_single, name='biometric_sync_single'),
     path('biometric-attendance/sync-all/', views.biometric_sync_all, name='biometric_sync_all'),
+    path('biometric-attendance/upload/', views.biometric_upload_dat, name='biometric_upload_dat'),
 
     # Zekto Settings (device dashboard)
     path('settings/zekto/', views.zekto_settings, name='zekto_settings'),
@@ -178,8 +190,14 @@ urlpatterns = [
     path('payroll/runs/<int:pk>/generate-payslips/', views.generate_payslips, name='generate_payslips'),
     path('payroll/payslips/', views.payslip_list, name='payslip_list'),
     path('payroll/payslips/sync-advances/', views.payslip_sync_advances, name='payslip_sync_advances'),
+    path('payroll/payslips/sync-bonuses/', views.payslip_sync_bonuses, name='payslip_sync_bonuses'),
+    path('payroll/payslips/filtered-ids/', views.payslip_filtered_ids, name='payslip_filtered_ids'),
+    path('payroll/payslips/bulk-action/', views.payslip_bulk_action, name='payslip_bulk_action'),
+    path('payroll/payslips/bulk-print/', views.payslip_bulk_print, name='payslip_bulk_print'),
     path('payroll/payslips/<int:pk>/', views.payslip_detail, name='payslip_detail'),
     path('payroll/payslips/<int:pk>/download/', views.payslip_download, name='payslip_download'),
+    path('payroll/payslips/<int:pk>/restore/', views.payslip_restore, name='payslip_restore'),
+    path('payroll/payslips/<int:pk>/permanent-delete/', views.payslip_permanent_delete, name='payslip_permanent_delete'),
 
     # Advance Payments
     path('payroll/advance-payments/', views.advance_payment_list, name='advance_payment_list'),
@@ -188,6 +206,11 @@ urlpatterns = [
     path('payroll/advance-payments/<int:pk>/update/', views.advance_payment_update, name='advance_payment_update'),
     path('payroll/advance-payments/<int:pk>/delete/', views.advance_payment_delete, name='advance_payment_delete'),
     path('payroll/advance-payments/<int:pk>/update-status/', views.advance_payment_update_status, name='advance_payment_update_status'),
+
+    # Salary Report (Reports menu) -- read-only payroll analytics.
+    # Lives in hrm/salary_report.py rather than the views.py monolith.
+    path('reports/salary/', salary_report.salary_report, name='salary_report'),
+    path('reports/salary/detail/', salary_report.salary_report_detail, name='salary_report_detail'),
 
     # Attendance Reports
     path('attendance/report/', views.attendance_report, name='attendance_report'),
@@ -223,4 +246,28 @@ urlpatterns = [
     path('leave/policies/<int:pk>/update/', views.leave_policy_update, name='leave_policy_update'),
     path('leave/policies/<int:pk>/delete/', views.leave_policy_delete, name='leave_policy_delete'),
     path('leave/policies/<int:pk>/toggle-status/', views.leave_policy_toggle_status, name='leave_policy_toggle_status'),
+
+    # Holiday Setup
+    path('holidays/', views.holiday_list, name='holiday_list'),
+    path('holidays/create/', views.holiday_create, name='holiday_create'),
+    path('holidays/<int:pk>/', views.holiday_detail, name='holiday_detail'),
+    path('holidays/<int:pk>/update/', views.holiday_update, name='holiday_update'),
+    path('holidays/<int:pk>/delete/', views.holiday_delete, name='holiday_delete'),
+    path('holidays/<int:pk>/toggle-status/', views.holiday_toggle_status, name='holiday_toggle_status'),
+    path('holidays/<int:pk>/apply/', views.holiday_apply, name='holiday_apply'),
+
+    # Bonus Management
+    path('payroll/bonuses/', views.bonus_list, name='bonus_list'),
+    path('payroll/bonuses/create/', views.bonus_create, name='bonus_create'),
+    path('payroll/bonuses/<int:pk>/', views.bonus_detail, name='bonus_detail'),
+    path('payroll/bonuses/<int:pk>/update/', views.bonus_update, name='bonus_update'),
+    path('payroll/bonuses/<int:pk>/delete/', views.bonus_delete, name='bonus_delete'),
+    path('payroll/bonuses/<int:pk>/status/', views.bonus_update_status, name='bonus_update_status'),
+
+    # Payslip Adjustments & Finalization
+    path('payroll/payslips/<int:pk>/adjust/', views.payslip_adjust, name='payslip_adjust'),
+    path('payroll/payslips/<int:pk>/finalize/', views.payslip_finalize, name='payslip_finalize'),
+    path('payroll/payslips/<int:pk>/unfinalize/', views.payslip_unfinalize, name='payslip_unfinalize'),
+    path('payroll/payslips/<int:pk>/delete/', views.payslip_delete, name='payslip_delete'),
 ]
+

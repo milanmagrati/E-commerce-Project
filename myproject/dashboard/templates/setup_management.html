@@ -146,12 +146,34 @@
         border-radius: 8px;
         margin-bottom: 0.75rem;
         border-left: 4px solid var(--primary);
-        transition: all 0.2s;
+        transition: background-color 0.2s, transform 0.2s;
     }
 
     .setup-item:hover {
         background: #e8eaf6;
         transform: translateX(4px);
+    }
+
+    .setup-item.dragging {
+        opacity: 0.4;
+    }
+
+    .setup-item.drag-over {
+        border-top: 3px solid var(--primary-dark);
+    }
+
+    .setup-drag-handle {
+        cursor: grab;
+        color: #9ca3af;
+        padding: 0.25rem 0.75rem 0.25rem 0.25rem;
+        font-size: 1rem;
+        line-height: 1;
+        user-select: none;
+        touch-action: none;
+    }
+
+    .setup-drag-handle:active {
+        cursor: grabbing;
     }
 
     .setup-item-info {
@@ -438,10 +460,11 @@
                     Add Payment
                 </button>
             </div>
-            <div class="setup-list">
+            <div class="setup-list" id="setup-list-payment" data-setup-type="payment">
                 {% if payment_setups %}
                     {% for setup in payment_setups %}
-                        <div class="setup-item">
+                        <div class="setup-item" data-id="{{ setup.id }}">
+                            <span class="setup-drag-handle" title="Drag to reorder"><i class="fas fa-grip-vertical"></i></span>
                             <div class="setup-item-info">
                                 <div class="setup-item-name">
                                     {{ setup.name }}
@@ -529,10 +552,11 @@
                     Add Status
                 </button>
             </div>
-            <div class="setup-list">
+            <div class="setup-list" id="setup-list-status" data-setup-type="status">
                 {% if status_setups %}
                     {% for setup in status_setups %}
-                        <div class="setup-item">
+                        <div class="setup-item" data-id="{{ setup.id }}">
+                            <span class="setup-drag-handle" title="Drag to reorder"><i class="fas fa-grip-vertical"></i></span>
                             <div class="setup-item-info">
                                 <div class="setup-item-name">
                                     {{ setup.name }}
@@ -620,10 +644,11 @@
                     Add Status
                 </button>
             </div>
-            <div class="setup-list">
+            <div class="setup-list" id="setup-list-payment_status" data-setup-type="payment_status">
                 {% if payment_status_setups %}
                     {% for setup in payment_status_setups %}
-                        <div class="setup-item">
+                        <div class="setup-item" data-id="{{ setup.id }}">
+                            <span class="setup-drag-handle" title="Drag to reorder"><i class="fas fa-grip-vertical"></i></span>
                             <div class="setup-item-info">
                                 <div class="setup-item-name">
                                     {{ setup.name }}
@@ -711,10 +736,11 @@
                     Add Source
                 </button>
             </div>
-            <div class="setup-list">
+            <div class="setup-list" id="setup-list-order_source" data-setup-type="order_source">
                 {% if order_source_setups %}
                     {% for setup in order_source_setups %}
-                        <div class="setup-item">
+                        <div class="setup-item" data-id="{{ setup.id }}">
+                            <span class="setup-drag-handle" title="Drag to reorder"><i class="fas fa-grip-vertical"></i></span>
                             <div class="setup-item-info">
                                 <div class="setup-item-name">
                                     {{ setup.name }}
@@ -931,4 +957,150 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    function getCsrfToken() {
+        const input = document.querySelector('input[name="csrfmiddlewaretoken"]');
+        return input ? input.value : '';
+    }
+
+    function initReorder(list) {
+        const setupType = list.dataset.setupType;
+        let draggedItem = null;
+        let originalOrder = [];
+
+        // Only the grip handle arms dragging - clicking Edit/Delete/star or
+        // the name/description text must never accidentally start a drag.
+        list.addEventListener('mousedown', function (e) {
+            const handle = e.target.closest('.setup-drag-handle');
+            if (!handle) return;
+            const item = handle.closest('.setup-item');
+            if (item) item.setAttribute('draggable', 'true');
+        });
+
+        function disarm() {
+            list.querySelectorAll('.setup-item[draggable="true"]').forEach(function (el) {
+                el.removeAttribute('draggable');
+            });
+            // Query by class rather than the draggedItem variable: drop() clears
+            // that reference before dragend fires, so relying on it here left
+            // the just-dropped row stuck at opacity 0.4 forever.
+            list.querySelectorAll('.setup-item.dragging').forEach(function (el) {
+                el.classList.remove('dragging');
+            });
+        }
+        list.addEventListener('mouseup', disarm);
+
+        list.addEventListener('dragstart', function (e) {
+            const item = e.target.closest('.setup-item');
+            if (!item) return;
+            draggedItem = item;
+            originalOrder = Array.from(list.querySelectorAll('.setup-item')).map(el => el.dataset.id);
+            item.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            // Firefox refuses to start a drag unless data is set here.
+            e.dataTransfer.setData('text/plain', item.dataset.id);
+        });
+
+        list.addEventListener('dragend', disarm);
+
+        // FLIP-animate the siblings that shift when the dragged row moves,
+        // so reordering slides into place instead of snapping instantly.
+        function moveWithFlip(nextSibling) {
+            const siblings = Array.from(list.querySelectorAll('.setup-item')).filter(el => el !== draggedItem);
+            const firstRects = new Map(siblings.map(el => [el, el.getBoundingClientRect()]));
+
+            list.insertBefore(draggedItem, nextSibling);
+
+            siblings.forEach(function (el) {
+                const first = firstRects.get(el);
+                const last = el.getBoundingClientRect();
+                const deltaY = first.top - last.top;
+                if (!deltaY) return;
+                el.style.transition = 'none';
+                el.style.transform = 'translateY(' + deltaY + 'px)';
+                requestAnimationFrame(function () {
+                    el.style.transition = 'transform 0.18s ease';
+                    el.style.transform = '';
+                    // Hand the transition back to the stylesheet's hover rule
+                    // once the slide finishes, instead of leaving it pinned
+                    // to this one-off inline value forever.
+                    setTimeout(function () { el.style.transition = ''; }, 200);
+                });
+            });
+        }
+
+        let reorderQueued = false;
+        list.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            if (!draggedItem || reorderQueued) return;
+
+            const target = e.target.closest('.setup-item');
+            if (!target || target === draggedItem) return;
+
+            const rect = target.getBoundingClientRect();
+            const before = (e.clientY - rect.top) < rect.height / 2;
+            const nextSibling = before ? target : target.nextSibling;
+            if (nextSibling === draggedItem.nextSibling) return;
+
+            // One DOM mutation per animation frame keeps the drag feeling
+            // smooth instead of thrashing layout on every pointer-move.
+            reorderQueued = true;
+            requestAnimationFrame(function () {
+                moveWithFlip(nextSibling);
+                reorderQueued = false;
+            });
+        });
+
+        list.addEventListener('drop', function (e) {
+            e.preventDefault();
+            if (!draggedItem) return;
+            draggedItem = null;
+
+            const ids = Array.from(list.querySelectorAll('.setup-item')).map(el => el.dataset.id);
+            const changed = ids.some((id, i) => id !== originalOrder[i]);
+            if (!changed) return;
+
+            saveOrder(list, setupType, ids, originalOrder);
+        });
+
+        function saveOrder(list, setupType, ids, previousOrder) {
+            fetch("{% url 'setup_reorder' %}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ setup_type: setupType, order: ids })
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        if (window.alertify) alertify.success('Status sorted');
+                    } else {
+                        restoreOrder(list, previousOrder);
+                        if (window.alertify) alertify.error(data.message || 'Failed to save order');
+                    }
+                })
+                .catch(() => {
+                    restoreOrder(list, previousOrder);
+                    if (window.alertify) alertify.error('Failed to save order');
+                });
+        }
+
+        function restoreOrder(list, previousOrder) {
+            const byId = {};
+            list.querySelectorAll('.setup-item').forEach(el => { byId[el.dataset.id] = el; });
+            previousOrder.forEach(id => {
+                if (byId[id]) list.appendChild(byId[id]);
+            });
+        }
+    }
+
+    document.querySelectorAll('.setup-list[data-setup-type]').forEach(initReorder);
+})();
+</script>
 {% endblock %}

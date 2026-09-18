@@ -1,28 +1,40 @@
-from urllib import request
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login, logout, get_user_model
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST, require_http_methods
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from django.contrib import messages
-from django.db.models import Sum, Count, Q, F, Prefetch, Min, Max, Avg, IntegerField, Case, When, Value
-from django.db.models.functions import TruncDate, Cast, Substr
+from django.db.models import Sum, Count, Q, F, Prefetch, Min, Max, Avg, IntegerField, Case, When, Value, OuterRef, Subquery
+from django.db.models.functions import TruncDate, Cast, Substr, Coalesce
 from django.http import JsonResponse, HttpResponse, Http404, HttpResponseRedirect
+from django.core.cache import cache
 from django.core.paginator import Paginator
+
+#: How long a follow-up presence ("X is viewing/typing") survives without a
+#: heartbeat. Must stay well above PRESENCE_INTERVAL_MS in follow_ups.html, or
+#: a live user's record expires between their own heartbeats.
+STALE_PRESENCE_SECONDS = 30
 from datetime import datetime, timedelta
+from typing import NamedTuple
 import pytz
+import re
 import requests
 from .models import (Product, Order, OrderItem, Category, Customer,
                      ProductVariation, ProductImage, ProductVariantOption,
                      OrderActivityLog, StockIn, City, StockInItem, Setup,
                      Supplier, Purchase, PurchaseItem, SupplierPayment,
                      BundleComponent, ProductPurchase, LogisticsAPIConfig,
-                     Branch, RTVOrder)
+                     Branch, RTVOrder, ProductBatch)
 from decimal import Decimal, InvalidOperation
 import json
 from .forms import ProductForm, ProductVariationForm, ProductVariationFormSet, CustomerForm, OrderForm
 from .decimal_utils import safe_decimal, validate_decimal_fields
+from services.status_override import (apply_manual_status,
+                                      clear_manual_status_override,
+                                      manual_override_holds)
 from django.db import IntegrityError, transaction, connection
 from django.utils import timezone
 import traceback
@@ -36,12 +48,31 @@ from django.core.files.base import File
 from django.conf import settings
 from django.utils.text import slugify
 from .models import ReturnRequest, ReturnItem, ReturnActivityLog, Dispatch, DispatchItem, StaffTarget, OrderFollowUp, CompanySetup, APISettings
+from .models import MediaCategory, MediaAsset
 
 # IMPORT DECORATORS
-from accounts.decorators import permission_required, admin_only
+from accounts.decorators import permission_required, admin_only, admin_or_permission_required, has_any_permission
 
 # GET CUSTOM USER MODEL
 User = get_user_model()
+
+
+def server_error_500(request, *args, **kwargs):
+    """
+    Custom 500 handler — logs the full traceback and renders a friendly error page.
+    Registered as handler500 in myproject/urls.py.
+
+    Without this, production 500s show a blank page and are invisible in logs.
+    """
+    import traceback as tb
+    exc_info = tb.format_exc()
+    logger.error(
+        "Internal Server Error (500) on %s\n%s",
+        getattr(request, 'path', '(unknown path)'),
+        exc_info,
+        exc_info=False,  # already formatted above
+    )
+    return render(request, '500.html', status=500)
 
 
 def fix_order_decimals(order):
@@ -68,8 +99,7 @@ def fix_order_decimals(order):
             order.save()  # Save the corrected total
     except Exception as e:
         # If calculation fails, at least set to zero instead of capped value
-        import logging
-        logging.error(f"Error recalculating order {order.id} totals: {e}")
+        logger.error("Error recalculating order %s totals: %s", order.id, e)
         if order.total_amount > Decimal('99999999.99'):
             order.total_amount = Decimal('0')
 
@@ -179,8 +209,6 @@ def sync_order_status_setup(order):
 
     return order
 
-    return order
-
 
 def _get_next_order_number():
     """Return the next available unique order number (e.g. T1346 when T1345 is the highest).
@@ -200,9 +228,31 @@ def _get_next_order_number():
     return "T001"
 
 
+def _safe_login_next(request, next_url):
+    """Only follow `next` if it points back into our own site (never an open redirect)."""
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return next_url
+    return None
+
+
 def login_view(request):
+    # Whenever @login_required bounces an authenticated-but-session-lost user here
+    # (e.g. mid-way through an external OAuth redirect for a CRM integration),
+    # we must send them back to where they were instead of always dumping them
+    # on the dashboard — otherwise the flow looks like it "logged out and started over".
+    next_url = request.POST.get('next') or request.GET.get('next', '')
+
     if request.user.is_authenticated:
-        return redirect('dashboard')
+        safe_next = _safe_login_next(request, next_url)
+        if safe_next:
+            return redirect(safe_next)
+        # Redirect based on dashboard access
+        if request.user.is_superuser or request.user.role == 'administrator' or request.user.can_view_dashboard:
+            return redirect('dashboard')
+        else:
+            return redirect('profile')
 
     if request.method == 'POST':
         username = request.POST.get('username')
@@ -212,20 +262,78 @@ def login_view(request):
         if user is not None:
             login(request, user)
             request.session.set_expiry(43200)  # 12-hour session per user
-            return redirect('dashboard')
+            safe_next = _safe_login_next(request, next_url)
+            if safe_next:
+                return redirect(safe_next)
+            # Redirect based on dashboard access permission
+            if user.is_superuser or user.role == 'administrator' or user.can_view_dashboard:
+                return redirect('dashboard')
+            else:
+                return redirect('profile')
         else:
             messages.error(request, 'Invalid username or password')
 
-    return render(request, 'login.html')
+    return render(request, 'login.html', {'next': next_url})
 
 
 def logout_view(request):
     logout(request)
-    return redirect('login')
+    return redirect('dashboard')  # 'dashboard' is home_view ('/'), which shows the landing page to anonymous users
+
+
+def landing_view(request):
+    """Public marketing site. Standalone template — no dashboard chrome.
+
+    Footer legal links are driven by the store's published CMS pages so the
+    landing page never links to a page that doesn't exist yet. All other copy
+    (hero, stats panel, brands, feature/integration cards, footer business
+    details) is admin-editable via LandingPageSettings ("Landing Page Setup"
+    in the sidebar).
+    """
+    try:
+        from store.models import Page
+        legal_pages = list(Page.objects.filter(is_published=True).only('title', 'slug')[:6])
+    except Exception:
+        legal_pages = []
+
+    from django.urls import reverse
+    from .models import LandingPageSettings
+    landing = LandingPageSettings.get_settings()
+
+    context = {
+        'legal_pages': legal_pages,
+        'landing': landing,
+        'primary_stats': landing.stat_items.filter(group='primary'),
+        'secondary_stats': landing.stat_items.filter(group='secondary'),
+        'brand_logos': landing.brand_logos.all(),
+        'platform_cards': landing.feature_cards.filter(section='platform'),
+        'integration_cards': landing.feature_cards.filter(section='integration'),
+        'hero_primary_url': landing.hero_cta_primary_link or reverse('login'),
+        'hero_secondary_url': landing.hero_cta_secondary_link or '#platform',
+    }
+    return render(request, 'landing.html', context)
+
+
+def home_view(request):
+    """Root URL dispatcher.
+
+    Anonymous visitors get the public landing page instead of being bounced
+    to /login/; authenticated users get the dashboard exactly as before.
+    Registered under name='dashboard' so every existing {% url 'dashboard' %}
+    keeps resolving to '/'.
+    """
+    if not request.user.is_authenticated:
+        return landing_view(request)
+    return dashboard_view(request)
 
 
 @login_required
 def dashboard_view(request):
+    # Role-based access: only admins/superusers or users with can_view_dashboard can access
+    if not (request.user.is_superuser or request.user.role == 'administrator' or request.user.can_view_dashboard):
+        messages.warning(request, '⚠️ You do not have access to the Dashboard. Redirecting to your profile.')
+        return redirect('profile')
+
     # System-wide product and order data (show counts to staff like warehouse)
     products = Product.objects.filter(is_deleted=False)
     orders = Order.objects.all()
@@ -243,7 +351,6 @@ def dashboard_view(request):
 
     # Recent orders
     from decimal import Decimal, InvalidOperation
-    import logging
     try:
         recent_orders = list(orders.order_by('-created_at')[:5])
         # Defensive: sanitize decimals to avoid InvalidOperation in template
@@ -260,7 +367,7 @@ def dashboard_view(request):
                 except (InvalidOperation, ValueError, TypeError):
                     setattr(order, field, Decimal('0'))
     except Exception as e:
-        logging.error(f"Error fetching recent orders: {e}")
+        logger.error("Error fetching recent orders: %s", e)
         recent_orders = []
 
     # ── Low Stock Alert: supports simple, variable, and bundle products ──
@@ -378,79 +485,126 @@ def dashboard_view(request):
     low_stock_alert_count = len(low_stock_items)
     low_stock_items = low_stock_items[:8]
 
-    # Monthly sales data for chart (last 6 months)
+    # ── Dashboard widget permissions (role-based visibility) ──
+    # Each widget has its own checkbox under "Dashboard Module" on the user
+    # create/edit pages, independent of the HRM module's own permissions.
+    is_admin_or_super = request.user.is_superuser or request.user.role == 'administrator'
+    can_view_incomplete_attendance_alert = is_admin_or_super or request.user.can_view_dashboard_incomplete_attendance
+    # "Review & Fix" only makes sense if the destination (the HRM Attendance
+    # Policies page's modal) will actually let them fix something — that page
+    # gates the whole modal on can_view_hrm_incomplete_attendance, so both
+    # flags are required here too, not just the fix checkbox alone.
+    can_fix_incomplete_attendance = is_admin_or_super or (
+        request.user.can_fix_hrm_incomplete_attendance and request.user.can_view_hrm_incomplete_attendance
+    )
+    can_view_sales_overview = is_admin_or_super or request.user.can_view_dashboard_sales_overview
+    can_view_orders_overview = is_admin_or_super or request.user.can_view_dashboard_orders_overview
+    can_view_orders_by_source = is_admin_or_super or request.user.can_view_dashboard_orders_by_source
+
+    # ── Incomplete Attendance Alert (Dashboard widget) ──
+    # Mirrors the default 7-day window used by the Attendance Policies page alert.
+    # Excludes today: a punch missing its clock-out while the workday is still
+    # in progress is expected, not a problem, so it would just be noise here.
+    incomplete_attendance_items = []
+    incomplete_attendance_count = 0
+    if can_view_incomplete_attendance_alert:
+        from hrm.models import AttendanceRecord
+        from .timezone_utils import get_nepali_now, format_nepali_datetime
+        today_nepal = get_nepali_now().date()
+        yesterday_nepal = today_nepal - timedelta(days=1)
+        week_ago = yesterday_nepal - timedelta(days=6)
+        incomplete_qs = AttendanceRecord.objects.exclude(
+            status__in=['absent', 'on_leave']
+        ).filter(
+            Q(clock_in__isnull=True) | Q(clock_out__isnull=True),
+            date__gte=week_ago, date__lte=yesterday_nepal,
+            is_deleted=False,
+        ).select_related('employee', 'employee__department', 'last_fixed_by').annotate(
+            fix_logs_count=Count('fix_logs', distinct=True)
+        ).order_by('-date', 'employee__full_name')
+        incomplete_attendance_count = incomplete_qs.count()
+        for rec in incomplete_qs[:5]:
+            incomplete_attendance_items.append({
+                'id': rec.id,
+                'employee_name': rec.employee.full_name,
+                'employee_id': rec.employee.employee_id,
+                'department': rec.employee.department.name if rec.employee.department_id else '-',
+                'date': rec.date,
+                'clock_in': rec.clock_in,
+                'clock_out': rec.clock_out,
+                'remarks': rec.last_fix_remarks or '',
+                'fixed_by': (rec.last_fixed_by.get_full_name() or rec.last_fixed_by.username) if rec.last_fixed_by else '',
+                'fixed_at': format_nepali_datetime(rec.last_fixed_at) if rec.last_fixed_at else '',
+                'fix_logs_count': rec.fix_logs_count,
+            })
+
+    # Monthly sales data for chart (last 6 months) — skip query if the
+    # widget is hidden from this user (Dashboard Module permission).
     monthly_sales = []
-    for i in range(5, -1, -1):
-        date = timezone.now() - timedelta(days=30*i)
-        month_name = date.strftime('%b %Y')
-        month_start = date.replace(day=1)
+    if can_view_sales_overview:
+        for i in range(5, -1, -1):
+            date = timezone.now() - timedelta(days=30*i)
+            month_name = date.strftime('%b %Y')
+            month_start = date.replace(day=1)
 
-        if i > 0:
-            next_month = (date.replace(day=28) + timedelta(days=4)).replace(day=1)
-        else:
-            next_month = timezone.now() + timedelta(days=1)
+            if i > 0:
+                next_month = (date.replace(day=28) + timedelta(days=4)).replace(day=1)
+            else:
+                next_month = timezone.now() + timedelta(days=1)
 
-        sales = orders.filter(
-            created_at__gte=month_start,
-            created_at__lt=next_month,
-            payment_status='paid'
-        ).aggregate(total=Sum('total_amount'))['total'] or 0
+            sales = orders.filter(
+                created_at__gte=month_start,
+                created_at__lt=next_month,
+                payment_status='paid'
+            ).aggregate(total=Sum('total_amount'))['total'] or 0
 
-        monthly_sales.append({
-            'month': month_name,
-            'sales': float(sales)
-        })
+            monthly_sales.append({
+                'month': month_name,
+                'sales': float(sales)
+            })
 
-    # Order source data by dates (last 7 days - default)
-    from django.db.models.functions import TruncDate
+    # Order source data by dates (last 7 days - default) — skip query if the
+    # widget is hidden from this user (Dashboard Module permission).
+    # ── FIXED: Single aggregated query instead of N+1 per-source loop ──
+    # Old code fired one DB query per source name × date range.
+    # New code fires ONE query that groups by (order_from, order_date).
+    order_sources = {'dates': [], 'sources': [], 'data': {}}
+    if can_view_orders_by_source:
+        # Generate last 7 days of dates (default view)
+        dates_list = [
+            (timezone.now() - timedelta(days=i)).date()
+            for i in range(6, -1, -1)
+        ]
 
-    # Get all sources first
-    all_sources = set()
-    source_dates_data = orders.annotate(
-        order_date=TruncDate('created_at')
-    ).values('order_date', 'order_from').annotate(
-        count=Count('id')
-    ).order_by('order_date', 'order_from')
+        # Single aggregated query: all sources × all dates in one hit
+        source_date_rows = (
+            orders
+            .annotate(order_date=TruncDate('created_at'))
+            .filter(order_date__in=dates_list)
+            .values('order_date', 'order_from')
+            .annotate(count=Count('id'))
+            .order_by('order_date', 'order_from')
+        )
 
-    for entry in source_dates_data:
-        source_name = entry['order_from'] if entry['order_from'] else 'Direct'
-        all_sources.add(source_name)
+        # Build lookup: {source_name: {date: count}}
+        all_sources = set()
+        source_date_map = {}  # {source_name: {date: count}}
+        for row in source_date_rows:
+            src = row['order_from'] or 'Direct'
+            all_sources.add(src)
+            source_date_map.setdefault(src, {})[row['order_date']] = row['count']
 
-    # Generate last 7 days of dates (default view)
-    dates_list = []
-    for i in range(6, -1, -1):
-        date = (timezone.now() - timedelta(days=i)).date()
-        dates_list.append(date)
-
-    # Build data structure: {date: {source: count}}
-    order_sources_by_date = {date: {} for date in dates_list}
-
-    for source_name in all_sources:
-        source_data = orders.filter(
-            order_from=source_name if source_name != 'Direct' else ''
-        ).annotate(
-            order_date=TruncDate('created_at')
-        ).values('order_date').annotate(
-            count=Count('id')
-        ).order_by('order_date')
-
-        for entry in source_data:
-            if entry['order_date'] in order_sources_by_date:
-                order_sources_by_date[entry['order_date']][source_name] = entry['count']
-
-    # Format for JSON: prepare chart data
-    order_sources = {
-        'dates': [date.strftime('%b %d') for date in dates_list],
-        'sources': sorted(list(all_sources)),
-        'data': {}
-    }
-
-    for source in order_sources['sources']:
-        counts = []
-        for date in dates_list:
-            count = order_sources_by_date.get(date, {}).get(source, 0)
-            counts.append(count)
-        order_sources['data'][source] = counts
+        # Format for JSON chart
+        order_sources = {
+            'dates': [d.strftime('%b %d') for d in dates_list],
+            'sources': sorted(all_sources),
+            'data': {},
+        }
+        for source in order_sources['sources']:
+            order_sources['data'][source] = [
+                source_date_map.get(source, {}).get(d, 0)
+                for d in dates_list
+            ]
 
     context = {
         'total_products': total_products,
@@ -463,19 +617,27 @@ def dashboard_view(request):
         'recent_orders': recent_orders,
         'low_stock_items': low_stock_items,
         'low_stock_alert_count': low_stock_alert_count,
+        'can_view_incomplete_attendance_alert': can_view_incomplete_attendance_alert,
+        'can_fix_incomplete_attendance': can_fix_incomplete_attendance,
+        'incomplete_attendance_items': incomplete_attendance_items,
+        'incomplete_attendance_count': incomplete_attendance_count,
+        'can_view_sales_overview': can_view_sales_overview,
+        'can_view_orders_overview': can_view_orders_overview,
+        'can_view_orders_by_source': can_view_orders_by_source,
         'monthly_sales': json.dumps(monthly_sales),
         'order_sources': json.dumps(order_sources),
         'can_view_total_revenue': request.user.can_view_total_revenue or request.user.role == 'administrator',
     }
     return render(request, 'dashboard.html', context)
+
 @login_required
 @permission_required('can_view_products')
 def products_view(request):
+    """Products list with search, filters, and date range"""
     # Check for a flag set by product_add to clear any client-side product drafts
     clear_product_draft = request.session.pop('clear_product_draft', False)
     # attach to request for template access
     request.clear_product_draft = clear_product_draft
-    """Products list with search, filters, and date range"""
     products = Product.objects.filter(
         is_deleted=False
     ).select_related('category').prefetch_related(
@@ -513,34 +675,40 @@ def products_view(request):
         products = products.filter(stock=0)
 
     # Date Range Filter
+    # NOTE: Do NOT use `created_at__date=`/`__year=`/`__month=` lookups here.
+    # With USE_TZ=True and TIME_ZONE='Asia/Kathmandu', those compile to MySQL
+    # CONVERT_TZ(...) calls, and CONVERT_TZ() silently returns NULL on this server
+    # (its mysql.time_zone_name tables aren't loaded) — so the filter matches
+    # zero rows every time, with no error. Use plain UTC datetime bounds instead
+    # (see dashboard/timezone_utils.py nepali_day_start/nepali_day_end_exclusive).
+    from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
     date_filter = request.GET.get("date_range", "")
     today = timezone.now().date()
 
     if date_filter == "today":
-        products = products.filter(created_at__date=today)
+        products = products.filter(created_at__gte=nepali_day_start(today), created_at__lt=nepali_day_end_exclusive(today))
     elif date_filter == "yesterday":
         yesterday = today - timedelta(days=1)
-        products = products.filter(created_at__date=yesterday)
+        products = products.filter(created_at__gte=nepali_day_start(yesterday), created_at__lt=nepali_day_end_exclusive(yesterday))
     elif date_filter == "last_7_days":
         start_date = today - timedelta(days=7)
-        products = products.filter(created_at__date__gte=start_date)
+        products = products.filter(created_at__gte=nepali_day_start(start_date))
     elif date_filter == "last_30_days":
         start_date = today - timedelta(days=30)
-        products = products.filter(created_at__date__gte=start_date)
+        products = products.filter(created_at__gte=nepali_day_start(start_date))
     elif date_filter == "this_month":
-        products = products.filter(
-            created_at__year=today.year,
-            created_at__month=today.month
-        )
+        first_day_this_month = today.replace(day=1)
+        next_month = (first_day_this_month + timedelta(days=32)).replace(day=1)
+        products = products.filter(created_at__gte=nepali_day_start(first_day_this_month), created_at__lt=nepali_day_start(next_month))
     elif date_filter == "last_month":
         first_day_this_month = today.replace(day=1)
-        last_month = first_day_this_month - timedelta(days=1)
-        products = products.filter(
-            created_at__year=last_month.year,
-            created_at__month=last_month.month
-        )
+        last_month_end_excl = first_day_this_month
+        last_month_start = (first_day_this_month - timedelta(days=1)).replace(day=1)
+        products = products.filter(created_at__gte=nepali_day_start(last_month_start), created_at__lt=nepali_day_start(last_month_end_excl))
     elif date_filter == "this_year":
-        products = products.filter(created_at__year=today.year)
+        year_start = today.replace(month=1, day=1)
+        next_year_start = today.replace(year=today.year + 1, month=1, day=1)
+        products = products.filter(created_at__gte=nepali_day_start(year_start), created_at__lt=nepali_day_start(next_year_start))
     elif date_filter == "custom":
         start_date = request.GET.get("start_date")
         end_date = request.GET.get("end_date")
@@ -548,16 +716,25 @@ def products_view(request):
         if start_date:
             try:
                 start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
-                products = products.filter(created_at__date__gte=start_date_obj)
+                products = products.filter(created_at__gte=nepali_day_start(start_date_obj))
             except ValueError:
                 pass
 
         if end_date:
             try:
                 end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
-                products = products.filter(created_at__date__lte=end_date_obj)
+                products = products.filter(created_at__lt=nepali_day_end_exclusive(end_date_obj))
             except ValueError:
                 pass
+
+    # Expiry filter
+    general_filter = request.GET.get("filter", "")
+    if general_filter == "expiring":
+        thirty_days_from_now = today + timedelta(days=30)
+        products = products.filter(
+            expiry_date__isnull=False,
+            expiry_date__lte=thirty_days_from_now
+        ).order_by('expiry_date')
 
     # Sort filter
     sort_filter = request.GET.get("sort", "")
@@ -1162,9 +1339,86 @@ def _get_bundle_context():
     }
 
 
+def _attach_existing_media_to_product(request, product):
+    """Copy Media Library assets picked via the 'Choose from Existing' modal into this product's gallery.
+
+    Idempotent: an asset already linked to this product's gallery (via source_asset)
+    is skipped so re-submitting the same form (e.g. re-saving without changing the
+    picker selection) doesn't keep duplicating the same images.
+    """
+    raw_ids = request.POST.get('existing_media_ids', '')
+    ids = [i for i in raw_ids.split(',') if i.strip().isdigit()]
+    if not ids:
+        return
+
+    already_linked = set(
+        product.images.filter(source_asset_id__in=ids).values_list('source_asset_id', flat=True)
+    )
+
+    for asset in MediaAsset.objects.filter(id__in=ids).exclude(id__in=already_linked):
+        gallery_image = ProductImage(product=product, alt_text=asset.title, source_asset=asset)
+        with asset.image.open('rb') as f:
+            gallery_image.image.save(os.path.basename(asset.image.name), File(f), save=True)
+
+
+def _add_gallery_image_to_media_library(product_image, request):
+    """Mirror a freshly uploaded product gallery image into the shared Media Library.
+
+    Images copied FROM the library (source_asset already set) are skipped since
+    they're already there. The new asset is linked back via source_asset so a
+    later re-save recognizes this gallery image as already-linked (see
+    _attach_existing_media_to_product) instead of duplicating it.
+
+    Best-effort: the gallery image itself is already saved by the time this runs,
+    so a storage hiccup here must not turn an otherwise-successful save into a
+    500 for the user — log and move on instead.
+    """
+    if product_image.source_asset_id or not product_image.image:
+        return
+    try:
+        asset = MediaAsset(
+            title=(product_image.alt_text or os.path.splitext(os.path.basename(product_image.image.name))[0])[:255],
+            uploaded_by=request.user,
+        )
+        with product_image.image.open('rb') as f:
+            asset.image.save(os.path.basename(product_image.image.name), File(f), save=False)
+        asset.file_size = asset.image.size
+        asset.save()
+        product_image.source_asset = asset
+        product_image.save(update_fields=['source_asset'])
+    except Exception:
+        logger.exception('Failed to mirror ProductImage %s into the Media Library', product_image.pk)
+
+
+def _add_main_image_to_media_library(product, request):
+    """Mirror a freshly uploaded main product image into the shared Media Library.
+
+    Best-effort, same reasoning as _add_gallery_image_to_media_library: the
+    product itself is already saved, so failures here are logged, not raised.
+    """
+    if not product.image:
+        return
+    try:
+        asset = MediaAsset(
+            title=product.name[:255],
+            uploaded_by=request.user,
+        )
+        with product.image.open('rb') as f:
+            asset.image.save(os.path.basename(product.image.name), File(f), save=False)
+        asset.file_size = asset.image.size
+        asset.save()
+    except Exception:
+        logger.exception('Failed to mirror main image of product %s into the Media Library', product.pk)
+
+
+# Setup > Product Page Theme owns the landing-page fields; the product form
+# just posts into them, so the save and the context both come from there.
+from dashboard.product_theme_views import (product_theme_form_context,
+                                           save_product_theme)
+
+
 @login_required
 @permission_required('can_create_products')
-
 def product_add(request):
     if request.method == 'POST':
         form = ProductForm(request.POST, request.FILES)
@@ -1175,6 +1429,7 @@ def product_add(request):
             product.save()
 
             # If a temporary uploaded image exists (from a previous failed validation), attach it to the saved product
+            main_image_freshly_uploaded = 'image' in request.FILES
             try:
                 temp_path = request.session.pop('temp_product_image', None)
                 if temp_path and default_storage.exists(temp_path):
@@ -1184,6 +1439,7 @@ def product_add(request):
                         default_storage.delete(temp_path)
                     except Exception:
                         pass
+                    main_image_freshly_uploaded = True
             except Exception:
                 pass
 
@@ -1243,17 +1499,42 @@ def product_add(request):
                     if temp_url:
                         ctx['temp_image_url'] = temp_url
                         ctx['temp_image_path'] = temp_path
+                    ctx.update(_get_bundle_context())
+                    ctx.update(product_theme_form_context(None, request.POST))
 
-                    return render(request, 'dashboard/product_form.html', ctx)
+                    return render(request, 'product_form.html', ctx)
 
             # Handle bundle components
             if product.product_type == 'bundle':
                 _save_bundle_components(request, product)
 
+            # Auto-create initial batch for FIFO tracking if dates are provided and stock > 0
+            if product.stock > 0 and product.expiry_date and not product.batches.exists():
+                ProductBatch.objects.create(
+                    product=product,
+                    batch_number=f"INIT-{product.pk}",
+                    quantity=product.stock,
+                    initial_quantity=product.stock,
+                    manufactured_date=product.manufactured_date,
+                    expiry_date=product.expiry_date,
+                    cost_price=product.cost_price or 0,
+                    notes="Auto-created initial batch"
+                )
+
             # Handle gallery images
             gallery_images = request.FILES.getlist('gallery_images')
             for img in gallery_images:
-                ProductImage.objects.create(product=product, image=img)
+                product_image = ProductImage.objects.create(product=product, image=img)
+                _add_gallery_image_to_media_library(product_image, request)
+
+            # Handle images picked from the Media Library
+            _attach_existing_media_to_product(request, product)
+
+            # Mirror a freshly uploaded main product image into the Media Library too
+            if main_image_freshly_uploaded:
+                _add_main_image_to_media_library(product, request)
+
+            save_product_theme(request, product)
 
             messages.success(request, f'Product "{product.name}" created successfully!')
             # Clean up any temporary uploaded image saved in session
@@ -1299,6 +1580,7 @@ def product_add(request):
                 }
             }
             ctx.update(_get_bundle_context())
+            ctx.update(product_theme_form_context(None, request.POST))
             return render(request, 'product_form.html', ctx)
     else:
         form = ProductForm()
@@ -1338,7 +1620,10 @@ def product_add(request):
         }
     }
     ctx.update(_get_bundle_context())
+    ctx.update(product_theme_form_context())
     return render(request, 'product_form.html', ctx)
+
+
 @login_required
 @permission_required('can_edit_products')
 def product_edit(request, product_id):
@@ -1359,6 +1644,14 @@ def product_edit(request, product_id):
 
         if form.is_valid():
             product = form.save()
+            default_image_changed = False
+            main_image_freshly_uploaded = 'image' in request.FILES
+
+            # Handle "Delete Main Image" checkbox — only clear if no replacement was uploaded
+            if request.POST.get('clear_main_image') and 'image' not in request.FILES and product.image:
+                product.image.delete(save=False)
+                product.image = None
+                product.save(update_fields=['image'])
 
             # Sync cost_price field with weighted average for variable cost products.
             # This handles the case where the user switches cost_price_type to 'variable'
@@ -1379,6 +1672,7 @@ def product_edit(request, product_id):
                         default_storage.delete(temp_path)
                     except Exception:
                         pass
+                    main_image_freshly_uploaded = True
             except Exception:
                 pass
 
@@ -1414,28 +1708,69 @@ def product_edit(request, product_id):
                 # FIXED: Always try to save formset if it's valid
                 if formset.is_valid():
                     formset.save()
-                    messages.success(request, f'Product "{product.name}" updated successfully!')
                 else:
                     # If formset has errors, show them and re-render the form
                     messages.error(request, 'Please correct the variation errors below.')
-                    return render(request, 'product_form.html', {
+                    variation_ctx = {
                         'form': form,
                         'formset': formset,
                         'product': product,
                         'action': 'Edit',
                         'current_step': 1,
-                    })
-            else:
-                messages.success(request, f'Product "{product.name}" updated successfully!')
+                    }
+                    variation_ctx.update(_get_bundle_context())
+                    variation_ctx.update(
+                        product_theme_form_context(product, request.POST))
+                    return render(request, 'product_form.html', variation_ctx)
 
             # Handle bundle components
             if product.product_type == 'bundle':
                 _save_bundle_components(request, product)
 
+            # Auto-create initial batch for FIFO tracking if dates are provided and stock > 0
+            if product.stock > 0 and product.expiry_date and not product.batches.exists():
+                ProductBatch.objects.create(
+                    product=product,
+                    batch_number=f"INIT-{product.pk}",
+                    quantity=product.stock,
+                    initial_quantity=product.stock,
+                    manufactured_date=product.manufactured_date,
+                    expiry_date=product.expiry_date,
+                    cost_price=product.cost_price or 0,
+                    notes="Auto-created initial batch"
+                )
+
             # Handle gallery images
             gallery_images = request.FILES.getlist('gallery_images')
             for img in gallery_images:
-                ProductImage.objects.create(product=product, image=img)
+                product_image = ProductImage.objects.create(product=product, image=img)
+                _add_gallery_image_to_media_library(product_image, request)
+
+            # Handle images picked from the Media Library
+            _attach_existing_media_to_product(request, product)
+
+            # Mirror a freshly uploaded main product image into the Media Library too
+            if main_image_freshly_uploaded:
+                _add_main_image_to_media_library(product, request)
+
+            # Handle gallery image deletions
+            delete_gallery_ids = request.POST.getlist('delete_gallery_image')
+            if delete_gallery_ids:
+                ProductImage.objects.filter(product=product, id__in=delete_gallery_ids).delete()
+
+            # Handle "set as default" gallery image
+            make_default_id = request.POST.get('make_default_image')
+            if make_default_id and make_default_id not in delete_gallery_ids:
+                default_image = ProductImage.objects.filter(product=product, id=make_default_id).first()
+                if default_image:
+                    ProductImage.objects.filter(product=product).update(is_featured=False)
+                    default_image.is_featured = True
+                    default_image.save(update_fields=['is_featured'])
+                    product.image = default_image.image
+                    product.save(update_fields=['image'])
+                    default_image_changed = True
+                else:
+                    messages.error(request, 'Could not set the selected gallery image as default — it may have been removed. Please try again.')
 
             # Clean up any temporary uploaded image saved in session
             temp_to_remove = request.session.pop('temp_product_image', None)
@@ -1444,7 +1779,16 @@ def product_edit(request, product_id):
                     default_storage.delete(temp_to_remove)
                 except Exception:
                     pass
-            return redirect('products')
+
+            save_product_theme(request, product)
+
+            # A single consolidated success message instead of one per sub-action
+            if default_image_changed:
+                messages.success(request, f'Product "{product.name}" updated successfully! Main image updated from the gallery selection.')
+            else:
+                messages.success(request, f'Product "{product.name}" updated successfully!')
+
+            return redirect('product_edit', product_id=product.pk)
         else:
             messages.error(request, 'Please correct the errors below.')
             # If user uploaded an image but form validation failed, persist it to temp storage
@@ -1508,6 +1852,8 @@ def product_edit(request, product_id):
         'bundle_components': list(product.bundle_components.select_related('component_product').all()) if product.product_type == 'bundle' else [],
     }
     ctx.update(_get_bundle_context())
+    ctx.update(product_theme_form_context(
+        product, request.POST if request.method == 'POST' else None))
     return render(request, 'product_form.html', ctx)
 
 
@@ -1625,6 +1971,16 @@ def product_detail(request, product_id):
     if product.is_bundle:
         bundle_components = product.bundle_components.select_related('component_product').all()
 
+    # Shelf-life percentage for expiry progress bar
+    shelf_life_pct = 50  # default fallback
+    if product.manufactured_date and product.expiry_date:
+        from django.utils import timezone
+        today = timezone.now().date()
+        total_days = (product.expiry_date - product.manufactured_date).days
+        elapsed_days = (today - product.manufactured_date).days
+        if total_days > 0:
+            shelf_life_pct = min(100, max(0, round((elapsed_days / total_days) * 100)))
+
     context = {
         'product': product,
         'variations': variations,  # ADDED: Explicitly pass variations
@@ -1634,6 +1990,7 @@ def product_detail(request, product_id):
         'profit_margin': profit_margin,
         'user_permissions': user_permissions,  # ADDED: Pass user permissions
         'bundle_components': bundle_components,
+        'shelf_life_pct': shelf_life_pct,
     }
 
     return render(request, 'product_detail.html', context)
@@ -1807,8 +2164,19 @@ def delete_product_image(request, image_id):
     image.delete()
 
     messages.success(request, f'Image deleted from "{product_name}" gallery successfully!')
-    return redirect('product_detail', product_id=product_id)
+    return redirect(request.META.get('HTTP_REFERER', 'product_detail'), product_id=product_id)
 
+@login_required
+@permission_required('can_edit_products')
+def delete_main_product_image(request, product_id):
+    """Delete the main product image"""
+    product = get_object_or_404(Product, id=product_id, user=request.user)
+    if product.image:
+        product.image.delete(save=False)
+        product.image = None
+        product.save(update_fields=['image'])
+        messages.success(request, f'Main image deleted for "{product.name}"!')
+    return redirect(request.META.get('HTTP_REFERER', 'product_detail'), product_id=product.id)
 
 @login_required
 @permission_required('can_edit_products')
@@ -1823,8 +2191,130 @@ def set_featured_image(request, image_id):
     image.is_featured = True
     image.save()
 
-    messages.success(request, f'Featured image updated for "{image.product.name}"!')
-    return redirect('product_detail', product_id=image.product.id)
+    # Also make it the default main product image
+    image.product.image = image.image
+    image.product.save(update_fields=['image'])
+
+    messages.success(request, f'Default image updated for "{image.product.name}"!')
+    return redirect(request.META.get('HTTP_REFERER', 'product_detail'), product_id=image.product.id)
+
+
+@login_required
+@admin_or_permission_required('can_edit_products', 'can_create_products')
+def media_library(request):
+    """Shared Media Library — upload, organize by category, and manage reusable images."""
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        if action == 'upload':
+            category_id = request.POST.get('category') or None
+            category = MediaCategory.objects.filter(id=category_id).first() if category_id else None
+            files = request.FILES.getlist('files')
+            if not files:
+                messages.error(request, 'Please choose at least one image to upload.')
+            else:
+                for f in files:
+                    MediaAsset.objects.create(
+                        image=f,
+                        title=os.path.splitext(f.name)[0][:255],
+                        category=category,
+                        uploaded_by=request.user,
+                        file_size=f.size,
+                    )
+                messages.success(request, f'{len(files)} image(s) uploaded to Media Library!')
+            return redirect(request.META.get('HTTP_REFERER') or 'media_library')
+
+        elif action == 'create_category':
+            name = request.POST.get('name', '').strip()
+            if not name:
+                messages.error(request, 'Category name is required.')
+            elif MediaCategory.objects.filter(name__iexact=name).exists():
+                messages.error(request, f'Category "{name}" already exists.')
+            else:
+                MediaCategory.objects.create(name=name)
+                messages.success(request, f'Category "{name}" created!')
+            return redirect('media_library')
+
+        elif action == 'delete_category':
+            category = MediaCategory.objects.filter(id=request.POST.get('category_id')).first()
+            if category:
+                name = category.name
+                category.delete()
+                messages.success(request, f'Category "{name}" deleted. Its images are now Uncategorized.')
+            return redirect('media_library')
+
+        elif action == 'delete':
+            asset = MediaAsset.objects.filter(id=request.POST.get('asset_id')).first()
+            if asset:
+                asset.image.delete(save=False)
+                asset.delete()
+                messages.success(request, 'Image deleted from Media Library.')
+            return redirect(request.META.get('HTTP_REFERER') or 'media_library')
+
+        elif action == 'move_category':
+            asset_ids = request.POST.getlist('asset_ids')
+            category_id = request.POST.get('category') or None
+            category = None
+            if category_id and category_id != 'uncategorized':
+                category = MediaCategory.objects.filter(id=category_id).first()
+            updated = MediaAsset.objects.filter(id__in=asset_ids).update(category=category)
+            messages.success(request, f'Moved {updated} image(s) to "{category.name if category else "Uncategorized"}".')
+            return redirect('media_library')
+
+        elif action == 'bulk_delete':
+            asset_ids = request.POST.getlist('asset_ids')
+            assets_qs = MediaAsset.objects.filter(id__in=asset_ids)
+            count = assets_qs.count()
+            for asset in assets_qs:
+                asset.image.delete(save=False)
+            assets_qs.delete()
+            messages.success(request, f'Deleted {count} image(s) from Media Library.')
+            return redirect('media_library')
+
+    active_category = request.GET.get('category', '')
+    assets = MediaAsset.objects.select_related('category', 'uploaded_by').all()
+    if active_category == 'uncategorized':
+        assets = assets.filter(category__isnull=True)
+    elif active_category:
+        assets = assets.filter(category_id=active_category)
+
+    categories = MediaCategory.objects.annotate(asset_count=Count('assets')).all()
+    uncategorized_count = MediaAsset.objects.filter(category__isnull=True).count()
+
+    return render(request, 'media_library.html', {
+        'assets': assets,
+        'categories': categories,
+        'uncategorized_count': uncategorized_count,
+        'active_category': active_category,
+        'total_count': MediaAsset.objects.count(),
+    })
+
+
+@login_required
+@admin_or_permission_required('can_edit_products', 'can_create_products')
+def api_media_list(request):
+    """JSON feed of Media Library assets for the 'Choose from Existing' picker in the product form."""
+    active_category = request.GET.get('category', '')
+    assets = MediaAsset.objects.select_related('category').all()
+    if active_category == 'uncategorized':
+        assets = assets.filter(category__isnull=True)
+    elif active_category:
+        assets = assets.filter(category_id=active_category)
+
+    data = [{
+        'id': a.id,
+        'url': a.image.url,
+        'title': a.title or '',
+        'category_id': a.category_id or 'uncategorized',
+        'category_name': a.category.name if a.category else 'Uncategorized',
+    } for a in assets]
+
+    categories = [{'id': c.id, 'name': c.name} for c in MediaCategory.objects.all()]
+    return JsonResponse({
+        'assets': data,
+        'categories': categories,
+        'uncategorized_count': MediaAsset.objects.filter(category__isnull=True).count(),
+    })
 
 
 @login_required
@@ -1841,12 +2331,13 @@ def upload_product_images(request, product_id):
             max_order = ProductImage.objects.filter(product=product).count()
 
             for idx, image in enumerate(gallery_images):
-                ProductImage.objects.create(
+                product_image = ProductImage.objects.create(
                     product=product,
                     image=image,
                     order=max_order + idx,
                     alt_text=f"{product.name} - Gallery Image {max_order + idx + 1}"
                 )
+                _add_gallery_image_to_media_library(product_image, request)
 
             messages.success(request, f'{len(gallery_images)} image(s) uploaded successfully to "{product.name}" gallery!')
         else:
@@ -1918,7 +2409,8 @@ def orders_view(request):
 @login_required
 def chart_data(request):
     # Get sales data for charts
-    today = datetime.now().date()
+    from .timezone_utils import get_nepali_now, nepali_day_start, nepali_day_end_exclusive
+    today = get_nepali_now().date()
 
     # Last 7 days sales
     daily_sales = []
@@ -1927,7 +2419,8 @@ def chart_data(request):
         sales = Order.objects.filter(
             user=request.user,
             payment_status='paid',
-            created_at__date=date
+            created_at__gte=nepali_day_start(date),
+            created_at__lt=nepali_day_end_exclusive(date)
         ).aggregate(total=Sum('total_amount'))['total'] or 0
 
         daily_sales.insert(0, {
@@ -2751,9 +3244,12 @@ def orders_list(request):
     dispatched_orders = orders.filter(order_status__iexact='dispatched').count()
 
     # Delivered today: orders with delivered status and delivered_at today
+    # (must use explicit UTC bounds, not __date=, for the same CONVERT_TZ reason as above)
+    _today_start = _day_start(today_nepal)
     delivered_today = orders.filter(
         order_status__iexact='delivered',
-        delivered_at__date=today_nepal
+        delivered_at__gte=_today_start,
+        delivered_at__lt=_today_start + timedelta(days=1)
     ).count()
 
     # Product name sorting
@@ -2769,7 +3265,7 @@ def orders_list(request):
     # Pagination
     from django.core.paginator import Paginator
     per_page = request.GET.get('per_page', '50')
-    if per_page not in ('50', '100', '200'):
+    if per_page not in ('50', '100', '200', '500'):
         per_page = '50'
     paginator = Paginator(orders, int(per_page))
     page_number = request.GET.get('page')
@@ -2777,8 +3273,8 @@ def orders_list(request):
 
     # ✅ FETCH DYNAMIC ORDER STATUSES AND PAYMENT STATUSES FROM SETUP MANAGEMENT
     # This ensures filters pull from Setup Management for consistency
-    order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
 
     # Convert Setup names to filter values (lowercase with underscores)
     # Format: [(filter_value, display_name), ...]
@@ -2833,8 +3329,7 @@ def orders_list(request):
             else:
                 order_products[order.id] = "No products"
         except Exception as e:
-            import logging
-            logging.error(f"Error fixing decimals for order {order.id}: {e}")
+            logger.error("Error fixing decimals for order %s: %s", order.id, e)
             order_products[order.id] = "No products"
 
     context = {
@@ -2866,7 +3361,8 @@ def orders_list(request):
         'payment_status_bulk_options': payment_status_bulk_options,
         'ncm_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True),
         'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
-        'ORDER_AUTO_SYNC_INTERVAL': APISettings.get_settings().order_sync_interval,
+        # Local-DB repaint cadence, not the NCM call cadence - see order_detail.
+        'ORDER_AUTO_SYNC_INTERVAL': APISettings.get_settings().page_refresh_interval,
     }
 
     return render(request, 'orders_list.html', context)
@@ -2889,7 +3385,12 @@ def order_create(request):
                 # UPDATED: Get city from City model
                 branch_city_name = (request.POST.get("branch_city") or "").strip()
                 shipping_address = (request.POST.get("shipping_address") or "").strip()
+                # The order form dropped its Landmark box in favour of VAT/PAN.
+                # Other callers (imports, the redirect flow) still post one, so
+                # the field is read rather than removed — but a post that never
+                # carried it must not blank the customer's stored landmark.
                 landmark = (request.POST.get("landmark") or "").strip()
+                vat_pan = (request.POST.get("vat_pan") or "").strip()
                 # Get in_out field from form (auto-detected)
                 in_out = (request.POST.get("in_out") or "in").strip()
 
@@ -2903,6 +3404,9 @@ def order_create(request):
                 payment_setup_id = request.POST.get("payment_setup")
                 status_setup_id = request.POST.get("status_setup")
                 payment_status_setup_id = request.POST.get("payment_status_setup")
+                
+                # Check for followup conversion
+                followup_id_post = request.POST.get("followup_id")
                 payment_setup = None
                 status_setup = None
                 payment_status_setup = None
@@ -3094,6 +3598,7 @@ def order_create(request):
                                 in_out=in_out,
                                 shipping_address=shipping_address,
                                 landmark=landmark,
+                                vat_pan=vat_pan,
                                 order_from=order_from,
                                 order_status=order_status,
                                 payment_method=payment_method,
@@ -3194,6 +3699,23 @@ def order_create(request):
                     description=f'City "{branch_city_name}" detected as {valley_status}. IN/OUT set to {in_out.upper()}'
                 )
 
+                if followup_id_post:
+                    try:
+                        from .models import FollowUp, FollowUpLog
+                        follow_up = FollowUp.objects.get(id=followup_id_post)
+                        old_status = follow_up.status
+                        if old_status.lower() != 'converted':
+                            follow_up.status = 'Converted'
+                            follow_up.save()
+                            FollowUpLog.objects.create(
+                                follow_up=follow_up, user=created_by, field_changed='Status',
+                                old_value=old_status or '-', new_value='Converted'
+                            )
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Error converting follow_up {followup_id_post}: {e}")
+
                 success_msg = f"Order {order.order_number} created successfully!"
                 if is_partial_payment:
                     success_msg += f" | Partial payment: रू {partial_amount_paid} paid"
@@ -3207,8 +3729,7 @@ def order_create(request):
                 return redirect("orders_list")
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logger.error("Error creating order: %s", e, exc_info=True)
             if _is_ajax:
                 return _ajax_error(f'Error creating order: {str(e)}')
             messages.error(request, f"Error creating order: {str(e)}")
@@ -3242,11 +3763,19 @@ def order_create(request):
     categories = Category.objects.all().order_by('name')
 
     # NEW: GET PAYMENT AND STATUS SETUPS
-    from .models import Setup
-    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
-    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
-    order_source_setups = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
+    from .models import Setup, FollowUp
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('sort_order', 'name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
+    order_source_setups = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('sort_order', 'name')
+
+    followup_id = request.GET.get('followup_id')
+    follow_up_data = None
+    if followup_id:
+        try:
+            follow_up_data = FollowUp.objects.prefetch_related('products', 'product_variations', 'product_variations__product').select_related('product').get(id=followup_id, is_deleted=False)
+        except FollowUp.DoesNotExist:
+            pass
 
     return render(
         request,
@@ -3260,8 +3789,201 @@ def order_create(request):
             "status_setups": status_setups,
             "payment_status_setups": payment_status_setups,
             "order_source_setups": order_source_setups,
+            "follow_up_data": follow_up_data,
         },
     )
+
+
+def _redirect_meta_as_dict(metadata):
+    """OrderActivityLog.metadata is a JSONField, but old rows may hold a JSON string or None."""
+    if isinstance(metadata, dict):
+        return metadata
+    if isinstance(metadata, str) and metadata.strip():
+        try:
+            parsed = json.loads(metadata)
+            return parsed if isinstance(parsed, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+    return {}
+
+
+def _redirect_old_customer(metadata):
+    """
+    Normalize the old-customer snapshot stored on a 'redirected' activity log.
+
+    The redirect code paths have written this metadata under two key styles over
+    time — customer_name/customer_phone/shipping_address/branch_city (current)
+    and old_customer_name/old_customer_phone/... (older) — so read both and
+    return a single predictable shape. Returns empty strings when nothing was
+    captured; callers decide whether to render the block at all.
+    """
+    meta = _redirect_meta_as_dict(metadata)
+
+    def pick(*keys):
+        for key in keys:
+            value = meta.get(key)
+            if value is None:
+                continue
+            value = str(value).strip()
+            if value and value != '—':
+                return value
+        return ''
+
+    return {
+        'name': pick('customer_name', 'old_customer_name', 'name', 'old_name'),
+        'phone': pick('customer_phone', 'old_customer_phone', 'phone', 'old_phone'),
+        'email': pick('customer_email', 'old_customer_email', 'email', 'old_email'),
+        'branch': pick('branch_city', 'old_branch_city', 'branch', 'old_branch', 'city'),
+        'address': pick('shipping_address', 'old_shipping_address', 'address', 'old_address'),
+    }
+
+
+# Every redirect code path writes the destination customer into the log
+# description, in one of three phrasings ("New customer: …", "Customer details
+# used: …", "Customer details used for redirect: …"), all followed by
+# ", Phone: …, Address: …". That sentence is the only record of the new customer
+# for orders whose denormalized fields were later blanked, so it doubles as a
+# recovery source. Name/address may contain commas, hence the non-greedy stops
+# on the literal ", Phone:" / ", Address:" separators.
+_REDIRECT_NEW_CUSTOMER_RE = re.compile(
+    r'(?:new customer|customer details used(?: for redirect)?)\s*:\s*'
+    r'(?P<name>.*?)\s*,\s*phone\s*:\s*'
+    r'(?P<phone>.*?)\s*,\s*address\s*:\s*'
+    r'(?P<address>.*?)\s*\.?\s*$',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+# Redirecting a package writes a 'redirected' log on TWO orders: the package's
+# own order (which really did change customer) and — when the destination was
+# picked off the Possible Redirection match list — the confirmed order whose
+# customer is receiving it. The second one did not change at all; its log exists
+# to record that it was fulfilled by a redirect. Telling them apart matters,
+# because a destination log's metadata is a snapshot of the order's *current*
+# customer, and reading it as an "old customer" makes Redirect Orders show the
+# same person on both sides of the arrow.
+_REDIRECT_DESTINATION_DESC_RE = re.compile(r'customer details used', re.IGNORECASE)
+
+REDIRECT_ROLE_SOURCE = 'redirected'      # this order was redirected elsewhere
+REDIRECT_ROLE_DESTINATION = 'destination'  # this order received a redirected package
+
+
+def _redirect_log_role(log, order):
+    """Return REDIRECT_ROLE_SOURCE or REDIRECT_ROLE_DESTINATION for a log."""
+    meta = _redirect_meta_as_dict(log.metadata)
+
+    role = str(meta.get('redirect_role') or '').strip().lower()
+    if role in (REDIRECT_ROLE_SOURCE, REDIRECT_ROLE_DESTINATION):
+        return role
+
+    # Rows written before redirect_role existed. The description phrasing is the
+    # strongest signal: destination logs say "Customer details used…", source
+    # logs say "New customer: …".
+    if _REDIRECT_DESTINATION_DESC_RE.search(log.description or ''):
+        return REDIRECT_ROLE_DESTINATION
+
+    # Failing that: a genuine redirect always moves the package to a different
+    # person, so a snapshot identical to the order's current customer can only
+    # be a destination log.
+    snapshot = _redirect_old_customer(meta)
+    if (snapshot['name'] and snapshot['phone']
+            and snapshot['name'] == (order.customer_name or '').strip()
+            and snapshot['phone'] == (order.customer_phone or '').strip()):
+        return REDIRECT_ROLE_DESTINATION
+
+    return REDIRECT_ROLE_SOURCE
+
+
+def _redirect_source_reference(log):
+    """The order/package a destination log received its parcel from, for display."""
+    meta = _redirect_meta_as_dict(log.metadata)
+    ncm_id = meta.get('source_ncm_order_id') or ''
+    if not ncm_id:
+        # Legacy destination logs only carry it in the description.
+        match = re.search(r'NCM Order #(\d+)', log.description or '')
+        if match:
+            ncm_id = match.group(1)
+    return {
+        'order_number': str(meta.get('source_order_number') or '').strip(),
+        'ncm_order_id': str(ncm_id).strip(),
+    }
+
+
+def _redirect_new_customer_from_description(description):
+    """Pull name/phone/address out of a 'redirected' log description, or {}."""
+    if not description:
+        return {}
+    match = _REDIRECT_NEW_CUSTOMER_RE.search(description)
+    if not match:
+        return {}
+    return {key: (value or '').strip() for key, value in match.groupdict().items()}
+
+
+def _redirect_new_customer(order, redirection_logs=()):
+    """
+    Resolve the customer an order was redirected *to*, with fallbacks.
+
+    The order's own denormalized fields are the source of truth — a redirect
+    overwrites them with the destination customer. They are not always complete
+    though: the RTV redirect path only ever wrote name/phone/address, so
+    email/branch/landmark can be stale or empty, and orders saved through a form
+    that posted blank values lost the fields entirely. So fill the gaps from the
+    linked Customer record, then the order's Branch, then the redirect log
+    description (see `_REDIRECT_NEW_CUSTOMER_RE`).
+
+    Never falls back to the *old* customer snapshot — showing the pre-redirect
+    customer under "Redirected To" would be worse than showing nothing.
+
+    `redirection_logs` must be newest-first (OrderActivityLog's default ordering).
+    """
+    info = {
+        'name': (order.customer_name or '').strip(),
+        'phone': (order.customer_phone or '').strip(),
+        'email': (order.customer_email or '').strip(),
+        'branch': (order.branch_city or '').strip(),
+        'landmark': (order.landmark or '').strip(),
+        'address': (order.shipping_address or '').strip(),
+    }
+
+    # Order.customer is not re-pointed by every redirect path, so it can still
+    # be the customer the order was redirected *away* from. Only borrow from it
+    # when it is demonstrably the same person as the order's own details — a
+    # matching phone, or an order with no phone left to contradict it.
+    customer = getattr(order, 'customer', None)
+    if customer is not None and info['phone'] and (customer.phone or '').strip() != info['phone']:
+        customer = None
+    if customer is not None:
+        for key, value in (
+            ('name', customer.name),
+            ('phone', customer.phone),
+            ('email', customer.email),
+            ('branch', customer.city),
+            ('landmark', customer.landmark),
+            ('address', customer.address),
+        ):
+            if not info[key] and value:
+                info[key] = str(value).strip()
+
+    if not info['branch'] and getattr(order, 'branch', None) is not None:
+        info['branch'] = (order.branch.name or '').strip()
+
+    recovered = False
+    if not all(info[key] for key in ('name', 'phone', 'address')):
+        for log in redirection_logs:
+            parsed = _redirect_new_customer_from_description(log.description)
+            if not parsed:
+                continue
+            for key in ('name', 'phone', 'address'):
+                if not info[key] and parsed.get(key):
+                    info[key] = parsed[key]
+                    recovered = True
+            if all(info[key] for key in ('name', 'phone', 'address')):
+                break
+
+    info['recovered_from_log'] = recovered
+    return info
+
+
 @login_required
 @permission_required('can_view_orders')
 def order_detail(request, order_id):
@@ -3324,10 +4046,11 @@ def order_detail(request, order_id):
                 if status_setup_id:
                     try:
                         status_setup = Setup.objects.get(id=status_setup_id, setup_type='status')
-                        if order.status_setup != status_setup:
-                            order.status_setup = status_setup
-                            # Also update the string field
-                            order.order_status = status_setup.name.lower().replace(' ', '_')
+                        # Writes status_setup, both string fields and the manual
+                        # hold, so this choice outlives the NCM sync that fires
+                        # on the next load of this page.
+                        if apply_manual_status(order, status_setup.name,
+                                               status_setup=status_setup):
                             changes_made.append('Order Status')
                     except Setup.DoesNotExist:
                         messages.warning(request, 'Selected status not found.')
@@ -3585,12 +4308,29 @@ def order_detail(request, order_id):
 
     # Now get order items and activity logs from fresh order instance
     order_items = order.items.select_related('product', 'product_variation').all()
-    activity_logs = order.activity_logs.select_related('user').order_by('-created_at')[:20]
+    # Sort by when the event actually happened (NCM event time when known),
+    # not when we recorded it — a webhook that arrives days late would
+    # otherwise jump to the top of the timeline.
+    from django.db.models.functions import Coalesce as _Coalesce
+    activity_logs = list(
+        order.activity_logs.select_related('user')
+        .annotate(_at=_Coalesce('event_at', 'created_at'))
+        .order_by('-_at')[:20]
+    )
+
+    # Attach the normalized old-customer snapshot so the timeline template doesn't
+    # have to know about the two historical metadata key styles.
+    for _log in activity_logs:
+        if _log.action_type == 'redirected':
+            _snapshot = _redirect_old_customer(_log.metadata)
+            _log.old_customer_snapshot = _snapshot if any(_snapshot.values()) else None
+        else:
+            _log.old_customer_snapshot = None
 
     # Get Setup options for dropdowns
-    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
-    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('sort_order', 'name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
 
     # Calculate subtotal
     subtotal = sum(item.total for item in order_items) or Decimal('0.00')
@@ -3644,7 +4384,10 @@ def order_detail(request, order_id):
         # API Integration configs for logistics
         'ncm_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True),
         'pnd_api_configs': LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True),
-        'AUTO_SYNC_INTERVAL': APISettings.get_settings().order_sync_interval,
+        # How often this page re-reads status from the local DB. Deliberately
+        # NOT order_sync_interval: that one is how often the SERVER calls NCM
+        # (ncm/scheduler.py). Polling the DB is free, so it can be much faster.
+        'AUTO_SYNC_INTERVAL': APISettings.get_settings().page_refresh_interval,
     }
 
     # Exchange eligibility check
@@ -3723,7 +4466,12 @@ def order_edit(request, order_id):
                 in_out = request.POST.get("in_out", "in").strip()
 
                 order.shipping_address = request.POST.get("shipping_address", "").strip()
-                order.landmark = request.POST.get("landmark", "").strip()
+                # The edit form no longer draws a Landmark box, so an ordinary
+                # save omits the key entirely — read it with the stored value as
+                # the default, or every edit would wipe the landmark NCM and the
+                # dispatch sheets still print.
+                order.landmark = request.POST.get("landmark", order.landmark or "").strip()
+                order.vat_pan = request.POST.get("vat_pan", order.vat_pan or "").strip()
 
                 created_by_id = request.POST.get("created_by")
                 try:
@@ -3744,9 +4492,11 @@ def order_edit(request, order_id):
                 if status_setup_id:
                     try:
                         status_setup = Setup.objects.get(id=status_setup_id, setup_type='status')
-                        order.status_setup = status_setup
-                        # Sync order_status with the setup name so the NOT NULL field stays valid
-                        order.order_status = status_setup.name.lower().replace(' ', '_')
+                        # apply_manual_status writes status_setup plus BOTH string
+                        # fields and stamps the manual hold, so the choice made here
+                        # isn't undone by the NCM sync that runs when the order page
+                        # loads right after this redirect.
+                        apply_manual_status(order, status_setup.name, status_setup=status_setup)
                     except Setup.DoesNotExist:
                         order.status_setup = None
                 else:
@@ -3763,7 +4513,18 @@ def order_edit(request, order_id):
                             )
                         except:
                             pass
-
+                
+                # Check for manual status transition away from 'dispatched' to restore stock
+                if old_order_status == 'dispatched' and order.order_status != 'dispatched':
+                    from inventory.services import restore_order_stock
+                    restore_order_stock(order)
+                    # Invalidate dispatch items so that if it is dispatched again later, stock will be deducted
+                    _invalidate_dispatch_items(
+                        order,
+                        f'Order status changed manually from "dispatched" to "{order.order_status}" — '
+                        f'stock deduction was rolled back',
+                        request.user,
+                    )
                 # Update payment_setup and sync payment_method
                 if payment_setup_id:
                     try:
@@ -3889,7 +4650,8 @@ def order_edit(request, order_id):
                     order.customer.phone = order.customer_phone
                     order.customer.city = order.branch_city
                     order.customer.address = order.shipping_address
-                    order.customer.landmark = order.landmark
+                    if order.landmark:
+                        order.customer.landmark = order.landmark
                     order.customer.save()
 
                 # Update order items
@@ -4114,10 +4876,10 @@ def order_edit(request, order_id):
     # CRITICAL: GET PAYMENT AND STATUS SETUPS FROM DATABASE
     # These must be fresh to ensure synchronization with order_detail
     from .models import Setup
-    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
-    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
-    order_source_setups = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('name')
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('sort_order', 'name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
+    order_source_setups = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('sort_order', 'name')
 
     # ✅ SAFE: Handle decimal InvalidOperation errors by deferring problematic decimal fields
     # Some orders have corrupted decimal values in total_amount and other fields
@@ -4170,18 +4932,8 @@ def order_delete(request, order_id):
         # If you want to restore stock for dispatched orders, check status:
 
         if order.order_status == 'dispatched':
-            # Restore stock for dispatched orders only
-            for item in order.items.all():
-                if item.product_variation:
-                    item.product_variation.stock += item.quantity
-                    if item.product_variation.stock > 0:
-                        item.product_variation.status = 'active'
-                    item.product_variation.save()
-                elif item.product:
-                    item.product.stock += item.quantity
-                    if item.product.stock > 0:
-                        item.product.stock_status = 'in_stock'
-                    item.product.save()
+            from inventory.services import restore_order_stock
+            restore_order_stock(order)
 
         order.delete()
         messages.success(request, f"Order {order_number} deleted successfully!")
@@ -4231,9 +4983,23 @@ def order_move_to_trash(request, order_id):
 
     if request.method == 'POST':
         order_number = order.order_number
-        order.is_deleted = True
-        order.deleted_at = timezone.now()
-        order.save()
+        
+        if order.order_status == 'dispatched':
+            from inventory.services import restore_order_stock
+            restore_order_stock(order)
+            order.order_status = 'cancelled'
+            order.is_deleted = True
+            order.deleted_at = timezone.now()
+            order.save()
+        else:
+            try:
+                from inventory.services import release_order_reservations
+                release_order_reservations(order)
+            except Exception as e:
+                pass
+            order.is_deleted = True
+            order.deleted_at = timezone.now()
+            order.save()
 
         # Log activity
         OrderActivityLog.objects.create(
@@ -4374,10 +5140,16 @@ def return_orders_list(request):
     from decimal import Decimal
     import pytz
 
-    # Get all orders with "Return" status
+    # Get all orders with "Return" status (including the in-transit
+    # "Return Processing" and at-the-return-counter "Return Arrived" stages, so
+    # this monitoring page reflects the whole active return pipeline, not just
+    # items already physically arrived)
     orders = Order.objects.filter(
         is_deleted=False,
-        order_status__iexact='return'  # Case-insensitive search for 'Return' status
+    ).filter(
+        Q(order_status__iexact='return')
+        | Q(order_status__iexact='return_processing')
+        | Q(order_status__iexact='return_arrived')
     ).select_related(
         'customer', 'created_by', 'status_setup',
         'payment_setup', 'payment_status_setup'
@@ -4389,6 +5161,7 @@ def return_orders_list(request):
     logistics_filter = request.GET.get('logistics_status', '')
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
+    stage_filter = request.GET.get('stage', '')
 
     # Apply filters
     if search_query:
@@ -4424,13 +5197,37 @@ def return_orders_list(request):
         orders = orders.filter(ncm_order_id__isnull=True)
 
     # Date filter
+    # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+    # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
     if start_date and end_date:
         try:
+            from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            orders = orders.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
+            orders = orders.filter(created_at__gte=nepali_day_start(start_date_obj), created_at__lt=nepali_day_end_exclusive(end_date_obj))
         except ValueError:
             pass
+
+    # Return stage: 'processing' is still travelling back from the customer,
+    # 'arrived' has reached NCM's return counter (past the point a redirect is
+    # possible, but not yet ours to open), 'completed' is back with us. Staff
+    # need them apart - only an arrived parcel can be inspected, restocked or
+    # refunded, and only a not-yet-arrived one can still be redirected. Applied
+    # last, and counted just before it is applied, so the dropdown keeps showing
+    # every total for the search/date/payment selection currently in force.
+    stage_counts = {
+        'processing': orders.filter(order_status__iexact='return_processing').count(),
+        'arrived': orders.filter(order_status__iexact='return_arrived').count(),
+        'completed': orders.filter(order_status__iexact='return').count(),
+    }
+    if stage_filter == 'processing':
+        orders = orders.filter(order_status__iexact='return_processing')
+    elif stage_filter == 'arrived':
+        orders = orders.filter(order_status__iexact='return_arrived')
+    elif stage_filter == 'completed':
+        orders = orders.filter(order_status__iexact='return')
+    else:
+        stage_filter = ''
 
     # Calculate statistics
     total_return_orders = orders.count()
@@ -4445,7 +5242,7 @@ def return_orders_list(request):
 
     # Pagination
     per_page = request.GET.get('per_page', '50')
-    if per_page not in ('50', '100', '200'):
+    if per_page not in ('50', '100', '200', '500'):
         per_page = '50'
     paginator = Paginator(orders, int(per_page))
     page_number = request.GET.get('page')
@@ -4459,7 +5256,7 @@ def return_orders_list(request):
             pass
 
     # Get payment statuses for filters
-    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
     payment_status_choices = [
         (setup.name.lower().replace(' ', '_'), setup.name)
         for setup in payment_setups
@@ -4479,9 +5276,453 @@ def return_orders_list(request):
         'per_page': per_page,
         'payment_status_choices': payment_status_choices,
         'page_obj': orders_page,
+        'stage_filter': stage_filter,
+        'stage_counts': stage_counts,
     }
 
     return render(request, 'return_orders.html', context)
+
+
+# ── RTV/order product-name normalisation & matching helpers (module-level so they're
+# unit-testable without a request/DB round-trip) ──
+_RTV_RE_QTY_PREFIX = re.compile(r'^\s*(\d+)\s*[xX×*]\s*')
+_RTV_RE_QTY_SUFFIX = re.compile(r'\s*[xX×*]\s*(\d+)\s*$')
+_RTV_RE_NON_ALNUM = re.compile(r'[^a-z0-9\s]')
+_RTV_RE_MULTI_SPACE = re.compile(r'\s+')
+_RTV_RE_TRAILING_MORE = re.compile(r'\s+and\s+\d+\s+more\s*$', re.IGNORECASE)
+_RTV_RE_SPLIT_TOKENS = re.compile(r'[,;|\n\r]+')
+
+
+def _normalize_product_name(raw):
+    """Lowercase, strip quantity prefix/suffix, remove punctuation, collapse whitespace."""
+    if not raw:
+        return '', 0
+    s = raw.lower().strip()
+    qty = 0
+
+    m_pref = _RTV_RE_QTY_PREFIX.match(s)
+    if m_pref:
+        qty = int(m_pref.group(1))
+        s = s[m_pref.end():]
+    else:
+        m_suff = _RTV_RE_QTY_SUFFIX.search(s)
+        if m_suff:
+            qty = int(m_suff.group(1))
+            s = s[:m_suff.start()]
+
+    s = _RTV_RE_NON_ALNUM.sub(' ', s)
+    s = _RTV_RE_MULTI_SPACE.sub(' ', s).strip()
+    return s, qty
+
+
+def _parse_rtv_description_items(raw):
+    """Split a package-description string (e.g. "2x Hair Growth Serum, 1x Vitamin C
+    and 3 more") into one entry per product: {'raw': original token, 'name':
+    normalised name, 'qty': parsed quantity (0 if absent)}.
+
+    NCM package descriptions are generated comma-joined (see
+    ncm/views.py::_get_package_description), so a single RTV can reference
+    multiple products — treating the whole string as one product silently
+    dropped all but the first item from matching/quantity checks.
+    """
+    if not raw:
+        return []
+    s = _RTV_RE_TRAILING_MORE.sub('', raw.strip())
+    tokens = _RTV_RE_SPLIT_TOKENS.split(s)
+    items = []
+    for tok in tokens:
+        tok = tok.strip()
+        if not tok:
+            continue
+        name, qty = _normalize_product_name(tok)
+        if name:
+            items.append({'raw': tok, 'name': name, 'qty': qty})
+    return items
+
+
+def _align_rtv_items_to_order(rtv_desc_raw, order_items):
+    """Pair every product in an RTV package description with a distinct order item.
+
+    Returns a list the same length as ``order_items`` holding the RTV's raw
+    product token for each item (so the "Order Products" and "RTV Product Ref"
+    columns can be rendered line-for-line), or ``None`` when the two sides do
+    not correspond exactly.
+
+    "Exactly" is deliberate and is the whole point of this function: a redirected
+    package ships as-is, so the candidate order must want *every* product in it,
+    in the same quantity, and nothing besides. The previous rule — match if ANY
+    RTV product matched ANY order item — surfaced candidates whose Order Products
+    column listed one item while the RTV Product Ref column listed that item plus
+    others that were never coming, i.e. a redirect that would under-ship.
+
+    Name comparison stays tolerant (exact normalised match, else containment for
+    names of 4+ chars) because NCM's package description is free text; quantity
+    comparison is strict whenever the description carries an explicit quantity.
+    """
+    rtv_products = _parse_rtv_description_items(rtv_desc_raw)
+    if not rtv_products:
+        return None  # empty/unparseable description → caller handles branch-only
+
+    # (index into order_items, normalised name, quantity) for items that carry a
+    # usable name. Indices are kept so the returned refs line up with the caller's
+    # original item list even when an unnamed item was skipped here.
+    usable = []
+    for idx, item in enumerate(order_items):
+        item_norm, _item_qty_from_name = _normalize_product_name(item.product_name)
+        if item_norm:
+            usable.append((idx, item_norm, item.quantity or 1))
+
+    # One product on the RTV side must correspond to exactly one on the order
+    # side — differing counts mean the package and the order aren't the same set.
+    if not usable or len(usable) != len(rtv_products):
+        return None
+
+    refs = [None] * len(order_items)
+    used_items = set()
+    used_rtv = set()
+    # Exact-name pass before the containment pass so a loose match can't consume
+    # the item an exact match needed (e.g. RTV "Serum" claiming the order's
+    # "Hair Growth Serum" row and leaving RTV "Hair Growth Serum" unpaired).
+    for exact_only in (True, False):
+        for r_idx, rp in enumerate(rtv_products):
+            if r_idx in used_rtv:
+                continue
+            for i_idx, (item_pos, item_norm, item_qty) in enumerate(usable):
+                if i_idx in used_items:
+                    continue
+                # qty 0 means the description carried no quantity — nothing to
+                # contradict, so the name alone decides.
+                if rp['qty'] and rp['qty'] != item_qty:
+                    continue
+                if rp['name'] != item_norm:
+                    if exact_only:
+                        continue
+                    if not (len(rp['name']) >= 4 and len(item_norm) >= 4 and (
+                            rp['name'] in item_norm or item_norm in rp['name'])):
+                        continue
+                refs[item_pos] = rp['raw']
+                used_items.add(i_idx)
+                used_rtv.add(r_idx)
+                break
+
+    return refs if len(used_rtv) == len(rtv_products) else None
+
+
+def _product_matches(rtv_desc_raw, order_items):
+    """Return True if the RTV package and the order's items correspond exactly
+    (same products, same quantities, nothing extra on either side)."""
+    return _align_rtv_items_to_order(rtv_desc_raw, order_items) is not None
+
+
+def _iter_matching_orders(match_sources, branch_orders, exclude_ids=frozenset()):
+    """Yield ``(order, rtv_refs)`` for confirmed orders in the RTV's branch whose
+    items correspond exactly to its products.
+
+    ``rtv_refs`` is the per-item alignment from _align_rtv_items_to_order(), so
+    callers can render the RTV reference beside the order item it matched
+    instead of repeating the whole package description on every row.
+
+    Shared by possible_redirection_list's two passes — the pre-filter that
+    decides which RTVs are listed at all, and the per-entry build that renders
+    the suggestions. They used to be separate copies of the same comparison and
+    drifted apart; keep them on this one generator so they can't disagree.
+
+    Lazy on purpose: the pre-filter only needs to know whether a first match
+    exists, so it stops after one instead of scoring every candidate order.
+
+    An empty match_sources yields nothing — branch alone is never sufficient,
+    since redirecting on branch without a product check ships the wrong item.
+    """
+    if not match_sources:
+        return
+    for order in branch_orders:
+        if order.id in exclude_ids:
+            continue
+        order_items = list(order.items.all())
+        for src in match_sources:
+            refs = _align_rtv_items_to_order(src, order_items)
+            if refs is not None:
+                yield order, refs
+                break
+
+
+# ── Redirectability rules ────────────────────────────────────────────────────
+# A returned package can only be redirected while it is still sitting at the
+# destination branch. Once NCM reports it delivered (to the customer OR back to
+# the vendor) or on its way to/at the vendor warehouse, it is no longer a
+# candidate.
+#
+# These live at module level because two views have to agree on them:
+# possible_redirection_list (which builds the queryset) and
+# possible_redirection_refresh_status (which decides, after pulling fresh
+# statuses from NCM, whether a listed row has just dropped out). They used to be
+# a local list inside the view, so the refresh endpoint had nothing to reuse.
+NON_REDIRECTABLE_RTV_STATUSES = ('returned', 'delivered', 'sent to vendor')
+
+#: Same rule applied to the linked local order's stored NCM status, which can
+#: carry branch-qualified variants ("Returned to Warehouse") rather than an
+#: exact match.
+NON_REDIRECTABLE_NCM_STATUS_REGEX = r'delivered|returned|sent to vendor'
+
+#: The linked order's own system status, when it is already past redirection.
+#: 'return_arrived' is the stage NCM's "Arrived at RETURN (BRANCH)" resolves to —
+#: the parcel finished the journey back, so there is nothing left to redirect.
+NON_REDIRECTABLE_ORDER_STATUSES = frozenset(('delivered', 'return_arrived'))
+
+
+def _rtv_is_non_redirectable(rtv_last_status, local_order=None):
+    """Python mirror of the exclusions possible_redirection_list applies in SQL.
+
+    Used after a live NCM refresh to tell whether a row that is currently on
+    screen would still be listed on a reload.
+    """
+    if (rtv_last_status or '').strip().lower() in NON_REDIRECTABLE_RTV_STATUSES:
+        return True
+    if local_order is None:
+        return False
+    if re.search(NON_REDIRECTABLE_NCM_STATUS_REGEX, (local_order.ncm_status or ''), re.IGNORECASE):
+        return True
+    # 'return_arrived' alongside 'delivered': both are end states for
+    # redirection. The parcel is at the courier's return counter, which is the
+    # same verdict the ncm_status check above reaches from the raw wording —
+    # kept here too so a blank or lagging ncm_status cannot lose it.
+    return bool(NON_REDIRECTABLE_ORDER_STATUSES & {
+        (local_order.status or '').strip().lower(),
+        (local_order.order_status or '').strip().lower(),
+    })
+
+
+#: Statuses NCM's own redirect endpoint accepts — from its rejection message,
+#: "Order can only be redirected when status is: Arrived, Pickup Complete,
+#: Returned to Warehouse". Matched as a prefix (case-insensitive) so branch-
+#: qualified variants NCM appends ("Arrived at BUTWAL") still count.
+REDIRECT_ELIGIBLE_STATUS_PREFIXES = ('arrived', 'pickup complete', 'returned to warehouse')
+
+
+def _rtv_is_redirect_eligible(rtv_last_status, local_ncm_status=None):
+    """True once NCM reports the package is at a branch it can be redirected FROM.
+
+    Two ways to fail. A parcel still travelling ("Dispatched to Return (...)")
+    is not a candidate: NCM's redirect endpoint refuses it outright. Nor is one
+    that has already finished the journey back — "Arrived at RETURN (BRANCH)"
+    starts with the same word as a parcel waiting at its delivery branch, but
+    the parcel is at NCM's return counter, past the point where a redirect is
+    physically possible. Only an arrival at a *delivery* branch counts, which
+    is what NCM's own "Arrived" in that rejection message means.
+
+    That distinction is the whole difference between:
+
+        "Arrived at POKHARA"             -> redirect it to another Pokhara
+                                            customer, saving the return leg
+        "Arrived at RETURN NAYA BUSPARK" -> too late, it came all the way back
+
+    This gates what possible_redirection_list shows (its SQL filter mirrors
+    this function) and what the save endpoints accept.
+
+    A return-leg arrival on EITHER stored copy vetoes the row, rather than just
+    failing that one copy. Everywhere else the two copies are OR'd, because
+    either can lag and "at a branch" is a state a parcel enters and leaves. A
+    return-leg arrival is not like that: it is monotonic — a parcel does not
+    un-arrive at the return counter — so the copy reporting it is the fresher
+    one by definition, whatever the other says. This is not hypothetical: NCM's
+    vendor/orders endpoint (which feeds RTVOrder.last_status) answers with the
+    coarse word "Arrived", while the tracking endpoint that writes
+    Order.ncm_status gives the branch-qualified "Arrived at RETURN NAYA
+    BUSPARK". OR-ing those left the parcel listed on the coarse copy alone.
+    """
+    # Imported here, not at module level: services.ncm_service imports from
+    # dashboard, so a top-level import would close the cycle.
+    from services.ncm_service import NCMService
+
+    normalized = [
+        ' '.join((text or '').strip().lower().split())
+        for text in (rtv_last_status, local_ncm_status)
+    ]
+    if any(NCMService.is_return_arrival(text) for text in normalized):
+        return False
+    return any(
+        text.startswith(prefix)
+        for text in normalized
+        for prefix in REDIRECT_ELIGIBLE_STATUS_PREFIXES
+    )
+
+
+def _redirect_ineligible_message(*statuses):
+    """Why NCM will not redirect this package, in the operator's words.
+
+    Two very different reasons share one gate, and telling an operator a parcel
+    that has already come all the way back is "still in transit" sends them
+    looking for a redirect that will never unlock.
+
+    Takes every status copy the caller holds and names the one that actually
+    blocked it: a return-leg arrival wins, since it is what vetoed the row, and
+    it is frequently on the copy the caller would not have quoted first (the RTV
+    row usually carries NCM's coarse "Arrived").
+    """
+    from services.ncm_service import NCMService
+
+    known = [(s or '').strip() for s in statuses if (s or '').strip()]
+    status = next((s for s in known if NCMService.is_return_arrival(s)),
+                  known[0] if known else 'unknown')
+    if NCMService.is_return_arrival(status):
+        return (
+            f"This package has already returned to the courier's return branch "
+            f"(NCM status: {status}). Redirection is only possible while it is still "
+            "at the delivery branch — this one has to be received back instead."
+        )
+    return (
+        f"This package is still in transit (NCM status: {status}). "
+        "Redirect becomes available once NCM marks it Arrived at the delivery "
+        "branch, Pickup Complete, or Returned to Warehouse."
+    )
+
+
+def _rtv_listed_on_stale_order_status(rtv_last_status, local_ncm_status):
+    """True when the ONLY thing keeping a row listed is the linked order's
+    stored NCM status, while the RTV row itself says the parcel is not at a
+    branch.
+
+    The same fact reaches this database by two routes that refresh at different
+    times:
+
+    * ``RTVOrder.last_status`` — rewritten for **every** active RTV each time
+      the RTV list sync runs (ncm_rtvs_sync, `:24207`);
+    * ``Order.ncm_status`` — rewritten by the NCM webhook (near-real-time, but
+      only for orders NCM actually sends events for) and by the order detail
+      page's load-time sync. Nothing else touches it for an RTV'd order: the
+      background bulk sync skips it, because 'return' is a terminal status.
+
+    Since either side can lag, _rtv_is_redirect_eligible() accepts a row when
+    *either* says "at a branch" — dropping the order-side rescue would hide a
+    webhook-fresh arrival until the next RTV sync. But the two directions of
+    disagreement are not equally suspicious, which is why this is one-sided:
+
+    * RTV says at-branch, order says in transit — routine. The RTV copy is the
+      one every sync refreshes; the order's is simply behind. Nothing to do.
+    * RTV says in transit, order says at-branch — the failure. The systematically
+      refreshed copy says the parcel has moved on, and a stale
+      ``"Arrived at (BRANCH)"`` frozen on the order is all that still lists it.
+      The operator finds out only when NCM refuses the redirect, and the row used
+      to clear itself only when somebody opened the order detail page — the other
+      writer of ``Order.ncm_status``.
+
+    Even so, this does not pick a winner: only NCM can. It flags the row so
+    possible_redirection_list can tell the page to hand it straight to
+    possible_redirection_refresh_status(), which asks NCM and writes the answer
+    back to both copies.
+
+    A blank status abstains: it means "never synced", not "not at a branch".
+
+    Note this only ever sees rows the list view kept, so a return-leg arrival
+    ("Arrived at RETURN (…)") never reaches it: that is a settled fact on either
+    copy, not a disagreement to resolve, and _rtv_is_redirect_eligible() has
+    already vetoed the row outright.
+    """
+    if not (rtv_last_status or '').strip() or not (local_ncm_status or '').strip():
+        return False
+    return (not _rtv_is_redirect_eligible(rtv_last_status)
+            and _rtv_is_redirect_eligible(local_ncm_status))
+
+
+def _live_ncm_status(ncm_order_id, api_config_id=None):
+    """NCM's current status string for one order, or '' if it can't be had.
+
+    Never raises. Every caller holds a stored fallback, and a modal that answers
+    from the last known status beats one that fails to open.
+    """
+    from services.ncm_service import NCMService
+    try:
+        svc = NCMService(api_config_id=api_config_id) if api_config_id else NCMService()
+        result = svc.get_bulk_order_statuses([str(ncm_order_id)])
+    except Exception:
+        logger.warning('Live NCM status lookup failed for order %s',
+                       ncm_order_id, exc_info=True)
+        return ''
+
+    if not result.get('success'):
+        return ''
+    _data = result.get('data') or {}
+    statuses = _data.get('result') if isinstance(_data, dict) else None
+    if not isinstance(statuses, dict):
+        return ''
+    raw = statuses.get(str(ncm_order_id))
+    if isinstance(raw, dict):
+        raw = raw.get('status') or raw.get('Status') or ''
+    return str(raw or '').strip()
+
+
+def _rtv_redirect_eligibility(rtv_rec, local_ncm_status, ncm_order_id, api_config_id=None):
+    """``(redirect_eligible, status_to_show)`` for the redirect / detail modals.
+
+    Normally the same OR of the two stored statuses the list view applies. The
+    exception is the one case that OR gets wrong — the RTV row says the parcel
+    has left the branch while the linked order's stored status still claims it
+    is there (see _rtv_listed_on_stale_order_status). Trusting the stale half
+    there enables the Redirect button and walks the operator through the whole
+    form for a redirect NCM then refuses.
+
+    Neither stored copy can settle that, so ask NCM. One extra request, only on
+    the ambiguous open of a single modal — and the answer is written back to the
+    RTV row so the Possible Redirection page stops asking it again.
+
+    A return-leg arrival on either copy short-circuits all of that: it is
+    monotonic, so there is nothing for NCM to settle, and the status reported
+    back is the one that actually blocked the button. The RTV copy is often
+    NCM's coarse "Arrived" (vendor/orders) while the order copy carries the
+    branch-qualified "Arrived at RETURN …", and naming the coarse one would tell
+    the operator to wait for something that has already happened.
+    """
+    from services.ncm_service import NCMService
+
+    stored = rtv_rec.last_status if rtv_rec else ''
+    for text in (stored, local_ncm_status):
+        if NCMService.is_return_arrival(text):
+            return False, text
+    if _rtv_listed_on_stale_order_status(stored, local_ncm_status):
+        live = _live_ncm_status(ncm_order_id, api_config_id)
+        if live:
+            if rtv_rec and live != rtv_rec.last_status:
+                RTVOrder.objects.filter(order_id=ncm_order_id).update(last_status=live)
+            return _rtv_is_redirect_eligible(live), live
+    return _rtv_is_redirect_eligible(stored, local_ncm_status), stored
+
+
+def _redirected_rtv_ncm_ids(rtv_qs):
+    """NCM order ids within `rtv_qs` whose package has already been redirected.
+
+    Three independent markers, because no single one survives everything:
+
+    * the linked order's ncm_status/order_status — but NCM status polling
+      rewrites ncm_status, so a genuinely redirected order can lose it;
+    * a 'redirected' activity log — local and permanent, and exactly what the
+      Redirect Orders page keys off, so anything listed there is guaranteed to
+      be counted here;
+    * the '[REDIRECTED]' comment tag, the only marker for an RTV with no
+      linked local order at all.
+
+    Written as subqueries rather than Python id lists so it stays cheap over
+    the whole RTV population, which is what the KPI strip counts.
+    """
+    ncm_ids = rtv_qs.values('order_id')
+
+    redirected = set(
+        rtv_qs.filter(comment__contains='[REDIRECTED]').values_list('order_id', flat=True)
+    )
+    redirected |= set(
+        Order.objects.filter(
+            is_deleted=False, ncm_order_id__isnull=False, ncm_order_id__in=ncm_ids,
+        ).filter(
+            Q(ncm_status__iexact='redirected') | Q(order_status__iexact='redirected')
+        ).values_list('ncm_order_id', flat=True)
+    )
+    redirected |= set(
+        OrderActivityLog.objects.filter(
+            action_type='redirected',
+            order__is_deleted=False,
+            order__ncm_order_id__in=ncm_ids,
+        ).values_list('order__ncm_order_id', flat=True)
+    )
+    return redirected
 
 
 @login_required
@@ -4498,55 +5739,158 @@ def possible_redirection_list(request):
     # pyrefly: ignore [missing-import]
     from django.db.models.functions import Cast
     from django.db import models as db_models
-    import re
 
     # Base queryset: all active RTV records, ordered like ncm_rtvs page
-    rtvs = RTVOrder.objects.filter(vendor_return=True).select_related('api_config').order_by(
-        db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
-    )
+    # Exclude RTVs whose NCM last_status shows the package has already been
+    # returned to vendor warehouse or delivered — redirection is impossible
+    # for those orders since the physical package is no longer at the branch.
+    rtvs = RTVOrder.objects.filter(
+        vendor_return=True
+    ).select_related('api_config')
 
-    # GET FILTER PARAMETERS
+    # GET FILTER PARAMETERS — read up front because they scope two querysets:
+    # the table below (only what can be redirected right now) and the KPI strip
+    # (the whole RTV population). A filter the user picked must narrow both.
     search_query = request.GET.get('search', '')
     start_date = request.GET.get('start_date', '')
     end_date = request.GET.get('end_date', '')
-    redirection_filter = request.GET.get('redirection', '')
     api_config_filter = request.GET.get('api_config', '')
 
-    # Apply filters on RTVOrder
-    if search_query:
-        rtvs = rtvs.annotate(_oid_str=Cast('order_id', output_field=CharField()))
-        search_q = Q(_oid_str__icontains=search_query) | Q(comment__icontains=search_query)
-        rtvs = rtvs.filter(search_q)
+    def _apply_rtv_request_filters(qs):
+        """Apply the page's search/portal/date filters to an RTVOrder queryset."""
+        if search_query:
+            qs = qs.annotate(_oid_str=Cast('order_id', output_field=CharField()))
+            qs = qs.filter(
+                Q(_oid_str__icontains=search_query) | Q(comment__icontains=search_query)
+            )
 
-    if api_config_filter:
-        rtvs = rtvs.filter(api_config_id=api_config_filter)
+        if api_config_filter:
+            qs = qs.filter(api_config_id=api_config_filter)
 
-    if start_date and end_date:
+        if not (start_date or end_date):
+            return qs
+
+        # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+        # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring),
+        # so we filter on the Coalesce'd datetime directly against UTC day bounds.
+        # Coalesce prefers rtv_marked_at over created_at for date filtering.
+        from django.db.models.functions import Coalesce
+        from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
+
+        _range = {}
         try:
-            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
-            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            # Use Coalesce to prefer rtv_marked_at over created_at for date filtering
-            from django.db.models.functions import Coalesce
-            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
-            rtvs = rtvs.filter(_rtv_date__date__gte=start_date_obj, _rtv_date__date__lte=end_date_obj)
+            if start_date:
+                _range['_rtv_date__gte'] = nepali_day_start(
+                    datetime.strptime(start_date, '%Y-%m-%d').date()
+                )
+            if end_date:
+                _range['_rtv_date__lt'] = nepali_day_end_exclusive(
+                    datetime.strptime(end_date, '%Y-%m-%d').date()
+                )
         except ValueError:
-            pass
-    elif start_date:
-        try:
-            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
-            from django.db.models.functions import Coalesce
-            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
-            rtvs = rtvs.filter(_rtv_date__date__gte=start_date_obj)
-        except ValueError:
-            pass
-    elif end_date:
-        try:
-            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            from django.db.models.functions import Coalesce
-            rtvs = rtvs.annotate(_rtv_date=Coalesce('rtv_marked_at', 'created_at'))
-            rtvs = rtvs.filter(_rtv_date__date__lte=end_date_obj)
-        except ValueError:
-            pass
+            # A malformed date filters nothing rather than erroring — same as
+            # before, and the form re-renders with what the user typed.
+            return qs
+
+        return qs.annotate(
+            _rtv_date=Coalesce('rtv_marked_at', 'ncm_created_date', 'created_at')
+        ).filter(**_range)
+
+    #: Every RTV order in the user's current filter scope, before any
+    #: redirectability narrowing. The KPI tiles report on this: they are an
+    #: overview of the RTV pipeline, so they must not shrink just because a
+    #: package is not redirectable *yet* (still in transit) or has no matching
+    #: local order. The table below is the actionable worklist and stays narrow.
+    kpi_rtvs = _apply_rtv_request_filters(RTVOrder.objects.filter(vendor_return=True))
+
+    for _nrs in NON_REDIRECTABLE_RTV_STATUSES:
+        rtvs = rtvs.exclude(last_status__iexact=_nrs)
+
+    # Exclude terminal orders using live Order.ncm_status
+    # PERFORMANCE FIX: Use a subquery restricted to active RTVs rather than loading all history
+    #
+    # is_deleted=False on all three linked-order subqueries below: a trashed
+    # order is not the parcel's status any more, and _rtv_is_non_redirectable()
+    # — the Python mirror the refresh endpoint applies — is only ever handed
+    # orders from a is_deleted=False queryset. Without it the two disagreed, and
+    # a deleted row could silently decide what this page shows.
+    _terminal_ncm_ids = Order.objects.filter(
+        is_deleted=False,
+        ncm_order_id__isnull=False,
+        ncm_order_id__in=rtvs.values('order_id'),
+        ncm_status__iregex=NON_REDIRECTABLE_NCM_STATUS_REGEX,
+    ).values('ncm_order_id')
+
+    rtvs = rtvs.exclude(order_id__in=_terminal_ncm_ids)
+
+    # Also exclude RTVs whose linked local Order is already past redirection —
+    # delivered, or back at the courier's return counter (NON_REDIRECTABLE_ORDER_STATUSES).
+    _past_redirection_q = Q(ncm_status__iexact='Delivered')
+    for _ors in NON_REDIRECTABLE_ORDER_STATUSES:
+        _past_redirection_q |= Q(status__iexact=_ors) | Q(order_status__iexact=_ors)
+
+    _past_redirection_ncm_ids = Order.objects.filter(
+        is_deleted=False,
+        ncm_order_id__isnull=False,
+        ncm_order_id__in=rtvs.values('order_id'),
+    ).filter(_past_redirection_q).values('ncm_order_id')
+
+    rtvs = rtvs.exclude(order_id__in=_past_redirection_ncm_ids)
+
+    # Keep ONLY packages NCM has confirmed are physically sitting at a branch or
+    # warehouse. NCM's redirect endpoint rejects anything else ("Order can only
+    # be redirected when status is: Arrived, Pickup Complete, Returned to
+    # Warehouse"), so a parcel still travelling back ("Dispatched to Return
+    # (TINKUNE)") is not a candidate yet — listing it only invited a redirect
+    # that was always going to fail. It reappears here on its own once NCM
+    # reports the arrival and the RTV sync writes that status through.
+    #
+    # SQL mirror of _rtv_is_redirect_eligible(): istartswith so branch-qualified
+    # variants ("Arrived at BUTWAL") still count.
+    _eligible_rtv_q = Q()
+    _eligible_order_q = Q()
+    for _prefix in REDIRECT_ELIGIBLE_STATUS_PREFIXES:
+        _eligible_rtv_q |= Q(last_status__istartswith=_prefix)
+        _eligible_order_q |= Q(ncm_status__istartswith=_prefix)
+
+    # ...minus the return-leg arrivals ("Arrived at RETURN NAYA BUSPARK"): same
+    # leading word, but the parcel has come all the way back and NCM will not
+    # redirect it from there. Applied as a veto over the whole row rather than
+    # per status copy, matching _rtv_is_redirect_eligible() — a return-leg
+    # arrival is monotonic, so whichever copy reports it is the fresher one. In
+    # practice the RTV copy carries NCM's coarse "Arrived" (from vendor/orders)
+    # while the order copy carries the branch-qualified wording, so OR-ing them
+    # kept the parcel listed on the coarse copy alone.
+    _return_leg_ncm_ids = Order.objects.filter(
+        is_deleted=False,
+        ncm_order_id__isnull=False,
+        ncm_order_id__in=rtvs.values('order_id'),
+        ncm_status__istartswith='arrived',
+        ncm_status__icontains='return',
+    ).values('ncm_order_id')
+
+    rtvs = rtvs.exclude(
+        Q(last_status__istartswith='arrived') & Q(last_status__icontains='return')
+    ).exclude(order_id__in=_return_leg_ncm_ids)
+
+    # The linked local order's ncm_status counts too: the NCM webhook and the
+    # order detail page's load-time sync both write it, and either can be ahead
+    # of the RTV list sync. It can also be BEHIND, which is the failure
+    # _rtv_listed_on_stale_order_status() flags on the way out — a row kept alive
+    # only by this clause is not trusted, it is checked against NCM.
+    _eligible_ncm_ids = Order.objects.filter(
+        is_deleted=False,
+        ncm_order_id__isnull=False,
+        ncm_order_id__in=rtvs.values('order_id'),
+    ).filter(_eligible_order_q).values('ncm_order_id')
+
+    rtvs = rtvs.filter(_eligible_rtv_q | Q(order_id__in=_eligible_ncm_ids))
+
+    rtvs = rtvs.order_by(
+        db_models.F('rtv_marked_at').desc(nulls_last=True), '-created_at', '-id'
+    )
+
+    rtvs = _apply_rtv_request_filters(rtvs)
 
     # ── Single-pass: fetch confirmed orders once, reuse for pre-filter + display ──
     # Collect (order_id, to_branch, product_description) for all RTVs that
@@ -4557,21 +5901,35 @@ def possible_redirection_list(request):
             .exclude(to_branch='')
             .values_list('order_id', 'to_branch', 'product_description')
     )
-    # Pre-fetch local order item names for DISPLAY ONLY (not for matching).
-    # Product matching is done exclusively via RTV's product_description.
+    # Pre-fetch local order item names (used for display AND as matching fallback
+    # when the RTV's product_description is empty).
     _all_ncm_ids_for_prefetch = {row[0] for row in _all_rtv_tuples}
-    _rtv_local_item_names = {}  # ncm_order_id → list of product name strings (for display)
+    _rtv_local_item_names = {}  # ncm_order_id → list of product name strings
+    # ncm_order_id → local Order.id, so an RTV is never offered its OWN order as
+    # a redirect target. The returned package trivially "matches" the order it
+    # came from (same items, same branch), and if that order still reads as
+    # confirmed locally the page would suggest redirecting it to itself.
+    _rtv_own_local_order_id = {}
     if _all_ncm_ids_for_prefetch:
         for _lo in Order.objects.filter(
             is_deleted=False,
             ncm_order_id__in=_all_ncm_ids_for_prefetch,
         ).prefetch_related(
-            _Pf('items', queryset=OrderItem.objects.only('order_id', 'product_name'))
+            _Pf('items', queryset=OrderItem.objects.only('order_id', 'product_name', 'quantity'))
         ).only('id', 'ncm_order_id'):
+            _rtv_own_local_order_id[_lo.ncm_order_id] = _lo.id
             _names = []
             for _it in _lo.items.all():
                 if _it.product_name:
-                    _names.append(_it.product_name.strip())
+                    # Always append the quantity suffix — even for qty=1 — so
+                    # _normalize_product_name() can parse a real quantity back out.
+                    # Omitting it for singular quantities (as before) made the RTV
+                    # side look quantity-less, which made _product_matches() treat
+                    # a 1-unit return as matching ANY quantity on the candidate
+                    # order (e.g. a returned qty-1 item wrongly "matched" a new
+                    # order needing qty-2 of the same product).
+                    _label = f'{_it.product_name.strip()} ×{_it.quantity or 1}'
+                    _names.append(_label)
             if _names:
                 _rtv_local_item_names[_lo.ncm_order_id] = _names
 
@@ -4594,13 +5952,18 @@ def possible_redirection_list(request):
                 )
                 .prefetch_related(
                     _Pf('items', queryset=OrderItem.objects.only(
-                        'order_id', 'product_name', 'quantity', 'price', 'total',
+                        'id', 'order_id', 'product_name', 'quantity', 'price', 'total',
                     ))
                 )
                 .only(
                     'id', 'order_number', 'customer_name', 'customer_phone',
                     'customer_email', 'shipping_address', 'landmark', 'branch_city',
-                    'ncm_destination_branch', 'order_status', 'total_amount',
+                    'ncm_destination_branch', 'order_status', 'status', 'total_amount',
+                    # Financials the match rows and the "Use Customer" prefill carry
+                    # over to the redirect form. Deferring these would make the
+                    # template fire one extra query per matched order.
+                    'discount_amount', 'shipping_charge', 'package_weight',
+                    'is_partial_payment', 'partial_amount_paid', 'remaining_amount',
                 )
         )
         for _o in _confirmed_orders:
@@ -4609,31 +5972,34 @@ def possible_redirection_list(request):
         # Determine which RTVs have at least one matching confirmed order.
         # Matching rules:
         #   - Branch must match (rtv.to_branch == order.branch_city, case-insensitive)
-        #   - RTV's product_description MUST match the order item name EXACTLY
-        #   - If RTV has no product_description, branch match alone is sufficient
+        #   - RTV's product_description is matched against order item names using
+        #     normalised comparison (case-insensitive, stripped punctuation, collapsed
+        #     whitespace, quantity-prefix aware, containment matching).
+        #   - If RTV has no product_description, branch match alone is sufficient.
         _has_match_ids = set()
         for _oid, _tbranch, _pdesc in _all_rtv_tuples:
             _bk = (_tbranch or '').upper()
             _branch_orders = _confirmed_branch_map.get(_bk, [])
             if not _branch_orders:
                 continue
-            # Use RTV's product_description for matching, NOT linked local order items
-            _desc = (_pdesc or '').lower().strip()
-            if not _desc:
-                # No product info at all — branch match alone qualifies this RTV.
+            _desc = (_pdesc or '').strip()
+            # Build match sources: prefer RTV product_description, fallback to the
+            # linked local order's item names. The fallback names are joined into
+            # ONE package string (comma-separated, exactly how NCM composes
+            # product_description) — passing them as separate sources would let a
+            # single item stand in for the whole package and re-introduce the
+            # partial matching this page is not supposed to do.
+            _local_names_for_match = _rtv_local_item_names.get(_oid, [])
+            _match_srcs = [_desc] if _desc else (
+                [', '.join(_local_names_for_match)] if _local_names_for_match else []
+            )
+            # No product info anywhere — branch-only match is NOT sufficient.
+            # Both branch AND product must match for redirection to make sense.
+            _own_id = _rtv_own_local_order_id.get(_oid)
+            _self_exclude = {_own_id} if _own_id else frozenset()
+            if next(_iter_matching_orders(_match_srcs, _branch_orders,
+                                          exclude_ids=_self_exclude), None) is not None:
                 _has_match_ids.add(_oid)
-            else:
-                for _o in _branch_orders:
-                    for _item in _o.items.all():
-                        if _item.product_name:
-                            _pn = _item.product_name.lower().strip()
-                            if _pn:
-                                # Match candidate order's products against RTV's product_description exactly
-                                if _desc == _pn:
-                                    _has_match_ids.add(_oid)
-                                    break
-                    if _oid in _has_match_ids:
-                        break
         rtvs = rtvs.filter(order_id__in=_has_match_ids) if _has_match_ids else rtvs.none()
     else:
         # No RTVs have to_branch set — nothing can match.
@@ -4650,39 +6016,37 @@ def possible_redirection_list(request):
         ).select_related('customer', 'branch').only(
             'id', 'order_number', 'customer_name', 'customer_phone',
             'shipping_address', 'branch_city', 'total_amount',
-            'ncm_order_id', 'ncm_status', 'barcode',
+            'ncm_order_id', 'ncm_status', 'order_status', 'barcode',
             'customer_id', 'branch_id',
         ):
             linked_orders[order.ncm_order_id] = order
 
-    # Stats (before redirection filter)
-    total_redirectable = len(all_rtv_ncm_ids)  # same as rtvs.count() but avoids extra DB query
+    # ── KPI strip ────────────────────────────────────────────────────────────
+    # Counted over EVERY RTV order in scope, not just the redirectable ones
+    # rendered below. The tiles are an overview of the RTV pipeline: a package
+    # still travelling back, or one with no matching local order, is a real RTV
+    # order and still belongs in the totals even though it cannot be actioned
+    # from this table yet.
+    total_rtv_orders = kpi_rtvs.count()
+    already_redirected = len(_redirected_rtv_ncm_ids(kpi_rtvs))
+    pending_redirection = total_rtv_orders - already_redirected
 
-    # Check redirection status from linked order OR RTVOrder comment tag
-    redirected_from_local = set(
-        ncm_id for ncm_id in all_rtv_ncm_ids
-        if ncm_id in linked_orders and (linked_orders[ncm_id].ncm_status or '').lower() == 'redirected'
-    )
-    redirected_from_comment = set(
-        rtvs.filter(comment__contains='[REDIRECTED]').values_list('order_id', flat=True)
-    )
-    all_redirected_ids = redirected_from_local | redirected_from_comment
+    # Redirected RTVs among the rows this table would otherwise show — a
+    # separate, narrower question from the tile above, and the one that decides
+    # what gets dropped from the listing.
+    all_redirected_ids = _redirected_rtv_ncm_ids(rtvs)
 
-    def _is_redirected(ncm_id, rtv_obj=None):
-        return ncm_id in all_redirected_ids
-
-    already_redirected = len(all_redirected_ids)
-    pending_redirection = total_redirectable - already_redirected
-
-    # Redirection status filter (applied after stats)
-    if redirection_filter == 'redirected':
-        rtvs = rtvs.filter(order_id__in=all_redirected_ids)
-    elif redirection_filter == 'pending':
+    # An RTV that has already been redirected is no longer a redirection
+    # *candidate* — the package has been re-dispatched to a new customer and the
+    # order belongs to the Redirect Orders page from that point on. It used to
+    # stay listed here (only a filter could hide it), which invited redirecting
+    # the same package twice.
+    if all_redirected_ids:
         rtvs = rtvs.exclude(order_id__in=all_redirected_ids)
 
     # Pagination
     per_page = request.GET.get('per_page', '50')
-    if per_page not in ('50', '100', '200'):
+    if per_page not in ('50', '100', '200', '500'):
         per_page = '50'
     paginator = Paginator(rtvs, int(per_page))
     page_number = request.GET.get('page')
@@ -4697,7 +6061,10 @@ def possible_redirection_list(request):
             'ncm_order_id': rtv.order_id,
             'api_config_name': rtv.api_config.api_name if rtv.api_config else '—',
             'comment': rtv.comment or '',
-            'rtv_date': rtv.rtv_marked_at or rtv.created_at,
+            # No created_at fallback: that's the local DB insert time, not when
+            # NCM marked the RTV. Blank is honest; a wrong date is not.
+            'rtv_date': rtv.rtv_marked_at,
+            'rtv_date_trusted': rtv.rtv_marked_at_is_trusted,
             'local_order': local_order,
             'has_local': local_order is not None,
             'customer_name': local_order.customer_name if local_order else (rtv.receiver_name or ''),
@@ -4709,59 +6076,114 @@ def possible_redirection_list(request):
             'branch_city': local_order.branch_city if local_order else '',
             'order_number': local_order.order_number if local_order else '',
             'total_amount': local_order.total_amount if local_order else None,
-            'ncm_status': 'redirected' if _is_redirected(rtv.order_id, rtv) else ((local_order.ncm_status or '') if local_order else ''),
+            # Redirected RTVs are excluded above, so this only ever reflects the
+            # linked order's live NCM status.
+            'ncm_status': (local_order.ncm_status or '') if local_order else '',
             'local_order_id': local_order.id if local_order else None,
+            'last_status': rtv.last_status or '',
+            # The row is listed only on a stored order status the RTV row itself
+            # contradicts, so we do not actually know whether it belongs here.
+            # The template marks these rows and the page checks them against NCM
+            # immediately on load instead of waiting out its cross-tab cooldown
+            # — see _rtv_listed_on_stale_order_status().
+            'status_uncertain': _rtv_listed_on_stale_order_status(
+                rtv.last_status, local_order.ncm_status if local_order else '',
+            ),
         }
         rtv_entries.append(entry)
 
-    # ── Per-entry matching_orders: reuse _confirmed_branch_map (no extra DB query) ──
+    # ── Per-entry matching_rows: reuse _confirmed_branch_map (no extra DB query) ──
+    # order id → NCM ids of the RTV rows above that also match it. One confirmed
+    # order can genuinely be the right destination for several RTVs, so instead
+    # of hiding it from all but the first row we show it everywhere and name the
+    # rows contesting it.
+    _suggested_by_order_id = {}
     for entry in rtv_entries:
         _bk = (entry['rtv'].to_branch or '').upper()
         _branch_candidates = _confirmed_branch_map.get(_bk, [])
         _ncm_id = entry['ncm_order_id']
-        # Use RTV's product_description for matching (what's actually being returned)
-        # Do NOT use linked local order items for matching — they're only for display
-        _desc = (entry['rtv'].product_description or '').lower().strip()
-        # Store local order product names for display in the template
-        entry['local_order_product_names'] = _rtv_local_item_names.get(_ncm_id, [])
+        # Use RTV's product_description for matching, fallback to linked local order names if empty
+        _desc = (entry['rtv'].product_description or '').strip()
+        _local_names = _rtv_local_item_names.get(_ncm_id, [])
+        entry['local_order_product_names'] = _local_names
 
-        if not _desc:
-            # No product info — all confirmed orders at this branch match.
-            # Mark as branch-only so the template can warn the user.
-            _matched = list(_branch_candidates)
-            entry['is_branch_only_match'] = True
+        # The local-name fallback is joined into one package string for the same
+        # reason as in the pre-filter above — the names describe a single package,
+        # not a set of independently acceptable alternatives.
+        _match_sources = [_desc] if _desc else (
+            [', '.join(_local_names)] if _local_names else []
+        )
+
+        # RTV Product Ref display must reflect the SAME source used for matching
+        # above (previously the template showed local_order_product_names whenever
+        # a linked order existed, even though matching had already preferred the
+        # NCM product_description — the two could silently diverge and show a
+        # different quantity than what was actually compared).
+        if _desc:
+            _parsed_desc_items = _parse_rtv_description_items(_desc)
+            entry['rtv_product_ref_display'] = (
+                [_it['raw'] for _it in _parsed_desc_items] if _parsed_desc_items else [_desc]
+            )
+            entry['rtv_ref_source_is_local'] = False
         else:
-            _matched = []
-            for _o in _branch_candidates:
-                for _item in _o.items.all():
-                    if _item.product_name:
-                        _pn = _item.product_name.lower().strip()
-                        if _pn:
-                            # Match candidate order's products against RTV's product_description exactly
-                            if _desc == _pn:
-                                _matched.append(_o)
-                                break
-            entry['is_branch_only_match'] = False
-        entry['matching_orders'] = _matched
+            entry['rtv_product_ref_display'] = _local_names
+            entry['rtv_ref_source_is_local'] = True
+
+        # No product info anywhere — branch-only match is NOT sufficient, and
+        # _iter_matching_orders yields nothing for empty sources. The RTV's own
+        # local order is excluded so it can't be suggested as its own target.
+        _own_order_id = _rtv_own_local_order_id.get(_ncm_id)
+        _matched = list(_iter_matching_orders(
+            _match_sources, _branch_candidates,
+            exclude_ids={_own_order_id} if _own_order_id else frozenset(),
+        ))
+
+        # Rows carry the per-item pairing so the template can print each RTV
+        # product next to the order item it actually matched, instead of
+        # repeating the whole package description against every item.
+        #
+        # 'claimed_by' names the RTV rows above that match the same order. These
+        # used to be filtered out entirely, which left the losing row with a
+        # dead "N matches claimed above" badge the operator could not open — and
+        # denied them the perfectly valid choice of sending THIS package to that
+        # customer instead. Nothing is actually reserved by rendering a row:
+        # the claim happens on redirect, which flips the order to 'redirected'
+        # and drops it out of the confirmed-order pool on the next page load.
+        entry['matching_rows'] = [
+            {
+                'order': _o,
+                'products': [
+                    {'item': _it, 'rtv_ref': _ref}
+                    for _it, _ref in zip(_o.items.all(), _refs)
+                ],
+                'claimed_by': list(_suggested_by_order_id.get(_o.id, ())),
+            }
+            for _o, _refs in _matched
+        ]
+        for _o, _ in _matched:
+            _suggested_by_order_id.setdefault(_o.id, []).append(_ncm_id)
+
         entry['matching_count'] = len(_matched)
+        entry['contested_count'] = sum(
+            1 for _row in entry['matching_rows'] if _row['claimed_by']
+        )
 
     ncm_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
     branches = Branch.objects.filter(is_active=True).order_by('name')
     cities = City.objects.all().order_by('name')
     pnd_api_configs = LogisticsAPIConfig.objects.filter(logistics_provider='pick_and_drop', is_active=True)
-    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
-    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
+    payment_setups = Setup.objects.filter(setup_type='payment', is_active=True).order_by('sort_order', 'name')
 
     context = {
         'rtv_entries': rtv_entries,
         'rtvs_page': rtvs_page,
-        'total_redirectable': total_redirectable,
+        'total_rtv_orders': total_rtv_orders,
         'already_redirected': already_redirected,
         'pending_redirection': pending_redirection,
         'linked_count': len(linked_orders),
         'search_query': search_query,
-        'redirection_filter': redirection_filter,
         'api_config_filter': api_config_filter,
         'start_date': start_date,
         'end_date': end_date,
@@ -4778,31 +6200,292 @@ def possible_redirection_list(request):
     return render(request, 'possible_redirection.html', context)
 
 
+#: Cap on how many rows one refresh call checks. The page can be set to 500 per
+#: page; without this a single load could turn into hundreds of NCM requests.
+POSSIBLE_REDIRECTION_REFRESH_MAX = 60
+
+#: Server-side damper so several open tabs (or several staff on the page at the
+#: same time) don't each fire the same refresh. Best-effort only - the cache is
+#: LocMemCache here, so it is per Passenger worker; the page also keeps its own
+#: cooldown in localStorage.
+POSSIBLE_REDIRECTION_REFRESH_THROTTLE_SECONDS = 45
+
+#: How many linked local orders one refresh may write through to NCM-derived
+#: statuses. Each such write costs extra NCM requests (a 'Delivered' is
+#: re-fetched in full, and the activity log asks for the real event time), so
+#: an unbounded page could fire a hundred rapid requests the first time a
+#: backlog of stale rows is checked. NCMService now paces and retries around
+#: NCM's rate limit, but that turns such a burst into a long wait rather than
+#: a fast page - the cap is still what keeps this snappy. The RTV
+#: rows' own last_status is refreshed for free from the one bulk response and is
+#: what actually decides whether a row stays listed, so capping this only
+#: spreads the linked-order catch-up over successive refreshes.
+POSSIBLE_REDIRECTION_REFRESH_MAX_ORDER_WRITES = 10
+
+
+@login_required
+@permission_required('can_view_orders')
+@require_POST
+def possible_redirection_refresh_status(request):
+    """Pull live NCM statuses for the RTV rows currently on screen.
+
+    Why this exists: nothing else refreshed these rows. NCM status for an RTV'd
+    order reaches this database by exactly two routes, and neither covers this
+    page:
+
+    * the RTV list sync (ncm_rtvs_sync) only writes ``last_status`` for orders
+      NCM still returns as RTVs - once a package leaves the RTV pipeline it
+      drops out of that response and its ``last_status`` is frozen forever at
+      whatever it last was ("Dispatched");
+    * the background bulk sync (ncm/bulk_sync.py) skips orders whose local
+      status is terminal, and an RTV'd order resolves to 'return', which is in
+      that terminal set.
+
+    So a package that was already delivered kept showing up here as a
+    redirection candidate until somebody happened to open its order detail
+    page, whose load-time sync is the only thing that writes a fresh
+    ``Order.ncm_status``. That is exactly the "it only updates after I open the
+    order" behaviour this endpoint removes.
+
+    One bulk status request per API config covers the whole page; the response
+    is used twice - for the RTV row's own ``last_status`` and for the linked
+    local order (through the same resolution the bulk sync uses, so an RTV
+    "Delivered" back to the vendor is still not mistaken for a delivery to the
+    customer).
+
+    POST ``ncm_ids``: comma-separated NCM order IDs of the rendered rows.
+    Returns ``dropped`` - the IDs that are no longer redirection candidates, so
+    the page knows it is out of date and can reload itself.
+    """
+    from services.ncm_service import NCMService
+    from ncm.bulk_sync import sync_order_status_from_raw
+
+    ncm_ids = []
+    for _raw_id in (request.POST.get('ncm_ids') or '').split(','):
+        _raw_id = _raw_id.strip()
+        if _raw_id.isdigit():
+            ncm_ids.append(int(_raw_id))
+    # dict.fromkeys de-dupes while keeping the page's own order.
+    ncm_ids = list(dict.fromkeys(ncm_ids))[:POSSIBLE_REDIRECTION_REFRESH_MAX]
+
+    _empty = {
+        'success': True, 'checked': 0, 'rtv_updated': 0,
+        'orders_updated': 0, 'dropped': [], 'errors': 0,
+    }
+    if not ncm_ids:
+        return JsonResponse(_empty)
+
+    _throttle_key = 'possible_redirection_status_refresh'
+    if cache.get(_throttle_key):
+        return JsonResponse(dict(_empty, throttled=True))
+    cache.set(_throttle_key, True, POSSIBLE_REDIRECTION_REFRESH_THROTTLE_SECONDS)
+
+    rtvs = list(
+        RTVOrder.objects.filter(order_id__in=ncm_ids).select_related('api_config')
+    )
+    if not rtvs:
+        return JsonResponse(_empty)
+
+    local_orders = {
+        _o.ncm_order_id: _o
+        for _o in Order.objects.filter(
+            is_deleted=False,
+            ncm_order_id__in=[r.order_id for r in rtvs],
+        )
+    }
+
+    # Rows listed only on a stale order status are the ones the page is
+    # currently getting wrong, so they get first call on the linked-order write
+    # budget below. Without this a page full of ordinary rows could use the whole
+    # cap and leave the one wrong row wrong for another refresh.
+    rtvs.sort(key=lambda r: not _rtv_listed_on_stale_order_status(
+        r.last_status,
+        local_orders[r.order_id].ncm_status if r.order_id in local_orders else '',
+    ))
+
+    # Each RTV carries the API account its shipment lives under; asking the
+    # wrong account for a status returns nothing, so group before requesting.
+    by_config = {}
+    for rtv in rtvs:
+        by_config.setdefault(rtv.api_config_id, []).append(rtv)
+
+    dropped = []
+    rtv_updated = 0
+    orders_updated = 0
+    order_writes_attempted = 0
+    errors = 0
+    # Same chunk size as the bulk sync - NCM caps how many IDs one status
+    # request can carry.
+    _CHUNK = 100
+
+    for config_id, group in by_config.items():
+        try:
+            svc = NCMService(api_config_id=config_id) if config_id else NCMService()
+        except Exception:
+            logger.warning('Possible-redirection refresh: no usable NCM config %s',
+                           config_id, exc_info=True)
+            errors += 1
+            continue
+
+        for _start in range(0, len(group), _CHUNK):
+            chunk = group[_start:_start + _CHUNK]
+            try:
+                result = svc.get_bulk_order_statuses([str(r.order_id) for r in chunk])
+            except Exception:
+                logger.warning('Possible-redirection refresh: NCM status request failed '
+                               'for config %s', config_id, exc_info=True)
+                errors += 1
+                continue
+
+            if not result.get('success'):
+                errors += 1
+                continue
+
+            _data = result.get('data') or {}
+            statuses = _data.get('result') if isinstance(_data, dict) else None
+            if not isinstance(statuses, dict):
+                errors += 1
+                continue
+
+            for rtv in chunk:
+                raw_status = statuses.get(str(rtv.order_id))
+                local = local_orders.get(rtv.order_id)
+
+                if raw_status is not None:
+                    if isinstance(raw_status, dict):
+                        new_status = raw_status.get('status') or raw_status.get('Status') or ''
+                    else:
+                        new_status = raw_status or ''
+                    new_status = str(new_status).strip()
+
+                    # Blank is never written over a known status: NCM
+                    # occasionally answers with an empty entry, and clearing
+                    # last_status would silently re-list a package that had
+                    # already been ruled out.
+                    if new_status and new_status != rtv.last_status:
+                        rtv.last_status = new_status
+                        rtv.save(update_fields=['last_status'])
+                        rtv_updated += 1
+
+                    # Two reasons to write NCM's answer through to the linked
+                    # local order:
+                    #
+                    #  * the fresh status is terminal — redirectability is over
+                    #    and the order genuinely moved on. 'Delivered' is
+                    #    re-fetched in full by the sync (so a package delivered
+                    #    back to the vendor is still recognised as a return),
+                    #    and the returned/sent-to-vendor texts map into the
+                    #    return states either way;
+                    #  * the fresh status says the parcel is NOT at a branch it
+                    #    can be redirected from — still travelling ("Dispatched
+                    #    to Return"), or already back at the return counter
+                    #    ("Arrived at RETURN …") — while the order's stored
+                    #    ncm_status still claims it is. That stored value is half
+                    #    of the list view's eligibility test, so leaving it stale
+                    #    re-lists the row on the very reload this endpoint asks
+                    #    for — the reason a "Dispatched to Return" parcel stayed
+                    #    on the page until somebody opened its order detail page,
+                    #    that page's sync being the only other writer of
+                    #    ncm_status.
+                    #
+                    # Anything else is left alone. The bulk endpoint answers
+                    # with a bare status string carrying no vendor_return flag,
+                    # so an in-pipeline "Arrived" would resolve to plain
+                    # 'in_transit' and quietly strip the order's 'return'
+                    # status. (bulk_sync's own guard refuses that write, but not
+                    # asking is cheaper than being refused.)
+                    _corrects_stale_eligibility = (
+                        not _rtv_is_redirect_eligible(new_status)
+                        and _rtv_is_redirect_eligible(local.ncm_status if local else None)
+                    )
+                    if (local is not None
+                            and new_status
+                            and order_writes_attempted < POSSIBLE_REDIRECTION_REFRESH_MAX_ORDER_WRITES
+                            and (re.search(NON_REDIRECTABLE_NCM_STATUS_REGEX,
+                                           new_status, re.IGNORECASE)
+                                 or _corrects_stale_eligibility)):
+                        order_writes_attempted += 1
+                        try:
+                            if sync_order_status_from_raw(svc, local, raw_status, request.user):
+                                orders_updated += 1
+                        except Exception:
+                            logger.warning('Possible-redirection refresh: could not persist '
+                                           'status for order %s', local.order_number,
+                                           exc_info=True)
+                            errors += 1
+
+                # Two ways a listed row stops being a candidate: it reached a
+                # terminal status, or NCM moved it back out of the at-branch
+                # statuses the list now requires (the page only shows parcels
+                # NCM will actually accept a redirect for).
+                if _rtv_is_non_redirectable(rtv.last_status, local) or not _rtv_is_redirect_eligible(
+                    rtv.last_status, local.ncm_status if local else None
+                ):
+                    dropped.append(rtv.order_id)
+
+    if dropped or rtv_updated or orders_updated:
+        logger.info(
+            'Possible-redirection refresh: %d checked, %d RTV status(es) and %d order(s) '
+            'updated, %d no longer redirectable',
+            len(rtvs), rtv_updated, orders_updated, len(dropped),
+        )
+
+    return JsonResponse({
+        'success': True,
+        'checked': len(rtvs),
+        'rtv_updated': rtv_updated,
+        'orders_updated': orders_updated,
+        'dropped': dropped,
+        'errors': errors,
+    })
+
+
 @login_required
 @permission_required('can_view_orders')
 def redirect_orders_list(request):
     """Display all orders that have been redirected with detailed history and old customer details"""
     # pyrefly: ignore [missing-import]
-    from django.db.models import Q, CharField, Prefetch as _Pf, Sum
+    from django.db.models import Q, CharField, Prefetch as _Pf, Sum, OuterRef, Subquery
     # pyrefly: ignore [missing-import]
     from django.db.models.functions import Cast, Coalesce
     from django.db import models as db_models
 
     # Base queryset: orders that are either redirected OR have a redirected activity log
-    redirect_log_order_ids = OrderActivityLog.objects.filter(
-        action_type='redirected'
-    ).values_list('order_id', flat=True)
-    
+    # Evaluate to a list early to avoid repeated subquery evaluations
+    redirect_log_order_ids = list(
+        OrderActivityLog.objects.filter(
+            action_type='redirected'
+        ).values_list('order_id', flat=True).distinct()
+    )
+
     orders = Order.objects.filter(
         is_deleted=False
     ).filter(
-        Q(ncm_status='redirected') | Q(id__in=redirect_log_order_ids)
+        Q(ncm_status='redirected') | Q(order_status__iexact='redirected') | Q(id__in=redirect_log_order_ids)
     ).select_related(
         'customer', 'branch', 'status_setup', 'payment_status_setup', 'payment_setup'
     ).prefetch_related(
         _Pf('items', queryset=OrderItem.objects.only('product_name', 'quantity', 'price', 'total')),
+        # Intentionally ordered by created_at, not Coalesce(event_at, ...):
+        # redirections are local staff actions, so event_at is always NULL here
+        # and created_at IS the event time.
         _Pf('activity_logs', queryset=OrderActivityLog.objects.filter(action_type='redirected').order_by('-created_at'))
-    ).order_by('-updated_at')
+    )
+
+    # The "Redirect Date" column (and date filtering below) must reflect when
+    # the redirect actually happened, not order.updated_at — that field drifts
+    # on every unrelated change (NCM status polling, payment updates, etc.)
+    # after the redirect, so filtering/sorting on it silently disagrees with
+    # what the table displays. Fall back to updated_at only for orders that
+    # were marked redirected without a matching activity log.
+    latest_redirect_log = OrderActivityLog.objects.filter(
+        order_id=OuterRef('pk'), action_type='redirected'
+    ).order_by('-created_at')
+    orders = orders.annotate(
+        last_redirect_at=Subquery(latest_redirect_log.values('created_at')[:1]),
+    ).annotate(
+        effective_redirect_date=Coalesce('last_redirect_at', 'updated_at'),
+    )
 
     # GET FILTER PARAMETERS
     search_query = request.GET.get('search', '')
@@ -4810,6 +6493,10 @@ def redirect_orders_list(request):
     end_date = request.GET.get('end_date', '')
     redirection_status = request.GET.get('status', '')
     branch_filter = request.GET.get('branch', '')
+    # Same param name/vocabulary as orders_list's date filter, for consistency
+    # across the admin — see dashboard/templates/orders_list.html.
+    date_filter = request.GET.get('date_range', '')
+    sort_by = request.GET.get('sort_by', 'redirect_date_desc')
 
     # Apply search filter (search by order number, NCM ID, customer name, phone)
     if search_query:
@@ -4824,23 +6511,52 @@ def redirect_orders_list(request):
         )
         orders = orders.filter(search_q)
 
-    # Apply date range filter using timezone-aware datetimes to avoid DB __date cast issues
-    from django.utils import timezone
-    from datetime import datetime, time
-    
+    # Date Range Filter — quick presets resolve to an explicit start/end date
+    # (in Nepal time) so the custom-range inputs stay in sync with whichever
+    # preset is active. 'custom' (or no preset) uses start_date/end_date as-is.
+    # NOTE: do NOT use `effective_redirect_date__date=`/`__gte=`-with-`__date`
+    # lookups here — see nepali_day_start()'s docstring for why CONVERT_TZ
+    # silently zeroes out results on this server.
+    from .timezone_utils import get_nepali_now, nepali_day_start, nepali_day_end_exclusive
+    from datetime import datetime, timedelta
+
+    nepal_today = get_nepali_now().date()
+
+    if date_filter and date_filter != 'custom':
+        if date_filter == 'today':
+            start_date = end_date = nepal_today.strftime('%Y-%m-%d')
+        elif date_filter == 'yesterday':
+            d = (nepal_today - timedelta(days=1)).strftime('%Y-%m-%d')
+            start_date = end_date = d
+        elif date_filter == 'last_7_days':
+            start_date = (nepal_today - timedelta(days=6)).strftime('%Y-%m-%d')
+            end_date = nepal_today.strftime('%Y-%m-%d')
+        elif date_filter == 'last_30_days':
+            start_date = (nepal_today - timedelta(days=29)).strftime('%Y-%m-%d')
+            end_date = nepal_today.strftime('%Y-%m-%d')
+        elif date_filter == 'this_month':
+            start_date = nepal_today.replace(day=1).strftime('%Y-%m-%d')
+            end_date = nepal_today.strftime('%Y-%m-%d')
+        elif date_filter == 'last_month':
+            first_of_this_month = nepal_today.replace(day=1)
+            last_month_end = first_of_this_month - timedelta(days=1)
+            start_date = last_month_end.replace(day=1).strftime('%Y-%m-%d')
+            end_date = last_month_end.strftime('%Y-%m-%d')
+        elif date_filter == 'this_year':
+            start_date = nepal_today.replace(month=1, day=1).strftime('%Y-%m-%d')
+            end_date = nepal_today.strftime('%Y-%m-%d')
+
     if start_date:
         try:
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
-            start_dt = timezone.make_aware(datetime.combine(start_date_obj, time.min))
-            orders = orders.filter(updated_at__gte=start_dt)
+            orders = orders.filter(effective_redirect_date__gte=nepali_day_start(start_date_obj))
         except ValueError:
             pass
 
     if end_date:
         try:
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            end_dt = timezone.make_aware(datetime.combine(end_date_obj, time.max))
-            orders = orders.filter(updated_at__lte=end_dt)
+            orders = orders.filter(effective_redirect_date__lt=nepali_day_end_exclusive(end_date_obj))
         except ValueError:
             pass
 
@@ -4850,30 +6566,53 @@ def redirect_orders_list(request):
 
     # Apply status filter
     if redirection_status == 'redirected':
-        orders = orders.filter(ncm_status='redirected')
+        orders = orders.filter(
+            Q(ncm_status__iexact='redirected') |
+            Q(order_status__iexact='redirected') |
+            Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$') |
+            Q(id__in=redirect_log_order_ids)
+        )
     elif redirection_status == 'pending':
-        orders = orders.exclude(ncm_status='redirected')
+        orders = orders.exclude(
+            Q(ncm_status__iexact='redirected') |
+            Q(order_status__iexact='redirected') |
+            Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$') |
+            Q(id__in=redirect_log_order_ids)
+        )
 
-    # Stats
-    total_redirected = Order.objects.filter(is_deleted=False, ncm_status='redirected').count()
+    # Sorting — keyed off the same effective_redirect_date used for filtering
+    # above, so what the user filtered by and what they sorted by never disagree.
+    SORT_FIELD_MAP = {
+        'redirect_date_desc': '-effective_redirect_date',
+        'redirect_date_asc': 'effective_redirect_date',
+        'amount_desc': '-total_amount',
+        'amount_asc': 'total_amount',
+        'order_number_desc': '-order_number',
+        'order_number_asc': 'order_number',
+    }
+    if sort_by not in SORT_FIELD_MAP:
+        sort_by = 'redirect_date_desc'
+    orders = orders.order_by(SORT_FIELD_MAP[sort_by])
 
-    # Count pending redirections (orders with redirection activity log but not yet completed)
-    pending_redirection_ids = set(
-        OrderActivityLog.objects.filter(
-            action_type='redirected',
-            order__is_deleted=False
-        ).exclude(
-            order__ncm_status='redirected'
-        ).values_list('order_id', flat=True)
-    )
-    pending_redirection_count = len(pending_redirection_ids)
+    # Stats — count all confirmed redirected orders (any signal)
+    total_redirected = Order.objects.filter(is_deleted=False).filter(
+        Q(ncm_status='redirected') | Q(order_status__iexact='redirected') | Q(id__in=redirect_log_order_ids)
+    ).count()
+
+    # Count pending redirections (orders in the list that haven't been confirmed redirected)
+    pending_redirection_count = orders.exclude(
+        Q(ncm_status__iexact='redirected') |
+        Q(order_status__iexact='redirected') |
+        Q(ncm_status__iregex=r'^(delivered|in_transit|completed|returned|rto)$') |
+        Q(id__in=redirect_log_order_ids)
+    ).count()
 
     # Calculate Total Value for the current filtered view
     total_value = orders.aggregate(total=Sum('total_amount'))['total'] or 0
 
     # Pagination
     per_page = request.GET.get('per_page', '50')
-    if per_page not in ('50', '100', '200'):
+    if per_page not in ('50', '100', '200', '500'):
         per_page = '50'
     paginator = Paginator(orders, int(per_page))
     page_number = request.GET.get('page')
@@ -4882,47 +6621,81 @@ def redirect_orders_list(request):
     # Build enriched entries with redirection history
     redirect_entries = []
     for order in orders_page.object_list:
-        # Get redirection activity logs
-        redirection_logs = order.activity_logs.all()[:1]  # Get latest redirection log
+        # Use prefetched activity_logs directly — avoids N+1 DB queries.
+        # The prefetch loaded only action_type='redirected' logs ordered by -created_at.
+        prefetched_logs = list(order.activity_logs.all())  # reads from cache
 
-        old_customer_info = {}
+        old_customer_info = {
+            'name': '—',
+            'phone': '—',
+            'address': '—',
+            'branch': '—',
+        }
         redirect_timestamp = None
         redirect_user = None
         redirect_reason = ''
 
-        if redirection_logs:
-            log = redirection_logs[0]
+        # An order that only ever received a redirected package has no "old
+        # customer" — see _redirect_log_role(). Listing its own customer on both
+        # sides of the arrow made the row read as a redirect to nowhere.
+        is_destination = bool(prefetched_logs) and all(
+            _redirect_log_role(_log, order) == REDIRECT_ROLE_DESTINATION
+            for _log in prefetched_logs
+        )
+
+        if prefetched_logs:
+            log = prefetched_logs[0]  # already sorted -created_at by prefetch
             redirect_timestamp = log.created_at
             redirect_user = log.user.username if log.user else 'System'
             redirect_reason = log.description or ''
 
-            # Extract old customer info from metadata
-            if log.metadata:
-                old_customer_info = {
-                    'name': log.metadata.get('old_customer_name', '—'),
-                    'phone': log.metadata.get('old_customer_phone', '—'),
-                    'address': log.metadata.get('old_shipping_address', '—'),
-                    'branch': log.metadata.get('old_branch_city', '—'),
-                }
+            # Walk the logs newest-first so an empty-metadata log doesn't hide the
+            # snapshot an earlier redirect captured. Key styles vary — see
+            # _redirect_old_customer().
+            for _log in prefetched_logs:
+                if _redirect_log_role(_log, order) == REDIRECT_ROLE_DESTINATION:
+                    continue
+                _snapshot = _redirect_old_customer(_log.metadata)
+                if any(_snapshot.values()):
+                    old_customer_info = {
+                        'name': _snapshot['name'] or '—',
+                        'phone': _snapshot['phone'] or '—',
+                        'address': _snapshot['address'] or '—',
+                        'branch': _snapshot['branch'] or '—',
+                    }
+                    break
+
+        # Same resolver the detail modal uses, so the row and the modal can't
+        # disagree about who the order went to.
+        new_customer_info = _redirect_new_customer(order, prefetched_logs)
 
         entry = {
             'order': order,
             'order_id': order.id,
             'order_number': order.order_number,
             'ncm_order_id': order.ncm_order_id,
-            'new_customer_name': order.customer_name,
-            'new_customer_phone': order.customer_phone,
-            'new_branch': order.branch_city,
-            'new_address': order.shipping_address,
+            'new_customer_name': new_customer_info['name'] or '—',
+            'new_customer_phone': new_customer_info['phone'] or '—',
+            'new_branch': new_customer_info['branch'] or '—',
+            'new_address': new_customer_info['address'] or '—',
             'old_customer_info': old_customer_info,
+            'is_destination': is_destination,
+            'redirect_source': (
+                _redirect_source_reference(prefetched_logs[0]) if is_destination else {}
+            ),
             'redirect_timestamp': redirect_timestamp,
             'redirect_user': redirect_user,
             'redirect_reason': redirect_reason,
             'total_amount': order.total_amount,
             'order_status': order.order_status,
             'ncm_status': order.ncm_status,
-            'is_pending': order.ncm_status != 'redirected',
-            'items_count': order.items.count(),
+            'is_pending': not (
+                (order.ncm_status and order.ncm_status.lower() in ['redirected', 'delivered', 'in_transit', 'in transit', 'completed', 'returned', 'rto']) or
+                (order.order_status and order.order_status.lower() == 'redirected') or
+                redirect_timestamp is not None or
+                order.id in redirect_log_order_ids
+            ),
+            'items_count': len(list(order.items.all())),  # uses prefetch cache, no extra DB query
             'updated_at': order.updated_at,
         }
         redirect_entries.append(entry)
@@ -4944,6 +6717,8 @@ def redirect_orders_list(request):
         'branch_filter': branch_filter,
         'start_date': start_date,
         'end_date': end_date,
+        'date_filter': date_filter,
+        'sort_by': sort_by,
         'per_page': per_page,
         'branches': branches,
         'cities': cities,
@@ -5031,23 +6806,76 @@ def redirect_order_save(request, order_id):
     try:
         order = get_object_or_404(Order, id=order_id, is_deleted=False)
 
+        _send_to_logistics = request.POST.get('send_to_logistics', '')
+        if _send_to_logistics == 'ncm_redirect':
+            _rtv_for_check = (
+                RTVOrder.objects.filter(order_id=order.ncm_order_id).first()
+                if order.ncm_order_id else None
+            )
+            if not _rtv_is_redirect_eligible(
+                _rtv_for_check.last_status if _rtv_for_check else '', order.ncm_status
+            ):
+                return JsonResponse({
+                    'status': 'error',
+                    'message': _redirect_ineligible_message(
+                        _rtv_for_check.last_status if _rtv_for_check else '',
+                        order.ncm_status,
+                    ),
+                }, status=400)
+
         # Capture old customer details before any changes
         _old_customer_details = {
+            'redirect_role': REDIRECT_ROLE_SOURCE,
             'customer_name': order.customer_name,
             'customer_phone': order.customer_phone,
+            'customer_email': order.customer_email,
             'shipping_address': order.shipping_address,
             'branch_city': order.branch_city,
+            'landmark': order.landmark,
         }
 
         with transaction.atomic():
-            # Update customer/shipping fields
-            order.customer_name = request.POST.get('customer_name', order.customer_name).strip()
-            order.customer_phone = request.POST.get('customer_phone', order.customer_phone).strip()
+            # Update customer/shipping fields.
+            #
+            # request.POST.get(key, default) only returns the default when the
+            # key is ABSENT — a key posted with an empty value overwrites the
+            # field with ''. For the identity fields that is never what the
+            # caller meant, and it is destructive: the redirect wipes the very
+            # customer it just redirected to, leaving the Redirect Orders modal
+            # with nothing to show under "Redirected To". Blank means "leave it
+            # alone" here; optional fields may still be cleared deliberately.
+            def _keep_if_blank(field, posted_key):
+                value = request.POST.get(posted_key)
+                if value is None or not value.strip():
+                    return getattr(order, field) or ''
+                return value.strip()
+
+            # Fields a redirect submission fills from the NEW (destination)
+            # customer/order — see openRedirectWithNewCustomer's overrideFields
+            # and moneyFields in possible_redirection.html. If this is an
+            # ncm_redirect attempt, none of these may reach the database until
+            # NCM actually confirms the redirect: otherwise a rejected redirect
+            # (wrong status, expired token, etc.) still leaves this order's
+            # identity AND its totals/branch/payment state overwritten with the
+            # new customer's figures even though the package never moved.
+            _REDIRECT_TARGET_FIELDS = (
+                'customer_name', 'customer_phone', 'customer_email', 'shipping_address',
+                'landmark', 'branch_city', 'discount_amount', 'shipping_charge',
+                'total_amount', 'is_partial_payment', 'partial_amount_paid', 'remaining_amount',
+            )
+            _original_redirect_values = {f: getattr(order, f) for f in _REDIRECT_TARGET_FIELDS}
+
+            order.customer_name = _keep_if_blank('customer_name', 'customer_name')
+            order.customer_phone = _keep_if_blank('customer_phone', 'customer_phone')
+            order.shipping_address = _keep_if_blank('shipping_address', 'shipping_address')
             order.customer_email = request.POST.get('customer_email', order.customer_email).strip()
-            order.shipping_address = request.POST.get('shipping_address', order.shipping_address).strip()
-            order.landmark = request.POST.get('landmark', order.landmark).strip()
-            order.notes = request.POST.get('notes', order.notes).strip()
-            order.in_out = request.POST.get('in_out', order.in_out)
+            order.landmark = request.POST.get('landmark', order.landmark or '').strip()
+            order.notes = request.POST.get('notes', order.notes or '').strip()
+            # in_out is a choice field with no blank option — an empty post would
+            # store a value that get_in_out_display() cannot resolve.
+            _in_out = (request.POST.get('in_out') or '').strip()
+            if _in_out in dict(Order.IN_OUT_CHOICES):
+                order.in_out = _in_out
 
             new_branch_city = request.POST.get('branch_city', '').strip()
             if new_branch_city:
@@ -5082,13 +6910,17 @@ def redirect_order_save(request, order_id):
             if is_partial is not None:
                 order.is_partial_payment = is_partial == 'true'
                 if order.is_partial_payment:
+                    # A blank field means "nothing paid yet", not "keep whatever
+                    # the previous customer had paid". Carrying the old figure
+                    # over left remaining_amount disagreeing with the COD the
+                    # form had already computed and sent to NCM.
                     partial_str = request.POST.get('partial_amount_paid', '').strip()
-                    if partial_str:
-                        try:
-                            order.partial_amount_paid = Decimal(partial_str)
-                            order.remaining_amount = order.total_amount - order.partial_amount_paid
-                        except (InvalidOperation, ValueError):
-                            pass
+                    try:
+                        order.partial_amount_paid = Decimal(partial_str) if partial_str else Decimal('0.00')
+                    except (InvalidOperation, ValueError):
+                        order.partial_amount_paid = Decimal('0.00')
+                    _remaining = (order.total_amount or Decimal('0.00')) - order.partial_amount_paid
+                    order.remaining_amount = _remaining if _remaining > 0 else Decimal('0.00')
                 else:
                     order.partial_amount_paid = None
                     order.remaining_amount = None
@@ -5098,8 +6930,10 @@ def redirect_order_save(request, order_id):
             if status_setup_id:
                 try:
                     status_obj = Setup.objects.get(id=status_setup_id, setup_type='status')
-                    order.status_setup = status_obj
-                    order.order_status = status_obj.name.lower()
+                    # Same treatment as the order edit page: write both status
+                    # fields and stamp the manual hold, so a later NCM sync
+                    # doesn't quietly put the old status back.
+                    apply_manual_status(order, status_obj.name, status_setup=status_obj)
                 except Setup.DoesNotExist:
                     pass
 
@@ -5124,7 +6958,7 @@ def redirect_order_save(request, order_id):
 
             # Clear old NCM/PND IDs so the order can be resent
             # Skip clearing when using ncm_redirect — redirect needs the existing NCM ID
-            send_to = request.POST.get('send_to_logistics', '')
+            send_to = _send_to_logistics
             clear_logistics = request.POST.get('clear_logistics') == 'true'
             if clear_logistics and send_to != 'ncm_redirect':
                 order.ncm_order_id = None
@@ -5143,17 +6977,33 @@ def redirect_order_save(request, order_id):
                 except (InvalidOperation, ValueError):
                     pass
 
+            # Capture the fully-resolved redirect-target values, then — for an
+            # ncm_redirect attempt only — put the ORIGINAL values back before
+            # saving. redirect_order_to_ncm re-applies the pending ones (in
+            # memory, for the NCM payload) and persists them itself, but only
+            # once NCM confirms the redirect actually happened.
+            _pending_redirect_values = {f: getattr(order, f) for f in _REDIRECT_TARGET_FIELDS}
+            if _send_to_logistics == 'ncm_redirect':
+                for _f, _v in _original_redirect_values.items():
+                    setattr(order, _f, _v)
+
             order.save()
 
-            # Update customer record if exists
+            # Mirror the edit onto the customer record, but never blank a field
+            # there either — this record is shared by every order the customer
+            # placed, so an empty value would erase history well beyond this one.
             if order.customer:
                 cust = order.customer
-                cust.name = order.customer_name
-                cust.phone = order.customer_phone
-                cust.email = order.customer_email
+                if order.customer_name:
+                    cust.name = order.customer_name
+                if order.customer_phone:
+                    cust.phone = order.customer_phone
+                if order.customer_email:
+                    cust.email = order.customer_email
                 if new_branch_city:
                     cust.city = new_branch_city
-                cust.address = order.shipping_address
+                if order.shipping_address:
+                    cust.address = order.shipping_address
                 cust.save()
 
         # Now handle logistics send if requested
@@ -5196,6 +7046,7 @@ def redirect_order_save(request, order_id):
                 destination=destination,
                 cod_charge=cod_charge,
                 old_customer_details=_old_customer_details,  # Pass old details for activity log
+                new_customer=_pending_redirect_values,
             )
             logistics_result = result
 
@@ -5207,19 +7058,31 @@ def redirect_order_save(request, order_id):
                     try:
                         _matched_order = Order.objects.get(id=int(_matched_oid), is_deleted=False)
 
-                        # Capture old matched order customer details for activity log
+                        # This order is the DESTINATION — its own customer is
+                        # unchanged, it is simply being fulfilled by the
+                        # redirected package. Record that, rather than a snapshot
+                        # of its current customer that later reads as an "old
+                        # customer" and shows the same person on both sides.
                         _matched_old_details = {
-                            'customer_name': _matched_order.customer_name,
-                            'customer_phone': _matched_order.customer_phone,
-                            'shipping_address': _matched_order.shipping_address,
-                            'branch_city': _matched_order.branch_city,
+                            'redirect_role': REDIRECT_ROLE_DESTINATION,
+                            'source_order_number': order.order_number or '',
+                            'source_ncm_order_id': order.ncm_order_id or '',
                         }
 
-                        _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
-                        _matched_order.status_setup = _redir_st
-                        _matched_order.order_status = _redir_st.name.lower()
-                        _matched_order.save(update_fields=['status_setup', 'order_status'])
-                        # Log redirect on the matched order's activity log
+                        # Try to apply 'Redirected' status from Setup Management
+                        # (kept separate so Setup.DoesNotExist doesn't block activity log)
+                        _lo_update_fields_matched = ['order_status']
+                        _matched_order.order_status = 'redirected'
+                        try:
+                            _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
+                            _matched_order.status_setup = _redir_st
+                            _matched_order.order_status = _redir_st.name.lower()
+                            _lo_update_fields_matched.append('status_setup')
+                        except Setup.DoesNotExist:
+                            pass
+                        _matched_order.save(update_fields=_lo_update_fields_matched)
+
+                        # Always log the redirect on the matched order's activity log
                         try:
                             OrderActivityLog.objects.create(
                                 order=_matched_order,
@@ -5239,7 +7102,7 @@ def redirect_order_save(request, order_id):
                             )
                         except Exception:
                             pass
-                    except (Order.DoesNotExist, Setup.DoesNotExist, ValueError, TypeError):
+                    except (Order.DoesNotExist, ValueError, TypeError):
                         pass
 
         response_data = {'status': 'success', 'message': 'Order updated successfully.'}
@@ -5344,6 +7207,16 @@ def redirect_rtv_get(request, ncm_order_id):
             'items': items,
             'source': 'local',
         }
+        _eligible, _shown_status = _rtv_redirect_eligibility(
+            rtv_rec, local_order.ncm_status, ncm_order_id, api_config_id,
+        )
+        rtv_extra['redirect_eligible'] = _eligible
+        # Report whatever the eligibility verdict was actually based on, so the
+        # disabled option's explanation names the status that disabled it rather
+        # than the one it overruled. Set even without an RTVOrder row: the
+        # blocking status can come from the linked order's ncm_status alone.
+        if rtv_rec or _shown_status:
+            rtv_extra['last_status'] = _shown_status
         return JsonResponse({'status': 'success', 'order': data, 'rtv': rtv_extra})
     except Order.DoesNotExist:
         pass
@@ -5420,6 +7293,24 @@ def redirect_rtv_get(request, ncm_order_id):
         'items': [],
         'source': 'ncm',
     }
+    # ncm_data['status'] is whatever NCM just answered with, so it does not need
+    # the stored last_status to vouch for it — and must not be overruled by it.
+    # OR-ing the two (as this used to) let a stale "Arrived" enable the Redirect
+    # button for a package NCM had already sent back out, and the operator only
+    # found out when NCM rejected the redirect. Falling back to the stored value
+    # still covers an NCM call that failed or answered without a status.
+    _live_status = (ncm_data.get('status') or '').strip()
+    if _live_status:
+        rtv_extra['redirect_eligible'] = _rtv_is_redirect_eligible(_live_status)
+        # Free correction: we already paid for this answer, so persist it rather
+        # than leaving the Possible Redirection page to discover it again.
+        if rtv_rec and _live_status != rtv_rec.last_status:
+            RTVOrder.objects.filter(order_id=ncm_order_id).update(last_status=_live_status)
+            rtv_extra['last_status'] = _live_status
+    else:
+        rtv_extra['redirect_eligible'] = _rtv_is_redirect_eligible(
+            rtv_rec.last_status if rtv_rec else ''
+        )
     return JsonResponse({'status': 'success', 'order': data, 'rtv': rtv_extra})
 
 
@@ -5440,14 +7331,25 @@ def redirect_rtv_save(request, ncm_order_id):
         return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
 
     try:
-        # Get API config from RTVOrder
+        _rtv_for_check = RTVOrder.objects.filter(order_id=ncm_order_id).first()
+        _local_for_check = Order.objects.filter(ncm_order_id=ncm_order_id, is_deleted=False).first()
+        if not _rtv_is_redirect_eligible(
+            _rtv_for_check.last_status if _rtv_for_check else '',
+            _local_for_check.ncm_status if _local_for_check else None,
+        ):
+            return JsonResponse({
+                'status': 'error',
+                'message': _redirect_ineligible_message(
+                    _rtv_for_check.last_status if _rtv_for_check else '',
+                    _local_for_check.ncm_status if _local_for_check else '',
+                ),
+            }, status=400)
+
+        # Which NCM account owns this order (Order first, then RTVOrder) - an
+        # order is invisible to any other account's key.
         api_config_id = request.POST.get('api_config_id')
         if not api_config_id:
-            try:
-                rtv_rec = RTVOrder.objects.get(order_id=ncm_order_id)
-                api_config_id = rtv_rec.api_config_id
-            except RTVOrder.DoesNotExist:
-                pass
+            api_config_id = _resolve_ncm_api_config_id(ncm_order_id)
 
         # Resolve API credentials
         base_url_v2 = ''
@@ -5541,10 +7443,13 @@ def redirect_rtv_save(request, ncm_order_id):
 
                 # Store old customer details before updating
                 _old_customer_details = {
+                    'redirect_role': REDIRECT_ROLE_SOURCE,
                     'customer_name': local_order.customer_name,
                     'customer_phone': local_order.customer_phone,
+                    'customer_email': local_order.customer_email,
                     'shipping_address': local_order.shipping_address,
                     'branch_city': local_order.branch_city,
+                    'landmark': local_order.landmark,
                 }
 
                 local_order.ncm_status = 'redirected'
@@ -5552,6 +7457,20 @@ def redirect_rtv_save(request, ncm_order_id):
                 local_order.customer_phone = payload['phone'] or local_order.customer_phone
                 local_order.shipping_address = payload['address'] or local_order.shipping_address
                 _lo_update_fields = ['ncm_status', 'customer_name', 'customer_phone', 'shipping_address']
+
+                # Only name/phone/address go to NCM, but the redirect form also
+                # collects email/city/landmark. Without persisting them the
+                # order keeps the *previous* customer's branch and landmark,
+                # so "Redirected To" shows a destination that never existed.
+                for _field, _posted_key in (
+                    ('customer_email', 'customer_email'),
+                    ('branch_city', 'branch_city'),
+                    ('landmark', 'landmark'),
+                ):
+                    _posted = request.POST.get(_posted_key, '').strip()
+                    if _posted:
+                        setattr(local_order, _field, _posted)
+                        _lo_update_fields.append(_field)
                 # Apply 'Redirected' order status from Setup Management
                 try:
                     _redir_status = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
@@ -5571,19 +7490,28 @@ def redirect_rtv_save(request, ncm_order_id):
                 try:
                     _matched_order = Order.objects.get(id=int(_matched_oid), is_deleted=False)
 
-                    # Capture old matched order customer details for activity log
+                    # Destination order — see the matching branch in
+                    # redirect_order_save() for why this is a role marker rather
+                    # than a customer snapshot.
                     _matched_old_details = {
-                        'customer_name': _matched_order.customer_name,
-                        'customer_phone': _matched_order.customer_phone,
-                        'shipping_address': _matched_order.shipping_address,
-                        'branch_city': _matched_order.branch_city,
+                        'redirect_role': REDIRECT_ROLE_DESTINATION,
+                        'source_ncm_order_id': ncm_order_id,
                     }
 
-                    _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
-                    _matched_order.status_setup = _redir_st
-                    _matched_order.order_status = _redir_st.name.lower()
-                    _matched_order.save(update_fields=['status_setup', 'order_status'])
-                    # Log the redirect on the matched (confirmed) order
+                    # Try to apply 'Redirected' status from Setup Management
+                    # (kept separate so Setup.DoesNotExist doesn't block activity log)
+                    _lo_update_fields_rtv = ['order_status']
+                    _matched_order.order_status = 'redirected'
+                    try:
+                        _redir_st = Setup.objects.get(setup_type='status', name__iexact='redirected', is_active=True)
+                        _matched_order.status_setup = _redir_st
+                        _matched_order.order_status = _redir_st.name.lower()
+                        _lo_update_fields_rtv.append('status_setup')
+                    except Setup.DoesNotExist:
+                        pass
+                    _matched_order.save(update_fields=_lo_update_fields_rtv)
+
+                    # Always log the redirect on the matched (confirmed) order
                     try:
                         OrderActivityLog.objects.create(
                             order=_matched_order,
@@ -5602,7 +7530,7 @@ def redirect_rtv_save(request, ncm_order_id):
                         )
                     except Exception:
                         pass
-                except (Order.DoesNotExist, Setup.DoesNotExist, ValueError, TypeError):
+                except (Order.DoesNotExist, ValueError, TypeError):
                     pass
 
             # Log the redirect on the linked local order (if it exists)
@@ -5655,12 +7583,23 @@ def redirect_rtv_save(request, ncm_order_id):
         return JsonResponse({'status': 'error', 'message': f'Redirect failed: {str(e)}'}, status=500)
 
 
-def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, cod_charge=None, old_customer_details=None):
+def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, cod_charge=None,
+                           old_customer_details=None, new_customer=None):
     """
     Redirect an existing NCM order to a different address/customer using NCM v2 redirect API.
     Endpoint: POST /api/v2/vendor/order/redirect
     Params: pk (NCM order ID), name, phone, address, vendorOrderid, destination (branch ID), cod_charge
     old_customer_details: Dict with old customer info for activity log
+    new_customer: Dict of {model field name: pending value} for every field the
+        redirect form fills from the destination order (identity, address,
+        and the financial/branch/partial-payment fields that ride along with
+        it — see _REDIRECT_TARGET_FIELDS in redirect_order_save). The caller
+        has NOT saved these onto `order` yet — they're applied here (in
+        memory only, to build the request payload and the activity log) and
+        persisted below, but only once NCM actually confirms the redirect. On
+        any failure `order` keeps its ORIGINAL values, both here and in the
+        database — a rejected redirect must not leave the order half-migrated
+        to a customer/total it was never actually sent to.
     """
     import requests
     from django.conf import settings
@@ -5669,6 +7608,10 @@ def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, 
     try:
         if not order.ncm_order_id:
             return {'status': 'error', 'message': 'Order has no NCM ID. Cannot redirect — use "Create New Order" instead.'}
+
+        if new_customer:
+            for _field, _value in new_customer.items():
+                setattr(order, _field, _value)
 
         # Get API credentials
         base_url_v2 = ''
@@ -5758,6 +7701,12 @@ def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, 
             update_fields = ['ncm_status']
             order.ncm_status = 'redirected'
 
+            # NCM confirmed the redirect — now, and only now, persist every
+            # redirect-target field (identity, address, totals, branch,
+            # partial-payment state) that was applied in memory above.
+            if new_customer:
+                update_fields += list(new_customer.keys())
+
             if 'delivery_charge' in data:
                 try:
                     order.delivery_charge = Decimal(str(data['delivery_charge']))
@@ -5783,6 +7732,19 @@ def redirect_order_to_ncm(request, order, api_config_id=None, destination=None, 
                 pass
 
             order.save(update_fields=update_fields)
+
+            # Tag the RTV record too, the same way redirect_ncm_order() does.
+            # order.ncm_status is not a durable marker — NCM status polling
+            # rewrites it — and the Possible Redirection page needs a permanent
+            # signal to keep this package off its candidate list.
+            try:
+                _rtv_obj = RTVOrder.objects.get(order_id=order.ncm_order_id)
+                _existing_comment = (_rtv_obj.comment or '').strip()
+                if 'redirected' not in _existing_comment.lower():
+                    _rtv_obj.comment = f'[REDIRECTED] {_existing_comment}'.strip()
+                    _rtv_obj.save(update_fields=['comment'])
+            except RTVOrder.DoesNotExist:
+                pass
 
             # Log the redirect action in the order's activity log
             try:
@@ -5901,9 +7863,10 @@ def on_hold_orders_list(request):
 
     if start_date and end_date:
         try:
+            from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-            orders = orders.filter(created_at__date__gte=start_date_obj, created_at__date__lte=end_date_obj)
+            orders = orders.filter(created_at__gte=nepali_day_start(start_date_obj), created_at__lt=nepali_day_end_exclusive(end_date_obj))
         except ValueError:
             pass
 
@@ -5915,7 +7878,7 @@ def on_hold_orders_list(request):
 
     # Pagination
     per_page = request.GET.get('per_page', '50')
-    if per_page not in ('50', '100', '200'):
+    if per_page not in ('50', '100', '200', '500'):
         per_page = '50'
     paginator = Paginator(orders, int(per_page))
     page_number = request.GET.get('page')
@@ -5940,8 +7903,8 @@ def on_hold_orders_list(request):
         }
 
     # Dynamic bulk action options
-    order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
-    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('name')
+    order_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    payment_setups = Setup.objects.filter(setup_type='payment_status', is_active=True).order_by('sort_order', 'name')
 
     order_status_bulk_options = [
         (f'status_setup_{setup.id}', f'Mark as {setup.name}', '📋')
@@ -6147,7 +8110,10 @@ def update_order_next_followup(request, order_id):
 @login_required
 @permission_required('can_view_orders')
 def order_invoice(request, order_id):
-    from decimal import Decimal
+    """The printable invoice. Its layout, wording and styling come from
+    Setup → Invoice Customizer (`dashboard.invoice_config`), not from this view."""
+    from dashboard import invoice_config
+
     # Allow admins/managers to view any invoice; restrict regular staff to their own
     queryset = Order.objects.select_related(
         'api_config', 'status_setup', 'payment_setup', 'payment_status_setup'
@@ -6163,13 +8129,6 @@ def order_invoice(request, order_id):
         'product__bundle_components__component_product'
     ).all()
 
-    subtotal = sum(item.total for item in order_items) or Decimal('0.00')
-    discount = order.discount_amount or Decimal('0.00')
-    after_discount = subtotal - discount
-    tax_amount = (after_discount * (order.tax_percent or Decimal('0'))) / Decimal('100')
-    shipping = order.shipping_charge or Decimal('0.00')
-    delivery = order.delivery_charge or Decimal('0.00')
-
     order_status_label = (
         order.status_setup.name if order.status_setup else (order.order_status or order.status or 'pending')
     )
@@ -6180,19 +8139,16 @@ def order_invoice(request, order_id):
         order.payment_setup.name if order.payment_setup else (order.payment_method or 'N/A')
     )
 
-    return render(request, "order_invoice.html", {
-        "order": order,
-        "order_items": order_items,
-        "subtotal": subtotal,
-        "tax_amount": tax_amount,
-        "shipping": shipping,
-        "delivery": delivery,
-        "discount": discount,
-        "order_status_label": order_status_label,
-        "payment_status_label": payment_status_label,
-        "payment_method_label": payment_method_label,
-        "user": request.user,
-    })
+    context = invoice_config.build_invoice_context(
+        order, order_items, user=request.user,
+        labels={
+            'status': order_status_label,
+            'payment_status': payment_status_label,
+            'payment_method': payment_method_label,
+        },
+    )
+    context['user'] = request.user
+    return render(request, "order_invoice.html", context)
 
 
 # API Endpoints for AJAX
@@ -6303,16 +8259,18 @@ def api_search_orders(request):
     if date_from:
         try:
             from datetime import datetime
+            from .timezone_utils import nepali_day_start
             dt_from = datetime.strptime(date_from, '%Y-%m-%d')
-            orders = orders.filter(created_at__date__gte=dt_from.date())
+            orders = orders.filter(created_at__gte=nepali_day_start(dt_from.date()))
         except ValueError:
             pass
 
     if date_to:
         try:
             from datetime import datetime
+            from .timezone_utils import nepali_day_end_exclusive
             dt_to = datetime.strptime(date_to, '%Y-%m-%d')
-            orders = orders.filter(created_at__date__lte=dt_to.date())
+            orders = orders.filter(created_at__lt=nepali_day_end_exclusive(dt_to.date()))
         except ValueError:
             pass
 
@@ -6443,6 +8401,7 @@ def api_search_products(request):
                 "product_type": p.product_type,
                 "image": p.image.url if p.image else None,
                 "sku": sku,
+                "description": p.description if hasattr(p, 'description') and p.description else "",
             })
 
         return JsonResponse({
@@ -6496,7 +8455,7 @@ def api_get_product_variations(request, product_id):
         # GET ALL ACTIVE VARIATIONS (ignore status field, only check is_active and stock)
         variations = (
             product.variations
-            .filter(is_active=True)  # Only check is_active, ignore status
+            .filter(Q(is_active=True) | Q(status='active'))  # Check either is_active=True or status='active'
             .order_by("-stock", "sku")  # Show in-stock items first
         )
 
@@ -7594,6 +9553,14 @@ def orders_bulk_action(request):
             if action == 'send_to_ncm':
                 return orders_bulk_ncm_send(request, orders)
 
+            elif action == 'print_invoices':
+                # The orders list intercepts this and opens the sheet in a new
+                # tab; this branch is what a browser with the script disabled
+                # (or a form posted from elsewhere) falls back to.
+                from django.urls import reverse
+                ids = ','.join(str(order.id) for order in orders)
+                return redirect(f"{reverse('orders_bulk_invoice')}?ids={ids}")
+
             elif action == 'delete':
                 # Only users with delete permission can move orders to trash
                 if request.user.role != 'administrator' and not request.user.can_delete_orders:
@@ -7602,18 +9569,11 @@ def orders_bulk_action(request):
                 # SOFT DELETE - Move to trash instead of permanent delete
                 for order in orders:
                     if order.order_status == 'dispatched':
-                        # Restore stock for dispatched orders
-                        for item in order.items.all():
-                            if item.product_variation:
-                                item.product_variation.stock += item.quantity
-                                if item.product_variation.stock > 0:
-                                    item.product_variation.status = 'active'
-                                item.product_variation.save()
-                            elif item.product:
-                                item.product.stock += item.quantity
-                                if item.product.stock > 0:
-                                    item.product.stock_status = 'in_stock'
-                                item.product.save()
+                        # Restore stock for dispatched orders and change status to cancelled
+                        from inventory.services import restore_order_stock
+                        restore_order_stock(order)
+                        order.order_status = 'cancelled'
+                        order.save(update_fields=['order_status'])
                     else:
                         # Release stock reservations for non-dispatched orders
                         try:
@@ -7644,16 +9604,32 @@ def orders_bulk_action(request):
                     # Update orders with the selected status
                     for order in orders:
                         old_status = order.order_status
-                        order.status_setup = status_setup
-                        order.order_status = normalized_status
+                        # Writes status_setup + both string fields and stamps the
+                        # manual hold, so the next NCM sync doesn't undo the choice.
+                        apply_manual_status(order, normalized_status,
+                                            status_setup=status_setup)
 
                         # Set delivered_at timestamp when status changes to delivered
                         if normalized_status == 'delivered' and old_status != 'delivered':
                             order.delivered_at = timezone.now()
 
-                        # Release stock reservations when cancelling
+                        # Restore stock if moving away from 'dispatched'
+                        if old_status == 'dispatched' and normalized_status != 'dispatched':
+                            try:
+                                from inventory.services import restore_order_stock
+                                restore_order_stock(order)
+                                _invalidate_dispatch_items(
+                                    order,
+                                    f'Order status changed from "dispatched" to "{normalized_status}" — '
+                                    f'stock deduction was rolled back',
+                                    request.user,
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to restore stock for order {order.order_number}: {e}")
+
+                        # Release stock reservations when cancelling (only if not previously dispatched, as restored stock doesn't need reservation release)
                         if (normalized_status in ('cancelled', 'canceled') and
-                                old_status not in ('cancelled', 'canceled')):
+                                old_status not in ('cancelled', 'canceled', 'dispatched')):
                             try:
                                 from inventory.services import release_order_reservations
                                 release_order_reservations(order)
@@ -7802,360 +9778,29 @@ def orders_bulk_action(request):
     return redirect(request.POST.get('redirect_to', 'orders_list') if request.method == 'POST' else 'orders_list')
 
 
-@login_required
-@permission_required('can_delete_orders')
-def orders_bulk_ncm_send(request):
-    """
-    Handle Bulk Sending to NCM Logistics
-    """
-    from ncm.models import NCMBulkLog, NCMBulkLogOrder, NCMBulkLogDetail
-
-    if request.method != 'POST':
-        messages.error(request, '❌ Invalid request method')
-        return redirect('orders_list')
-
-    # 1. Get Form Data
-    order_ids = request.POST.getlist('order_ids')
-    from_branch = request.POST.get('from_branch', 'TINKUNE')
-    delivery_type = request.POST.get('delivery_type', 'Door2Door')
-    api_config_id = request.POST.get('api_config_id', '') or None
-
-    # Handle auto_set_logistics checkbox
-    auto_set_logistics = request.POST.get('auto_set_logistics') == 'on'
-
-    # Handle weight (default to 1.0 if invalid)
-    try:
-        default_weight = float(request.POST.get('default_weight', '1.0'))
-    except (ValueError, TypeError):
-        default_weight = 1.0
-
-    if not order_ids:
-        messages.error(request, '❌ No orders selected for NCM dispatch!')
-        return redirect('orders_list')
-
-    # 2. Get Orders
-    orders = Order.objects.filter(id__in=order_ids, is_deleted=False)
-    count = orders.count()
-
-    if count == 0:
-        messages.error(request, '❌ No valid active orders found matching selection.')
-        return redirect('orders_list')
-
-    # 3. Auto-set Logistics Field (if checked)
-    if auto_set_logistics:
-        orders.update(logistics='ncm')
-
-    # Create NCM Bulk Log
-    bulk_log = NCMBulkLog.objects.create(
-        batch_number=NCMBulkLog.generate_batch_number(),
-        total_orders=count,
-        status='processing',
-        from_branch=from_branch,
-        delivery_type=delivery_type,
-        created_by=request.user,
-    )
-    NCMBulkLogDetail.objects.create(
-        batch=bulk_log,
-        action='batch_started',
-        message=f'Bulk send started with {count} order(s) from {from_branch}',
-        user=request.user,
-    )
-
-    # 4. Processing Variables
-    success_count = 0
-    skip_count = 0
-    error_count = 0
-    error_details = []
-
-    # 5. Iterate and Send
-    for order in orders:
-        result = send_single_order_to_ncm(
-            request=request,
-            order=order,
-            from_branch=from_branch,
-            delivery_type=delivery_type,
-            default_weight=default_weight,
-            api_config_id=api_config_id
-        )
-
-        if result['status'] == 'success':
-            success_count += 1
-            log_status = 'success'
-            log_action = 'order_sent'
-        elif result['status'] == 'skipped':
-            skip_count += 1
-            log_status = 'skipped'
-            log_action = 'order_skipped'
-        else:
-            error_count += 1
-            log_status = 'failed'
-            log_action = 'order_failed'
-            if len(error_details) < 3:
-                error_details.append(f"{order.order_number}: {result['message']}")
-
-        # Create log entry for this order
-        order.refresh_from_db()
-        NCMBulkLogOrder.objects.create(
-            batch=bulk_log,
-            order=order,
-            order_number=order.order_number or '',
-            customer_name=order.customer_name or '',
-            customer_phone=order.customer_phone or '',
-            shipping_address=order.shipping_address or '',
-            cod_amount=order.total_amount or 0,
-            destination_branch=order.branch_city or '',
-            ncm_order_id=order.ncm_order_id,
-            status=log_status,
-            message=result.get('message', ''),
-        )
-        NCMBulkLogDetail.objects.create(
-            batch=bulk_log,
-            action=log_action,
-            order_number=order.order_number or '',
-            message=result.get('message', ''),
-            user=request.user,
-        )
-
-    # Update bulk log with final counts and status
-    if error_count == count:
-        final_status = 'failed'
-    elif success_count == count:
-        final_status = 'completed'
-    elif success_count > 0:
-        final_status = 'partial'
-    else:
-        final_status = 'failed'
-
-    bulk_log.success_count = success_count
-    bulk_log.failed_count = error_count
-    bulk_log.skipped_count = skip_count
-    bulk_log.status = final_status
-    bulk_log.completed_at = timezone.now()
-    bulk_log.save()
-
-    NCMBulkLogDetail.objects.create(
-        batch=bulk_log,
-        action='batch_completed',
-        message=f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped',
-        user=request.user,
-    )
-
-    # 6. Final Feedback
-    if success_count > 0:
-        messages.success(request, f'✅ Successfully sent {success_count} order(s) to NCM.')
-
-    if skip_count > 0:
-        messages.warning(request, f'⚠️ Skipped {skip_count} order(s) (Already sent or missing info).')
-
-    if error_count > 0:
-        messages.error(request, f'❌ Failed to send {error_count} order(s).')
-        # Show specific API errors
-        for err in error_details:
-            messages.error(request, f"Error: {err}")
-
-    return redirect('orders_list')
-
-def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door', default_weight=1.0, api_config_id=None):
-    """
-    Helper function to send a single order to NCM API.
-    Supports dynamic API configuration via api_config_id.
-    """
-    try:
-        # Validate order has required fields
-        if not order.order_number:
-            return {'status': 'error', 'message': f'Order {order.id} has no order_number'}
-
-        if not order.customer_name or not order.customer_phone or not order.shipping_address:
-            return {'status': 'error', 'message': f'Order {order.order_number} missing required customer info'}
-
-        # Check if already has NCM ID
-        if order.ncm_order_id:
-            return {'status': 'skipped', 'message': 'Already has NCM ID'}
-
-        # 1. Get API Credentials - from dynamic config or settings fallback
-        base_url = ''
-        api_key = ''
-        matched_api_config = None
-
-        if api_config_id:
-            try:
-                matched_api_config = LogisticsAPIConfig.objects.get(id=api_config_id, is_active=True, logistics_provider='ncm')
-                base_url = matched_api_config.get_primary_base_url()
-                api_key = matched_api_config.api_key
-            except LogisticsAPIConfig.DoesNotExist:
-                return {'status': 'error', 'message': 'Selected API configuration not found or inactive'}
-
-        if not base_url or not api_key:
-            base_url = (getattr(settings, 'NCM_API_BASE_URL', '') or '').rstrip('/')
-            api_key = getattr(settings, 'NCM_API_KEY', '') or ''
-            # Auto-match default .env credentials to a DB config by API key
-            if not matched_api_config and api_key:
-                matched_api_config = LogisticsAPIConfig.objects.filter(
-                    logistics_provider='ncm', is_active=True, api_key=api_key
-                ).order_by('-id').first()
-
-        if not base_url or not api_key:
-            return {'status': 'error', 'message': 'NCM configuration missing. Add an API config in Settings > API Integration.'}
-
-        # Construct Endpoint (use /order/create not /ordercreate)
-        api_url = f"{base_url}/order/create"
-
-        # 2. Prepare Data
-        # Build package description with variant names
-        product_name = "General Item"
-        try:
-            items = order.items.select_related('product_variation').all()[:3]
-            if items:
-                parts = []
-                for item in items:
-                    qty = getattr(item, 'quantity', 1) or 1
-                    name = item.product_name or 'Item'
-                    var_name = item.variation_name or (item.product_variation.variation_name if item.product_variation else None)
-                    if var_name:
-                        name = f"{name} ({var_name})"
-                    parts.append(f"{qty}x {name}")
-                product_name = ', '.join(parts)
-                total_items = order.items.count()
-                if total_items > 3:
-                    product_name += f' and {total_items - 3} more'
-        except Exception:
-            pass
-
-        # Calculate Weight
-        weight = default_weight
-        # If your order model has a weight field, use it
-        if hasattr(order, 'package_weight') and order.package_weight:
-             weight = float(order.package_weight)
-
-        # Clean phone number (remove non-digits)
-        phone = ''.join(filter(str.isdigit, str(order.customer_phone or "")))
-
-        # FIXED: Generate Vendor Reference ID - Use order ID directly
-        # NCM requires vrefid field to be populated with order reference
-        vendor_ref_id = str(order.id)  # Start with order ID (guaranteed to exist)
-
-        # Try to use order_number if available (better for tracking)
-        if order.order_number:
-            order_num = str(order.order_number).strip()
-            if order_num:
-                vendor_ref_id = order_num
-
-        # If vendor_id exists from creator, use it as main reference
-        try:
-            if order.created_by and hasattr(order.created_by, 'vendor_id') and order.created_by.vendor_id:
-                vendor_id_str = str(order.created_by.vendor_id).strip()
-                if vendor_id_str:
-                    vendor_ref_id = vendor_id_str
-        except:
-            pass
-
-        # Ensure vendor_ref_id is always set and valid
-        if not vendor_ref_id or vendor_ref_id.strip() == "":
-            vendor_ref_id = str(order.id)
-
-        vendor_ref_id = vendor_ref_id.strip()
-
-        # For partial payments, send remaining amount as COD (not full total)
-        cod_amount = order.remaining_amount if order.is_partial_payment and order.remaining_amount is not None else order.total_amount
-        payload = {
-            "name": str(order.customer_name or "").strip(),
-            "phone": phone,
-            "phone2": "", # Optional
-            "cod_charge": float(cod_amount or 0),
-            "address": str(order.shipping_address or "").strip(),
-            "fbranch": from_branch,
-            "branch": str(order.branch_city or "KATHMANDU").upper(),
-            "package": str(product_name)[:100], # Limit length
-            "vref_id": vendor_ref_id,
-            "instruction": str(order.notes or "")[:100],
-            "deliverytype": delivery_type,
-            "weight": weight
-        }
-
-        # 3. Send Request
-        headers = {
-            'Authorization': f'Token {api_key}',
-            'Content-Type': 'application/json'
-        }
-
-        response = requests.post(api_url, json=payload, headers=headers, timeout=15)
-
-        # 4. Handle Response
-        if response.status_code == 200:
-            resp_data = response.json()
-
-            # Check NCM specific success message
-            if resp_data.get('Message') == 'Order Successfully Created':
-                # Save NCM ID to Order
-                ncm_id = resp_data.get('orderid')
-                if ncm_id:
-                    order.ncm_order_id = int(ncm_id)
-                order.logistics = 'ncm' # Ensure logistics is set
-                if matched_api_config:
-                    order.api_config = matched_api_config
-                order.save()
-
-                # ✅ FETCH DELIVERY CHARGE FROM NCM API
-                try:
-                    # Import ncm_service here to avoid circular imports
-                    from services.ncm_service import NCMService
-                    ncm_service = NCMService()
-                    details_result = ncm_service.get_order_details(order.ncm_order_id)
-
-                    logger.info(f"NCM API response details: {details_result}")
-
-                    if details_result.get('success'):
-                        details_data = details_result.get('data', {})
-                        logger.info(f"Extracted data from NCM response: {details_data}")
-
-                        # Extract delivery_charge from NCM response - try multiple field names
-                        delivery_charge = (details_data.get('chargeDetail') or
-                                         details_data.get('deliveryCharge') or
-                                         details_data.get('deliverycharge') or
-                                         details_data.get('delivery_charge') or
-                                         details_data.get('chargedetail') or
-                                         details_data.get('shippingCharge') or
-                                         details_data.get('shipping_charge') or
-                                         details_data.get('charge') or
-                                         details_data.get('amount') or
-                                         0)
-
-                        logger.info(f"Extracted delivery_charge: {delivery_charge} from data keys: {list(details_data.keys())}")
-
-                        if delivery_charge and float(delivery_charge) > 0:
-                            order.delivery_charge = Decimal(str(delivery_charge))
-                            order.save(update_fields=['delivery_charge'])
-                            logger.info(f"✅ Fetched and saved delivery charge: {delivery_charge} for NCM order {order.ncm_order_id}")
-                        else:
-                            logger.warning(f"⚠️ No delivery charge found in NCM response for order {order.ncm_order_id}. Response data: {details_data}")
-                    else:
-                        logger.warning(f"⚠️ Failed to fetch order details from NCM: {details_result.get('error', 'Unknown error')}")
-                except Exception as e:
-                    logger.error(f"Error fetching delivery charge from NCM: {str(e)}", exc_info=True)
-
-                # Log Activity
-                OrderActivityLog.objects.create(
-                    order=order,
-                    user=request.user,
-                    action_type='updated',
-                    description=f"Sent to NCM. NCM ID: {order.ncm_order_id}, Vendor Ref: {vendor_ref_id}"
-                )
-                return {'status': 'success', 'message': 'Sent successfully'}
-            else:
-                # API returned 200 but with an internal error message
-                return {'status': 'error', 'message': str(resp_data)}
-
-        elif response.status_code == 404:
-            # 404 means the URL is wrong OR the Resource ID is wrong.
-            # Since we are creating, it's likely the URL.
-            return {'status': 'error', 'message': f'API Endpoint 404. Checked URL: {api_url}'}
-
-        else:
-            return {'status': 'error', 'message': f'HTTP Error {response.status_code}: {response.text}'}
-
-    except Exception as e:
-        return {'status': 'error', 'message': str(e)}
 # ==================== DISPATCH MANAGEMENT VIEWS ====================
+
+def _invalidate_dispatch_items(order, reason, user=None):
+    """Mark an order's successful dispatch rows as failed after its status is
+    moved away from "dispatched".
+
+    The stock deduction has just been rolled back, so the batch no longer
+    dispatched this order — recording the reason (and an audit entry) is what
+    lets the dispatch detail page explain why a previously green row is now red.
+    """
+    items = list(
+        DispatchItem.objects.filter(
+            order=order, dispatch_status='success'
+        ).select_related('dispatch')
+    )
+    for item in items:
+        item.mark_failed(reason, code='status_reverted')
+        item.dispatch.log(
+            'status_reverted', reason, level='warning',
+            item=item, order_ref=item.scanned_order_id, user=user,
+        )
+    return len(items)
+
 
 @login_required
 @permission_required('can_view_dispatch')
@@ -8187,10 +9832,20 @@ def dispatch_management(request):
             messages.error(request, 'Duplicate order IDs detected. Please remove duplicates.')
             return redirect('dispatch_management')
 
+        from .timezone_utils import format_nepali_datetime
+
         try:
             with transaction.atomic():
-                # Generate batch number
-                batch_number = f"DISPATCH-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                # Generate batch number. The timestamp only has second
+                # granularity, so two batches submitted inside the same second
+                # collide on the unique constraint — suffix until it is free
+                # rather than failing the whole scan.
+                stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+                batch_number = f"DISPATCH-{stamp}"
+                suffix = 1
+                while Dispatch.objects.filter(batch_number=batch_number).exists():
+                    suffix += 1
+                    batch_number = f"DISPATCH-{stamp}-{suffix}"
 
                 # Create dispatch
                 dispatch = Dispatch.objects.create(
@@ -8200,16 +9855,26 @@ def dispatch_management(request):
                     total_orders=len(order_ids),
                     created_by=request.user
                 )
+                dispatch.log(
+                    'batch_created',
+                    f'Batch {batch_number} created with {len(order_ids)} scanned ID(s) — '
+                    f'logistics: {dict(Dispatch.LOGISTICS_CHOICES).get(logistics, logistics)}, '
+                    f'target status: {set_status}.',
+                    level='info',
+                    user=request.user,
+                )
 
                 # Create dispatch items and update orders
                 updated_count = 0
                 not_found = []
+                failed_details = []  # (order_id, reason) for the redirect message
                 stock_warnings = []
                 stock_deductions = []  # detailed per-item deduction records
 
                 for order_id in order_ids:
-                    # Create dispatch item
-                    DispatchItem.objects.create(
+                    # Create dispatch item — one row per scan, held as an object so
+                    # its outcome is written exactly once instead of via re-queries.
+                    dispatch_item = DispatchItem.objects.create(
                         dispatch=dispatch,
                         scanned_order_id=order_id
                     )
@@ -8221,21 +9886,35 @@ def dispatch_management(request):
 
                     if order:
                         # Always link the dispatch item to the order (even if already dispatched)
-                        DispatchItem.objects.filter(
-                            dispatch=dispatch,
-                            scanned_order_id=order_id
-                        ).update(order=order)
+                        dispatch_item.order = order
+                        dispatch_item.save(update_fields=['order'])
 
-                        # Check if already dispatched
-                        if order.order_status == 'dispatched':
-                            DispatchItem.objects.filter(
-                                dispatch=dispatch,
-                                scanned_order_id=order_id
-                            ).update(dispatch_status='failed', failure_reason='Already dispatched')
-                            messages.warning(request, f'⚠️ Order {order_id} already dispatched')
+                        # Check if historically dispatched (even if status was changed manually later)
+                        prior_item = DispatchItem.objects.filter(
+                            order=order,
+                            dispatch__is_deleted=False,
+                            dispatch_status='success',
+                        ).exclude(dispatch=dispatch).select_related('dispatch').first()
+
+                        if order.order_status == 'dispatched' or prior_item:
+                            if prior_item:
+                                reason = (
+                                    f'Already dispatched in batch {prior_item.dispatch.batch_number} '
+                                    f'on {format_nepali_datetime(prior_item.scanned_at)}'
+                                )
+                            else:
+                                reason = 'Order is already in "dispatched" status'
+                            dispatch_item.mark_failed(reason, code='already_dispatched')
+                            failed_details.append((order_id, reason))
+                            dispatch.log(
+                                'order_failed', reason, level='error',
+                                item=dispatch_item, order_ref=order_id, user=request.user,
+                            )
+                            messages.warning(request, f'⚠️ Order {order_id} was not dispatched — {reason}.')
                             continue
 
                         # ✅ STOCK DEDUCTION: Reduce stock when status is "dispatched"
+                        warn_start = len(stock_warnings)
                         if set_status == 'dispatched':
                             order_items = order.items.select_related(
                                 'product', 'product_variation'
@@ -8250,31 +9929,35 @@ def dispatch_management(request):
                                     # ── Variation stock ──────────────────────────────
                                     old_stock = variation.stock
                                     oversold = variation.stock < quantity
-                                    if not oversold:
-                                        variation.stock -= quantity
-                                    else:
+                                    variation.stock -= quantity
+                                    if oversold:
                                         warn_msg = (
                                             f"⚠️ {variation.sku}: Need {quantity}, "
-                                            f"Available {variation.stock} (oversold)"
+                                            f"Available {old_stock} (oversold)"
                                         )
                                         stock_warnings.append(warn_msg)
-                                        variation.stock = max(0, variation.stock - quantity)
 
                                     # Update variation status based on its own threshold
                                     threshold = variation.low_stock_threshold or 0
-                                    if variation.stock == 0:
+                                    if variation.stock <= 0:
                                         variation.status = 'out_of_stock'
                                     elif threshold > 0 and variation.stock <= threshold:
                                         variation.status = 'inactive'  # low-stock flag for variations
                                     variation.save()
 
-                                    # Clear reservation counters on parent product
-                                    if product:
+                                    # Variation oversold logic
+                                    if product and oversold and product.backorders_allowed:
+                                        backorder_qty = quantity - max(0, old_stock)
+                                        item.backordered_qty = backorder_qty
                                         try:
-                                            from inventory.services import clear_reservation_on_dispatch
-                                            clear_reservation_on_dispatch(product, quantity)
-                                        except Exception:
-                                            pass
+                                            item.save(update_fields=['backordered_qty'])
+                                        except ValueError:
+                                            item.save()
+                                        product.backordered_qty += backorder_qty
+                                        try:
+                                            product.save(update_fields=['backordered_qty'])
+                                        except ValueError:
+                                            product.save()
 
                                     # Record deduction detail
                                     product_name = product.name if product else 'Unknown'
@@ -8295,7 +9978,7 @@ def dispatch_management(request):
                                             total=Sum('stock')
                                         )['total'] or 0
                                         p_threshold = product.low_stock_threshold or 0
-                                        if total_var_stock == 0:
+                                        if total_var_stock <= 0:
                                             product.stock_status = 'out_of_stock'
                                         elif p_threshold > 0 and total_var_stock <= p_threshold:
                                             product.stock_status = 'low_stock'
@@ -8313,19 +9996,17 @@ def dispatch_management(request):
                                                 required = comp.quantity_required * quantity
                                                 old_stock = comp_product.stock
                                                 oversold = comp_product.stock < required
-                                                if not oversold:
-                                                    comp_product.stock -= required
-                                                else:
+                                                comp_product.stock -= required
+                                                if oversold:
                                                     warn_msg = (
                                                         f"⚠️ {comp_product.name} (bundle component of {product.name}): "
-                                                        f"Need {required}, Available {comp_product.stock} (oversold)"
+                                                        f"Need {required}, Available {old_stock} (oversold)"
                                                     )
                                                     stock_warnings.append(warn_msg)
-                                                    comp_product.stock = max(0, comp_product.stock - required)
 
                                                 # Update component stock_status
                                                 threshold = comp_product.low_stock_threshold or 0
-                                                if comp_product.stock == 0:
+                                                if comp_product.stock <= 0:
                                                     comp_product.stock_status = 'out_of_stock'
                                                 elif threshold > 0 and comp_product.stock <= threshold:
                                                     comp_product.stock_status = 'low_stock'
@@ -8335,12 +10016,20 @@ def dispatch_management(request):
                                                     comp_product.stock_status = 'in_stock'
                                                 comp_product.save(update_fields=['stock', 'stock_status'])
 
-                                                # Clear reservation counters on component
-                                                try:
-                                                    from inventory.services import clear_reservation_on_dispatch
-                                                    clear_reservation_on_dispatch(comp_product, required)
-                                                except Exception:
-                                                    pass
+                                                # Bundle component oversold logic (backorders track on parent bundle)
+                                                if oversold and product.backorders_allowed:
+                                                    # Just track backorder on the item and bundle product, not component
+                                                    backorder_qty = required - max(0, old_stock)
+                                                    item.backordered_qty = backorder_qty
+                                                    try:
+                                                        item.save(update_fields=['backordered_qty'])
+                                                    except ValueError:
+                                                        item.save()
+                                                    product.backordered_qty += backorder_qty
+                                                    try:
+                                                        product.save(update_fields=['backordered_qty'])
+                                                    except ValueError:
+                                                        product.save()
 
                                                 # Record deduction detail for each component
                                                 stock_deductions.append({
@@ -8357,19 +10046,17 @@ def dispatch_management(request):
                                             # ── Simple product stock ──────────────────────────
                                             old_stock = product.stock
                                             oversold = product.stock < quantity
-                                            if not oversold:
-                                                product.stock -= quantity
-                                            else:
+                                            product.stock -= quantity
+                                            if oversold:
                                                 warn_msg = (
                                                     f"⚠️ {product.name}: Need {quantity}, "
-                                                    f"Available {product.stock} (oversold)"
+                                                    f"Available {old_stock} (oversold)"
                                                 )
                                                 stock_warnings.append(warn_msg)
-                                                product.stock = max(0, product.stock - quantity)
 
                                             # Update stock_status using configured threshold
                                             threshold = product.low_stock_threshold or 0
-                                            if product.stock == 0:
+                                            if product.stock <= 0:
                                                 product.stock_status = 'out_of_stock'
                                             elif threshold > 0 and product.stock <= threshold:
                                                 product.stock_status = 'low_stock'
@@ -8379,12 +10066,21 @@ def dispatch_management(request):
                                                 product.stock_status = 'in_stock'
                                             product.save(update_fields=['stock', 'stock_status'])
 
-                                            # Clear reservation counters
-                                            try:
-                                                from inventory.services import clear_reservation_on_dispatch
-                                                clear_reservation_on_dispatch(product, quantity)
-                                            except Exception:
-                                                pass
+                                            # Generate backorder at dispatch if oversold
+                                            if oversold and product.backorders_allowed:
+                                                backorder_qty = quantity - max(0, old_stock)
+                                                item.backordered_qty = backorder_qty
+                                                try:
+                                                    item.save(update_fields=['backordered_qty'])
+                                                except ValueError:
+                                                    item.save()
+                                                product.backordered_qty += backorder_qty
+                                                try:
+                                                    product.save(update_fields=['stock', 'stock_status', 'backordered_qty'])
+                                                except ValueError:
+                                                    product.save(update_fields=['stock', 'stock_status'])
+                                            else:
+                                                product.save(update_fields=['stock', 'stock_status'])
 
                                             # Record deduction detail
                                             stock_deductions.append({
@@ -8397,6 +10093,13 @@ def dispatch_management(request):
                                                 'new_stock': product.stock,
                                                 'oversold': oversold,
                                             })
+
+                        # Any oversell raised while deducting this order's stock
+                        for warn_msg in stock_warnings[warn_start:]:
+                            dispatch.log(
+                                'stock_oversold', warn_msg, level='warning',
+                                item=dispatch_item, order_ref=order_id, user=request.user,
+                            )
 
                         # Capture old values BEFORE modification
                         old_order_status = order.order_status
@@ -8437,12 +10140,23 @@ def dispatch_management(request):
                         )
 
                         updated_count += 1
-                        DispatchItem.objects.filter(
-                            dispatch=dispatch,
-                            scanned_order_id=order_id
-                        ).update(dispatch_status='success')
+                        dispatch_item.mark_success()
+                        dispatch.log(
+                            'order_dispatched',
+                            f'Order {order.order_number} ({order.customer_name or "no customer name"}) '
+                            f'moved {old_order_status or "—"} → {order.order_status} via {logistics}.',
+                            level='success',
+                            item=dispatch_item, order_ref=order_id, user=request.user,
+                        )
                     else:
+                        reason = 'No order matches this ID by order number or barcode'
+                        dispatch_item.mark_not_found(reason)
                         not_found.append(order_id)
+                        failed_details.append((order_id, reason))
+                        dispatch.log(
+                            'order_not_found', reason, level='error',
+                            item=dispatch_item, order_ref=order_id, user=request.user,
+                        )
 
                 # Store detailed stock deduction summary in session for display on detail page
                 import json as _json
@@ -8455,29 +10169,46 @@ def dispatch_management(request):
                     'batch_number': batch_number,
                 })
 
-                # Success message
-                if updated_count == len(order_ids):
+                # Closing summary — count every non-success, not just "not found",
+                # so the message agrees with the Failed column on the list page.
+                issue_count = len(failed_details)
+                dispatch.log(
+                    'batch_completed',
+                    f'Batch finished: {updated_count} dispatched, {issue_count} failed '
+                    f'({len(not_found)} not found) out of {len(order_ids)} scanned.',
+                    level='success' if issue_count == 0 else ('error' if updated_count == 0 else 'warning'),
+                    user=request.user,
+                )
+
+                if issue_count == 0:
                     messages.success(
                         request,
-                        f'✅ Successfully dispatched {updated_count} orders! Batch: {batch_number}'
+                        f'✅ Successfully dispatched {updated_count} order(s)! Batch: {batch_number}'
                     )
                 else:
+                    failed_ids = ', '.join(oid for oid, _ in failed_details)
                     messages.warning(
                         request,
                         f'⚠️ Dispatched {updated_count}/{len(order_ids)} orders. '
-                        f'{len(not_found)} order(s) not found: {", ".join(not_found)}'
+                        f'{issue_count} failed ({len(not_found)} not found in system): {failed_ids}. '
+                        f'See the Failure Report below for the reason on each.'
                     )
 
                 return redirect('dispatch_detail', pk=dispatch.pk)
 
         except Exception as e:
+            # The atomic block rolled the batch back, but the session write is
+            # not part of it — drop the summary so it can't surface later,
+            # attached to an unrelated dispatch.
+            request.session.pop('stock_deduction_summary', None)
             messages.error(request, f'Error creating dispatch: {str(e)}')
             import traceback
             traceback.print_exc()
+            logger.exception('Dispatch batch creation failed')
             return redirect('dispatch_management')
 
     # Get status setups for the dropdown
-    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('name')
+    status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
 
     # Get recent orders from the last 2 days for sidebar
     two_days_ago = timezone.now() - timedelta(days=2)
@@ -8492,69 +10223,6 @@ def dispatch_management(request):
     }
 
     return render(request, 'dispatch_management.html', context)
-
-
-@login_required
-@permission_required('can_view_dispatch')
-def dispatch_list(request):
-    """List all dispatches (not trashed)"""
-    dispatches = Dispatch.objects.filter(is_deleted=False).prefetch_related('items').order_by('-created_at')
-
-    # Filters
-    logistics_filter = request.GET.get('logistics')
-    status_filter = request.GET.get('status')
-    search = request.GET.get('search')
-
-    if logistics_filter:
-        dispatches = dispatches.filter(logistics=logistics_filter)
-
-    if status_filter:
-        dispatches = dispatches.filter(status=status_filter)
-
-    if search:
-        dispatches = dispatches.filter(
-            Q(batch_number__icontains=search) |
-            Q(items__scanned_order_id__icontains=search)
-        ).distinct()
-
-    context = {
-        'dispatches': dispatches,
-        'logistics_choices': Dispatch.LOGISTICS_CHOICES,
-        'status_choices': Dispatch.STATUS_CHOICES,
-        'search': search,
-        'logistics_filter': logistics_filter,
-        'status_filter': status_filter,
-    }
-
-    return render(request, 'dispatch_list.html', context)
-
-
-@login_required
-@permission_required('can_view_dispatch')
-def dispatch_detail(request, pk):
-    """View single dispatch details"""
-    import json as _json
-    dispatch = get_object_or_404(
-        Dispatch.objects.prefetch_related('items__order'),
-        pk=pk,
-        is_deleted=False
-    )
-
-    # Pop one-time stock deduction summary stored by dispatch_management view
-    stock_summary_raw = request.session.pop('stock_deduction_summary', None)
-    stock_summary = None
-    if stock_summary_raw:
-        try:
-            stock_summary = _json.loads(stock_summary_raw)
-        except Exception:
-            stock_summary = None
-
-    context = {
-        'dispatch': dispatch,
-        'stock_summary': stock_summary,
-    }
-
-    return render(request, 'dispatch_detail.html', context)
 
 
 # ==================== DISPATCH TRASH MANAGEMENT ====================
@@ -8706,7 +10374,34 @@ def empty_dispatch_trash(request):
 @permission_required('can_view_dispatch')
 def dispatch_list(request):
     """List all dispatches (not trashed)"""
-    dispatches = Dispatch.objects.filter(is_deleted=False).prefetch_related('items').order_by('-created_at')
+    from urllib.parse import urlencode as _urlencode
+
+    # Outcome counters come from correlated subqueries rather than JOIN-based
+    # aggregates: the search filter below joins `items`, and a plain
+    # Count('items', filter=...) over that join double-counts. Subqueries stay
+    # correct regardless of what else is joined, and keep the page at a fixed
+    # query count instead of 4 per row.
+    def _outcome_count(status):
+        return Coalesce(
+            Subquery(
+                DispatchItem.objects
+                .filter(dispatch=OuterRef('pk'), dispatch_status=status)
+                .values('dispatch')
+                .annotate(c=Count('id'))
+                .values('c')[:1],
+                output_field=IntegerField(),
+            ),
+            Value(0),
+        )
+
+    dispatches = Dispatch.objects.filter(is_deleted=False).annotate(
+        annot_success_count=_outcome_count('success'),
+        annot_failed_count=_outcome_count('failed'),
+        annot_not_found_count=_outcome_count('not_found'),
+    ).annotate(
+        annot_item_count=F('annot_success_count') + F('annot_failed_count') + F('annot_not_found_count'),
+        annot_issue_count=F('annot_failed_count') + F('annot_not_found_count'),
+    ).select_related('created_by').order_by('-created_at')
 
     # Filters
     logistics_filter = request.GET.get('logistics')
@@ -8714,6 +10409,7 @@ def dispatch_list(request):
     search = request.GET.get('search')
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
+    outcome_filter = request.GET.get('outcome')
 
     if logistics_filter:
         dispatches = dispatches.filter(logistics=logistics_filter)
@@ -8728,11 +10424,57 @@ def dispatch_list(request):
         ).distinct()
 
     # Date filters
+    # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+    # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
     if date_from:
-        dispatches = dispatches.filter(created_at__date__gte=date_from)
+        try:
+            from .timezone_utils import nepali_day_start
+            dispatches = dispatches.filter(created_at__gte=nepali_day_start(datetime.strptime(date_from, '%Y-%m-%d').date()))
+        except ValueError:
+            pass
 
     if date_to:
-        dispatches = dispatches.filter(created_at__date__lte=date_to)
+        try:
+            from .timezone_utils import nepali_day_end_exclusive
+            dispatches = dispatches.filter(created_at__lt=nepali_day_end_exclusive(datetime.strptime(date_to, '%Y-%m-%d').date()))
+        except ValueError:
+            pass
+
+    # Outcome filter — lets staff jump straight to the batches needing attention
+    if outcome_filter == 'failed':
+        dispatches = dispatches.filter(annot_issue_count__gt=0, annot_success_count=0)
+    elif outcome_filter == 'partial':
+        dispatches = dispatches.filter(annot_issue_count__gt=0, annot_success_count__gt=0)
+    elif outcome_filter == 'issues':
+        dispatches = dispatches.filter(annot_issue_count__gt=0)
+    elif outcome_filter == 'completed':
+        dispatches = dispatches.filter(annot_issue_count=0, annot_success_count__gt=0)
+
+    dispatches = list(dispatches)
+
+    # Page totals for the stat cards — computed from the same rows on screen so
+    # the headline numbers always agree with the table underneath.
+    totals = {
+        'batches': len(dispatches),
+        'scanned': sum(d.get_item_count() for d in dispatches),
+        'success': sum(d.get_success_count() for d in dispatches),
+        'failed': sum(d.get_failed_count() for d in dispatches),
+        'not_found': sum(d.get_not_found_count() for d in dispatches),
+    }
+    totals['issues'] = totals['failed'] + totals['not_found']
+    totals['batches_with_issues'] = sum(1 for d in dispatches if d.get_issue_count() > 0)
+    totals['success_rate'] = (
+        round(totals['success'] * 100.0 / totals['scanned']) if totals['scanned'] else 0
+    )
+
+    base_query = _urlencode({
+        k: v for k, v in (
+            ('search', search), ('logistics', logistics_filter), ('status', status_filter),
+            ('date_from', date_from), ('date_to', date_to),
+        ) if v
+    })
+    if base_query:
+        base_query += '&'
 
     context = {
         'dispatches': dispatches,
@@ -8743,6 +10485,13 @@ def dispatch_list(request):
         'status_filter': status_filter,
         'date_from': date_from,
         'date_to': date_to,
+        'outcome_filter': outcome_filter,
+        'totals': totals,
+        'has_filters': bool(search or logistics_filter or status_filter or date_from or date_to or outcome_filter),
+        # Current filters minus `outcome`, so the stat cards can toggle outcome
+        # without dropping the search/date/logistics the user already applied.
+        # Ends with '&' when non-empty so templates can append a param directly.
+        'base_query': base_query,
     }
 
     return render(request, 'dispatch_list.html', context)
@@ -8754,7 +10503,9 @@ def dispatch_detail(request, pk):
     """View single dispatch details"""
     import json as _json
     dispatch = get_object_or_404(
-        Dispatch.objects.prefetch_related('items__order__items__product', 'items__order__items__product_variation'),
+        Dispatch.objects.select_related('created_by', 'deleted_by').prefetch_related(
+            'items__order__items__product', 'items__order__items__product_variation'
+        ),
         pk=pk
     )
 
@@ -8768,9 +10519,11 @@ def dispatch_detail(request, pk):
             stock_summary = None
 
     # ── Persistent: build items table from linked orders (always available) ───
+    # Only successful scans actually moved stock; a failed/not-found scan never
+    # deducted anything, so including it here overstated the reduction report.
     dispatch_items_detail = []
     for di in dispatch.items.all():
-        if di.order:
+        if di.order and di.dispatch_status == 'success':
             for oi in di.order.items.all():
                 product = oi.product
                 variation = oi.product_variation
@@ -8785,13 +10538,206 @@ def dispatch_detail(request, pk):
                     'stock_status': (variation.status if variation else (product.stock_status if product else '—')),
                 })
 
+    # ── Failure report: every scan that did not dispatch, with its reason ─────
+    failed_items = [di for di in dispatch.items.all() if di.dispatch_status != 'success']
+    failure_breakdown = {}  # dicts preserve insertion order — first-seen cause first
+    for di in failed_items:
+        code = di.failure_code or ('not_found' if di.dispatch_status == 'not_found' else 'error')
+        bucket = failure_breakdown.setdefault(code, {
+            'code': code,
+            'label': dict(DispatchItem.FAILURE_CODE_CHOICES).get(code, 'Other failure'),
+            'hint': DispatchItem.FAILURE_CODE_HINTS.get(code, ''),
+            'count': 0,
+            'order_ids': [],
+        })
+        bucket['count'] += 1
+        bucket['order_ids'].append(di.scanned_order_id)
+
+    activity_logs = dispatch.logs.select_related('user').all()
+
     context = {
         'dispatch': dispatch,
         'stock_summary': stock_summary,
         'dispatch_items_detail': dispatch_items_detail,
+        'failed_items': failed_items,
+        'failure_breakdown': list(failure_breakdown.values()),
+        'failed_order_ids': ', '.join(di.scanned_order_id for di in failed_items),
+        'activity_logs': activity_logs,
+        'has_activity_logs': bool(activity_logs),
     }
 
     return render(request, 'dispatch_detail.html', context)
+
+
+# ==================== SINGLE-BATCH EXPORT ====================
+#: Columns of the per-scan export. Kept as one list so the CSV and the Excel
+#: sheet can never drift apart - a mismatch there is how exports quietly start
+#: shipping the wrong value under the wrong heading.
+DISPATCH_EXPORT_COLUMNS = [
+    '#', 'Scanned Order ID', 'Order Number', 'Customer', 'Phone', 'City',
+    'Order Status', 'Payment Method', 'Total Amount', 'Outcome',
+    'Failure Cause', 'Reason', 'Scanned At', 'Failed At',
+]
+
+#: Export scope -> filename suffix. The keys mirror the All / Success /
+#: Problems tabs on the detail page.
+DISPATCH_EXPORT_SCOPES = {
+    'all': 'all-scans',
+    'success': 'dispatched',
+    'problems': 'problems',
+}
+
+
+def _dispatch_export_rows(dispatch, scope='all'):
+    """Rows for one batch's export, in scan order, filtered by `scope`."""
+    from .timezone_utils import format_nepali_datetime
+
+    cause_labels = dict(DispatchItem.FAILURE_CODE_CHOICES)
+    rows = []
+    index = 0
+
+    for item in dispatch.items.all():
+        if scope == 'success' and item.dispatch_status != 'success':
+            continue
+        if scope == 'problems' and item.dispatch_status == 'success':
+            continue
+
+        index += 1
+        order = item.order
+        rows.append([
+            index,
+            item.scanned_order_id,
+            order.order_number if order else '',
+            order.customer_name if order else '',
+            order.customer_phone if order else '',
+            (order.branch_city or '') if order else '',
+            order.status if order else '',
+            (order.payment_method or '') if order else '',
+            float(order.total_amount) if order and order.total_amount is not None else '',
+            item.get_dispatch_status_display(),
+            cause_labels.get(item.failure_code, ''),
+            item.get_failure_reason_display(),
+            format_nepali_datetime(item.scanned_at),
+            format_nepali_datetime(item.failed_at) if item.failed_at else '',
+        ])
+
+    return rows
+
+
+def _dispatch_export_filename(dispatch, scope, extension):
+    suffix = DISPATCH_EXPORT_SCOPES.get(scope, 'all-scans')
+    return '{}-{}.{}'.format(dispatch.batch_number, suffix, extension)
+
+
+def _dispatch_export_csv(dispatch, scope):
+    import csv
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+        _dispatch_export_filename(dispatch, scope, 'csv')
+    )
+    # Excel on Windows reads a bare UTF-8 CSV as ANSI and mangles Nepali
+    # customer names; the BOM is what makes it pick the right codec.
+    response.write('\ufeff')
+
+    writer = csv.writer(response)
+    writer.writerow(DISPATCH_EXPORT_COLUMNS)
+    for row in _dispatch_export_rows(dispatch, scope):
+        writer.writerow(row)
+    return response
+
+
+def _dispatch_export_excel(dispatch, scope):
+    """Workbook with a batch summary sheet plus the scanned-order rows."""
+    from .timezone_utils import format_nepali_datetime
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', start_color='1E293B')
+    fail_fill = PatternFill('solid', start_color='FFE4E6')
+    warn_fill = PatternFill('solid', start_color='FEF3C7')
+    label_font = Font(bold=True)
+
+    wb = Workbook()
+
+    summary = wb.active
+    summary.title = 'Summary'
+    for label, value in [
+        ('Batch Number', dispatch.batch_number),
+        ('Logistics', dispatch.get_logistics_display()),
+        ('Status', dispatch.get_status_display()),
+        ('Outcome', dispatch.get_outcome().title()),
+        ('Total Orders Scanned', dispatch.total_orders),
+        ('Successfully Dispatched', dispatch.get_success_count()),
+        ('Failed / Rejected', dispatch.get_failed_count()),
+        ('Not Found in System', dispatch.get_not_found_count()),
+        ('Success Rate %', dispatch.get_success_rate()),
+        ('Created By', dispatch.created_by.username if dispatch.created_by else ''),
+        ('Created At', format_nepali_datetime(dispatch.created_at)),
+        ('Rows Exported', DISPATCH_EXPORT_SCOPES.get(scope, 'all-scans').replace('-', ' ').title()),
+    ]:
+        summary.append([label, value])
+        summary.cell(row=summary.max_row, column=1).font = label_font
+    summary.column_dimensions['A'].width = 24
+    summary.column_dimensions['B'].width = 34
+
+    detail = wb.create_sheet('Scanned Orders')
+    detail.append(DISPATCH_EXPORT_COLUMNS)
+    for cell in detail[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    detail.freeze_panes = 'A2'
+
+    outcome_column = DISPATCH_EXPORT_COLUMNS.index('Outcome') + 1
+    for row in _dispatch_export_rows(dispatch, scope):
+        detail.append(row)
+        outcome = detail.cell(row=detail.max_row, column=outcome_column).value
+        if outcome == 'Failed':
+            for cell in detail[detail.max_row]:
+                cell.fill = fail_fill
+        elif outcome == 'Not Found':
+            for cell in detail[detail.max_row]:
+                cell.fill = warn_fill
+
+    for column in detail.columns:
+        width = max((len(str(c.value)) for c in column if c.value is not None), default=10)
+        detail.column_dimensions[column[0].column_letter].width = min(max(width + 2, 10), 60)
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+        _dispatch_export_filename(dispatch, scope, 'xlsx')
+    )
+    wb.save(response)
+    return response
+
+
+@login_required
+@permission_required('can_view_dispatch')
+def dispatch_export(request, pk):
+    """Export one dispatch batch as Excel or CSV.
+
+    `scope` mirrors the All / Success / Problems tabs on the detail page, so
+    whatever the user is looking at is what they can take away.
+    """
+    dispatch = get_object_or_404(
+        Dispatch.objects.select_related('created_by').prefetch_related('items__order'),
+        pk=pk
+    )
+
+    export_format = (request.GET.get('format') or 'xlsx').lower()
+    scope = (request.GET.get('scope') or 'all').lower()
+    if scope not in DISPATCH_EXPORT_SCOPES:
+        scope = 'all'
+
+    try:
+        if export_format == 'csv':
+            return _dispatch_export_csv(dispatch, scope)
+        return _dispatch_export_excel(dispatch, scope)
+    except Exception as e:
+        messages.error(request, 'Could not export this dispatch: {}'.format(e))
+        return redirect('dispatch_detail', pk=pk)
 
 
 @login_required
@@ -8807,6 +10753,94 @@ def dispatch_delete(request, pk):
         return redirect('dispatch_list')
 
     return redirect('dispatch_detail', pk=pk)
+
+def _export_dispatches_excel(dispatches):
+    """Two-sheet workbook: one row per batch, one row per scanned order.
+
+    The per-order sheet carries the failure reason, which is the whole point of
+    exporting — it is what staff need to chase the orders that did not ship.
+    """
+    from .timezone_utils import format_nepali_datetime, get_nepali_now
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', start_color='1E293B')
+    fail_fill = PatternFill('solid', start_color='FFE4E6')
+    warn_fill = PatternFill('solid', start_color='FEF3C7')
+
+    def write_header(sheet, columns):
+        sheet.append(columns)
+        for cell in sheet[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        sheet.freeze_panes = 'A2'
+
+    wb = Workbook()
+
+    summary = wb.active
+    summary.title = 'Batches'
+    write_header(summary, [
+        'Batch Number', 'Logistics', 'Status', 'Outcome', 'Total Scanned',
+        'Success', 'Failed', 'Not Found', 'Success Rate %', 'Created By', 'Created At',
+    ])
+
+    detail = wb.create_sheet('Scanned Orders')
+    write_header(detail, [
+        'Batch Number', 'Scanned Order ID', 'Customer', 'Outcome',
+        'Failure Cause', 'Reason', 'Scanned At', 'Failed At',
+    ])
+
+    cause_labels = dict(DispatchItem.FAILURE_CODE_CHOICES)
+
+    for dispatch in dispatches.select_related('created_by').prefetch_related('items__order'):
+        summary.append([
+            dispatch.batch_number,
+            dispatch.get_logistics_display(),
+            dispatch.get_status_display(),
+            dispatch.get_outcome().title(),
+            dispatch.total_orders,
+            dispatch.get_success_count(),
+            dispatch.get_failed_count(),
+            dispatch.get_not_found_count(),
+            dispatch.get_success_rate(),
+            dispatch.created_by.username if dispatch.created_by else '',
+            format_nepali_datetime(dispatch.created_at),
+        ])
+        if dispatch.get_issue_count():
+            for cell in summary[summary.max_row]:
+                cell.fill = fail_fill
+
+        for item in dispatch.items.all():
+            detail.append([
+                dispatch.batch_number,
+                item.scanned_order_id,
+                item.order.customer_name if item.order else '',
+                item.get_dispatch_status_display(),
+                cause_labels.get(item.failure_code, ''),
+                item.get_failure_reason_display(),
+                format_nepali_datetime(item.scanned_at),
+                format_nepali_datetime(item.failed_at) if item.failed_at else '',
+            ])
+            if item.dispatch_status == 'failed':
+                for cell in detail[detail.max_row]:
+                    cell.fill = fail_fill
+            elif item.dispatch_status == 'not_found':
+                for cell in detail[detail.max_row]:
+                    cell.fill = warn_fill
+
+    for sheet in (summary, detail):
+        for column in sheet.columns:
+            width = max((len(str(c.value)) for c in column if c.value is not None), default=10)
+            sheet.column_dimensions[column[0].column_letter].width = min(max(width + 2, 12), 60)
+
+    filename = f"dispatches-{get_nepali_now().strftime('%Y%m%d-%H%M%S')}.xlsx"
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
+
 
 @login_required
 @permission_required('can_view_dispatch')
@@ -8846,8 +10880,7 @@ def dispatch_bulk_action(request):
                 messages.success(request, f'✅ {count} dispatch(es) status updated to {new_status}!')
 
             elif action == 'export_excel':
-                # Export functionality (you can implement this later)
-                messages.info(request, 'Export functionality coming soon!')
+                return _export_dispatches_excel(dispatches)
 
             else:
                 messages.error(request, 'Invalid action selected!')
@@ -8902,12 +10935,17 @@ def backorder_management(request):
 
         elif action == 'toggle_backorders':
             product_id = request.POST.get('product_id')
+            return_to_product = request.POST.get('return_to_product', '')
             try:
                 product = Product.objects.get(id=product_id)
                 product.backorders_allowed = not product.backorders_allowed
                 product.save(update_fields=['backorders_allowed'])
                 status = 'enabled' if product.backorders_allowed else 'disabled'
                 messages.success(request, f'✅ Backorders {status} for "{product.name}"')
+                # If toggled from product detail page, redirect back there
+                if return_to_product == '1' and product_id:
+                    from django.urls import reverse as url_reverse
+                    return HttpResponseRedirect(url_reverse('product_detail', args=[product_id]) + '#backorderStatusCard')
             except Product.DoesNotExist:
                 messages.error(request, '❌ Product not found.')
             return HttpResponseRedirect(_build_redirect_url())
@@ -8920,7 +10958,10 @@ def backorder_management(request):
                 old_backordered = product.backordered_qty
                 product.reserved_qty = 0
                 product.backordered_qty = 0
-                product.save(update_fields=['reserved_qty', 'backordered_qty'])
+                try:
+                    product.save(update_fields=['reserved_qty', 'backordered_qty'])
+                except ValueError:
+                    product.save(update_fields=['reserved_qty'])
                 messages.success(
                     request,
                     f'✅ Cleared counters for "{product.name}" '
@@ -8953,7 +10994,9 @@ def backorder_management(request):
     filter_type = request.GET.get('filter', 'all')
 
     # Products with backorder-related data
-    products_qs = Product.objects.filter(is_deleted=False).order_by('name')
+    products_qs = Product.objects.filter(is_deleted=False).prefetch_related(
+        'bundle_components__component_product'
+    ).order_by('name')
 
     if search:
         products_qs = products_qs.filter(
@@ -9225,14 +11268,20 @@ def inventory_dashboard(request):
         stock_in_data   = []
         stock_out_data  = []
 
+        # NOTE: __date= lookups silently match zero rows on this server
+        # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
+        from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
+
         current_date = movement_start
         while current_date <= movement_end:
             movement_labels.append(current_date.strftime('%b %d'))
+            _cd_start = nepali_day_start(current_date)
+            _cd_end = nepali_day_end_exclusive(current_date)
 
             # Stock In for this date
             try:
                 stock_ins_day = StockIn.objects.filter(
-                    created_at__date=current_date
+                    created_at__gte=_cd_start, created_at__lt=_cd_end
                 ).aggregate(total=Sum('total_quantity'))['total'] or 0
             except Exception:
                 stock_ins_day = 0
@@ -9241,7 +11290,7 @@ def inventory_dashboard(request):
             try:
                 orders_day = Order.objects.filter(
                     order_status='dispatched',
-                    dispatch_date__date=current_date
+                    dispatch_date__gte=_cd_start, dispatch_date__lt=_cd_end
                 )
                 stock_out_day = 0
                 for order in orders_day:
@@ -9903,7 +11952,7 @@ def api_get_product_for_stockin(request, product_id):
     }
 
     if product.product_type == 'variable':
-        variations = product.variations.filter(is_active=True).prefetch_related(
+        variations = product.variations.filter(Q(is_active=True) | Q(status='active')).prefetch_related(
             'attribute_values__attribute_value__attribute'
         ).order_by('sku')
 
@@ -10429,20 +12478,25 @@ def returns_dashboard(request):
     returns = ReturnRequest.objects.filter(is_deleted=False).select_related('order', 'customer', 'created_by').all()
 
     # Apply date filter
+    # NOTE: __date=/__year=/__month= lookups silently match zero rows on this
+    # server (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
+    from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
     today = timezone.now().date()
     if date_filter == 'today':
-        returns = returns.filter(created_at__date=today)
+        returns = returns.filter(created_at__gte=nepali_day_start(today), created_at__lt=nepali_day_end_exclusive(today))
     elif date_filter == 'yesterday':
         yesterday = today - timedelta(days=1)
-        returns = returns.filter(created_at__date=yesterday)
+        returns = returns.filter(created_at__gte=nepali_day_start(yesterday), created_at__lt=nepali_day_end_exclusive(yesterday))
     elif date_filter == 'last_7_days':
         start = today - timedelta(days=7)
-        returns = returns.filter(created_at__date__gte=start)
+        returns = returns.filter(created_at__gte=nepali_day_start(start))
     elif date_filter == 'last_30_days':
         start = today - timedelta(days=30)
-        returns = returns.filter(created_at__date__gte=start)
+        returns = returns.filter(created_at__gte=nepali_day_start(start))
     elif date_filter == 'this_month':
-        returns = returns.filter(created_at__year=today.year, created_at__month=today.month)
+        month_start = today.replace(day=1)
+        next_month_start = (month_start + timedelta(days=32)).replace(day=1)
+        returns = returns.filter(created_at__gte=nepali_day_start(month_start), created_at__lt=nepali_day_start(next_month_start))
 
     # Apply status filter
     if status_filter:
@@ -10675,6 +12729,40 @@ def returns_list(request):
     return render(request, 'returns/list.html', context)
 
 
+def _mark_order_as_returned(order, user, rma_number):
+    """Set an order's status to 'returned' (the final stage of the return
+    lifecycle) and log it on the order's own activity timeline (order_detail's
+    right-side Activity Log). This fires when staff scan/create a
+    ReturnRequest on the Return Management page - physical possession by
+    staff is a stronger signal than NCM's own return-pipeline stage, so this
+    sets 'returned' directly rather than the intermediate 'return_processing'/
+    'return' values NCM's own sync/webhook produces. No-op for cancelled
+    orders or orders already marked 'returned', to avoid clobbering a
+    cancellation or logging a redundant entry. (return_detail's
+    process_refund branch also sets 'returned' once a ReturnRequest completes
+    its own approve/receive/inspect/refund workflow - setting the same value
+    here too, at scan-time, is intentional and idempotent.)
+    """
+    if order.status in ('cancelled', 'returned'):
+        return
+
+    from services.ncm_service import NCMService
+    old_status = order.status
+    update_fields = NCMService.sync_order_status_fields(order, 'returned')
+    update_fields.append('updated_at')
+    order.save(update_fields=list(dict.fromkeys(update_fields)))
+
+    OrderActivityLog.objects.create(
+        order=order,
+        action_type='status_changed',
+        user=user,
+        field_name='status',
+        old_value=old_status,
+        new_value='returned',
+        description=f'Order marked as Returned via Return Management (RMA {rma_number})'
+    )
+
+
 @login_required
 @permission_required('can_create_returns')
 def return_create(request):
@@ -10788,6 +12876,11 @@ def return_create(request):
                     action_type='created',
                     description=f'Return request {return_request.rma_number} created for order {order.order_number}'
                 )
+
+                # Mark the order itself as returned so order_detail/order_list
+                # reflect the scan immediately, and record it in the order's
+                # own activity log (not just the return request's log).
+                _mark_order_as_returned(order, request.user, return_request.rma_number)
 
                 messages.success(request, f'Return request {return_request.rma_number} created successfully!')
                 return redirect('returns_list')
@@ -10944,6 +13037,11 @@ def bulk_return_create(request):
                         action_type='created',
                         description=f'Return request {return_request.rma_number} created via bulk return for order {order.order_number}'
                     )
+
+                    # Mark the order itself as returned so order_detail/order_list
+                    # reflect the scan immediately, and record it in the order's
+                    # own activity log (not just the return request's log).
+                    _mark_order_as_returned(order, request.user, return_request.rma_number)
 
                     created_returns.append(return_request.rma_number)
 
@@ -11904,6 +14002,20 @@ def search_customer_by_phone(request):
         order = Order.objects.filter(customer_phone=phone).order_by('-created_at').first()
 
         if order:
+            # A VAT/PAN number belongs to the buyer, not to one order, but most
+            # of their orders will not carry it — a shop only asks for it when
+            # the customer wants a billable invoice. Falling back to the most
+            # recent order that *has* one means a returning business customer
+            # does not retype it every time.
+            vat_pan = (order.vat_pan or '').strip()
+            if not vat_pan:
+                vat_pan = (
+                    Order.objects.filter(customer_phone=phone)
+                    .exclude(vat_pan='')
+                    .order_by('-created_at')
+                    .values_list('vat_pan', flat=True)
+                    .first()
+                ) or ''
             return JsonResponse({
                 'success': True,
                 'customer': {
@@ -11912,6 +14024,7 @@ def search_customer_by_phone(request):
                     'phone': order.customer_phone,
                     'address': order.shipping_address or '',
                     'landmark': order.landmark or '',
+                    'vat_pan': vat_pan,
                     'branch_city': order.branch_city or '',
                 }
             })
@@ -12090,6 +14203,7 @@ def create_custom_product(request):
         if 'image' in request.FILES:
             product.image = request.FILES['image']
             product.save()
+            _add_main_image_to_media_library(product, request)
 
         # Return success response
         return JsonResponse({
@@ -12189,9 +14303,12 @@ def ncm_order_detail(request, order_id):
     activity_logs = []
     try:
         from dashboard.models import OrderActivityLog
+        from django.db.models.functions import Coalesce as _Coalesce
         activity_logs = OrderActivityLog.objects.filter(
             order=order
-        ).select_related('user').order_by('-created_at')[:50]
+        ).select_related('user').annotate(
+            _at=_Coalesce('event_at', 'created_at')
+        ).order_by('-_at')[:50]
     except Exception as e:
         pass
 
@@ -12332,12 +14449,20 @@ def ncm_sync_all_statuses(request):
         ncm_service = NCMService()
 
         # Get all NCM orders
+        # ncm_order_id is an IntegerField, so the `| Q(ncm_order_id='')` this
+        # used to carry raised ValueError before the query could even run -
+        # the whole sync failed with "expected a number but got ''".
+        #
+        # Cancelled orders are excluded for the same reason the webhook, the
+        # per-order sync and the bulk sync (PROTECTED_STATUSES) exclude them: a
+        # cancellation is a local staff decision and NCM can report a stale
+        # status long after it was made.
+        from ncm.bulk_sync import PROTECTED_STATUSES
         ncm_orders = Order.objects.filter(
             is_deleted=False,
-            logistics='ncm'
-        ).exclude(
-            Q(ncm_order_id__isnull=True) | Q(ncm_order_id='')
-        )
+            logistics='ncm',
+            ncm_order_id__isnull=False,
+        ).exclude(status__in=PROTECTED_STATUSES)
 
         total = ncm_orders.count()
         updated = 0
@@ -12346,40 +14471,61 @@ def ncm_sync_all_statuses(request):
 
         for order in ncm_orders:
             try:
-                # Call tracking for each order
-                base_url = getattr(settings, 'NCM_API_BASE_URL', None)
-                api_key = getattr(settings, 'NCM_API_KEY', None)
-
-                if not base_url or not api_key:
-                    continue
-
-                api_url = f"{base_url.rstrip('/')}/order/status"
-
-                response = requests.get(
-                    api_url,
-                    params={'id': order.ncm_order_id},
-                    headers={
-                        'Authorization': f'Token {api_key}',
-                        'Content-Type': 'application/json'
-                    },
-                    timeout=10
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
+                svc = NCMService(api_config_id=order.api_config_id if order.api_config_id else None)
+                
+                # Fetch order status
+                status_result = svc.get_order_status(order.ncm_order_id)
+                if status_result.get('success'):
+                    data = status_result.get('data')
                     if data and isinstance(data, list) and len(data) > 0:
                         latest_status = data[0]
                         new_status = latest_status.get('status', '')
 
-                        if new_status and new_status != order.ncm_status:
+                        from dashboard.timezone_utils import parse_ncm_datetime
+                        event_at = parse_ncm_datetime(latest_status.get('added_time'))
+
+                        # A status staff set by hand outranks NCM until the parcel
+                        # really moves - the same guard the per-order sync, the
+                        # webhook and the background bulk sync apply. It is part of
+                        # this condition rather than a `continue` so that a held
+                        # order still gets its delivery charge refreshed below.
+                        if (new_status and new_status != order.ncm_status
+                                and not manual_override_holds(order, new_status, event_at)):
+                            system_status, payment_status = svc.resolve_delivered_status(latest_status)
+                            old_ncm_status = order.ncm_status
+                            old_system_status = order.status
+
                             order.ncm_status = new_status
-                            order.save(update_fields=['ncm_status', 'updated_at'])
+                            update_fields = svc.sync_order_status_fields(order, system_status, payment_status)
+                            update_fields.extend(['ncm_status', 'updated_at'])
+                            # NCM has moved past the manual choice; retire the hold.
+                            update_fields.extend(clear_manual_status_override(order))
+
+                            if system_status == 'delivered' and not order.delivered_at:
+                                order.delivered_at = event_at or timezone.now()
+                                update_fields.append('delivered_at')
+
+                            order.save(update_fields=list(dict.fromkeys(update_fields)))
+
+                            # This path used to rewrite order status with no
+                            # activity log at all, leaving no trace of who or
+                            # what changed it.
+                            OrderActivityLog.objects.create(
+                                order=order,
+                                action_type='status_changed',
+                                user=request.user,
+                                field_name='ncm_status',
+                                old_value=old_ncm_status or 'None',
+                                new_value=new_status,
+                                event_at=event_at,
+                                description=f'Sync all statuses: {old_system_status} → {system_status}',
+                            )
                             updated += 1
 
                 # ✅ Fetch and update delivery charge from NCM
                 if not order.delivery_charge or order.delivery_charge == 0:
                     try:
-                        details_result = ncm_service.get_order_details(order.ncm_order_id, timeout=5)
+                        details_result = svc.get_order_details(order.ncm_order_id, timeout=5)
                         if details_result.get('success'):
                             details_data = details_result.get('data', {})
                             # Try multiple possible field names for delivery charge
@@ -12526,7 +14672,12 @@ def ncm_branches_json(request):
                             code_value = str(branch.get('code') or branch.get('Code') or branch.get('id') or branch.get('ID') or '').strip()
                             name_value = str(branch.get('name') or branch.get('Name') or branch.get('branch_name') or branch.get('Branch_Name') or '').strip()
 
-                            address = branch.get('address', '')
+                            # NCM returns address as null for some branches
+                            # (23 of them as of Aug 2026, incl. FALASHAIN/FALA1).
+                            # A None here used to raise AttributeError on
+                            # address.lower() below and the branch got silently
+                            # dropped by the bare except.
+                            address = branch.get('address') or ''
                             municipality_value = ''
 
                             for address_pattern, muni_name in MUNICIPALITY_MAPPING.items():
@@ -12611,11 +14762,13 @@ def ncm_branches_json(request):
 
 
 @login_required
+@permission_required('can_create_ncm_orders')
 def orders_bulk_ncm_send(request):
     """
     Bulk send multiple orders to NCM logistics
     """
     from ncm.models import NCMBulkLog, NCMBulkLogOrder, NCMBulkLogDetail
+    from ncm import branch_resolver
 
     if request.method != 'POST':
         messages.error(request, '❌ Invalid request method')
@@ -12661,6 +14814,14 @@ def orders_bulk_ncm_send(request):
             from_branch=from_branch,
             delivery_type=delivery_type,
             created_by=request.user,
+            # See dashboard/bulk_batch.py - lets a batch this request never
+            # finishes be resumed from the Bulk Logs page.
+            selected_order_ids=list(orders.values_list('id', flat=True)),
+            send_options={
+                'api_config_id': api_config_id,
+                'default_weight': default_weight,
+                'auto_set_logistics': auto_set_logistics,
+            },
         )
         NCMBulkLogDetail.objects.create(
             batch=bulk_log,
@@ -12674,15 +14835,31 @@ def orders_bulk_ncm_send(request):
         skip_count = 0
         error_count = 0
 
+        from .bulk_batch import start_heartbeat
+        heartbeat = start_heartbeat(bulk_log)
+        stopped = False
+
+        # One branch fetch for the whole batch, not one per order.
+        catalogue = branch_resolver.catalogue(api_config_id)
+
+        # The first few failures, verbatim, for the redirect's messages. "Failed
+        # 31 order(s)." on its own tells nobody what to fix.
+        error_details = []
+
         # Process each order
         for order in orders:
+            if heartbeat.should_stop():
+                stopped = True
+                break
+
             result = send_single_order_to_ncm(
                 request,
                 order,
                 from_branch=from_branch,
                 delivery_type=delivery_type,
                 default_weight=default_weight,
-                api_config_id=api_config_id
+                api_config_id=api_config_id,
+                branch_catalogue=catalogue,
             )
 
             if result['status'] == 'success':
@@ -12701,6 +14878,10 @@ def orders_bulk_ncm_send(request):
                 error_count += 1
                 log_status = 'failed'
                 log_action = 'order_failed'
+                if len(error_details) < 3:
+                    error_details.append(
+                        f"{order.order_number}: {result.get('message', 'Unknown error')}"
+                    )
 
             # Create log entry for this order
             order.refresh_from_db()
@@ -12711,8 +14892,10 @@ def orders_bulk_ncm_send(request):
                 customer_name=order.customer_name or '',
                 customer_phone=order.customer_phone or '',
                 shipping_address=order.shipping_address or '',
-                cod_amount=order.total_amount or 0,
-                destination_branch=order.branch_city or '',
+                cod_amount=order.amount_due or 0,
+                # The branch the parcel actually went to once resolved, not the
+                # city it was selected by.
+                destination_branch=order.ncm_destination_branch or order.branch_city or '',
                 ncm_order_id=order.ncm_order_id,
                 status=log_status,
                 message=result.get('message', ''),
@@ -12726,7 +14909,9 @@ def orders_bulk_ncm_send(request):
             )
 
         # Update bulk log with final counts and status
-        if error_count == count:
+        if stopped:
+            final_status = 'cancelled'
+        elif error_count == count:
             final_status = 'failed'
         elif success_count == count:
             final_status = 'completed'
@@ -12741,15 +14926,29 @@ def orders_bulk_ncm_send(request):
         bulk_log.status = final_status
         bulk_log.completed_at = timezone.now()
         bulk_log.save()
+        heartbeat.release()
 
+        not_attempted = count - success_count - error_count - skip_count
         NCMBulkLogDetail.objects.create(
             batch=bulk_log,
             action='batch_completed',
-            message=f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped',
+            message=(
+                f'Batch stopped on request: {success_count} success, {error_count} failed, '
+                f'{skip_count} skipped, {not_attempted} not attempted'
+                if stopped else
+                f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped'
+            ),
             user=request.user,
         )
 
         # Show results
+        if stopped:
+            messages.warning(
+                request,
+                f'⏹️ Batch {bulk_log.batch_number} was stopped before finishing '
+                f'({not_attempted} order(s) not attempted).'
+            )
+
         if success_count > 0:
             messages.success(
                 request,
@@ -12765,8 +14964,11 @@ def orders_bulk_ncm_send(request):
         if error_count > 0:
             messages.error(
                 request,
-                f"❌ Failed {error_count} order(s)."
+                f"❌ Failed {error_count} order(s). "
+                f"Open the batch in Logistics → Bulk Logs to see every reason."
             )
+            for err in error_details:
+                messages.error(request, f"Error: {err}")
 
     except Exception as e:
         messages.error(request, f'❌ Bulk send error: {str(e)}')
@@ -12804,14 +15006,20 @@ def ncm_single_order_send(request, order_id):
     return redirect('order_detail', order_id=order_id)
 
 
-def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door', default_weight=1.0, api_config_id=None):
-    """
-    Helper function to send single order to NCM - COMPLETE VERSION
-    Returns: dict with 'status' and 'message'
+def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_type='Door2Door',
+                             default_weight=1.0, api_config_id=None, branch_catalogue=None):
+    """Send one order to NCM. Returns {'status': ..., 'message': ...}.
+
+    `branch_catalogue` is an `ncm.branch_resolver.Catalogue`. A bulk loop builds
+    one and passes it to every order, so a 31-order batch costs one branch fetch
+    rather than 31 against an API that rate-limits at 3 requests a second. Left
+    out, one is fetched here (cached for 12 hours, so this is cheap too).
     """
     import requests
     from django.conf import settings
     from django.utils import timezone
+
+    from ncm import branch_resolver
 
     try:
         # CHECK 1: Already sent?
@@ -12865,11 +15073,6 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
             except:
                 weight = default_weight
 
-        # Get destination branch
-        destination_branch = 'KATHMANDU'
-        if hasattr(order, 'branch_city') and order.branch_city:
-            destination_branch = str(order.branch_city).upper()
-
         # Get API credentials - try dynamic config first, then fall back to settings
         base_url = ''
         api_key = ''
@@ -12902,22 +15105,48 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 'message': 'NCM API not configured in settings'
             }
 
+        # Destination branch. NCM wants the name of one of ITS branches; an
+        # order carries a city or district, or a branch code the storefront
+        # wrote. Resolving it here is what stopped whole batches being rejected
+        # one order at a time - see ncm/branch_resolver.py.
+        if branch_catalogue is None:
+            branch_catalogue = branch_resolver.catalogue(
+                matched_api_config.id if matched_api_config else api_config_id
+            )
+        destination_branch, branch_error = branch_resolver.resolve(order, branch_catalogue)
+        if branch_error:
+            return {'status': 'error', 'message': branch_error}
+
+        # Phone: NCM rejects anything but digits, and orders carry '+977-98...',
+        # '98.. / 98..' and similar. The single-send path has always cleaned it
+        # (NCMService._clean_phone); this one used to post it raw.
+        phone = ''.join(filter(str.isdigit, str(order.customer_phone or '')))
+        if len(phone) > 10 and phone.startswith('977'):
+            phone = phone[3:]
+        if not phone:
+            return {'status': 'error',
+                    'message': f'Phone number is not usable: {order.customer_phone!r}'}
+
+        # Our reference back to this order. order_number is normally set, but a
+        # blank one would post the string 'None' and lose the tie-back.
+        vendor_ref_id = str(order.order_number or '').strip() or str(order.id)
+
         # Build API URL
         base_url = base_url.rstrip('/')
         api_url = f"{base_url}/order/create"
 
         # Build payload - for partial payments, send remaining amount as COD
-        cod_amount = order.remaining_amount if order.is_partial_payment and order.remaining_amount is not None else order.total_amount
+        cod_amount = order.amount_due
         payload = {
             "name": str(order.customer_name)[:50],
-            "phone": str(order.customer_phone),
+            "phone": phone,
             "phone2": "",
             "cod_charge": float(cod_amount or 0),
             "address": str(order.shipping_address)[:200],
             "fbranch": from_branch,
             "branch": destination_branch,
             "package": str(product_name)[:50],
-            "vref_id": str(order.order_number),
+            "vref_id": vendor_ref_id,
             "instruction": str(order.notes or "")[:100],
             "delivery_type": delivery_type,
             "weight": weight
@@ -12940,7 +15169,8 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
         if response.status_code == 200:
             try:
                 data = response.json()
-            except:
+            except ValueError:
+                logger.warning("Invalid JSON response from NCM API (status 200)")
                 return {
                     'status': 'error',
                     'message': 'Invalid JSON response from NCM'
@@ -12963,10 +15193,56 @@ def send_single_order_to_ncm(request, order, from_branch='TINKUNE', delivery_typ
                 order.ncm_from_branch = from_branch
                 order.ncm_delivery_type = delivery_type
                 order.ncm_destination_branch = destination_branch
+                # Without this a bulk-sent order never appears under Logistics
+                # Orders: that list filters on `logistics`, and only the bulk
+                # view's optional "auto set logistics" checkbox used to set it.
+                order.logistics = 'ncm'
                 if matched_api_config:
                     order.api_config = matched_api_config
+
+                # Update order status to "Pickup Created" from Setup Management
+                try:
+                    from dashboard.models import Setup
+                    pickup_setup = Setup.objects.filter(setup_type='status', name__iexact='Pickup Created').first()
+                    if not pickup_setup:
+                        pickup_setup = Setup.objects.filter(setup_type='status', name__icontains='Pickup Created').first()
+                    
+                    if pickup_setup:
+                        order.status_setup = pickup_setup
+                        order.order_status = pickup_setup.name
+                        order.status = pickup_setup.name
+                    else:
+                        order.order_status = 'Pickup Created'
+                        order.status = 'Pickup Created'
+                except Exception:
+                    pass
+
                 order.save()
 
+                # Delivery charge, straight from NCM. Never fatal: the parcel is
+                # already created at the courier by this point, so a failure here
+                # must not turn a successful send into a failed one.
+                try:
+                    from services.ncm_service import NCMService
+                    details = NCMService(
+                        api_config_id=order.api_config_id or None
+                    ).get_order_details(order.ncm_order_id)
+                    data_ = details.get('data') if details.get('success') else None
+                    if isinstance(data_, dict):
+                        charge = next(
+                            (data_.get(k) for k in (
+                                'chargeDetail', 'deliveryCharge', 'deliverycharge',
+                                'delivery_charge', 'chargedetail', 'shippingCharge',
+                                'shipping_charge', 'charge', 'amount',
+                            ) if data_.get(k)),
+                            0,
+                        )
+                        if charge and float(charge) > 0:
+                            order.delivery_charge = Decimal(str(charge))
+                            order.save(update_fields=['delivery_charge'])
+                except Exception:
+                    logger.warning('Could not fetch NCM delivery charge for order %s',
+                                   order.order_number, exc_info=True)
 
                 # Log activity
                 try:
@@ -13080,9 +15356,11 @@ def ncm_orders_trash(request):
             Q(customer_phone__icontains=search_query)
         )
 
-    # Branch filter
+    # Branch filter. Destination branch, matching the Logistics Orders list -
+    # ncm_from_branch is the pickup branch and defaults to 'TINKUNE', so
+    # filtering on it offered one choice that matched nearly every row.
     if branch_filter:
-        orders = orders.filter(ncm_from_branch=branch_filter)
+        orders = orders.filter(ncm_destination_branch=branch_filter)
 
     # Get total count before pagination
     total_orders = orders.count()
@@ -13092,10 +15370,10 @@ def ncm_orders_trash(request):
         is_deleted=True,
         logistics='ncm'
     ).exclude(
-        ncm_from_branch__isnull=True
+        ncm_destination_branch__isnull=True
     ).exclude(
-        ncm_from_branch=''
-    ).values_list('ncm_from_branch', flat=True).distinct().order_by('ncm_from_branch')
+        ncm_destination_branch=''
+    ).values_list('ncm_destination_branch', flat=True).distinct().order_by('ncm_destination_branch')
 
     # Pagination
     paginator = Paginator(orders, 25)
@@ -13297,11 +15575,11 @@ def ncm_orders_empty_trash(request):
 
     try:
         # Get all deleted NCM orders
+        # Same IntegerField-vs-'' crash as ncm_sync_all_statuses had.
         orders = Order.objects.filter(
             is_deleted=True,
-            logistics='ncm'
-        ).exclude(
-            Q(ncm_order_id__isnull=True) | Q(ncm_order_id='')
+            logistics='ncm',
+            ncm_order_id__isnull=False,
         )
 
         count = orders.count()
@@ -13329,10 +15607,10 @@ def setup_management(request):
     from .models import Setup
 
     # Get all setups grouped by type
-    payment_setups = Setup.objects.filter(setup_type='payment').order_by('name')
-    status_setups = Setup.objects.filter(setup_type='status').order_by('name')
-    payment_status_setups = Setup.objects.filter(setup_type='payment_status').order_by('name')
-    order_source_setups = Setup.objects.filter(setup_type='order_source').order_by('name')
+    payment_setups = Setup.objects.filter(setup_type='payment').order_by('sort_order', 'name')
+    status_setups = Setup.objects.filter(setup_type='status').order_by('sort_order', 'name')
+    payment_status_setups = Setup.objects.filter(setup_type='payment_status').order_by('sort_order', 'name')
+    order_source_setups = Setup.objects.filter(setup_type='order_source').order_by('sort_order', 'name')
 
     context = {
         'payment_setups': payment_setups,
@@ -13367,11 +15645,15 @@ def setup_add(request):
             return redirect('setup_management')
 
         try:
+            last_order = Setup.objects.filter(setup_type=setup_type).aggregate(
+                Max('sort_order')
+            )['sort_order__max']
             setup = Setup.objects.create(
                 setup_type=setup_type,
                 name=name,
                 description=description,
-                is_active=is_active
+                is_active=is_active,
+                sort_order=(last_order + 1) if last_order is not None else 0
             )
             messages.success(request, f'✅ {name} setup created successfully!')
         except Exception as e:
@@ -13459,6 +15741,70 @@ def setup_toggle_default(request, setup_id):
     return redirect('setup_management')
 
 
+@login_required
+def setup_reorder(request):
+    """Persist drag-and-drop reordering of setup items (Payment/Status/Payment Status/Order Source) via AJAX"""
+    from .models import Setup
+
+    # Checked here rather than with @permission_required: this is called over
+    # AJAX, and that decorator answers a refusal with an HTML redirect plus a
+    # queued message the fetch() call can't parse. See has_any_permission.
+    if not has_any_permission(request.user, 'can_create_orders'):
+        return JsonResponse(
+            {'success': False, 'message': 'You do not have permission to reorder setups.'},
+            status=403,
+        )
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Invalid request method'})
+
+    try:
+        order_data = json.loads(request.body)
+        setup_type = order_data.get('setup_type')
+        raw_ids = order_data.get('order', [])
+
+        if not setup_type or not raw_ids:
+            return JsonResponse({'success': False, 'message': 'Missing setup_type or order'})
+
+        # The browser sends ids as strings (dataset.id), while the DB returns
+        # ints - comparing the two forms directly silently matches nothing, so
+        # normalize to int up front.
+        ordered_ids = []
+        for raw_id in raw_ids:
+            try:
+                ordered_ids.append(int(raw_id))
+            except (TypeError, ValueError):
+                continue
+
+        if not ordered_ids:
+            return JsonResponse({'success': False, 'message': 'No valid setup ids in order'})
+
+        # Only reorder items that actually belong to this setup_type, so a
+        # tampered id list can't move an item into another type's ordering.
+        valid_ids = set(
+            Setup.objects.filter(setup_type=setup_type, id__in=ordered_ids).values_list('id', flat=True)
+        )
+
+        updated = 0
+        with transaction.atomic():
+            for index, setup_id in enumerate(ordered_ids):
+                if setup_id in valid_ids:
+                    updated += Setup.objects.filter(id=setup_id, setup_type=setup_type).update(sort_order=index)
+
+        # Never report success for a no-op: that is what let the ordering
+        # silently revert on the next page load while the UI said "saved".
+        if not updated:
+            return JsonResponse(
+                {'success': False, 'message': 'No matching setups found to reorder'},
+                status=400,
+            )
+
+        return JsonResponse({'success': True, 'updated': updated, 'message': 'Order saved successfully!'})
+    except Exception as e:
+        logger.exception('Setup reorder failed')
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
 # ==================== NCM BULK ORDER LOG VIEWS ====================
 
 @login_required
@@ -13475,8 +15821,250 @@ def ncm_bulk_log_detail(request, log_id):
         'bulk_log': bulk_log,
         'batch_orders': batch_orders,
         'log_details': log_details,
+        'export_counts': _bulk_log_export_counts(batch_orders),
     }
     return render(request, 'ncm_bulk_log_detail.html', context)
+
+
+# ==================== BULK LOG BATCH EXPORT ====================
+#: Export scope -> filename suffix. 'all' plus the three per-order statuses a
+#: batch table can show, so staff can take away exactly the rows they are
+#: chasing instead of the whole batch every time.
+BULK_LOG_EXPORT_SCOPES = {
+    'all': 'all-orders',
+    'success': 'success',
+    'failed': 'failed',
+    'skipped': 'skipped',
+}
+
+
+def _bulk_log_export_columns(id_label):
+    """Columns of a batch export, mirroring the on-screen orders table.
+
+    Only the tracking-ID heading differs between providers (NCM ID / PND ID).
+    Both the CSV and the Excel sheet read this one list so they cannot drift
+    apart - a mismatch there is how exports quietly start shipping the wrong
+    value under the wrong heading.
+    """
+    return [
+        'S.N.', 'Order Number', 'Receiver', 'Phone', 'Address', 'COD Amount',
+        'Branch', 'API Account', id_label, 'Status', 'Message', 'Logged At',
+    ]
+
+
+def _bulk_log_export_rows(batch_orders, scope, id_field):
+    """Rows for one batch's export, in table order, filtered by `scope`."""
+    from .timezone_utils import format_nepali_datetime
+
+    rows = []
+    index = 0
+
+    for entry in batch_orders:
+        if scope != 'all' and entry.status != scope:
+            continue
+
+        index += 1
+        order = entry.order
+        api_config = order.api_config if order else None
+        rows.append([
+            index,
+            entry.order_number,
+            entry.customer_name,
+            entry.customer_phone,
+            entry.shipping_address,
+            float(safe_decimal(entry.cod_amount)),
+            entry.destination_branch,
+            api_config.api_name if api_config else '',
+            getattr(entry, id_field, None) or '',
+            entry.get_status_display(),
+            entry.message,
+            format_nepali_datetime(entry.created_at),
+        ])
+
+    return rows
+
+
+def _bulk_log_export_filename(bulk_log, scope, extension):
+    suffix = BULK_LOG_EXPORT_SCOPES.get(scope, 'all-orders')
+    return '{}-{}.{}'.format(bulk_log.batch_number, suffix, extension)
+
+
+def _bulk_log_excel_value(value):
+    """Make a cell value safe for openpyxl.
+
+    API error messages land in the Message column verbatim; a stray control
+    character in one of them makes openpyxl raise IllegalCharacterError and
+    kills the whole download, and anything past 32,767 characters is rejected
+    outright by the format.
+    """
+    if isinstance(value, str):
+        return ILLEGAL_CHARACTERS_RE.sub('', value)[:32000]
+    return value
+
+
+def _bulk_log_export_csv(bulk_log, rows, columns, scope):
+    import csv
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+        _bulk_log_export_filename(bulk_log, scope, 'csv')
+    )
+    # Excel on Windows reads a bare UTF-8 CSV as ANSI and mangles Nepali
+    # receiver names and addresses; the BOM is what makes it pick the right
+    # codec.
+    response.write('﻿')
+
+    writer = csv.writer(response)
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow(row)
+    return response
+
+
+def _bulk_log_write_summary_sheet(ws, summary_rows):
+    """Label/value sheet saying what an export actually contains."""
+    label_font = Font(bold=True)
+    for label, value in summary_rows:
+        ws.append([label, _bulk_log_excel_value(value)])
+        ws.cell(row=ws.max_row, column=1).font = label_font
+    ws.column_dimensions['A'].width = 26
+    ws.column_dimensions['B'].width = 48
+
+
+def _bulk_log_write_export_sheet(ws, columns, rows):
+    """Header + rows on `ws`, styled the way every bulk-log export is.
+
+    Dark frozen header, failed rows tinted red and skipped ones amber, columns
+    sized to their contents. The single-batch export and the Bulk Logs list
+    export share this so the same row cannot come out looking one way from the
+    batch page and another way from the list.
+    """
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', start_color='1E293B')
+    fail_fill = PatternFill('solid', start_color='FFE4E6')
+    skip_fill = PatternFill('solid', start_color='FEF3C7')
+
+    ws.append(columns)
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    ws.freeze_panes = 'A2'
+
+    status_column = columns.index('Status') + 1 if 'Status' in columns else None
+    for row in rows:
+        ws.append([_bulk_log_excel_value(value) for value in row])
+        if status_column is None:
+            continue
+        status = ws.cell(row=ws.max_row, column=status_column).value
+        fill = fail_fill if status == 'Failed' else skip_fill if status == 'Skipped' else None
+        if fill:
+            for cell in ws[ws.max_row]:
+                cell.fill = fill
+
+    for column in ws.columns:
+        width = max((len(str(c.value)) for c in column if c.value is not None), default=10)
+        ws.column_dimensions[column[0].column_letter].width = min(max(width + 2, 10), 60)
+
+
+def _bulk_log_export_excel(bulk_log, rows, columns, scope, summary_rows):
+    """Workbook with a batch summary sheet plus the per-order rows."""
+    wb = Workbook()
+    summary = wb.active
+    summary.title = 'Summary'
+    _bulk_log_write_summary_sheet(summary, summary_rows)
+    _bulk_log_write_export_sheet(wb.create_sheet('Orders'), columns, rows)
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+        _bulk_log_export_filename(bulk_log, scope, 'xlsx')
+    )
+    wb.save(response)
+    return response
+
+
+def _bulk_log_export_response(request, bulk_log, batch_orders, id_label, id_field,
+                              summary_rows, detail_url_name):
+    """Shared body of the NCM / PND batch exports.
+
+    The two providers keep separate models and permissions but identical batch
+    tables, so everything below the model lookup is one implementation.
+    """
+    export_format = (request.GET.get('format') or 'xlsx').lower()
+    scope = (request.GET.get('scope') or 'all').lower()
+    if scope not in BULK_LOG_EXPORT_SCOPES:
+        scope = 'all'
+
+    try:
+        columns = _bulk_log_export_columns(id_label)
+        rows = _bulk_log_export_rows(batch_orders, scope, id_field)
+
+        if export_format == 'csv':
+            return _bulk_log_export_csv(bulk_log, rows, columns, scope)
+
+        summary_rows = list(summary_rows) + [
+            ('Rows Exported', '{} ({} rows)'.format(
+                BULK_LOG_EXPORT_SCOPES[scope].replace('-', ' ').title(), len(rows)
+            )),
+        ]
+        return _bulk_log_export_excel(bulk_log, rows, columns, scope, summary_rows)
+    except Exception as e:
+        logger.exception('Bulk log export failed for batch %s', bulk_log.batch_number)
+        messages.error(request, 'Could not export this batch: {}'.format(e))
+        return redirect(detail_url_name, log_id=bulk_log.id)
+
+
+def _bulk_log_export_counts(batch_orders):
+    """Per-status row counts taken from the batch rows themselves.
+
+    The header cards read the batch's stored counters; the export menu must
+    read what is actually exportable, or a drifted counter offers a "Failed
+    only" download that comes back empty.
+    """
+    counts = {row['status']: row['n'] for row in
+              batch_orders.values('status').order_by().annotate(n=Count('id'))}
+    return {
+        'all': sum(counts.values()),
+        'success': counts.get('success', 0),
+        'failed': counts.get('failed', 0),
+        'skipped': counts.get('skipped', 0),
+    }
+
+
+@login_required
+@permission_required('can_view_ncm_bulk_logs')
+def ncm_bulk_log_export(request, log_id):
+    """Export one NCM batch as Excel or CSV (?format=xlsx|csv & ?scope=...)."""
+    from ncm.models import NCMBulkLog, NCMBulkLogOrder
+    from .timezone_utils import format_nepali_datetime
+
+    bulk_log = get_object_or_404(NCMBulkLog, id=log_id, is_deleted=False)
+    batch_orders = NCMBulkLogOrder.objects.filter(batch=bulk_log).select_related('order__api_config')
+
+    summary_rows = [
+        ('Batch Number', bulk_log.batch_number),
+        ('Logistics', 'Nepal Can Move'),
+        ('Status', bulk_log.get_status_display()),
+        ('Total Orders', bulk_log.total_orders),
+        ('Success', bulk_log.success_count),
+        ('Failed', bulk_log.failed_count),
+        ('Skipped', bulk_log.skipped_count),
+        ('From Branch', bulk_log.from_branch),
+        ('Delivery Type', bulk_log.delivery_type),
+        ('Sent By', bulk_log.created_by.username if bulk_log.created_by else 'System'),
+        ('Sent At', format_nepali_datetime(bulk_log.created_at)),
+        ('Completed At', format_nepali_datetime(bulk_log.completed_at)),
+    ]
+
+    return _bulk_log_export_response(
+        request, bulk_log, batch_orders,
+        id_label='NCM ID',
+        id_field='ncm_order_id',
+        summary_rows=summary_rows,
+        detail_url_name='ncm_bulk_log_detail',
+    )
 
 
 @login_required
@@ -13515,6 +16103,9 @@ def ncm_bulk_logs_bulk_action(request):
                 deleted_at=timezone.now()
             )
             messages.success(request, f'{count} batch(es) moved to trash.')
+
+        elif action == 'terminate':
+            _bulk_terminate_batches(request, 'ncm', log_ids)
 
     return redirect('logistics_bulk_logs_list')
 
@@ -13761,7 +16352,6 @@ def low_stock_alerts(request):
 @permission_required('can_view_sales_reports')
 def sales_report(request):
     """Comprehensive sales analytics with smart forecasting"""
-    from django.db.models.functions import ExtractHour
     from collections import defaultdict
     import math
 
@@ -14002,14 +16592,17 @@ def sales_report(request):
         category_data.append(float(c['revenue'] or 0))
 
     # ── 5. Hourly Sales Pattern ──
-    hourly_raw = (
-        orders_qs
-        .annotate(hour=ExtractHour('created_at'))
-        .values('hour')
-        .annotate(count=Count('id'), revenue=Sum('total_amount'))
-        .order_by('hour')
-    )
-    hourly_map = {h['hour']: {'count': h['count'], 'revenue': float(h['revenue'] or 0)} for h in hourly_raw}
+    # Python-side grouping in Nepal local time — MySQL CONVERT_TZ (used under the
+    # hood by ExtractHour/TruncHour) returns NULL here because the server's time
+    # zone tables aren't loaded, which silently collapsed every order into a
+    # single NULL bucket and made every hour read 0.
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    hourly_map = {}
+    for _hr_created, _hr_amount in orders_qs.values_list('created_at', 'total_amount'):
+        h = timezone.localtime(_hr_created, nepal_tz).hour
+        bucket = hourly_map.setdefault(h, {'count': 0, 'revenue': 0.0})
+        bucket['count'] += 1
+        bucket['revenue'] += float(_hr_amount or 0)
     hourly_labels = []
     hourly_data = []
     for h in range(24):
@@ -14323,6 +16916,342 @@ def sales_report(request):
     return render(request, 'sales_report.html', context)
 
 
+# ==================== ORDERS BY SOURCE REPORT ====================
+
+def _normalize_order_source(raw):
+    """Turn a free-text Order.order_from value into a display-ready source name."""
+    source_raw = (raw or '').strip()
+    if not source_raw:
+        source_raw = 'Direct'
+    return source_raw.replace('_', ' ').title()
+
+
+def _orders_by_source_selection(request):
+    """Parse the page-wide Sources filter used by the Orders by Source report.
+
+    Returns None when every source is selected (i.e. no filtering at all), or a
+    set of normalized source names otherwise. The explicit `sources_filtered=1`
+    flag is what distinguishes "all selected" (no param, show everything) from
+    "none selected" (flag with an empty set, show nothing).
+
+    Sources arrive as repeated `sources=` params rather than one comma-joined
+    value because normalized names come from free-text Order.order_from and may
+    legitimately contain commas.
+    """
+    if request.GET.get('sources_filtered') not in ('1', 'true', 'True'):
+        return None
+    return {s.strip() for s in request.GET.getlist('sources') if s.strip()}
+
+
+def _orders_by_source_date_range(request, default_days=30):
+    """Shared date-range parser for the Orders by Source report endpoints.
+
+    Mirrors order_sources_data's day-preset / custom-range convention so both
+    features stay in sync, and also returns an equal-length preceding window
+    for trend/growth comparisons.
+    """
+    from datetime import datetime, time
+
+    from .timezone_utils import get_nepali_now
+
+    # "Today" has to mean today in Kathmandu, not in UTC: the window bounds
+    # below are built with make_aware (local tz), so anchoring them to a UTC
+    # date would hand back yesterday's window every night between midnight and
+    # 05:45 local.
+    local_today = get_nepali_now().date()
+
+    custom_from = request.GET.get('custom_from')
+    custom_to = request.GET.get('custom_to')
+
+    if custom_from and custom_to:
+        try:
+            start_date = datetime.strptime(custom_from, '%Y-%m-%d').date()
+            end_date = datetime.strptime(custom_to, '%Y-%m-%d').date()
+            if end_date < start_date:
+                start_date, end_date = end_date, start_date
+        except (ValueError, TypeError):
+            end_date = local_today
+            start_date = end_date - timedelta(days=default_days - 1)
+    else:
+        days = request.GET.get('days', default_days)
+        try:
+            days = int(days)
+            # 1 == "Today": the same code path as every other preset, so the
+            # single-day window still gets its own equal-length (yesterday)
+            # comparison period for growth figures.
+            if days not in [1, 7, 14, 30, 60, 90]:
+                days = default_days
+        except (ValueError, TypeError):
+            days = default_days
+        end_date = local_today
+        start_date = end_date - timedelta(days=days - 1)
+
+    dates_list = []
+    current = start_date
+    while current <= end_date:
+        dates_list.append(current)
+        current += timedelta(days=1)
+
+    start_dt = timezone.make_aware(datetime.combine(start_date, time.min))
+    end_dt = timezone.make_aware(datetime.combine(end_date, time.max))
+
+    period_days = len(dates_list)
+    prev_end_dt = start_dt - timedelta(microseconds=1)
+    prev_start_dt = timezone.make_aware(datetime.combine(start_date - timedelta(days=period_days), time.min))
+
+    return dates_list, start_dt, end_dt, prev_start_dt, prev_end_dt
+
+
+@login_required
+@permission_required('can_view_orders_by_source_report')
+def orders_by_source_report(request):
+    """Orders by Source Report page shell — all data is loaded client-side via
+    orders_by_source_analytics_data / orders_by_source_table_data so the
+    preset & custom date filters, search and pagination never need a full
+    page reload."""
+    # Pull the real, currently-in-use order statuses straight from Order data
+    # (not a guessed static list) so the status filter always matches what's
+    # actually stored, including any custom Setup-driven status names.
+    raw_statuses = (
+        Order.objects.filter(is_deleted=False)
+        .exclude(order_status__isnull=True).exclude(order_status='')
+        .values_list('order_status', flat=True)
+        .distinct()
+    )
+    status_choices = sorted(
+        {(s, s.replace('_', ' ').title()) for s in raw_statuses},
+        key=lambda pair: pair[1]
+    )
+    return render(request, 'orders_by_source_report.html', {'status_choices': status_choices})
+
+
+@login_required
+@permission_required('can_view_orders_by_source_report')
+def orders_by_source_analytics_data(request):
+    """API: trend chart series + ranked source breakdown (with per-source
+    creator/staff attribution) for the Orders by Source report."""
+    dates_list, start_dt, end_dt, prev_start_dt, prev_end_dt = _orders_by_source_date_range(request)
+
+    orders = Order.objects.filter(
+        is_deleted=False,
+        created_at__range=(start_dt, end_dt),
+    ).values('created_at', 'order_from', 'total_amount', 'created_by__username',
+              'created_by__first_name', 'created_by__last_name')
+
+    all_sources = set()
+    by_date = {d: {} for d in dates_list}
+    source_stats = {}  # name -> {'count', 'revenue', 'creators': {name: count}}
+
+    for o in orders:
+        local_dt = timezone.localtime(o['created_at'])
+        order_date = local_dt.date()
+        source_name = _normalize_order_source(o['order_from'])
+        all_sources.add(source_name)
+
+        if order_date in by_date:
+            by_date[order_date][source_name] = by_date[order_date].get(source_name, 0) + 1
+
+        stats = source_stats.setdefault(source_name, {'count': 0, 'revenue': 0.0, 'creators': {}})
+        stats['count'] += 1
+        stats['revenue'] += float(o['total_amount'] or 0)
+
+        first = (o['created_by__first_name'] or '').strip()
+        last = (o['created_by__last_name'] or '').strip()
+        full_name = f"{first} {last}".strip()
+        creator_name = full_name or o['created_by__username'] or 'Unknown'
+        stats['creators'][creator_name] = stats['creators'].get(creator_name, 0) + 1
+
+    # The unfiltered source universe, captured *before* the selection filter is
+    # applied, so the "Filter Sources" modal can still list (and re-tick)
+    # sources the user has currently switched off.
+    all_sources_meta = sorted(
+        [{'source': name, 'count': stats['count']} for name, stats in source_stats.items()],
+        key=lambda x: (-x['count'], x['source'])
+    )
+
+    # Page-wide Sources filter: everything below (KPI totals, trend series,
+    # ranking, shares) is computed over the selected subset only.
+    selection = _orders_by_source_selection(request)
+    if selection is not None:
+        source_stats = {n: s for n, s in source_stats.items() if n in selection}
+        by_date = {d: {n: c for n, c in counts.items() if n in selection}
+                   for d, counts in by_date.items()}
+        all_sources = {s for s in all_sources if s in selection}
+
+    # Previous equal-length period counts, per source, for trend/growth
+    prev_counts = {}
+    if prev_start_dt < prev_end_dt:
+        prev_orders = Order.objects.filter(
+            is_deleted=False,
+            created_at__range=(prev_start_dt, prev_end_dt),
+        ).values_list('order_from', flat=True)
+        for raw in prev_orders:
+            name = _normalize_order_source(raw)
+            prev_counts[name] = prev_counts.get(name, 0) + 1
+
+    total_orders = sum(s['count'] for s in source_stats.values())
+    total_revenue = sum(s['revenue'] for s in source_stats.values())
+
+    def calc_growth(current, previous):
+        if previous and previous > 0:
+            return round((current - previous) / previous * 100, 1)
+        return 100.0 if current > 0 else 0.0
+
+    ranking = []
+    for name, stats in source_stats.items():
+        count = stats['count']
+        revenue = stats['revenue']
+        creators_sorted = sorted(stats['creators'].items(), key=lambda x: x[1], reverse=True)
+        top_creator, top_creator_count = creators_sorted[0] if creators_sorted else ('Unknown', 0)
+        prev_count = prev_counts.get(name, 0)
+        ranking.append({
+            'source': name,
+            'count': count,
+            'revenue': round(revenue, 2),
+            'avg_order_value': round(revenue / count, 2) if count else 0,
+            'share_pct': round(count / total_orders * 100, 1) if total_orders else 0,
+            'growth_pct': calc_growth(count, prev_count),
+            'prev_count': prev_count,
+            'unique_creators': len(stats['creators']),
+            'top_creator': top_creator,
+            'top_creator_count': top_creator_count,
+            'creators': [{'name': n, 'count': c} for n, c in creators_sorted[:10]],
+        })
+    ranking.sort(key=lambda x: x['count'], reverse=True)
+    for i, r in enumerate(ranking, start=1):
+        r['rank'] = i
+
+    sorted_sources = sorted(all_sources)
+    chart = {
+        'dates': [d.strftime('%b %d') for d in dates_list],
+        'sources': sorted_sources,
+        'data': {s: [by_date.get(d, {}).get(s, 0) for d in dates_list] for s in sorted_sources},
+    }
+
+    return JsonResponse({
+        'chart': chart,
+        'ranking': ranking,
+        'all_sources': all_sources_meta,
+        'totals': {
+            'total_orders': total_orders,
+            'total_revenue': round(total_revenue, 2),
+            'total_sources': len(source_stats),
+            'top_source': ranking[0]['source'] if ranking else None,
+            'top_source_count': ranking[0]['count'] if ranking else 0,
+            'date_from': dates_list[0].strftime('%b %d, %Y') if dates_list else '',
+            'date_to': dates_list[-1].strftime('%b %d, %Y') if dates_list else '',
+        },
+    })
+
+
+@login_required
+@permission_required('can_view_orders_by_source_report')
+def orders_by_source_table_data(request):
+    """API: paginated + searchable order-level detail table backing the
+    Orders by Source report, filterable by the same date range plus an
+    optional source/status and a free-text search box."""
+    from django.urls import reverse
+
+    dates_list, start_dt, end_dt, prev_start_dt, prev_end_dt = _orders_by_source_date_range(request)
+
+    qs = Order.objects.filter(
+        is_deleted=False,
+        created_at__range=(start_dt, end_dt),
+    ).select_related('created_by').prefetch_related('items__product')
+
+    # Two source filters combine here: the page-wide Sources selection at the
+    # top of the report, and the table's own single-source dropdown which
+    # narrows down *within* that selection.
+    selection = _orders_by_source_selection(request)
+    source_param = (request.GET.get('source') or '').strip()
+
+    allowed = selection
+    if source_param:
+        allowed = {source_param} if allowed is None else (allowed & {source_param})
+
+    if allowed is not None:
+        if not allowed:
+            qs = qs.none()
+        else:
+            matching_ids = [
+                oid for oid, raw in qs.values_list('id', 'order_from')
+                if _normalize_order_source(raw) in allowed
+            ]
+            qs = qs.filter(id__in=matching_ids)
+
+    status_param = (request.GET.get('status') or '').strip()
+    if status_param:
+        qs = qs.filter(order_status__iexact=status_param)
+
+    search = (request.GET.get('search') or '').strip()
+    if search:
+        qs = qs.filter(
+            Q(order_number__icontains=search) |
+            Q(customer_name__icontains=search) |
+            Q(customer_phone__icontains=search) |
+            Q(created_by__username__icontains=search) |
+            Q(created_by__first_name__icontains=search) |
+            Q(created_by__last_name__icontains=search)
+        )
+
+    sort = request.GET.get('sort', '-created_at')
+    allowed_sorts = {'created_at', '-created_at', 'total_amount', '-total_amount', 'order_number', '-order_number'}
+    if sort not in allowed_sorts:
+        sort = '-created_at'
+    qs = qs.order_by(sort)
+
+    try:
+        page = max(int(request.GET.get('page', 1)), 1)
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        page_size = min(max(int(request.GET.get('page_size', 25)), 5), 100)
+    except (ValueError, TypeError):
+        page_size = 25
+
+    paginator = Paginator(qs, page_size)
+    page_obj = paginator.get_page(page)
+
+    rows = []
+    for o in page_obj.object_list:
+        creator = o.created_by
+        creator_name = (creator.get_full_name() or creator.username) if creator else 'Unknown'
+        # The line items are what the row is actually about — name, quantity
+        # and product type per line, so the table says what was sold and not
+        # just how much it cost. product_type falls back to 'simple' for a
+        # line whose Product row has since been deleted.
+        items = [{
+            'product_name': item.product_name or 'Unknown',
+            'variation_name': item.variation_name or '',
+            'product_type': (item.product.product_type if item.product else '') or 'simple',
+            'quantity': item.quantity or 0,
+        } for item in o.items.all()]
+        rows.append({
+            'id': o.id,
+            'items': items,
+            'items_count': len(items),
+            'total_qty': sum(i['quantity'] for i in items),
+            'order_number': o.order_number,
+            'customer_name': o.customer_name,
+            'customer_phone': o.customer_phone,
+            'source': _normalize_order_source(o.order_from),
+            'created_by': creator_name,
+            'status': o.order_status,
+            'payment_status': o.payment_status,
+            'total_amount': float(o.total_amount or 0),
+            'created_at': timezone.localtime(o.created_at).strftime('%b %d, %Y %I:%M %p'),
+            'detail_url': reverse('order_detail', args=[o.id]),
+        })
+
+    return JsonResponse({
+        'rows': rows,
+        'page': page_obj.number,
+        'pages': paginator.num_pages,
+        'total': paginator.count,
+        'page_size': page_size,
+    })
+
+
 # ==================== DAILY SALES REPORT ====================
 
 @login_required
@@ -14460,6 +17389,7 @@ def daily_sales_report(request):
                 'product_name': item.product_name or 'Unknown',
                 'product_sku': item.product_sku or '',
                 'variation_name': item.variation_name or '',
+                'product_type': (item.product.product_type if item.product else '') or 'simple',
                 'quantity': item.quantity,
                 'price': float(item.price),
                 'total': float(item.total),
@@ -14673,10 +17603,10 @@ def financial_report_data(request):
                 needs_sync = True
                 try:
                     from services.ncm_service import NCMService
-                    ncm_service = NCMService()
                     for item in ncm_orders_to_sync:
                         try:
-                            result = ncm_service.get_order_details(item.ncm_order_id, timeout=5)
+                            svc = NCMService(api_config_id=item.api_config_id if item.api_config_id else None)
+                            result = svc.get_order_details(item.ncm_order_id, timeout=5)
                             if result.get('success') and result.get('data'):
                                 ncm_data = result['data']
                                 update_fields = []
@@ -15005,6 +17935,240 @@ def financial_report_data(request):
 
 # ==================== STAFF PERFORMANCE ANALYTICS ====================
 
+def _staff_orders_log_export(orders_qs, request, date_range_text, period,
+                             staff_filter_label, status_filter, selection_note=None):
+    """Write the Staff Orders Log to a four-sheet workbook.
+
+    Exports the whole filtered queryset — not just the 15 rows the paginator
+    happens to be showing — so the file matches the period/staff/status filters
+    the page was rendered with.
+    """
+    from collections import OrderedDict
+    from .timezone_utils import convert_to_nepali, get_nepali_now
+
+    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    MONEY_FMT = '#,##0.00'
+    DATE_FMT = 'yyyy-mm-dd hh:mm AM/PM'
+
+    def _local(dt):
+        """Nepali wall-clock, naive — Excel has no concept of tz-aware values."""
+        local = convert_to_nepali(dt)
+        return local.replace(tzinfo=None) if local else None
+
+    def _money(value):
+        return float(safe_decimal(value or 0, max_digits=18, decimal_places=2))
+
+    def write_sheet(ws, headers, data_rows, money_cols=(), date_cols=()):
+        ws.append(headers)
+        for col_num in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        for r in data_rows:
+            ws.append(r)
+        for col_idx in money_cols:
+            for row_idx in range(2, ws.max_row + 1):
+                ws.cell(row=row_idx, column=col_idx).number_format = MONEY_FMT
+        for col_idx in date_cols:
+            for row_idx in range(2, ws.max_row + 1):
+                ws.cell(row=row_idx, column=col_idx).number_format = DATE_FMT
+        for column in ws.columns:
+            width = max(
+                [len(str(headers[column[0].column - 1]))] +
+                [len(str(c.value)) for c in column[1:] if c.value is not None],
+                default=10,
+            )
+            ws.column_dimensions[column[0].column_letter].width = min(width + 3, 55)
+        ws.freeze_panes = 'A2'
+        if ws.max_row > 1:
+            ws.auto_filter.ref = ws.dimensions
+
+    def staff_name(user):
+        if not user:
+            return 'System'
+        full = f"{user.first_name or ''} {user.last_name or ''}".strip()
+        return full or user.username
+
+    order_rows = []
+    item_rows = []
+    staff_stats = OrderedDict()
+    totals = {'orders': 0, 'delivered': 0, 'revenue': 0.0, 'units': 0}
+
+    for order in orders_qs:
+        created_local = _local(order.created_at)
+        who = staff_name(order.created_by)
+        role = order.created_by.get_role_display() if order.created_by else ''
+        # Mirrors the on-screen pill: order_status wins, status is the fallback.
+        effective_status = order.order_status or order.status or ''
+        is_delivered = effective_status.lower() in ('delivered', 'completed')
+
+        items = list(order.items.all())
+        units = sum(item.quantity or 0 for item in items)
+        item_labels = []
+        for item in items:
+            label = item.product_name or ''
+            if item.variation_name:
+                label += f" ({item.variation_name})"
+            item_labels.append(f"{label} x{item.quantity}")
+        items_summary = ' | '.join(item_labels)
+        amount = _money(order.total_amount)
+
+        order_rows.append([
+            order.order_number,
+            who,
+            role,
+            order.customer_name or '',
+            order.customer_phone or '',
+            order.customer_email or '',
+            items_summary,
+            len(items),
+            units,
+            effective_status.title(),
+            (order.order_from or '').upper(),
+            (order.payment_method or '').upper(),
+            (order.payment_status or '').title(),
+            _money(order.discount_amount),
+            _money(order.shipping_charge),
+            _money(order.delivery_charge),
+            amount,
+            _money(order.cod_collected),
+            str(order.branch) if order.branch else '',
+            order.shipping_address or '',
+            order.landmark or '',
+            order.get_logistics_display() if order.logistics else '',
+            order.tracking_number or '',
+            (order.in_out or '').upper(),
+            created_local,
+            _local(order.dispatch_date),
+            _local(order.delivered_at),
+            order.notes or '',
+            order.admin_notes or '',
+        ])
+
+        for item in items:
+            item_rows.append([
+                order.order_number,
+                created_local,
+                who,
+                order.customer_name or '',
+                order.customer_phone or '',
+                item.product_name or '',
+                item.variation_name or '',
+                item.product_sku or '',
+                item.quantity or 0,
+                _money(item.price),
+                _money(item.total),
+                effective_status.title(),
+                (order.order_from or '').upper(),
+            ])
+
+        stat = staff_stats.get(who)
+        if stat is None:
+            stat = staff_stats[who] = {
+                'role': role, 'orders': 0, 'delivered': 0, 'revenue': 0.0, 'units': 0,
+            }
+        stat['orders'] += 1
+        stat['revenue'] += amount
+        stat['units'] += units
+        if is_delivered:
+            stat['delivered'] += 1
+
+        totals['orders'] += 1
+        totals['revenue'] += amount
+        totals['units'] += units
+        if is_delivered:
+            totals['delivered'] += 1
+
+    wb = Workbook()
+    write_sheet(
+        wb.active,
+        ['Order #', 'Created By', 'Role', 'Customer', 'Phone', 'Email',
+         'Items', 'Item Lines', 'Total Qty', 'Status', 'Source',
+         'Payment Method', 'Payment Status', 'Discount', 'Shipping',
+         'Delivery Charge', 'Amount', 'COD Collected', 'Branch',
+         'Shipping Address', 'Landmark', 'Logistics', 'Tracking #',
+         'In/Out', 'Created At', 'Dispatched At', 'Delivered At',
+         'Notes', 'Admin Notes'],
+        order_rows,
+        money_cols=(14, 15, 16, 17, 18),
+        date_cols=(25, 26, 27),
+    )
+    wb.active.title = 'Staff Orders'
+
+    write_sheet(
+        wb.create_sheet('Order Items'),
+        ['Order #', 'Created At', 'Created By', 'Customer', 'Phone',
+         'Product', 'Variation', 'SKU', 'Qty', 'Unit Price', 'Line Total',
+         'Order Status', 'Source'],
+        item_rows,
+        money_cols=(10, 11),
+        date_cols=(2,),
+    )
+
+    total_orders = totals['orders']
+    write_sheet(
+        wb.create_sheet('Staff Summary'),
+        ['Staff', 'Role', 'Orders', 'Share %', 'Delivered', 'Delivery %',
+         'Units Sold', 'Revenue', 'Avg Order Value'],
+        [
+            [
+                name,
+                s['role'],
+                s['orders'],
+                round(s['orders'] * 100.0 / total_orders, 1) if total_orders else 0,
+                s['delivered'],
+                round(s['delivered'] * 100.0 / s['orders'], 1) if s['orders'] else 0,
+                s['units'],
+                round(s['revenue'], 2),
+                round(s['revenue'] / s['orders'], 2) if s['orders'] else 0,
+            ]
+            for name, s in sorted(staff_stats.items(), key=lambda kv: -kv[1]['orders'])
+        ],
+        money_cols=(8, 9),
+    )
+
+    exported_at = get_nepali_now().replace(tzinfo=None)
+    info_rows = [['Report', 'Staff Orders Log']]
+    if selection_note:
+        # A manual checkbox export ignores the ambient filters (see the view),
+        # so say that plainly instead of listing Staff/Status Filter values
+        # that didn't actually scope this file.
+        info_rows.append(['Selection', selection_note])
+        info_rows.append(['Filters active on page at export time', date_range_text])
+    else:
+        info_rows += [
+            ['Period', period],
+            ['Date Range', date_range_text],
+            ['Staff Filter', staff_filter_label],
+            ['Status Filter', status_filter.title() if status_filter else 'All Statuses'],
+        ]
+    info_rows += [
+        ['Total Orders', total_orders],
+        ['Delivered Orders', totals['delivered']],
+        ['Total Units', totals['units']],
+        ['Total Revenue', round(totals['revenue'], 2)],
+        ['Exported By', staff_name(request.user)],
+        ['Exported At', exported_at.strftime('%Y-%m-%d %I:%M %p') + ' (NPT)'],
+    ]
+    write_sheet(
+        wb.create_sheet('Report Info'),
+        ['Field', 'Value'],
+        info_rows,
+    )
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    stamp = exported_at.strftime('%Y%m%d_%H%M%S')
+    filename_prefix = 'staff_orders_selection' if selection_note else 'staff_orders_log'
+    response['Content-Disposition'] = f'attachment; filename={filename_prefix}_{stamp}.xlsx'
+    wb.save(response)
+    return response
+
+
+
 @login_required(login_url='login')
 def staff_performance_analytics(request):
     """Staff Performance Analytics Dashboard with Session Persistence"""
@@ -15124,6 +18288,66 @@ def staff_performance_analytics(request):
             orders_qs = orders_qs.filter(created_by_id=staff_id)
         except (ValueError, TypeError):
             pass
+
+    # ========== STAFF ORDERS LOG QUERYSET ==========
+    # Built here (not down with the rest of the log section) so the Excel export
+    # can return before the page's KPI/chart aggregation runs.
+    staff_orders_status = request.GET.get('orders_status', '')
+
+    def _build_staff_orders_qs():
+        qs = orders_qs.select_related(
+            'created_by', 'customer', 'branch'
+        ).prefetch_related('items__product').order_by('-created_at')
+        # Case-insensitive, and checks both status fields, exactly like the pill
+        if staff_orders_status:
+            qs = qs.filter(
+                Q(status__iexact=staff_orders_status) | Q(order_status__iexact=staff_orders_status)
+            )
+        return qs
+
+    # "Select all N matching filter" (bulk-select toolbar) asks for just the
+    # id list for the current filters, so it can check every row across every
+    # page without downloading the workbook itself.
+    if request.GET.get('orders_ids_only') == '1':
+        return JsonResponse({'ids': list(_build_staff_orders_qs().values_list('id', flat=True))})
+
+    if request.GET.get('orders_export') == 'xlsx':
+        staff_filter_label = 'All Staff'
+        if staff_filter != 'all':
+            try:
+                picked = User.objects.filter(pk=int(staff_filter)).first()
+            except (ValueError, TypeError):
+                picked = None
+            if picked:
+                staff_filter_label = (
+                    f"{picked.first_name} {picked.last_name}".strip() or picked.username
+                )
+
+        # A manual checkbox selection (possibly built across several pages,
+        # or across a filter change) always wins over the ambient filters —
+        # it's an explicit "export exactly these" request, so it isn't
+        # re-scoped to the current period/staff/status.
+        order_ids_param = request.GET.get('order_ids', '')
+        if order_ids_param:
+            try:
+                selected_ids = [int(x) for x in order_ids_param.split(',') if x.strip()]
+            except ValueError:
+                selected_ids = []
+            export_qs = Order.objects.filter(
+                id__in=selected_ids, is_deleted=False
+            ).select_related('created_by', 'customer', 'branch').prefetch_related(
+                'items__product'
+            ).order_by('-created_at')
+            return _staff_orders_log_export(
+                export_qs, request, date_range_text, period,
+                staff_filter_label, staff_orders_status,
+                selection_note=f'Manual selection ({len(selected_ids)} order{"s" if len(selected_ids) != 1 else ""} requested)',
+            )
+
+        return _staff_orders_log_export(
+            _build_staff_orders_qs(), request, date_range_text, period,
+            staff_filter_label, staff_orders_status,
+        )
 
     # ========== KPI CALCULATIONS ==========
     total_orders = orders_qs.count()
@@ -15310,9 +18534,11 @@ def staff_performance_analytics(request):
             'total_revenue': info['total_revenue']
         })
 
-    # Sort by revenue descending and take top 5
+    # Sort by revenue descending. The table paginates client-side, so keep a
+    # deeper slice than the 5 that used to be rendered - the page-size control
+    # is pointless if the server only ever sends 5 rows.
     top_products_data.sort(key=lambda x: x['total_revenue'], reverse=True)
-    top_products_data = top_products_data[:5]
+    top_products_data = top_products_data[:50]
 
     top_products = []
     for i, item in enumerate(top_products_data, 1):
@@ -15451,7 +18677,7 @@ def staff_performance_analytics(request):
         # Determine effective status
         if status in ['delivered', 'completed'] or order_status in ['delivered', 'completed']:
             status_breakdown['delivered'] += 1
-        elif status in ['returned', 'return'] or order_status in ['returned', 'return']:
+        elif status in ['returned', 'return', 'return_processing', 'return_arrived'] or order_status in ['returned', 'return', 'return_processing', 'return_arrived']:
             status_breakdown['returns'] += 1
         elif status in ['pending', 'processing'] or order_status in ['pending', 'processing']:
             status_breakdown['pending'] += 1
@@ -15463,9 +18689,11 @@ def staff_performance_analytics(request):
 
     # ========== DETAILED RETURNS DATA ==========
     # Recent return requests with items
+    # Deeper slice than the old 20 for the same reason as top_products: the
+    # Recent Returns table pages client-side and needs rows to page through.
     recent_returns = return_requests.select_related(
         'order', 'customer', 'created_by'
-    ).prefetch_related('items').order_by('-created_at')[:20]
+    ).prefetch_related('items').order_by('-created_at')[:100]
 
     # Return stats summary
     return_stats = {
@@ -15504,20 +18732,21 @@ def staff_performance_analytics(request):
     ).order_by('-count')
 
     # ========== STAFF ORDERS LOG ==========
-    staff_orders_qs = orders_qs.select_related(
-        'created_by', 'customer', 'branch'
-    ).prefetch_related('items__product').order_by('-created_at')
-
-    # Staff orders status filter (case-insensitive, check both status fields)
-    staff_orders_status = request.GET.get('orders_status', '')
-    if staff_orders_status:
-        staff_orders_qs = staff_orders_qs.filter(
-            Q(status__iexact=staff_orders_status) | Q(order_status__iexact=staff_orders_status)
-        )
+    staff_orders_qs = _build_staff_orders_qs()
 
     # Pagination
+    # Page size is user-controllable, but only from a fixed menu — an arbitrary
+    # ?orders_per_page=100000 would render 100k rows of prefetched items.
+    STAFF_ORDERS_PER_PAGE_CHOICES = [15, 25, 50, 100, 200]
+    try:
+        staff_orders_per_page = int(request.GET.get('orders_per_page', 15))
+    except (ValueError, TypeError):
+        staff_orders_per_page = 15
+    if staff_orders_per_page not in STAFF_ORDERS_PER_PAGE_CHOICES:
+        staff_orders_per_page = 15
+
     staff_orders_page_num = request.GET.get('orders_page', 1)
-    staff_orders_paginator = Paginator(staff_orders_qs, 15)
+    staff_orders_paginator = Paginator(staff_orders_qs, staff_orders_per_page)
     staff_orders_page = staff_orders_paginator.get_page(staff_orders_page_num)
 
     # Collect distinct statuses for filter dropdown (merge both status fields)
@@ -15570,6 +18799,8 @@ def staff_performance_analytics(request):
         'return_reason_breakdown': return_reason_breakdown,
         'staff_orders_page': staff_orders_page,
         'staff_orders_statuses': staff_orders_statuses,
+        'staff_orders_per_page': staff_orders_per_page,
+        'staff_orders_per_page_choices': STAFF_ORDERS_PER_PAGE_CHOICES,
         'selected_orders_status': staff_orders_status,
         'staff_order_summary': staff_order_summary,
     }
@@ -15652,6 +18883,9 @@ def api_product_staff_orders(request):
             'delivered': '#10b981',
             'cancelled': '#ef4444',
             'returned': '#374151',
+            'return': '#374151',
+            'return_processing': '#f97316',
+            'return_arrived': '#c2410c',
             'pending': '#f59e0b',
         }
         order_status = (order.order_status or order.status or 'processing').lower()
@@ -15762,6 +18996,9 @@ def api_product_staff_orders(request):
         'delivered': '#10b981',
         'cancelled': '#ef4444',
         'returned': '#374151',
+        'return': '#374151',
+        'return_processing': '#f97316',
+        'return_arrived': '#c2410c',
         'pending': '#f59e0b',
         'inquiry': '#374151',
     }
@@ -16390,7 +19627,7 @@ def purchase_report(request):
 
     if selected_product and selected_product.product_type == 'variable':
         is_variable = True
-        variations = list(selected_product.variations.filter(is_active=True).order_by('variation_name'))
+        variations = list(selected_product.variations.filter(Q(is_active=True) | Q(status='active')).order_by('variation_name'))
 
         if selected_variation_id:
             try:
@@ -16899,7 +20136,7 @@ def purchase_create(request):
     for vp in variable_products:
         product_variations_map[vp.id] = [
             {'id': v.id, 'name': v.variation_name or v.sku, 'sku': v.sku, 'stock': v.stock}
-            for v in vp.variations.filter(is_active=True).order_by('variation_name')
+            for v in vp.variations.filter(Q(is_active=True) | Q(status='active')).order_by('variation_name')
         ]
 
     # Build bundle components map for JS
@@ -17609,7 +20846,9 @@ def send_single_order_to_pnd(request, order, default_weight=1.0, api_config_id=N
             "primaryMobileNo": digits_only,
             "destinationBranch": destination_branch,
             "destinationCityArea": str(order.shipping_address or destination_branch)[:200],
-            "codAmount": float(order.total_amount or 0),
+            # Partial payments have already been collected up front —
+            # amount_due is what is left to take on delivery.
+            "codAmount": float(order.amount_due or 0),
             "orderDescription": str(product_name)[:200],
             "vendorTrackingNumber": str(order.order_number),
             "landmark": str(order.landmark or order.shipping_address or 'N/A')[:200],
@@ -17665,6 +20904,24 @@ def send_single_order_to_pnd(request, order, default_weight=1.0, api_config_id=N
                         ).order_by('id').first()
                 if matched_api_config:
                     order.api_config = matched_api_config
+
+                # Update order status to "Pickup Created" from Setup Management
+                try:
+                    from dashboard.models import Setup
+                    pickup_setup = Setup.objects.filter(setup_type='status', name__iexact='Pickup Created').first()
+                    if not pickup_setup:
+                        pickup_setup = Setup.objects.filter(setup_type='status', name__icontains='Pickup Created').first()
+                    
+                    if pickup_setup:
+                        order.status_setup = pickup_setup
+                        order.order_status = pickup_setup.name
+                        order.status = pickup_setup.name
+                    else:
+                        order.order_status = 'Pickup Created'
+                        order.status = 'Pickup Created'
+                except Exception:
+                    pass
+
                 order.save()
 
                 # Log activity
@@ -17743,6 +21000,14 @@ def orders_bulk_pnd_send(request):
             total_orders=count,
             status='processing',
             created_by=request.user,
+            # See dashboard/bulk_batch.py - lets a batch this request never
+            # finishes be resumed from the Bulk Logs page.
+            selected_order_ids=list(orders.values_list('id', flat=True)),
+            send_options={
+                'api_config_id': api_config_id,
+                'default_weight': default_weight,
+                'auto_set_logistics': auto_set_logistics,
+            },
         )
         PNDBulkLogDetail.objects.create(
             batch=bulk_log,
@@ -17757,8 +21022,16 @@ def orders_bulk_pnd_send(request):
         error_count = 0
         error_details = []
 
+        from .bulk_batch import start_heartbeat
+        heartbeat = start_heartbeat(bulk_log)
+        stopped = False
+
         # Process each order
         for order in orders:
+            if heartbeat.should_stop():
+                stopped = True
+                break
+
             result = send_single_order_to_pnd(
                 request,
                 order,
@@ -17793,7 +21066,7 @@ def orders_bulk_pnd_send(request):
                 customer_name=order.customer_name or '',
                 customer_phone=order.customer_phone or '',
                 shipping_address=order.shipping_address or '',
-                cod_amount=order.total_amount or 0,
+                cod_amount=order.amount_due or 0,
                 destination_branch=order.branch_city or '',
                 pnd_order_id=order.pnd_order_id,
                 status=log_status,
@@ -17808,7 +21081,9 @@ def orders_bulk_pnd_send(request):
             )
 
         # Update bulk log with final counts and status
-        if error_count == count:
+        if stopped:
+            final_status = 'cancelled'
+        elif error_count == count:
             final_status = 'failed'
         elif success_count == count:
             final_status = 'completed'
@@ -17823,15 +21098,29 @@ def orders_bulk_pnd_send(request):
         bulk_log.status = final_status
         bulk_log.completed_at = timezone.now()
         bulk_log.save()
+        heartbeat.release()
 
+        not_attempted = count - success_count - error_count - skip_count
         PNDBulkLogDetail.objects.create(
             batch=bulk_log,
             action='batch_completed',
-            message=f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped',
+            message=(
+                f'Batch stopped on request: {success_count} success, {error_count} failed, '
+                f'{skip_count} skipped, {not_attempted} not attempted'
+                if stopped else
+                f'Batch completed: {success_count} success, {error_count} failed, {skip_count} skipped'
+            ),
             user=request.user,
         )
 
         # Show results
+        if stopped:
+            messages.warning(
+                request,
+                f"Batch {bulk_log.batch_number} was stopped before finishing "
+                f"({not_attempted} order(s) not attempted)."
+            )
+
         if success_count > 0:
             messages.success(
                 request,
@@ -17873,8 +21162,41 @@ def pnd_bulk_log_detail(request, log_id):
         'bulk_log': bulk_log,
         'batch_orders': batch_orders,
         'log_details': log_details,
+        'export_counts': _bulk_log_export_counts(batch_orders),
     }
     return render(request, 'pnd_bulk_log_detail.html', context)
+
+
+@login_required
+def pnd_bulk_log_export(request, log_id):
+    """Export one Pick and Drop batch as Excel or CSV (?format= & ?scope=)."""
+    from pick_and_drop.models import PNDBulkLog, PNDBulkLogOrder
+    from .timezone_utils import format_nepali_datetime
+
+    bulk_log = get_object_or_404(PNDBulkLog, id=log_id, is_deleted=False)
+    batch_orders = PNDBulkLogOrder.objects.filter(batch=bulk_log).select_related('order__api_config')
+
+    summary_rows = [
+        ('Batch Number', bulk_log.batch_number),
+        ('Logistics', 'Pick and Drop'),
+        ('Status', bulk_log.get_status_display()),
+        ('Total Orders', bulk_log.total_orders),
+        ('Success', bulk_log.success_count),
+        ('Failed', bulk_log.failed_count),
+        ('Skipped', bulk_log.skipped_count),
+        ('Destination Branch', bulk_log.destination_branch),
+        ('Sent By', bulk_log.created_by.username if bulk_log.created_by else 'System'),
+        ('Sent At', format_nepali_datetime(bulk_log.created_at)),
+        ('Completed At', format_nepali_datetime(bulk_log.completed_at)),
+    ]
+
+    return _bulk_log_export_response(
+        request, bulk_log, batch_orders,
+        id_label='PND ID',
+        id_field='pnd_order_id',
+        summary_rows=summary_rows,
+        detail_url_name='pnd_bulk_log_detail',
+    )
 
 
 @login_required
@@ -17912,18 +21234,60 @@ def pnd_bulk_logs_bulk_action(request):
             )
             messages.success(request, f'{count} batch(es) moved to trash.')
 
+        elif action == 'terminate':
+            _bulk_terminate_batches(request, 'pnd', log_ids)
+
     return redirect('logistics_bulk_logs_list')
+
+
+def _bulk_terminate_batches(request, provider, log_ids):
+    """Terminate several batches at once, reporting each outcome separately.
+
+    Terminating is per-batch work (it reconciles counts, and a live batch is
+    only *asked* to stop), so this loops rather than issuing one UPDATE -
+    and reports the two outcomes apart, because "stopping shortly" and
+    "closed out now" mean different things to whoever clicked.
+    """
+    from .bulk_batch import BatchError, terminate
+
+    closed = requested = 0
+    problems = []
+    for log_id in log_ids:
+        try:
+            message, state = terminate(provider, int(log_id), request.user)
+        except (BatchError, ValueError, TypeError) as e:
+            problems.append(str(e))
+            continue
+        except Exception as e:
+            logger.exception('Bulk terminate failed for %s #%s', provider, log_id)
+            problems.append(str(e))
+            continue
+        if state.get('status') == 'cancelled':
+            closed += 1
+        else:
+            requested += 1
+
+    if closed:
+        messages.success(request, f'{closed} stalled batch(es) terminated.')
+    if requested:
+        messages.warning(
+            request,
+            f'{requested} batch(es) are mid-send and will stop after their current order.'
+        )
+    for problem in problems[:5]:
+        messages.error(request, problem)
+    if len(problems) > 5:
+        messages.error(request, f'...and {len(problems) - 5} more could not be terminated.')
 
 
 # ==================== UNIFIED LOGISTICS VIEWS ====================
 
-@login_required
-def logistics_orders_list(request):
-    """
-    Unified Logistics Orders Page - Shows NCM and/or PND orders with a provider toggle filter
-    """
-    provider = request.GET.get('provider', 'all').strip()
+def _filtered_logistics_orders(provider, search_query, branch_filter, status_filter, date_from, date_to):
+    """Shared query-building for the logistics orders list and its Excel export.
 
+    Kept as one function so the list page and the export can never drift apart
+    on what a given filter combination actually matches.
+    """
     # Build base queryset based on provider filter
     if provider == 'ncm':
         orders = Order.objects.select_related('customer', 'created_by', 'api_config').filter(
@@ -17951,13 +21315,6 @@ def logistics_orders_list(request):
         )
         orders = (ncm_orders | pnd_orders).order_by('-created_at')
 
-    # Get filter parameters
-    search_query = request.GET.get('search', '').strip()
-    branch_filter = request.GET.get('branch', '').strip()
-    status_filter = request.GET.get('status', '').strip()
-    date_from = request.GET.get('date_from', '').strip()
-    date_to = request.GET.get('date_to', '').strip()
-
     # Search filter
     if search_query:
         if provider == 'ncm':
@@ -17983,15 +21340,19 @@ def logistics_orders_list(request):
                 Q(customer_phone__icontains=search_query)
             )
 
-    # Branch filter
+    # Branch filter.
+    # Filters on the DESTINATION branch, which is the one the Branch column
+    # actually displays. It used to filter NCM orders on ncm_from_branch - the
+    # pickup branch, which defaults to 'TINKUNE' for practically every order -
+    # so the dropdown offered a single value and choosing it matched everything.
     if branch_filter:
         if provider == 'ncm':
-            orders = orders.filter(ncm_from_branch=branch_filter)
+            orders = orders.filter(ncm_destination_branch=branch_filter)
         elif provider == 'pnd':
             orders = orders.filter(pnd_destination_branch=branch_filter)
         else:
             orders = orders.filter(
-                Q(ncm_from_branch=branch_filter) | Q(pnd_destination_branch=branch_filter)
+                Q(ncm_destination_branch=branch_filter) | Q(pnd_destination_branch=branch_filter)
             )
 
     # Status filter
@@ -18006,38 +21367,180 @@ def logistics_orders_list(request):
             )
 
     # Date range filter
+    # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+    # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
+    from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
     if date_from:
         try:
+            _date_from_obj = datetime.strptime(date_from, '%Y-%m-%d').date()
+            _date_from_start = nepali_day_start(_date_from_obj)
             if provider == 'ncm':
-                orders = orders.filter(ncm_created_at__date__gte=date_from)
+                orders = orders.filter(ncm_created_at__gte=_date_from_start)
             elif provider == 'pnd':
-                orders = orders.filter(pnd_created_at__date__gte=date_from)
+                orders = orders.filter(pnd_created_at__gte=_date_from_start)
             else:
-                orders = orders.filter(created_at__date__gte=date_from)
+                orders = orders.filter(created_at__gte=_date_from_start)
         except:
             pass
 
     if date_to:
         try:
+            _date_to_obj = datetime.strptime(date_to, '%Y-%m-%d').date()
+            _date_to_end = nepali_day_end_exclusive(_date_to_obj)
             if provider == 'ncm':
-                orders = orders.filter(ncm_created_at__date__lte=date_to)
+                orders = orders.filter(ncm_created_at__lt=_date_to_end)
             elif provider == 'pnd':
-                orders = orders.filter(pnd_created_at__date__lte=date_to)
+                orders = orders.filter(pnd_created_at__lt=_date_to_end)
             else:
-                orders = orders.filter(created_at__date__lte=date_to)
+                orders = orders.filter(created_at__lt=_date_to_end)
         except:
             pass
+
+    return orders
+
+
+def _export_logistics_orders_excel(orders, provider, date_from, date_to):
+    """Build the Logistics Orders export workbook. One row per order, same
+    columns as the on-screen table so the file matches what staff were
+    looking at when they exported it."""
+    from .timezone_utils import get_nepali_now
+    from .logistics_status import logistics_status_text
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Logistics Orders"
+
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    center_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    headers = [
+        'S.N.', 'Provider', 'Order ID', 'Vendor Ref', 'API Account',
+        'Created Date', 'Branch', 'Receiver', 'Phone', 'Address',
+        'COD Amount', 'Status',
+    ]
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.value = header
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center_alignment
+        cell.border = border
+    ws.freeze_panes = 'A2'
+
+    row_num = 2
+    for i, order in enumerate(orders.iterator(), 1):
+        is_ncm = order.logistics == 'ncm'
+        provider_label = 'NCM' if is_ncm else 'Pick & Drop'
+        provider_order_id = order.ncm_order_id if is_ncm else order.pnd_order_id
+        created_at = order.ncm_created_at if is_ncm else order.pnd_created_at
+        branch = order.ncm_destination_branch if is_ncm else order.pnd_destination_branch
+        provider_status = order.ncm_status if is_ncm else order.pnd_status
+        status_text = logistics_status_text(provider_status, order.logistics)
+
+        row_data = [
+            i, provider_label, provider_order_id or '', order.order_number,
+            order.api_config.api_name if order.api_config else 'Default',
+            created_at.strftime('%Y-%m-%d %H:%M') if created_at else '',
+            branch or 'N/A', order.customer_name or '', order.customer_phone or '',
+            order.shipping_address or '', float(order.total_amount or 0),
+            status_text,
+        ]
+        for col_num, value in enumerate(row_data, 1):
+            cell = ws.cell(row=row_num, column=col_num)
+            cell.value = value
+            cell.border = border
+            cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+            if col_num == 11:  # COD Amount
+                cell.alignment = center_alignment
+                cell.number_format = '"Rs "#,##0.00'
+        row_num += 1
+
+    column_widths = [6, 12, 12, 12, 16, 16, 12, 18, 14, 30, 14, 16]
+    for col_num, width in enumerate(column_widths, 1):
+        ws.column_dimensions[chr(64 + col_num)].width = width
+
+    range_bits = []
+    if provider and provider != 'all':
+        range_bits.append(provider)
+    if date_from:
+        range_bits.append(f"from-{date_from}")
+    if date_to:
+        range_bits.append(f"to-{date_to}")
+    suffix = ('-' + '-'.join(range_bits)) if range_bits else ''
+    filename = f"logistics-orders{suffix}-{get_nepali_now().strftime('%Y%m%d-%H%M%S')}.xlsx"
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
+
+
+@login_required
+@require_http_methods(["GET"])
+def export_logistics_orders_excel(request):
+    """Export logistics orders to Excel, honouring the same filters as the
+    list page plus a custom date range picked just for the export."""
+    if request.user.role != 'administrator' and not (
+        getattr(request.user, 'can_view_ncm_orders', False)
+        and getattr(request.user, 'can_export_logistics_orders', False)
+    ):
+        return HttpResponse("You do not have permission to export logistics orders.", status=403)
+
+    provider = request.GET.get('provider', 'all').strip()
+    search_query = request.GET.get('search', '').strip()
+    branch_filter = request.GET.get('branch', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    orders = _filtered_logistics_orders(
+        provider, search_query, branch_filter, status_filter, date_from, date_to
+    ).select_related('api_config')
+
+    return _export_logistics_orders_excel(orders, provider, date_from, date_to)
+
+
+# These three were login-only while the sidebar links to them were gated on the
+# permissions below, and while their sibling (ncm_orders_trash) enforced its
+# own - so any logged-in account could read every customer's name, phone and
+# address by typing the URL. Gated to match what the menu already declares.
+@login_required
+@permission_required('can_view_ncm_orders')
+def logistics_orders_list(request):
+    """
+    Unified Logistics Orders Page - Shows NCM and/or PND orders with a provider toggle filter
+    """
+    provider = request.GET.get('provider', 'all').strip()
+
+    # Get filter parameters
+    search_query = request.GET.get('search', '').strip()
+    branch_filter = request.GET.get('branch', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    orders = _filtered_logistics_orders(
+        provider, search_query, branch_filter, status_filter, date_from, date_to
+    )
 
     # Get total count before pagination
     total_orders = orders.count()
 
     # Get unique branches and statuses for filter dropdowns based on provider
     if provider == 'ncm':
+        # Destination branch, to match both the Branch column and the filter above.
         branches = list(Order.objects.filter(
             is_deleted=False, logistics='ncm'
-        ).exclude(ncm_from_branch__isnull=True).exclude(ncm_from_branch='').values_list(
-            'ncm_from_branch', flat=True
-        ).distinct().order_by('ncm_from_branch'))
+        ).exclude(ncm_destination_branch__isnull=True).exclude(ncm_destination_branch='').values_list(
+            'ncm_destination_branch', flat=True
+        ).distinct().order_by('ncm_destination_branch'))
         statuses = list(Order.objects.filter(
             is_deleted=False, logistics='ncm'
         ).exclude(ncm_status__isnull=True).exclude(ncm_status='').values_list(
@@ -18057,8 +21560,8 @@ def logistics_orders_list(request):
     else:
         ncm_branches = list(Order.objects.filter(
             is_deleted=False, logistics='ncm'
-        ).exclude(ncm_from_branch__isnull=True).exclude(ncm_from_branch='').values_list(
-            'ncm_from_branch', flat=True
+        ).exclude(ncm_destination_branch__isnull=True).exclude(ncm_destination_branch='').values_list(
+            'ncm_destination_branch', flat=True
         ).distinct())
         pnd_branches = list(Order.objects.filter(
             is_deleted=False, logistics='pick_and_drop'
@@ -18106,9 +21609,12 @@ def logistics_orders_list(request):
         from dashboard.models import OrderActivityLog
 
         order_ids = [order.id for order in orders_page]
+        from django.db.models.functions import Coalesce as _Coalesce
         all_logs = OrderActivityLog.objects.filter(
             order_id__in=order_ids
-        ).select_related('user', 'order').order_by('-created_at')
+        ).select_related('user', 'order').annotate(
+            _at=_Coalesce('event_at', 'created_at')
+        ).order_by('-_at')
 
         for log in all_logs:
             if log.order_id not in activity_logs:
@@ -18122,6 +21628,18 @@ def logistics_orders_list(request):
 
     # Trash count for NCM
     trash_count = Order.objects.filter(is_deleted=True, logistics='ncm').count()
+
+    # Background sync state: this page repaints its status badges live as the
+    # sync writes them, so it needs the poll cadence and something honest to
+    # show in the "Last Updated" card.
+    from ncm.scheduler import get_status as _ncm_sync_status
+    from ncm.views import _may_sync_ncm
+    _sync_status = _ncm_sync_status()
+
+    # "Sync Now" is NCM-only (Pick & Drop has no status-sync integration) and
+    # needs the sync permission, so decide once here rather than assembling the
+    # condition in the template.
+    can_sync_now = provider != 'pnd' and _may_sync_ncm(request.user)
 
     context = {
         'orders': orders_page,
@@ -18139,20 +21657,141 @@ def logistics_orders_list(request):
         'ncm_count': ncm_count,
         'pnd_count': pnd_count,
         'trash_count': trash_count,
+        'PAGE_REFRESH_INTERVAL': _sync_status['page_refresh_interval'],
+        'last_sync_at': _sync_status['last_sync_finished_at'],
+        'sync_running': _sync_status['syncing'],
+        'can_sync_now': can_sync_now,
     }
 
     return render(request, 'logistics_orders_list.html', context)
 
 
+# ==================== BULK LOGS LIST: SHARED BATCH LOOKUP ====================
+#: The list filters with nothing set - what the export uses when it is asked
+#: for everything rather than for the view currently on screen.
+BULK_LOG_LIST_NO_FILTERS = {
+    'search': '', 'branch': '', 'status': '', 'date_from': '', 'date_to': '',
+}
+
+
+def _bulk_log_list_filters(request):
+    """The Bulk Logs list filters, read off the querystring."""
+    return {key: request.GET.get(key, '').strip() for key in BULK_LOG_LIST_NO_FILTERS}
+
+
+def _bulk_log_list_batches(provider, filters):
+    """The batches the Bulk Logs list shows for `provider`, newest first.
+
+    Returns (batches, branches, all_ncm, all_pnd): the batches carrying the
+    `log_provider` / `branch_display` attributes the template and the export
+    both read, the branch choices for the filter box, and the unfiltered
+    querysets the header statistics aggregate.
+
+    The page and its export go through this one function on purpose - a filter
+    applied on only one side would hand staff a file that quietly disagrees
+    with the table they were looking at when they asked for it.
+    """
+    from ncm.models import NCMBulkLog
+    from pick_and_drop.models import PNDBulkLog
+    from itertools import chain
+    from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
+
+    def apply_filters(qs, branch_field):
+        if filters['search']:
+            qs = qs.filter(
+                Q(batch_number__icontains=filters['search']) |
+                Q(orders__order_number__icontains=filters['search']) |
+                Q(orders__customer_name__icontains=filters['search'])
+            ).distinct()
+        if filters['branch']:
+            qs = qs.filter(**{branch_field: filters['branch']})
+        if filters['status']:
+            qs = qs.filter(status=filters['status'])
+        # NOTE: __date__gte/__lte lookups silently match zero rows on this server
+        # (CONVERT_TZ() returns NULL — see dashboard/timezone_utils.py docstring).
+        if filters['date_from']:
+            try:
+                qs = qs.filter(created_at__gte=nepali_day_start(
+                    datetime.strptime(filters['date_from'], '%Y-%m-%d').date()))
+            except ValueError:
+                pass
+        if filters['date_to']:
+            try:
+                qs = qs.filter(created_at__lt=nepali_day_end_exclusive(
+                    datetime.strptime(filters['date_to'], '%Y-%m-%d').date()))
+            except ValueError:
+                pass
+        return qs.select_related('created_by')
+
+    def tag(logs, name, branch_field):
+        for log in logs:
+            log.log_provider = name
+            log.branch_display = getattr(log, branch_field)
+        return logs
+
+    ncm_all = NCMBulkLog.objects.filter(is_deleted=False)
+    pnd_all = PNDBulkLog.objects.filter(is_deleted=False)
+
+    if provider == 'ncm':
+        batches = tag(list(apply_filters(ncm_all, 'from_branch').order_by('-created_at')),
+                      'ncm', 'from_branch')
+        branches = list(ncm_all.values_list('from_branch', flat=True)
+                        .distinct().order_by('from_branch'))
+        return batches, branches, ncm_all, PNDBulkLog.objects.none()
+
+    if provider == 'pnd':
+        batches = tag(list(apply_filters(pnd_all, 'destination_branch').order_by('-created_at')),
+                      'pnd', 'destination_branch')
+        branches = list(pnd_all.values_list('destination_branch', flat=True)
+                        .distinct().order_by('destination_branch'))
+        return batches, branches, NCMBulkLog.objects.none(), pnd_all
+
+    ncm_list = tag(list(apply_filters(ncm_all, 'from_branch')), 'ncm', 'from_branch')
+    pnd_list = tag(list(apply_filters(pnd_all, 'destination_branch')), 'pnd', 'destination_branch')
+    branches = sorted(set(
+        list(ncm_all.values_list('from_branch', flat=True).distinct()) +
+        list(pnd_all.values_list('destination_branch', flat=True).distinct())
+    ))
+    batches = sorted(chain(ncm_list, pnd_list), key=lambda x: x.created_at, reverse=True)
+    return batches, branches, ncm_all, pnd_all
+
+
+def _bulk_log_list_order_counts(batches):
+    """Order-row counts per status across `batches`.
+
+    Counted from the order rows themselves rather than the batches' stored
+    counters, for the same reason the single-batch menu does it (see
+    _bulk_log_export_counts): a drifted counter would offer staff a "Failed
+    only" download that comes back empty.
+    """
+    from ncm.models import NCMBulkLogOrder
+    from pick_and_drop.models import PNDBulkLogOrder
+
+    counts = {'success': 0, 'failed': 0, 'skipped': 0}
+    for name, model in (('ncm', NCMBulkLogOrder), ('pnd', PNDBulkLogOrder)):
+        batch_ids = [b.id for b in batches if b.log_provider == name]
+        if not batch_ids:
+            continue
+        rows = (model.objects.filter(batch_id__in=batch_ids)
+                .values('status').order_by().annotate(n=Count('id')))
+        for row in rows:
+            if row['status'] in counts:
+                counts[row['status']] += row['n']
+
+    counts['all'] = sum(counts.values())
+    counts['batches'] = len(batches)
+    return counts
+
+
 @login_required
+@permission_required('can_view_ncm_bulk_logs')
 def logistics_bulk_logs_list(request):
     """
     Unified Bulk Logs Page - Shows NCM and/or PND bulk logs with a provider toggle filter.
     Supports provider=all (default), ncm, or pnd.
     """
-    from ncm.models import NCMBulkLog, NCMBulkLogOrder
-    from pick_and_drop.models import PNDBulkLog, PNDBulkLogOrder
-    from itertools import chain
+    from ncm.models import NCMBulkLogOrder
+    from pick_and_drop.models import PNDBulkLogOrder
 
     provider = request.GET.get('provider', 'all').strip()
     if provider not in ('all', 'ncm', 'pnd'):
@@ -18182,6 +21821,10 @@ def logistics_bulk_logs_list(request):
                         'status': o.status,
                         'status_display': o.get_status_display(),
                         'api_config_name': api_name,
+                        # Why this order failed. Recorded since the feature
+                        # shipped, but never shown - so a failed batch used to
+                        # be a red badge with no reason anywhere in the UI.
+                        'message': o.message or '',
                     })
             else:
                 batch_orders = NCMBulkLogOrder.objects.filter(batch_id=ajax_batch_id).select_related('order__api_config')
@@ -18201,108 +21844,20 @@ def logistics_bulk_logs_list(request):
                         'status': o.status,
                         'status_display': o.get_status_display(),
                         'api_config_name': api_name,
+                        'message': o.message or '',
                     })
             return JsonResponse({'orders': orders_data})
         except Exception:
             return JsonResponse({'orders': []})
 
-    # Filters
-    search_query = request.GET.get('search', '').strip()
-    branch_filter = request.GET.get('branch', '').strip()
-    status_filter = request.GET.get('status', '').strip()
-    date_from = request.GET.get('date_from', '').strip()
-    date_to = request.GET.get('date_to', '').strip()
+    filters = _bulk_log_list_filters(request)
+    search_query = filters['search']
+    branch_filter = filters['branch']
+    status_filter = filters['status']
+    date_from = filters['date_from']
+    date_to = filters['date_to']
 
-    def apply_filters(qs, branch_field):
-        """Apply common filters to a queryset."""
-        nonlocal search_query, branch_filter, status_filter, date_from, date_to
-        if search_query:
-            qs = qs.filter(
-                Q(batch_number__icontains=search_query) |
-                Q(orders__order_number__icontains=search_query) |
-                Q(orders__customer_name__icontains=search_query)
-            ).distinct()
-        if branch_filter:
-            qs = qs.filter(**{branch_field: branch_filter})
-        if status_filter:
-            qs = qs.filter(status=status_filter)
-        if date_from:
-            try:
-                qs = qs.filter(created_at__date__gte=datetime.strptime(date_from, '%Y-%m-%d').date())
-            except ValueError:
-                pass
-        if date_to:
-            try:
-                qs = qs.filter(created_at__date__lte=datetime.strptime(date_to, '%Y-%m-%d').date())
-            except ValueError:
-                pass
-        return qs
-
-    branches = []
-
-    if provider == 'ncm':
-        ncm_logs = apply_filters(NCMBulkLog.objects.filter(is_deleted=False), 'from_branch')
-        all_logs_ncm = NCMBulkLog.objects.filter(is_deleted=False)
-        all_logs_pnd = PNDBulkLog.objects.none()
-        branches = list(
-            NCMBulkLog.objects.filter(is_deleted=False)
-            .values_list('from_branch', flat=True)
-            .distinct().order_by('from_branch')
-        )
-        # Annotate provider for template
-        combined_logs = list(ncm_logs.order_by('-created_at'))
-        for log in combined_logs:
-            log.log_provider = 'ncm'
-            log.branch_display = log.from_branch
-
-    elif provider == 'pnd':
-        pnd_logs = apply_filters(PNDBulkLog.objects.filter(is_deleted=False), 'destination_branch')
-        all_logs_ncm = NCMBulkLog.objects.none()
-        all_logs_pnd = PNDBulkLog.objects.filter(is_deleted=False)
-        branches = list(
-            PNDBulkLog.objects.filter(is_deleted=False)
-            .values_list('destination_branch', flat=True)
-            .distinct().order_by('destination_branch')
-        )
-        combined_logs = list(pnd_logs.order_by('-created_at'))
-        for log in combined_logs:
-            log.log_provider = 'pnd'
-            log.branch_display = log.destination_branch
-
-    else:
-        # ALL - combine both
-        ncm_logs = apply_filters(NCMBulkLog.objects.filter(is_deleted=False), 'from_branch')
-        pnd_logs = apply_filters(PNDBulkLog.objects.filter(is_deleted=False), 'destination_branch')
-        all_logs_ncm = NCMBulkLog.objects.filter(is_deleted=False)
-        all_logs_pnd = PNDBulkLog.objects.filter(is_deleted=False)
-
-        ncm_branches = list(
-            NCMBulkLog.objects.filter(is_deleted=False)
-            .values_list('from_branch', flat=True)
-            .distinct()
-        )
-        pnd_branches = list(
-            PNDBulkLog.objects.filter(is_deleted=False)
-            .values_list('destination_branch', flat=True)
-            .distinct()
-        )
-        branches = sorted(set(ncm_branches + pnd_branches))
-
-        ncm_list = list(ncm_logs)
-        for log in ncm_list:
-            log.log_provider = 'ncm'
-            log.branch_display = log.from_branch
-
-        pnd_list = list(pnd_logs)
-        for log in pnd_list:
-            log.log_provider = 'pnd'
-            log.branch_display = log.destination_branch
-
-        combined_logs = sorted(
-            chain(ncm_list, pnd_list),
-            key=lambda x: x.created_at,
-            reverse=True
-        )
+    combined_logs, branches, all_logs_ncm, all_logs_pnd = _bulk_log_list_batches(provider, filters)
 
     # Statistics (across the selected provider scope, unfiltered)
     ncm_stats = all_logs_ncm.aggregate(
@@ -18329,6 +21884,11 @@ def logistics_bulk_logs_list(request):
     paginator = Paginator(combined_logs, 20)
     logs = paginator.get_page(page_number)
 
+    # Terminate/Resume state for the Actions column. Done for the page as a
+    # whole (two queries) rather than per row.
+    from .bulk_batch import annotate_controls
+    annotate_controls(list(logs))
+
     context = {
         'logs': logs,
         'total_batches': total_batches,
@@ -18342,11 +21902,341 @@ def logistics_bulk_logs_list(request):
         'date_from': date_from,
         'date_to': date_to,
         'provider': provider,
+        'has_filters': any(filters.values()),
+        'filtered_batches': paginator.count,
+        'export_counts': _bulk_log_list_order_counts(combined_logs),
+        'can_manage_batches': has_any_permission(request.user, 'can_manage_ncm_bulk_logs'),
     }
     return render(request, 'logistics_bulk_logs.html', context)
 
 
+# ==================== BULK LOGS LIST EXPORT ====================
+#: What a list export can carry. 'batches' is one row per batch, 'orders'
+#: flattens every order row inside those batches, 'both' is a workbook holding
+#: the two sheets. A CSV can only carry one table, so a CSV asking for 'both'
+#: gets the batch list.
+BULK_LOG_LIST_INCLUDE = ('batches', 'orders', 'both')
+
+#: Which batches to take: the current filtered view, only the rows ticked on
+#: the page, or every batch in the provider view regardless of the filters.
+BULK_LOG_LIST_SCOPES = ('view', 'selected', 'all')
+
+#: Ceiling on flattened order rows. A year of batches is tens of thousands of
+#: rows and openpyxl holds every one of them in memory; when the cut actually
+#: happens the Summary sheet says so, so a truncated file can never pass for a
+#: complete one.
+BULK_LOG_LIST_MAX_ORDER_ROWS = 20000
+
+#: A ticked page holds 20 rows; the cap only bounds a hand-made URL.
+BULK_LOG_LIST_MAX_SELECTED = 500
+
+BULK_LOG_PROVIDER_LABELS = {'ncm': 'Nepal Can Move', 'pnd': 'Pick & Drop'}
+
+
+def _bulk_log_list_batch_columns():
+    """Columns of the batch sheet - the list table, plus what it has no room for."""
+    return [
+        'S.N.', 'Batch Number', 'Provider', 'Status', 'Total Orders', 'Success',
+        'Failed', 'Skipped', 'Branch', 'Delivery Type', 'Sent By', 'Sent At',
+        'Completed At',
+    ]
+
+
+def _bulk_log_list_order_columns():
+    """The single-batch order columns, told which batch each row came from.
+
+    Built from _bulk_log_export_columns so the flattened sheet and the
+    per-batch export stay the same shape; only the tracking-ID heading is
+    generic here, since one file can hold both providers' rows.
+    """
+    base = _bulk_log_export_columns('Tracking ID')
+    return base[:1] + ['Batch Number', 'Provider'] + base[1:]
+
+
+def _bulk_log_list_batch_rows(batches):
+    """One row per batch, in the order the list shows them."""
+    from .timezone_utils import format_nepali_datetime
+
+    rows = []
+    for index, log in enumerate(batches, start=1):
+        rows.append([
+            index,
+            log.batch_number,
+            BULK_LOG_PROVIDER_LABELS.get(log.log_provider, log.log_provider),
+            log.get_status_display(),
+            log.total_orders,
+            log.success_count,
+            log.failed_count,
+            log.skipped_count,
+            log.branch_display or '',
+            # Pick & Drop batches carry no delivery type.
+            getattr(log, 'delivery_type', '') or '',
+            log.created_by.username if log.created_by else 'System',
+            format_nepali_datetime(log.created_at),
+            format_nepali_datetime(log.completed_at),
+        ])
+    return rows
+
+
+def _bulk_log_list_order_rows(batches, statuses):
+    """Every order row inside `batches`, batch by batch, numbered across the file.
+
+    The rows are fetched one query per provider rather than one per batch: a
+    filtered list can hold hundreds of batches, and a per-batch query there is
+    what turns an export into a timeout. Returns (rows, truncated).
+    """
+    from collections import defaultdict
+    from ncm.models import NCMBulkLogOrder
+    from pick_and_drop.models import PNDBulkLogOrder
+
+    entries = defaultdict(list)
+    for name, model in (('ncm', NCMBulkLogOrder), ('pnd', PNDBulkLogOrder)):
+        batch_ids = [b.id for b in batches if b.log_provider == name]
+        if not batch_ids:
+            continue
+        qs = model.objects.filter(batch_id__in=batch_ids).select_related('order__api_config')
+        if statuses:
+            qs = qs.filter(status__in=statuses)
+        for entry in qs.order_by('batch_id', 'created_at', 'id'):
+            entries[(name, entry.batch_id)].append(entry)
+
+    rows = []
+    for log in batches:
+        id_field = 'ncm_order_id' if log.log_provider == 'ncm' else 'pnd_order_id'
+        label = BULK_LOG_PROVIDER_LABELS.get(log.log_provider, log.log_provider)
+        for row in _bulk_log_export_rows(entries.get((log.log_provider, log.id), []),
+                                         'all', id_field):
+            if len(rows) >= BULK_LOG_LIST_MAX_ORDER_ROWS:
+                return rows, True
+            # The per-batch S.N. restarts at 1; renumber across the whole file.
+            rows.append([len(rows) + 1, log.batch_number, label] + row[1:])
+
+    return rows, False
+
+
+def _bulk_log_list_filter_summary(filters):
+    """The active filters in words, for the Summary sheet."""
+    labels = (
+        ('search', 'Search "{}"'),
+        ('branch', 'Branch: {}'),
+        ('status', 'Batch status: {}'),
+        ('date_from', 'From: {}'),
+        ('date_to', 'To: {}'),
+    )
+    parts = [text.format(filters[key]) for key, text in labels if filters.get(key)]
+    return ', '.join(parts)
+
+
+def _bulk_log_list_export_filename(provider, include, extension):
+    from .timezone_utils import get_nepali_now
+
+    return 'bulk-logs-{}-{}-{}.{}'.format(
+        provider, include, get_nepali_now().strftime('%Y%m%d'), extension
+    )
+
+
+def _bulk_log_list_export_csv(provider, include, columns, rows):
+    import csv
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+        _bulk_log_list_export_filename(provider, include, 'csv')
+    )
+    # Excel on Windows reads a bare UTF-8 CSV as ANSI and mangles Nepali
+    # receiver names and addresses; the BOM is what makes it pick the right codec.
+    response.write('﻿')
+
+    writer = csv.writer(response)
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow(row)
+    return response
+
+
 @login_required
+@permission_required('can_view_ncm_bulk_logs', 'can_export_logistics_bulk_logs')
+def logistics_bulk_logs_export(request):
+    """Export the Bulk Logs list: the batches, their order rows, or both.
+
+    Reads the list's own filters (?provider/search/branch/status/date_from/
+    date_to) through the same helpers the page does, so what downloads is what
+    the page was showing. ?scope=selected takes only the batches whose ids are
+    passed in ?ids (as "<provider>:<id>"), and ?scope=all ignores the filters
+    and takes the whole provider view.
+    """
+    from .timezone_utils import format_nepali_datetime, get_nepali_now
+
+    provider = request.GET.get('provider', 'all').strip()
+    if provider not in ('all', 'ncm', 'pnd'):
+        provider = 'all'
+
+    include = (request.GET.get('include') or 'batches').lower()
+    if include not in BULK_LOG_LIST_INCLUDE:
+        include = 'batches'
+
+    export_format = 'csv' if (request.GET.get('format') or '').lower() == 'csv' else 'xlsx'
+
+    scope = (request.GET.get('scope') or 'view').lower()
+    if scope not in BULK_LOG_LIST_SCOPES:
+        scope = 'view'
+
+    # Order-row statuses to keep. Named apart from the list's own `status`,
+    # which filters batches, not the rows inside them.
+    statuses = [s for s in request.GET.getlist('order_status')
+                if s in ('success', 'failed', 'skipped')]
+
+    filters = _bulk_log_list_filters(request) if scope == 'view' else dict(BULK_LOG_LIST_NO_FILTERS)
+
+    try:
+        batches, _branches, _ncm, _pnd = _bulk_log_list_batches(provider, filters)
+
+        if scope == 'selected':
+            keys = [k.strip() for k in request.GET.get('ids', '').split(',') if k.strip()]
+            keys = set(keys[:BULK_LOG_LIST_MAX_SELECTED])
+            batches = [b for b in batches if '{}:{}'.format(b.log_provider, b.id) in keys]
+
+        batch_rows = _bulk_log_list_batch_rows(batches) if include in ('batches', 'both') else []
+        order_rows, truncated = (_bulk_log_list_order_rows(batches, statuses)
+                                 if include in ('orders', 'both') else ([], False))
+
+        if export_format == 'csv':
+            # One table per file; 'both' falls back to the batch list.
+            if include == 'orders':
+                return _bulk_log_list_export_csv(
+                    provider, 'orders', _bulk_log_list_order_columns(), order_rows)
+            return _bulk_log_list_export_csv(
+                provider, 'batches', _bulk_log_list_batch_columns(), batch_rows)
+
+        scope_label = {
+            'view': 'Current view',
+            'selected': 'Selected batches',
+            'all': 'All batches in this view',
+        }[scope]
+        summary_rows = [
+            ('Export', 'Logistics Bulk Logs'),
+            ('Provider', BULK_LOG_PROVIDER_LABELS.get(provider, 'All providers')),
+            ('Scope', scope_label),
+            ('Filters', _bulk_log_list_filter_summary(filters) or 'None'),
+            ('Batches', len(batches)),
+        ]
+        if include in ('orders', 'both'):
+            summary_rows += [
+                ('Order Rows', len(order_rows)),
+                ('Order Statuses', ', '.join(s.title() for s in statuses) if statuses else 'All'),
+            ]
+        if truncated:
+            summary_rows.append((
+                'Truncated',
+                'Cut at {} order rows - narrow the filters and export again'.format(
+                    BULK_LOG_LIST_MAX_ORDER_ROWS),
+            ))
+        summary_rows += [
+            ('Generated At', format_nepali_datetime(get_nepali_now())),
+            ('Generated By', request.user.get_username()),
+        ]
+
+        wb = Workbook()
+        summary = wb.active
+        summary.title = 'Summary'
+        _bulk_log_write_summary_sheet(summary, summary_rows)
+        if include in ('batches', 'both'):
+            _bulk_log_write_export_sheet(
+                wb.create_sheet('Batches'), _bulk_log_list_batch_columns(), batch_rows)
+        if include in ('orders', 'both'):
+            _bulk_log_write_export_sheet(
+                wb.create_sheet('Orders'), _bulk_log_list_order_columns(), order_rows)
+
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+            _bulk_log_list_export_filename(provider, include, 'xlsx')
+        )
+        wb.save(response)
+        return response
+    except Exception as e:
+        logger.exception('Bulk logs list export failed (provider=%s, include=%s)',
+                         provider, include)
+        messages.error(request, 'Could not export the bulk logs: {}'.format(e))
+        return redirect('logistics_bulk_logs_list')
+
+
+# ==================== BULK BATCH CONTROL (terminate / resume) ====================
+
+@login_required
+@require_POST
+def logistics_bulk_log_terminate(request, provider, log_id):
+    """Stop a bulk batch that is stuck (or genuinely still) processing."""
+    from .bulk_batch import BatchError, terminate
+
+    # Checked here rather than with @permission_required: these are called over
+    # AJAX, and that decorator answers a refusal with an HTML redirect plus a
+    # queued message that would resurface on the next page. See has_any_permission.
+    if not has_any_permission(request.user, 'can_manage_ncm_bulk_logs'):
+        return JsonResponse(
+            {'success': False, 'message': 'You do not have permission to manage bulk logs.'},
+            status=403,
+        )
+
+    try:
+        message, state = terminate(provider, log_id, request.user)
+    except BatchError as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=400)
+    except Exception as e:
+        logger.exception('Bulk batch terminate failed for %s #%s', provider, log_id)
+        return JsonResponse(
+            {'success': False, 'message': f'Could not terminate the batch: {e}'},
+            status=500,
+        )
+
+    return JsonResponse({'success': True, 'message': message, 'state': state})
+
+
+@login_required
+@require_POST
+def logistics_bulk_log_resume(request, provider, log_id):
+    """Send the orders a bulk batch never got to, on a background thread."""
+    from .bulk_batch import BatchError, resume
+
+    if not has_any_permission(request.user, 'can_manage_ncm_bulk_logs'):
+        return JsonResponse(
+            {'success': False, 'message': 'You do not have permission to manage bulk logs.'},
+            status=403,
+        )
+
+    try:
+        message, state = resume(provider, log_id, request.user)
+    except BatchError as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=400)
+    except Exception as e:
+        logger.exception('Bulk batch resume failed for %s #%s', provider, log_id)
+        return JsonResponse(
+            {'success': False, 'message': f'Could not resume the batch: {e}'},
+            status=500,
+        )
+
+    return JsonResponse({'success': True, 'message': message, 'state': state})
+
+
+@login_required
+def logistics_bulk_log_progress(request):
+    """Live state for the batches on the current Bulk Logs page.
+
+    Takes `keys` as a comma-separated list of "<provider>:<id>" so one poll
+    covers every spinning row, rather than one request per row.
+    """
+    from .bulk_batch import progress_states
+
+    if not has_any_permission(request.user, 'can_view_ncm_bulk_logs', 'can_manage_ncm_bulk_logs'):
+        return JsonResponse({'states': []}, status=403)
+
+    keys = [k.strip() for k in request.GET.get('keys', '').split(',') if k.strip()]
+    # A page holds 20; the cap just bounds a hand-made URL.
+    return JsonResponse({'states': progress_states(keys[:50])})
+
+
+@login_required
+@permission_required('can_view_ncm_branches')
 def logistics_branches(request):
     """
     Unified Logistics Branches page - currently shows NCM branches.
@@ -18825,18 +22715,77 @@ def settings_hub(request):
             except (ValueError, TypeError):
                 return default
 
-        api_settings.order_sync_interval = _safe_int('order_sync_interval', api_settings.order_sync_interval, 60, 86400)
-        api_settings.webhook_check_interval = _safe_int('webhook_check_interval', api_settings.webhook_check_interval, 10, 3600)
+        # order_sync_interval is the real server-side NCM cadence, so its floor
+        # is enforced here as well as in the form - ncm.scheduler clamps it a
+        # second time when it actually schedules, because a hand-crafted POST
+        # or a legacy row must not be able to point the sync at NCM every second.
+        from ncm.scheduler import MIN_SYNC_SECONDS
+        api_settings.order_sync_interval = _safe_int(
+            'order_sync_interval', api_settings.order_sync_interval, MIN_SYNC_SECONDS, 86400)
+        api_settings.page_refresh_interval = _safe_int(
+            'page_refresh_interval', api_settings.page_refresh_interval, 10, 3600)
         api_settings.ncm_api_timeout = _safe_int('ncm_api_timeout', api_settings.ncm_api_timeout, 5, 120)
-        api_settings.save()
+
+        # Only persist statuses that actually exist in Setup Management. This
+        # list feeds a `status__in` filter in the background sync, so an
+        # unrecognized value (stale checkbox, hand-crafted POST) would
+        # silently narrow the sync to nothing instead of erroring.
+        valid_status_values = {
+            s.name.lower().replace(' ', '_')
+            for s in Setup.objects.filter(setup_type='status', is_active=True)
+        }
+        submitted_statuses = request.POST.getlist('included_statuses')
+        api_settings.bulk_sync_included_statuses = [
+            s for s in dict.fromkeys(submitted_statuses) if s in valid_status_values
+        ]
+        api_settings.bulk_sync_fetch_event_times = bool(request.POST.get('bulk_sync_fetch_event_times'))
+
+        # Write only the admin-editable columns. A plain save() would also write
+        # back the scheduler's lock/clock columns as they looked when this page
+        # was rendered - so saving settings while a sync happened to be running
+        # would clear `bulk_sync_running_since` underneath it and let a second
+        # sync start on top of the first.
+        api_settings.save(update_fields=[
+            'order_sync_interval', 'page_refresh_interval', 'ncm_api_timeout',
+            'bulk_sync_included_statuses', 'bulk_sync_fetch_event_times', 'updated_at',
+        ])
         messages.success(request, 'API settings saved successfully!')
         from django.urls import reverse
         return redirect(reverse('settings_hub') + '?section=api_settings')
+
+    # Order statuses selectable for the background NCM bulk-sync (Settings -> API Sync Settings).
+    # Same Setup-driven source/normalization as the orders-list status filter (see orders_list view).
+    order_status_setups = Setup.objects.filter(setup_type='status', is_active=True).order_by('sort_order', 'name')
+    included_statuses = set(api_settings.bulk_sync_included_statuses or [])
+    bulk_sync_status_choices = [
+        {
+            'value': setup.name.lower().replace(' ', '_'),
+            'label': setup.name,
+            'checked': setup.name.lower().replace(' ', '_') in included_statuses,
+        }
+        for setup in order_status_setups
+    ]
+
+    # Live health of the background NCM sync, plus the order count the interval
+    # field uses to show what a given cadence costs in API calls.
+    from ncm.bulk_sync import DEFAULT_TERMINAL_STATUSES
+    from ncm.scheduler import get_status as _ncm_sync_status
+    _sync_status = _ncm_sync_status()
+    # Mirrors how the sync itself picks candidates (ncm/bulk_sync.py), so the
+    # cost estimate reflects the orders that will actually be requested.
+    _included = api_settings.bulk_sync_included_statuses or []
+    _active_qs = Order.objects.filter(ncm_order_id__isnull=False, is_deleted=False)
+    _active_qs = (_active_qs.filter(status__in=_included) if _included
+                  else _active_qs.exclude(status__in=DEFAULT_TERMINAL_STATUSES))
+    active_ncm_order_count = _active_qs.count()
 
     context = {
         'active_section': active_section,
         'company': company,
         'api_settings': api_settings,
+        'bulk_sync_status_choices': bulk_sync_status_choices,
+        'bulk_sync_is_running': _sync_status['syncing'],
+        'active_ncm_order_count': active_ncm_order_count,
         'devices': device_list,
         'device_count': len(device_list),
         'maintenance': maintenance,
@@ -18918,6 +22867,172 @@ def company_setup(request):
         return redirect('company_setup')
 
     return render(request, 'company_setup.html', {'company': company})
+
+
+# ==================== LANDING PAGE SETUP ====================
+
+@login_required
+def landing_page_setup(request):
+    """Full editor for the public marketing landing page (admin only)."""
+    import re
+    from .models import LandingPageSettings, LandingStatItem, LandingBrandLogo, LandingFeatureCard
+
+    if not (request.user.is_superuser or request.user.role == 'administrator'):
+        messages.error(request, 'You do not have permission to access Landing Page Setup.', extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    landing = LandingPageSettings.get_settings()
+    allowed_image_types = ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp']
+    max_logo_size = 2 * 1024 * 1024  # 2 MB, matches CompanySetup logo limit
+    upload_warnings = []
+
+    def validate_logo(f):
+        if f.content_type not in allowed_image_types:
+            return False, f'"{f.name}" was skipped — must be PNG, JPG, GIF, SVG or WebP.'
+        if f.size > max_logo_size:
+            return False, f'"{f.name}" was skipped — file size must be under 2 MB.'
+        return True, ''
+
+    if request.method == 'POST':
+        text_fields = [
+            'hero_pill_text', 'hero_headline', 'hero_subtext',
+            'hero_cta_primary_text', 'hero_cta_primary_link',
+            'hero_cta_secondary_text', 'hero_cta_secondary_link', 'hero_note_text',
+            'trusted_label',
+            'solutions_eyebrow', 'solutions_heading', 'solutions_subtext',
+            'solution_card1_title', 'solution_card1_text',
+            'solution_card2_title', 'solution_card2_text',
+            'platform_eyebrow', 'platform_heading', 'platform_subtext',
+            'integrations_eyebrow', 'integrations_heading',
+            'cta_heading', 'cta_subtext', 'cta_primary_text', 'cta_secondary_text',
+            'business_address', 'business_pan', 'business_contact',
+            'social_instagram', 'social_facebook', 'social_tiktok', 'social_whatsapp', 'social_email',
+        ]
+        for field in text_fields:
+            if field in request.POST:
+                setattr(landing, field, request.POST.get(field, '').strip())
+
+        # Bare domains (e.g. "instagram.com/x") would otherwise render as a broken
+        # relative link, so normalize to a full URL — but leave the email field alone.
+        for url_field in ('social_instagram', 'social_facebook', 'social_tiktok', 'social_whatsapp'):
+            value = getattr(landing, url_field)
+            if value and not re.match(r'^https?://', value, re.IGNORECASE):
+                setattr(landing, url_field, f'https://{value}')
+
+        # ---- Stat panel rows (delete & recreate — text only, no files) ----
+        stat_labels = request.POST.getlist('stat_label[]')
+        stat_values = request.POST.getlist('stat_value[]')
+        stat_colors = request.POST.getlist('stat_color[]')
+        stat_groups = request.POST.getlist('stat_group[]')
+        valid_groups = {c[0] for c in LandingStatItem.GROUP_CHOICES}
+        valid_dots = {c[0] for c in LandingStatItem.DOT_CHOICES}
+        new_stats = []
+        for i, label in enumerate(stat_labels):
+            label = label.strip()
+            if not label:
+                continue
+            group = stat_groups[i] if i < len(stat_groups) and stat_groups[i] in valid_groups else 'primary'
+            dot = stat_colors[i] if i < len(stat_colors) and stat_colors[i] in valid_dots else ''
+            new_stats.append(LandingStatItem(
+                settings=landing, label=label,
+                value=(stat_values[i].strip() if i < len(stat_values) else ''),
+                dot_color=dot, group=group, order=i,
+            ))
+        landing.stat_items.all().delete()
+        LandingStatItem.objects.bulk_create(new_stats)
+
+        # ---- Feature / integration cards (delete & recreate — text only) ----
+        card_sections = request.POST.getlist('card_section[]')
+        card_icons = request.POST.getlist('card_icon[]')
+        card_titles = request.POST.getlist('card_title[]')
+        card_descriptions = request.POST.getlist('card_description[]')
+        valid_sections = {c[0] for c in LandingFeatureCard.SECTION_CHOICES}
+        new_cards = []
+        for i, title in enumerate(card_titles):
+            title = title.strip()
+            if not title:
+                continue
+            section = card_sections[i] if i < len(card_sections) and card_sections[i] in valid_sections else 'platform'
+            new_cards.append(LandingFeatureCard(
+                settings=landing, section=section,
+                icon=(card_icons[i].strip() if i < len(card_icons) and card_icons[i].strip() else 'fas fa-star'),
+                title=title,
+                description=(card_descriptions[i].strip() if i < len(card_descriptions) else ''),
+                order=i,
+            ))
+        landing.feature_cards.all().delete()
+        LandingFeatureCard.objects.bulk_create(new_cards)
+
+        # ---- Brand logos (id-based update/delete so uploaded images survive resubmits) ----
+        for key in list(request.POST.keys()):
+            m = re.match(r'^brand_name_(\d+)$', key)
+            if not m:
+                continue
+            pk = int(m.group(1))
+            try:
+                brand = landing.brand_logos.get(pk=pk)
+            except LandingBrandLogo.DoesNotExist:
+                continue
+            if request.POST.get(f'brand_delete_{pk}') == '1':
+                if brand.logo:
+                    brand.logo.delete(save=False)
+                brand.delete()
+                continue
+            name = request.POST.get(key, '').strip()
+            if name:
+                brand.name = name
+            order_val = request.POST.get(f'brand_order_{pk}')
+            if order_val and order_val.isdigit():
+                brand.order = int(order_val)
+            file_key = f'brand_logo_{pk}'
+            if file_key in request.FILES:
+                logo_file = request.FILES[file_key]
+                ok, reason = validate_logo(logo_file)
+                if ok:
+                    if brand.logo:
+                        brand.logo.delete(save=False)
+                    brand.logo = logo_file
+                else:
+                    upload_warnings.append(reason)
+            brand.save()
+
+        # New brand rows: brand_name_new_<tempid>
+        for key in list(request.POST.keys()):
+            m = re.match(r'^brand_name_new_(\w+)$', key)
+            if not m:
+                continue
+            tempid = m.group(1)
+            name = request.POST.get(key, '').strip()
+            if not name:
+                continue
+            order_val = request.POST.get(f'brand_order_new_{tempid}')
+            order = int(order_val) if order_val and order_val.isdigit() else 0
+            new_brand = LandingBrandLogo(settings=landing, name=name, order=order)
+            file_key = f'brand_logo_new_{tempid}'
+            if file_key in request.FILES:
+                logo_file = request.FILES[file_key]
+                ok, reason = validate_logo(logo_file)
+                if ok:
+                    new_brand.logo = logo_file
+                else:
+                    upload_warnings.append(reason)
+            new_brand.save()
+
+        landing.save()
+        for warning in upload_warnings:
+            messages.warning(request, warning)
+        messages.success(request, 'Landing page updated successfully!')
+        return redirect('landing_page_setup')
+
+    context = {
+        'landing': landing,
+        'primary_stats': landing.stat_items.filter(group='primary'),
+        'secondary_stats': landing.stat_items.filter(group='secondary'),
+        'brand_logos': landing.brand_logos.all(),
+        'platform_cards': landing.feature_cards.filter(section='platform'),
+        'integration_cards': landing.feature_cards.filter(section='integration'),
+    }
+    return render(request, 'landing_page_setup.html', context)
 
 
 # ===================== RTV STATUS MANAGEMENT =====================
@@ -19116,6 +23231,348 @@ def get_rtv_followups(request, rtv_id):
     return JsonResponse({'success': True, 'followups': data})
 
 
+class RTVCommentSync(NamedTuple):
+    """What one sync_rtv_from_ncm_comments call actually did.
+
+    Split out because callers used to get a single `changed` bool covering
+    three unrelated writes, and the RTV page reported all of them to the user
+    as "date(s) updated" — including comment-text refreshes and first-time
+    backfills of dates NCM had never changed. See ncm_rtvs_sync.
+    """
+
+    resolved: bool          # NCM answered at all
+    fields_changed: bool    # comment and/or vendor_return refreshed
+    date_backfilled: bool   # date was missing/untrusted, now resolved (a repair)
+    date_changed: bool      # an already-trusted date moved (real NCM-side change)
+
+    @property
+    def changed(self) -> bool:
+        """Any local write at all — the old single-bool meaning."""
+        return self.fields_changed or self.date_backfilled or self.date_changed
+
+
+def sync_rtv_from_ncm_comments(ncm_service, order_id, use_status_fallback=False):
+    """Refresh one RTVOrder's date/comment/vendor_return from NCM.
+
+    Single source of truth for "ask NCM when this RTV was marked", shared by
+    both sync modes and the repair management command — three divergent copies
+    of this logic is how the wrong dates got in.
+
+    Only the "RTV marked" comment's added_time is authoritative. When there is
+    no such comment and use_status_fallback is set, the order's status timeline
+    supplies an approximate (upper-bound) date instead, recorded as such so a
+    later real comment can still replace it.
+
+    Returns:
+        RTVCommentSync — .resolved is False when NCM couldn't be reached, in
+        which case rtv_marked_at_checked_at is left alone so the row stays at
+        the front of the repair queue.
+    """
+    from dashboard.models import RTVOrder
+    from services.ncm_service import NCMService
+
+    rtv = RTVOrder.objects.filter(order_id=order_id).first()
+    if not rtv:
+        return RTVCommentSync(False, False, False, False)
+
+    cresult = ncm_service.get_order_comments(order_id)
+    if not cresult.get('success'):
+        return RTVCommentSync(False, False, False, False)
+
+    found = NCMService.extract_rtv_marked_at(cresult.get('data') or [])
+
+    fields_changed = False
+    simple_fields = []
+    if found['comment'] and rtv.comment != found['comment']:
+        rtv.comment = found['comment']
+        simple_fields.append('comment')
+        fields_changed = True
+    if found['vendor_return'] is not None and rtv.vendor_return != found['vendor_return']:
+        rtv.vendor_return = found['vendor_return']
+        simple_fields.append('vendor_return')
+        fields_changed = True
+
+    marked_at, source = found['marked_at'], found['source']
+    if marked_at is None and use_status_fallback:
+        sresult = ncm_service.get_order_status(order_id)
+        if sresult.get('success'):
+            data = sresult.get('data') or []
+            entries = data if isinstance(data, list) else [data]
+            marked_at, source = NCMService.extract_return_step_time(entries)
+
+    # Snapshot before the write: a row whose date was missing or came from an
+    # untrusted source is being *repaired* to a value NCM has held all along,
+    # not told that NCM changed. Only a move on an already-trusted date is a
+    # genuine change worth surfacing.
+    was_trusted = (
+        rtv.rtv_marked_at is not None
+        and rtv.rtv_marked_at_source in RTVOrder.TRUSTED_SOURCES
+    )
+
+    # apply_rtv_marked_at always stamps checked_at, so the row leaves the front
+    # of the repair queue even when NCM had no date for us.
+    date_written = NCMService.apply_rtv_marked_at(rtv, marked_at, source, save=False)
+    rtv.save(update_fields=simple_fields + [
+        'rtv_marked_at_checked_at',
+        *(['rtv_marked_at', 'rtv_marked_at_source'] if date_written else []),
+    ])
+
+    return RTVCommentSync(
+        resolved=True,
+        fields_changed=fields_changed,
+        date_backfilled=date_written and not was_trusted,
+        date_changed=date_written and was_trusted,
+    )
+
+
+def rtv_needs_date_verification(queryset):
+    """RTVs whose rtv_marked_at is missing or came from an untrusted source.
+
+    Ordered least-recently-checked first so a bounded batch (NCM rate limits
+    cap us at a handful per call) works through the backlog instead of
+    re-picking the same rows every sync.
+    """
+    from dashboard.models import RTVOrder
+
+    return queryset.filter(
+        Q(rtv_marked_at__isnull=True)
+        | ~Q(rtv_marked_at_source__in=RTVOrder.TRUSTED_SOURCES)
+    ).order_by(F('rtv_marked_at_checked_at').asc(nulls_first=True), 'id')
+
+
+# NCM allows about three v1 requests a second per account.
+# NCMService._make_request now paces itself against that and retries a 429,
+# so this cap is no longer what prevents errors - it is what keeps an
+# interactive sync from queueing behind its own backlog. It is a budget for
+# the whole request, not per portal — three active configs used to mean 3x
+# this many calls.
+RTV_COMMENT_SYNC_BATCH = 6
+
+
+def select_rtv_comment_sync_batch(config_ids, limit=RTV_COMMENT_SYNC_BATCH):
+    """Pick which RTVs to re-ask NCM about this sync, neediest first.
+
+    Three tiers, in priority order:
+      1. date missing or from an untrusted source — the repair backlog
+      2. no comment stored at all
+      3. any active RTV, to notice an unmark -> re-mark
+
+    Every tier is ordered by rtv_marked_at_checked_at (nulls first) so a
+    bounded batch works through its backlog. Tier 2 used to rely on the
+    model's default ordering (-rtv_marked_at, -created_at), which meant the
+    same three rows were re-picked on every single sync forever: NCM has no
+    comment for them, so nothing ever moved them off the top, so the other
+    ~185 empty-comment rows were never checked at all and half the request's
+    rate-limit budget was spent re-fetching rows that could not change.
+
+    Returns:
+        list of (order_id, api_config_id), at most `limit` long, no repeats.
+    """
+    from dashboard.models import RTVOrder
+
+    base = RTVOrder.objects.filter(api_config_id__in=config_ids)
+    by_staleness = (F('rtv_marked_at_checked_at').asc(nulls_first=True), 'id')
+
+    tiers = (
+        rtv_needs_date_verification(base),           # already ordered by staleness
+        base.filter(comment='').order_by(*by_staleness),
+        base.filter(vendor_return=True).order_by(*by_staleness),
+    )
+
+    picked = []
+    seen = set()
+    for tier in tiers:
+        if len(picked) >= limit:
+            break
+        rows = tier.exclude(order_id__in=seen).values_list(
+            'order_id', 'api_config_id'
+        )[:limit - len(picked)]
+        for order_id, cfg_id in rows:
+            picked.append((order_id, cfg_id))
+            seen.add(order_id)
+
+    return picked
+
+
+def _normalize_np_phone(raw):
+    """Reduce a phone to its comparable 10-digit Nepali subscriber number.
+
+    NCM returns receiver phones in whatever shape the order was created with
+    (+977, 977-, spaces, dashes), so raw string equality against
+    Order.customer_phone misses most real matches.
+    """
+    digits = re.sub(r'\D', '', raw or '')
+    if len(digits) > 10 and digits.startswith('977'):
+        digits = digits[3:]
+    return digits[-10:] if len(digits) >= 10 else ''
+
+
+# Above this many distinct receiver phones, resolve_rtv_order_by stops issuing
+# one `customer_phone LIKE '%<number>'` per phone. A trailing-wildcard LIKE
+# cannot use an index, so every term is its own full scan of Orders — fine for
+# the 25 rows of a list page, ruinous for the RTV report, which resolves a
+# whole date range at once. Past the threshold a single narrow pass over
+# (id, phone, created_at) indexes every order phone in memory instead.
+PHONE_INDEX_THRESHOLD = 40
+
+
+def resolve_rtv_order_by(rtv_orders):
+    """Map NCM order id -> the staff member who took the underlying local order.
+
+    An RTV row carries only NCM's order id, so attribution has to be
+    reconstructed. Three sources are tried, most authoritative first; a later
+    layer never overwrites an earlier one:
+
+      1. Order.ncm_order_id — written back when this app dispatched the order
+         to NCM. Exact, but absent for orders punched straight into the NCM
+         portal or created before that write-back existed.
+      2. NCMBulkLogOrder.ncm_order_id — the bulk-send log's own record of
+         which local order became which NCM order. Also exact, and it survives
+         the case where the write-back onto Order failed or the id was later
+         cleared by order recovery.
+      3. Receiver phone — every RTV NCM returns carries receiver_phone, so a
+         customer's local order can still be found even when nothing ever
+         linked the two ids. This is a heuristic: it is flagged 'phone' so the
+         UI can mark it probable, and it is never written back to the DB.
+
+    rtv.vendor is deliberately not a fallback — that is whoever marked the RTV
+    in this app, not who took the order.
+    """
+    from ncm.models import NCMBulkLogOrder
+
+    resolved = {}
+    if not rtv_orders:
+        return resolved
+
+    ncm_ids = [r.order_id for r in rtv_orders]
+
+    def _pack(order, source):
+        u = order.created_by
+        return {
+            'name': (u.get_full_name() or u.username) if u else None,
+            'username': u.username if u else None,
+            'user_id': u.id if u else None,
+            'role': (u.role or '').replace('_', ' ').title() if u else None,
+            'order_pk': order.id,
+            'order_number': order.order_number,
+            'order_from': order.order_from or '',
+            'is_deleted': bool(order.is_deleted),
+            'match': source,
+            'ambiguous': False,
+        }
+
+    # ── 1. Exact: the id stamped on the order itself ──────────────────
+    for o in Order.objects.filter(
+        ncm_order_id__in=ncm_ids
+    ).select_related('created_by'):
+        resolved[o.ncm_order_id] = _pack(o, 'exact')
+
+    # ── 2. Exact: the bulk-send log that created the NCM order ────────
+    missing_ids = [i for i in ncm_ids if i not in resolved]
+    if missing_ids:
+        # Oldest first so the earliest send wins if an order was re-sent.
+        for ble in NCMBulkLogOrder.objects.filter(
+            ncm_order_id__in=missing_ids, order__isnull=False
+        ).select_related('order__created_by').order_by('created_at'):
+            if ble.ncm_order_id not in resolved:
+                resolved[ble.ncm_order_id] = _pack(ble.order, 'bulk_log')
+
+        # Log rows whose order FK was nulled still kept the order number.
+        orphan_ids = [i for i in ncm_ids if i not in resolved]
+        if orphan_ids:
+            number_by_ncm_id = {}
+            for ncm_id, number in NCMBulkLogOrder.objects.filter(
+                ncm_order_id__in=orphan_ids
+            ).exclude(order_number='').order_by('created_at').values_list(
+                'ncm_order_id', 'order_number'
+            ):
+                number_by_ncm_id.setdefault(ncm_id, number)
+            if number_by_ncm_id:
+                orders_by_number = {
+                    o.order_number: o for o in Order.objects.filter(
+                        order_number__in=set(number_by_ncm_id.values())
+                    ).select_related('created_by')
+                }
+                for ncm_id, number in number_by_ncm_id.items():
+                    o = orders_by_number.get(number)
+                    if o:
+                        resolved[ncm_id] = _pack(o, 'bulk_log')
+
+    # ── 3. Probable: the customer's phone number ──────────────────────
+    unmatched = [r for r in rtv_orders if r.order_id not in resolved]
+    rtvs_by_phone = {}
+    for r in unmatched:
+        phone = _normalize_np_phone(r.receiver_phone)
+        if phone:
+            rtvs_by_phone.setdefault(phone, []).append(r)
+
+    if rtvs_by_phone:
+        wanted = set(rtvs_by_phone)
+        # (normalized phone, order pk, order created_at) for every local order
+        # whose phone is one we are looking for.
+        matches = []
+
+        if len(wanted) > PHONE_INDEX_THRESHOLD:
+            # Index every order phone in memory in one narrow pass. See
+            # PHONE_INDEX_THRESHOLD for why the LIKE chain is abandoned here.
+            phone_rows = Order.objects.filter(is_deleted=False).values_list(
+                'id', 'customer_phone', 'created_at'
+            ).iterator(chunk_size=2000)
+        else:
+            phone_q = Q()
+            for phone in wanted:
+                phone_q |= Q(customer_phone__endswith=phone)
+            phone_rows = Order.objects.filter(phone_q).filter(
+                is_deleted=False
+            ).values_list('id', 'customer_phone', 'created_at')
+
+        # Whichever path produced the rows, endswith was only ever a prefilter:
+        # the authoritative comparison is the normalized form, recomputed here.
+        for pk, cphone, created in phone_rows:
+            key = _normalize_np_phone(cphone)
+            if key in wanted:
+                matches.append((key, pk, created))
+
+        # Newest first, so "the closest order at or before the reference date"
+        # is simply the first candidate that qualifies.
+        matches.sort(key=lambda m: m[2], reverse=True)
+        orders_by_pk = {
+            o.id: o for o in Order.objects.filter(
+                id__in={m[1] for m in matches}
+            ).select_related('created_by')
+        } if matches else {}
+
+        candidates_by_phone = {}
+        for key, pk, _created in matches:
+            o = orders_by_pk.get(pk)
+            if o is not None:
+                candidates_by_phone.setdefault(key, []).append(o)
+
+        for phone, rtvs_for_phone in rtvs_by_phone.items():
+            candidates = candidates_by_phone.get(phone)
+            if not candidates:
+                continue
+            for r in rtvs_for_phone:
+                # NCM's own order-creation date sits closest to when the local
+                # order was placed; rtv_marked_at can be weeks later, by which
+                # time a repeat customer may have ordered again.
+                reference = r.ncm_created_date or r.rtv_marked_at
+                chosen = None
+                if reference:
+                    # candidates are newest-first, so the first one at or
+                    # before the reference is the closest preceding order.
+                    chosen = next(
+                        (o for o in candidates if o.created_at <= reference), None
+                    )
+                chosen = chosen or candidates[0]
+                info = _pack(chosen, 'phone')
+                info['ambiguous'] = len(candidates) > 1
+                info['matched_phone'] = r.receiver_phone
+                resolved[r.order_id] = info
+
+    return resolved
+
+
 @login_required
 @permission_required('can_view_orders')
 def ncm_rtvs_list(request):
@@ -19125,8 +23582,11 @@ def ncm_rtvs_list(request):
     """
     from services.ncm_service import NCMService
     from dashboard.models import RTVOrder, LogisticsAPIConfig, RTVFollowUp
+    from dashboard.timezone_utils import (
+        format_nepali_datetime_or_none, get_nepali_now,
+        nepali_day_start, nepali_day_end_exclusive,
+    )
     from django.db import models
-    import pytz
 
     # All NCM API configs (for the selector UI)
     ncm_api_configs = list(
@@ -19169,6 +23629,10 @@ def ncm_rtvs_list(request):
         result = ncm_service.return_order(order_id, comment=comment or None)
 
         if result['success']:
+            # We just marked it, so we know the exact time — record it as
+            # 'manual' (top rank) so a later approximate sync can't override it.
+            # update_or_create overwriting on re-submit is correct: a
+            # re-submitted RTV really was re-marked, now.
             RTVOrder.objects.update_or_create(
                 order_id=order_id,
                 defaults={
@@ -19176,6 +23640,9 @@ def ncm_rtvs_list(request):
                     'vendor_return': True,
                     'vendor': request.user,
                     'api_config': chosen_config,
+                    'rtv_marked_at': timezone.now(),
+                    'rtv_marked_at_source': RTVOrder.SOURCE_MANUAL,
+                    'rtv_marked_at_checked_at': timezone.now(),
                 },
             )
             return JsonResponse({'success': True, 'message': 'RTV submitted successfully'})
@@ -19201,7 +23668,7 @@ def ncm_rtvs_list(request):
             api_config_id = ''
 
     qs = RTVOrder.objects.select_related('vendor', 'api_config', 'rtv_status').order_by(
-        models.F('rtv_marked_at').desc(nulls_last=True), '-created_at'
+        models.F('rtv_marked_at').desc(nulls_last=True), '-created_at', '-id'
     )
 
     if api_config_id:
@@ -19222,10 +23689,99 @@ def ncm_rtvs_list(request):
         from django.db.models import CharField
         # Cast order_id to string for partial matching (portable across SQLite/PostgreSQL)
         qs = qs.annotate(_oid_str=Cast('order_id', output_field=CharField()))
+        # Also let the search box find RTVs by the staff member who took the
+        # local order (the "Order By" column), and by the customer NCM was
+        # delivering to. Only the two id-based links are searchable in SQL —
+        # the phone fallback in resolve_rtv_order_by is resolved per page, so
+        # a phone-matched row is found by searching the customer instead.
+        from ncm.models import NCMBulkLogOrder
+        _staff_q = (
+            Q(created_by__first_name__icontains=search) |
+            Q(created_by__last_name__icontains=search) |
+            Q(created_by__username__icontains=search)
+        )
+        staff_matched_ncm_ids = Order.objects.filter(
+            ncm_order_id__isnull=False,
+        ).filter(_staff_q).values('ncm_order_id')
+        bulk_matched_ncm_ids = NCMBulkLogOrder.objects.filter(
+            ncm_order_id__isnull=False, order__isnull=False,
+        ).filter(
+            Q(order__created_by__first_name__icontains=search) |
+            Q(order__created_by__last_name__icontains=search) |
+            Q(order__created_by__username__icontains=search)
+        ).values('ncm_order_id')
         qs = qs.filter(
             Q(_oid_str__icontains=search) |
-            Q(comment__icontains=search)
+            Q(comment__icontains=search) |
+            Q(receiver_name__icontains=search) |
+            Q(receiver_phone__icontains=search) |
+            Q(order_id__in=staff_matched_ncm_ids) |
+            Q(order_id__in=bulk_matched_ncm_ids)
         )
+
+    # "Today's RTVs" is a fixed daily counter (like Total RTVs), scoped to the
+    # portal/status/search filters above but deliberately NOT to the date
+    # filter below — picking a date range shouldn't change what "today" means.
+    # Counted off rtv_marked_at (NCM's real event time), same field the date
+    # filter and the Added Time column use — see commit 76207d8.
+    today_nepal = get_nepali_now().date()
+    today_count = qs.filter(
+        rtv_marked_at__gte=nepali_day_start(today_nepal),
+        rtv_marked_at__lt=nepali_day_end_exclusive(today_nepal),
+    ).count()
+
+    # ---------- Date filter (rtv_marked_at, Nepal calendar days) ----------
+    date_preset = request.GET.get('date_preset', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    range_start = None
+    range_end = None
+
+    if date_preset == 'today':
+        range_start = nepali_day_start(today_nepal)
+        range_end = nepali_day_end_exclusive(today_nepal)
+        date_from = date_to = today_nepal.isoformat()
+    elif date_preset == 'yesterday':
+        y = today_nepal - timedelta(days=1)
+        range_start = nepali_day_start(y)
+        range_end = nepali_day_end_exclusive(y)
+        date_from = date_to = y.isoformat()
+    elif date_preset == 'last7':
+        start_day = today_nepal - timedelta(days=6)
+        range_start = nepali_day_start(start_day)
+        range_end = nepali_day_end_exclusive(today_nepal)
+        date_from, date_to = start_day.isoformat(), today_nepal.isoformat()
+    elif date_preset == 'thismonth':
+        start_day = today_nepal.replace(day=1)
+        range_start = nepali_day_start(start_day)
+        range_end = nepali_day_end_exclusive(today_nepal)
+        date_from, date_to = start_day.isoformat(), today_nepal.isoformat()
+    elif date_preset == 'lastmonth':
+        first_this = today_nepal.replace(day=1)
+        last_month_end = first_this - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+        range_start = nepali_day_start(last_month_start)
+        range_end = nepali_day_end_exclusive(last_month_end)
+        date_from, date_to = last_month_start.isoformat(), last_month_end.isoformat()
+    elif date_preset == 'custom' and date_from and date_to:
+        try:
+            df = datetime.strptime(date_from, '%Y-%m-%d').date()
+            dt_ = datetime.strptime(date_to, '%Y-%m-%d').date()
+            if df > dt_:
+                df, dt_ = dt_, df
+            range_start = nepali_day_start(df)
+            range_end = nepali_day_end_exclusive(dt_)
+            date_from, date_to = df.isoformat(), dt_.isoformat()
+        except ValueError:
+            date_preset = ''
+            date_from = date_to = ''
+    else:
+        date_preset = ''
+        date_from = date_to = ''
+
+    if range_start is not None:
+        qs = qs.filter(rtv_marked_at__gte=range_start, rtv_marked_at__lt=range_end)
 
     # Paginate at DB level
     page_size = 25
@@ -19234,13 +23790,22 @@ def ncm_rtvs_list(request):
         page = int(page)
     except (ValueError, TypeError):
         page = 1
-    total_count = qs.count()
+    # Snapshot the ordered id list once so total_count/page_objs can't see
+    # different states if a background sync mutates rtv_marked_at (the sort
+    # key) between a separate count() and slice() call.
+    ordered_ids = list(qs.values_list('id', flat=True))
+    total_count = len(ordered_ids)
     total_pages = max(1, (total_count + page_size - 1) // page_size)
     page = max(1, min(page, total_pages))
     start = (page - 1) * page_size
     end = start + page_size
+    page_ids = ordered_ids[start:end]
 
-    page_objs = list(qs[start:end])
+    _objs_by_id = {
+        rtv.id: rtv for rtv in
+        RTVOrder.objects.select_related('vendor', 'api_config', 'rtv_status').filter(id__in=page_ids)
+    }
+    page_objs = [_objs_by_id[i] for i in page_ids if i in _objs_by_id]
     rtv_ids_page = [rtv.id for rtv in page_objs]
 
     # Auto-assign unassigned RTVs on this page to the primary NCM config
@@ -19257,8 +23822,11 @@ def ncm_rtvs_list(request):
                 rtv.api_config = primary_cfg
                 rtv.api_config_id = primary_cfg.id
 
+    # "Order By" — see resolve_rtv_order_by for how an RTV is traced back to
+    # the staff member who took the order.
+    order_by_map = resolve_rtv_order_by(page_objs)
+
     # Build follow-up metadata directly from RTVFollowUp (no local Order needed)
-    nepal_tz = pytz.timezone('Asia/Kathmandu')
     followup_meta = {}
     if rtv_ids_page:
         latest_followups = RTVFollowUp.objects.filter(
@@ -19272,7 +23840,7 @@ def ncm_rtvs_list(request):
                 followup_meta[fu.rtv_order_id] = {
                     'has_followups': True,
                     'last_user': (fu.user.get_full_name() or fu.user.username) if fu.user else None,
-                    'last_date': fu.created_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p') if fu.created_at else None,
+                    'last_date': format_nepali_datetime_or_none(fu.created_at),
                     'last_type': fu.get_followup_type_display(),
                     'last_type_key': fu.followup_type,
                     'last_comment': fu.comment,
@@ -19280,15 +23848,10 @@ def ncm_rtvs_list(request):
 
     page_rtvs = []
     for rtv in page_objs:
-        # rtv_marked_at = authoritative date (from NCM RTV comment added_time)
-        # created_at    = local DB insert time; may have been corrupted in older syncs
-        #                 by overwriting with NCM's order created_date — do NOT trust it
-        #                 as a fallback for display.
-        if rtv.rtv_marked_at:
-            display_time_str = rtv.rtv_marked_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p')
-        else:
-            display_time_str = '—'
-
+        # The RTV-marked date is the only correct "Added Time": rtv.created_at
+        # is the local DB insert time and NCM's order created_date is weeks
+        # earlier. Rows whose date came from an untrusted source are shown
+        # flagged rather than hidden — see rtv_marked_at_is_trusted.
         status_dict = None
         if rtv.rtv_status:
             status_dict = {
@@ -19301,14 +23864,35 @@ def ncm_rtvs_list(request):
             'rtv_id': rtv.id,
             'order_id': rtv.order_id,
             'comment': rtv.comment or '—',
-            'created_at': display_time_str,
+            'marked_at': format_nepali_datetime_or_none(rtv.rtv_marked_at),
+            'marked_at_trusted': rtv.rtv_marked_at_is_trusted,
+            'marked_at_source': rtv.get_rtv_marked_at_source_display(),
             'status': status_dict,
             'api_config_name': rtv.api_config.api_name if rtv.api_config else None,
             'followup': followup_meta.get(rtv.id),
+            'order_by': order_by_map.get(rtv.order_id),
+            # Shown in the "not linked" tooltip so the row can still be traced
+            # by hand when nothing resolved automatically.
+            'receiver_name': rtv.receiver_name,
+            'receiver_phone': rtv.receiver_phone,
         })
 
     from dashboard.models import RTVStatus
     rtv_statuses = list(RTVStatus.objects.filter(is_active=True).order_by('name').values('id', 'name', 'color'))
+
+    date_preset_labels = {
+        'today': 'Today',
+        'yesterday': 'Yesterday',
+        'last7': 'Last 7 Days',
+        'thismonth': 'This Month',
+        'lastmonth': 'Last Month',
+    }
+    if date_preset == 'custom' and date_from and date_to:
+        d_from_fmt = datetime.strptime(date_from, '%Y-%m-%d').strftime('%b %d')
+        d_to_fmt = datetime.strptime(date_to, '%Y-%m-%d').strftime('%b %d')
+        date_filter_label = d_from_fmt if date_from == date_to else f'{d_from_fmt} → {d_to_fmt}'
+    else:
+        date_filter_label = date_preset_labels.get(date_preset, '')
 
     context = {
         'rtvs': page_rtvs,
@@ -19326,6 +23910,11 @@ def ncm_rtvs_list(request):
         'selected_config': selected_config,
         'rtv_statuses': rtv_statuses,
         'selected_rtv_status_id': rtv_status_id,
+        'today_count': today_count,
+        'selected_date_preset': date_preset,
+        'selected_date_from': date_from,
+        'selected_date_to': date_to,
+        'date_filter_label': date_filter_label,
     }
     return render(request, 'ncm_rtvs.html', context)
 
@@ -19336,23 +23925,24 @@ def ncm_rtvs_sync(request):
     """AJAX endpoint — sync RTVs from NCM API into local DB.
 
     Supports two modes via ?mode= param:
-      - mode=orders (default): Parallel fetch of ALL pages using threads — fast.
-      - mode=comments: Fetch missing comments from NCM for orders in DB.
+      - mode=orders (default): status-based parallel fetch of active RTVs.
+      - mode=comments: re-ask NCM about a small batch of existing RTVs to
+        repair/refresh their date, comment and vendor_return flag. This is a
+        bounded repair queue, not a change feed — see
+        select_rtv_comment_sync_batch for how the batch is chosen and
+        RTVCommentSync for what the returned counts distinguish.
 
-    Speed control via ?full= param (mode=orders only):
-      - full=0 (default): Quick incremental parallel scan — first 30 pages only,
-        catches new RTVs created today. ~1-2s.
-      - full=1: Full parallel scan — ALL pages with 300 workers. ~15s.
+    ?full= is accepted for backward compatibility but no longer changes
+    anything: the status-based fetch already covers what the old full scan did.
     """
     from services.ncm_service import NCMService
     from dashboard.models import RTVOrder, LogisticsAPIConfig
-    from django.utils.dateparse import parse_datetime
+    from dashboard.timezone_utils import parse_ncm_datetime
     from django.db import models
     import time
 
     api_config_id = request.GET.get('api_config_id', '').strip()
     mode = request.GET.get('mode', 'orders').strip()
-    full_sync = request.GET.get('full', '0').strip() == '1'
     chosen_config = None
     if api_config_id:
         try:
@@ -19367,101 +23957,49 @@ def ncm_rtvs_sync(request):
         configs = [chosen_config] if chosen_config else list(
             LogisticsAPIConfig.objects.filter(logistics_provider='ncm', is_active=True)
         )
-        comments_updated = 0
-        for cfg in configs:
+        comments_updated = 0   # any local write (legacy key — see response below)
+        dates_updated = 0      # an already-trusted rtv_marked_at actually moved
+        records_synced = 0     # comment/vendor_return refresh, or a date backfill
+
+        batch = select_rtv_comment_sync_batch([c.id for c in configs])
+        services = {}
+        # No sleep between these: the calls are sequential, so each already
+        # waits on the previous response, and NCMService now paces itself
+        # against NCM's rate limit. The old 1s spacing just made an
+        # interactive sync a batch-length slower for nothing.
+        for i, (oid, cfg_id) in enumerate(batch):
             try:
-                ncm_service = NCMService(api_config_id=cfg.id)
-                # Priority 1: orders with a comment but no rtv_marked_at
-                #   (these had their date fetch 429'd — most likely do have an RTV marked comment)
-                # Priority 2: orders with no comment at all
-                # Take up to 6 total per sync call to stay within rate limits
-                priority_ids = list(
-                    RTVOrder.objects.filter(
-                        rtv_marked_at__isnull=True, api_config=cfg
-                    ).exclude(comment='').values_list('order_id', flat=True)[:3]
-                )
-                fallback_ids = list(
-                    RTVOrder.objects.filter(
-                        comment='', api_config=cfg
-                    ).values_list('order_id', flat=True)[:3]
-                )
-
-                # Priority 3: Random active RTVs to keep existing records fresh
-                # (helps catch unmark -> re-mark scenarios that otherwise aren't noticed)
-                remaining = 6 - (len(priority_ids) + len(fallback_ids))
-                random_ids = []
-                if remaining > 0:
-                    random_ids = list(
-                        RTVOrder.objects.filter(
-                            vendor_return=True, api_config=cfg
-                        ).exclude(
-                            order_id__in=priority_ids + fallback_ids
-                        ).order_by('?')[:remaining].values_list('order_id', flat=True)
-                    )
-
-                no_comment_ids = priority_ids + fallback_ids + random_ids
-                for i, oid in enumerate(no_comment_ids):
-                    if i > 0:
-                        time.sleep(1.0)  # 1-second delay between sequential requests
-                    try:
-                        cresult = ncm_service.get_order_comments(oid)
-                        if cresult['success'] and cresult['data']:
-                            rtv_comment = ''
-                            rtv_marked_at = None
-                            vendor_return_status = None
-                            # Comments are newest-first, so the first match is the latest state
-                            for c in cresult['data']:
-                                text = c.get('comment', '')
-                                if text.startswith('RTV marked'):
-                                    rtv_comment = text.replace('RTV marked - ', '').strip()
-                                    vendor_return_status = True
-                                    added_time_str = c.get('added_time', '')
-                                    if added_time_str:
-                                        try:
-                                            from django.utils.dateparse import parse_datetime
-                                            parsed_dt = parse_datetime(added_time_str)
-                                            if parsed_dt:
-                                                rtv_marked_at = parsed_dt
-                                        except Exception:
-                                            pass
-                                    break
-                                elif text.startswith('RTV removed'):
-                                    vendor_return_status = False
-                                    break
-
-                            if vendor_return_status is None and not rtv_comment:
-                                for c in cresult['data']:
-                                    if c.get('added_by', '') == 'NCM Staff':
-                                        rtv_comment = c.get('comment', '')
-                                        if not rtv_marked_at:
-                                            fallback_time_str = c.get('added_time', '')
-                                            if fallback_time_str:
-                                                try:
-                                                    from django.utils.dateparse import parse_datetime
-                                                    rtv_marked_at = parse_datetime(fallback_time_str)
-                                                except Exception:
-                                                    pass
-                                        break
-
-                            update_fields = {}
-                            if rtv_comment:
-                                update_fields['comment'] = rtv_comment
-                            if rtv_marked_at:
-                                update_fields['rtv_marked_at'] = rtv_marked_at
-                            if vendor_return_status is not None:
-                                update_fields['vendor_return'] = vendor_return_status
-
-                            if update_fields:
-                                RTVOrder.objects.filter(order_id=oid).update(**update_fields)
-                                comments_updated += 1
-                    except Exception:
-                        pass
+                if cfg_id not in services:
+                    services[cfg_id] = NCMService(api_config_id=cfg_id)
+                result = sync_rtv_from_ncm_comments(services[cfg_id], oid)
             except Exception:
+                # One unreachable order must not abort the batch, but swallowing
+                # this silently is why "nothing updates" was impossible to
+                # diagnose from the outside.
+                logger.warning(
+                    "NCM RTV comment sync failed for order %s (config %s)",
+                    oid, cfg_id, exc_info=True,
+                )
                 continue
 
+            if result.changed:
+                comments_updated += 1
+            if result.date_changed:
+                dates_updated += 1
+            elif result.fields_changed or result.date_backfilled:
+                records_synced += 1
+
+        # This batch is a bounded repair queue (rtv_needs_date_verification),
+        # so most hits are the app fixing its own missing/legacy dates against
+        # NCM data that never moved. comments_updated lumps all three write
+        # kinds together and is kept only for the older possible_redirection
+        # caller; the RTV page uses the split counts so it stops telling the
+        # user "date(s) updated" when no date on NCM's side changed.
         return JsonResponse({
             'success': True,
             'comments_updated': comments_updated,
+            'dates_updated': dates_updated,
+            'records_synced': records_synced,
         })
 
     # ── MODE: ORDERS ───────────────────────────────────────────
@@ -19478,6 +24016,10 @@ def ncm_rtvs_sync(request):
     new_count = 0
     updated_count = 0
     tagged_count = 0
+    #: Set when NCM failed to answer for part of the scan. The sync is additive,
+    #: so nothing is lost from the screen - but RTVs that exist in NCM can be
+    #: missing from it, and reporting a clean sync would hide that.
+    partial_error = None
     existing_ids = set(RTVOrder.objects.values_list('order_id', flat=True))
 
     try:
@@ -19485,18 +24027,18 @@ def ncm_rtvs_sync(request):
             try:
                 ncm_service = NCMService(api_config_id=cfg.id)
 
-                if full_sync:
-                    # Full sync: status-based fetch + recent pages scan
-                    # Catches all active RTVs + recently marked ones in ~7 parallel API calls
-                    api_result = ncm_service.get_vendor_rtvs_by_status(include_recent=True)
-                else:
-                    # Quick incremental sync: status-based fetch only (~4-7 API calls, <2s)
-                    # Catches ALL active RTVs regardless of creation date
-                    api_result = ncm_service.get_vendor_rtvs_by_status(include_recent=True)
+                # Status-based fetch already returns ALL active RTVs plus
+                # recently marked ones in ~4-7 parallel calls, so the old
+                # full=1 "scan every page" path had nothing left to add — both
+                # branches had become the same call.
+                api_result = ncm_service.get_vendor_rtvs_by_status(include_recent=True)
 
                 if not api_result['success']:
                     logger.warning(f"NCM RTV sync: API call failed for config {cfg.id} ({cfg.api_name})")
                     continue
+
+                if api_result.get('partial') and partial_error is None:
+                    partial_error = api_result.get('error') or 'some pages failed'
 
                 new_rtvs = []
                 date_map = {}
@@ -19525,17 +24067,23 @@ def ncm_rtvs_sync(request):
                             delivery_charge=order.get('delivery_charge', ''),
                             tracking_id=order.get('trackid', order.get('tracking_id', '')),
                             last_status=order.get('last_delivery_status', ''),
-                            product_description=order.get('description', ''),
+                            # Match the fallback key chain used for the existing-RTV
+                            # update path below — the list endpoint's field name for
+                            # package description isn't consistent, so relying on
+                            # only 'description' here left product_description empty
+                            # for every newly-created RTV (forcing the page to always
+                            # fall back to the linked local order for matching/display).
+                            product_description=(
+                                order.get('description') or order.get('productdescription') or
+                                order.get('product_description') or order.get('item_description') or ''
+                            ),
                         ))
                         existing_ids.add(oid)
                         ncm_date = order.get('created_date', '')
                         if ncm_date:
-                            try:
-                                dt = parse_datetime(ncm_date)
-                                if dt:
-                                    date_map[oid] = dt
-                            except Exception:
-                                pass
+                            dt = parse_ncm_datetime(ncm_date)
+                            if dt:
+                                date_map[oid] = dt
                     else:
                         # Existing RTV — update with latest NCM data
                         # This handles the unmark → re-mark scenario:
@@ -19615,78 +24163,37 @@ def ncm_rtvs_sync(request):
                     new_count += len(new_rtvs)
                     if date_map:
                         for oid, dt in date_map.items():
-                            # Store NCM's created_date into rtv_marked_at as a fallback
-                            # display date. Do NOT overwrite created_at — that field tracks
-                            # when we first saved the record locally and is used as the last
-                            # fallback. The real RTV date will be set from comment added_time
-                            # during the immediate comment-fetch below.
-                            RTVOrder.objects.filter(
-                                order_id=oid, rtv_marked_at__isnull=True
-                            ).update(rtv_marked_at=dt)
+                            # NCM's order created_date goes into its own column.
+                            # It must NEVER land in rtv_marked_at: it's the date
+                            # the order was created (often weeks before the
+                            # return), and because every repair query used to
+                            # filter rtv_marked_at IS NULL, writing it there
+                            # made the wrong date permanent. The real RTV date
+                            # comes from the "RTV marked" comment's added_time
+                            # in the comment fetch below.
+                            RTVOrder.objects.filter(order_id=oid).update(ncm_created_date=dt)
 
                 # Immediately fetch comments for:
                 # 1. New RTVs (up to 8) — to get rtv_marked_at from the start
-                # 2. Existing RTVs missing dates (rtv_marked_at=NULL, up to 6)
-                #    — catches re-marked orders and old records that never had dates
-                # For re-marked orders there may be multiple "RTV marked" comments;
-                # we want the LAST one (newest date).
+                # 2. Existing RTVs whose date is missing or untrusted (up to 6)
+                #    — catches re-marked orders and rows still carrying the old
+                #      created_date fallback, least-recently-checked first
+                # Caps stay: _make_request now paces itself against NCM's
+                # limit and retries a 429, so these no longer prevent errors -
+                # they keep an interactive request from queueing behind its own
+                # backlog.
                 comment_fetch_oids = [r.order_id for r in new_rtvs[:8]]
-                # Prioritize existing RTVs that have no date yet
-                missing_date_oids = list(
-                    RTVOrder.objects.filter(
-                        order_id__in=found_oids,
-                        rtv_marked_at__isnull=True,
+                stale_date_oids = list(
+                    rtv_needs_date_verification(
+                        RTVOrder.objects.filter(order_id__in=found_oids)
                     ).exclude(
                         order_id__in=comment_fetch_oids,
                     ).values_list('order_id', flat=True)[:6]
                 )
-                comment_fetch_oids.extend(missing_date_oids)
-                for i, oid in enumerate(comment_fetch_oids):
-                    if i > 0:
-                        time.sleep(1.0)
+                comment_fetch_oids.extend(stale_date_oids)
+                for oid in comment_fetch_oids:
                     try:
-                        cresult = ncm_service.get_order_comments(oid)
-                        if cresult.get('success') and cresult.get('data'):
-                            comments = cresult['data']
-                            rtv_comment = ''
-                            rtv_marked_at = None
-                            vendor_return_status = None
-                            # Comments are newest-first, so the first match is the latest state
-                            for c in comments:
-                                text = c.get('comment', '')
-                                if text.startswith('RTV marked'):
-                                    rtv_comment = text.replace('RTV marked - ', '').strip()
-                                    vendor_return_status = True
-                                    at = c.get('added_time', '')
-                                    if at:
-                                        parsed_dt = parse_datetime(at)
-                                        if parsed_dt:
-                                            rtv_marked_at = parsed_dt
-                                    break
-                                elif text.startswith('RTV removed'):
-                                    vendor_return_status = False
-                                    break
-
-                            if vendor_return_status is None and not rtv_comment:
-                                for c in comments:
-                                    if c.get('added_by', '') == 'NCM Staff':
-                                        rtv_comment = c.get('comment', '')
-                                        if not rtv_marked_at:
-                                            at = c.get('added_time', '')
-                                            if at:
-                                                rtv_marked_at = parse_datetime(at)
-                                        break
-
-                            upd = {}
-                            if rtv_comment:
-                                upd['comment'] = rtv_comment
-                            if rtv_marked_at:
-                                upd['rtv_marked_at'] = rtv_marked_at
-                            if vendor_return_status is not None:
-                                upd['vendor_return'] = vendor_return_status
-
-                            if upd:
-                                RTVOrder.objects.filter(order_id=oid).update(**upd)
+                        sync_rtv_from_ncm_comments(ncm_service, oid)
                     except Exception:
                         pass
 
@@ -19806,13 +24313,21 @@ def ncm_rtvs_sync(request):
         qs = qs.filter(api_config=chosen_config)
     total = qs.count()
 
-    return JsonResponse({
+    payload = {
         'success': True,
         'new_count': new_count,
         'updated_count': updated_count,
         'tagged_count': tagged_count,
         'total_count': total,
-    })
+    }
+    if partial_error:
+        payload['partial'] = True
+        payload['message'] = (
+            'Synced, but NCM did not answer for part of the scan - some RTVs '
+            'may be missing. Try again in a moment.'
+        )
+        payload['error'] = partial_error
+    return JsonResponse(payload)
 
 
 @login_required
@@ -19855,20 +24370,95 @@ def ncm_rtv_add_comment(request, ncm_order_id):
         }, status=500)
 
 
+def _resolve_ncm_api_config_id(ncm_order_id):
+    """Which NCM account owns this NCM order id, or None for the default.
+
+    Orders can be created under any of several LogisticsAPIConfig accounts, and
+    an order is only visible to the account that created it - query it with the
+    wrong key and NCM answers with nothing.
+
+    The Order table is checked first. These endpoints started life serving the
+    RTV screens, so they looked the account up on RTVOrder alone; but the order
+    detail page uses them too, and a plain non-RTV order has no RTVOrder row.
+    Those orders silently fell back to the default account, which is why the
+    "Status History" panel could come up empty on an order whose history NCM
+    knows perfectly well.
+    """
+    from dashboard.models import Order, RTVOrder
+
+    # Note the tuple: a local order that exists but has api_config_id=None was
+    # created on the DEFAULT account, and None is the right answer for it. Only
+    # a genuinely missing order should fall through to RTVOrder - otherwise a
+    # default-account order could be handed some other account's credentials.
+    row = Order.objects.filter(
+        ncm_order_id=ncm_order_id
+    ).values_list('api_config_id', flat=True)[:1]
+    row = list(row)
+    if row:
+        return row[0]
+
+    # .filter().first() rather than .get(): RTVOrder has no uniqueness
+    # guarantee on order_id, and a duplicate must not raise here.
+    return RTVOrder.objects.filter(
+        order_id=ncm_order_id
+    ).values_list('api_config_id', flat=True).first()
+
+
+def _ncm_status_error_text(error):
+    """A staff-readable reason the status history could not be fetched.
+
+    NCM's own wording for "this order isn't yours" is a bare
+    {"detail": "Not found."}, which tells the person looking at the order
+    nothing at all.
+    """
+    if isinstance(error, dict):
+        error = error.get('detail') or error.get('error') or str(error)
+    text = str(error or '').strip()
+    if not text:
+        return 'NCM did not return a status history for this order.'
+    if 'not found' in text.lower():
+        return 'NCM has no record of this order under any configured NCM account.'
+    if 'throttled' in text.lower():
+        # NCM's raw wording ("Request was throttled. Expected available in 1
+        # second.") reads like a bug report to the staff looking at an order.
+        return 'NCM is rate-limiting requests right now. Retrying in a moment.'
+    return text
+
+
+def _remember_ncm_api_config(ncm_order_id, api_config_id):
+    """Record which NCM account actually answered for this order id.
+
+    Discovering the owning account costs an extra HTTP round trip per account
+    tried, so the answer is written back to the local rows: the next request
+    for the same order resolves it in one shot, and every other code path that
+    reads Order.api_config_id (status sync, comments, redirect) stops using the
+    wrong key too.
+
+    Best-effort by design - a failure here must never break the read it was
+    piggybacking on.
+    """
+    from dashboard.models import Order, RTVOrder
+
+    try:
+        Order.objects.filter(ncm_order_id=ncm_order_id).exclude(
+            api_config_id=api_config_id
+        ).update(api_config_id=api_config_id)
+        RTVOrder.objects.filter(order_id=ncm_order_id).exclude(
+            api_config_id=api_config_id
+        ).update(api_config_id=api_config_id)
+    except Exception as e:
+        logger.warning(
+            f"Could not persist NCM api_config {api_config_id} for order {ncm_order_id}: {e}"
+        )
+
+
 @login_required
 @permission_required('can_view_orders')
 def ncm_rtv_get_comments(request, ncm_order_id):
     """Fetch all comments for an NCM RTV order"""
     from services.ncm_service import NCMService
-    from dashboard.models import RTVOrder
 
-    # Look up RTV to find the correct API config
-    api_config_id = None
-    try:
-        rtv = RTVOrder.objects.get(order_id=ncm_order_id)
-        api_config_id = rtv.api_config_id
-    except RTVOrder.DoesNotExist:
-        pass
+    api_config_id = _resolve_ncm_api_config_id(ncm_order_id)
 
     ncm_service = NCMService(api_config_id=api_config_id)
     result = ncm_service.get_order_comments(ncm_order_id)
@@ -19893,16 +24483,13 @@ def ncm_rtv_order_detail(request, ncm_order_id):
     - NCM API order comments
     - Local Order data (if linked via ncm_order_id) with items, payment info, etc.
     """
-    from services.ncm_service import NCMService
-    from dashboard.models import RTVOrder, Order, OrderItem
+    from services.ncm_service import (
+        NCMService, fetch_order_status_history, normalize_status_entries,
+        peek_order_status_cache, single_flight, _is_throttle_error,
+    )
+    from dashboard.models import Order, OrderItem
 
-    # Look up RTV to find the correct API config
-    api_config_id = None
-    try:
-        rtv_rec = RTVOrder.objects.get(order_id=ncm_order_id)
-        api_config_id = rtv_rec.api_config_id
-    except RTVOrder.DoesNotExist:
-        pass
+    api_config_id = _resolve_ncm_api_config_id(ncm_order_id)
 
     ncm_service = NCMService(api_config_id=api_config_id)
     response_data = {
@@ -19912,39 +24499,144 @@ def ncm_rtv_order_detail(request, ncm_order_id):
         'local_order': None,
         'comments': [],
         'status_history': [],
+        # None = NCM answered; a string = we could not ask it. The UI needs the
+        # difference: "this order has no history yet" and "the history could not
+        # be loaded" used to render as the same misleading empty state.
+        'status_history_error': None,
+        # True when the reason was a rate limit rather than a real failure,
+        # so the page can quietly retry instead of showing a dead end.
+        'status_history_throttled': False,
     }
 
     # Fire all 3 NCM API calls in parallel to avoid sequential latency
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    def _fetch_details():
+    # Several tabs (or several staff) opening the same order fire these reads
+    # at the same instant. They are identical requests, so only one of each
+    # actually goes to NCM and the rest wait on its answer - otherwise six
+    # tabs meant twelve rate-limited calls queueing three per second.
+    def _flight_key(kind, svc):
+        return ('ncm-detail', kind, ncm_order_id, svc.api_key)
+
+    def _fetch_details(svc):
         try:
-            return ncm_service.get_order_details(ncm_order_id)
+            return single_flight(
+                _flight_key('details', svc),
+                lambda: svc.get_order_details(ncm_order_id),
+            )
         except Exception as e:
             logger.warning(f"Failed to fetch NCM details for order {ncm_order_id}: {e}")
             return {'success': False}
 
-    def _fetch_status():
+    def _fetch_status(svc):
         try:
-            return ncm_service.get_order_status(ncm_order_id)
+            return single_flight(
+                _flight_key('status', svc),
+                lambda: svc.get_order_status(ncm_order_id),
+            )
         except Exception as e:
             logger.warning(f"Failed to fetch NCM status history for order {ncm_order_id}: {e}")
             return {'success': False}
 
-    def _fetch_comments():
+    def _fetch_comments(svc):
         try:
-            return ncm_service.get_order_comments(ncm_order_id)
+            return single_flight(
+                _flight_key('comments', svc),
+                lambda: svc.get_order_comments(ncm_order_id),
+            )
         except Exception as e:
             logger.warning(f"Failed to fetch NCM comments for order {ncm_order_id}: {e}")
             return {'success': False}
 
+    # The page-load sync ran moments ago and asked NCM for this exact status
+    # history. Reusing its answer keeps this endpoint's fan-out at two calls
+    # instead of three - which matters because NCM allows roughly three per
+    # second per account, and going over is what produced the "Request was
+    # throttled" banner on the first load of an order.
+    cached_status = peek_order_status_cache(ncm_order_id)
+    if cached_status is not None:
+        status_result, cached_config_id = cached_status
+        if cached_config_id is not None and cached_config_id != api_config_id:
+            api_config_id = cached_config_id
+            ncm_service = NCMService(api_config_id=cached_config_id)
+
     with ThreadPoolExecutor(max_workers=3) as executor:
-        fut_details = executor.submit(_fetch_details)
-        fut_status = executor.submit(_fetch_status)
-        fut_comments = executor.submit(_fetch_comments)
+        fut_details = executor.submit(_fetch_details, ncm_service)
+        fut_status = (
+            executor.submit(_fetch_status, ncm_service)
+            if cached_status is None else None
+        )
+        fut_comments = executor.submit(_fetch_comments, ncm_service)
         details_result = fut_details.result()
-        status_result = fut_status.result()
+        if fut_status is not None:
+            status_result = fut_status.result()
         comments_result = fut_comments.result()
+
+    # NCM scopes an order to the account that created it: ask with any other
+    # key and it answers 404 "Not found", not an empty timeline. When the
+    # account we believed owns this order has nothing to say, try the other
+    # active NCM accounts before reporting an empty history - otherwise an
+    # order whose api_config_id is missing or stale shows "No status history
+    # found" while NCM's own portal lists the full timeline for it.
+    status_history = (
+        normalize_status_entries(status_result.get('data'))
+        if status_result.get('success') else []
+    )
+
+    if not status_history:
+        # Normally the account we just asked is worth skipping - it already
+        # answered. But a 429 is not an answer: NCM rate-limits per account at
+        # about three calls a second, and this endpoint alone fires three in
+        # parallel. Skipping a throttled account meant the only account that
+        # actually holds the history never got asked, and the page reported
+        # the throttle - which is exactly why a manual Retry then worked.
+        preferred_answered = (
+            status_result.get('success')
+            or not _is_throttle_error(status_result.get('error'))
+        )
+        swept, resolved_config_id, sweep_error = fetch_order_status_history(
+            ncm_order_id,
+            api_config_id=api_config_id,
+            skip_config_ids=(api_config_id,) if preferred_answered else (),
+            use_cache=True,
+        )
+        if swept:
+            status_history = swept
+            _remember_ncm_api_config(ncm_order_id, resolved_config_id)
+            api_config_id = resolved_config_id
+            ncm_service = NCMService(api_config_id=resolved_config_id)
+
+            # The other two calls went to the same wrong account, so an empty
+            # answer from either is worthless - re-issue those too, not just
+            # the ones that reported failure. get_order_comments in particular
+            # reports success with an empty list when every URL 404s, which is
+            # indistinguishable from "this order has no comments"; trusting it
+            # meant an order on a non-default account showed no comments at
+            # all while NCM held a dozen.
+            retry_details = (
+                not details_result.get('success') or not details_result.get('data')
+            )
+            retry_comments = (
+                not comments_result.get('success') or not comments_result.get('data')
+            )
+            if retry_details or retry_comments:
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    fut_d = executor.submit(_fetch_details, ncm_service) if retry_details else None
+                    fut_c = executor.submit(_fetch_comments, ncm_service) if retry_comments else None
+                    if fut_d is not None:
+                        details_result = fut_d.result()
+                    if fut_c is not None:
+                        comments_result = fut_c.result()
+        elif not status_result.get('success') or sweep_error:
+            # Every account refused or failed to answer - say so rather than
+            # claiming the order has no history.
+            raw_error = status_result.get('error') or sweep_error
+            response_data['status_history_error'] = _ncm_status_error_text(raw_error)
+            response_data['status_history_throttled'] = bool(
+                _is_throttle_error(raw_error) or _is_throttle_error(sweep_error)
+            )
+
+    response_data['status_history'] = status_history
 
     # 1. Process NCM order details
     if details_result.get('success'):
@@ -20004,31 +24696,11 @@ def ncm_rtv_order_detail(request, ncm_order_id):
                 'items': ncm_items,
             }
 
-    # 2. Process NCM order status history
-    if status_result.get('success'):
-            raw_status = status_result['data']
-            if isinstance(raw_status, list):
-                statuses = raw_status
-            elif isinstance(raw_status, dict):
-                statuses = raw_status.get('data', raw_status.get('results', []))
-                if isinstance(statuses, dict):
-                    statuses = [statuses]
-            else:
-                statuses = []
-
-            for s in statuses:
-                if isinstance(s, dict):
-                    response_data['status_history'].append({
-                        'status': s.get('status', s.get('Status', '')),
-                        'timestamp': s.get('date', s.get('timestamp', s.get('added_time', s.get('created_at', '')))),
-                        'remarks': s.get('remarks', s.get('comment', '')),
-                    })
-
-    # 3. Process NCM comments
+    # 2. Process NCM comments
     if comments_result.get('success'):
         response_data['comments'] = comments_result.get('data', [])
 
-    # 4. Try to find matching local Order by ncm_order_id (multiple strategies)
+    # 3. Try to find matching local Order by ncm_order_id (multiple strategies)
     local_order = None
     try:
         # Strategy 1: By ncm_order_id, not deleted
@@ -20158,15 +24830,16 @@ def ncm_rtv_order_detail(request, ncm_order_id):
         except Exception as e:
             logger.warning(f"Error processing local order for NCM ID {ncm_order_id}: {e}")
 
-    # 5. Get RTV record and enrich ncm_data with stored fields
+    # 4. Get RTV record and enrich ncm_data with stored fields
     try:
-        from django.utils.timezone import localtime
+        from dashboard.timezone_utils import format_nepali_datetime_or_none
         rtv = RTVOrder.objects.get(order_id=ncm_order_id)
-        _fmt = lambda dt: localtime(dt).strftime('%b %d, %Y %I:%M %p') if dt else ''
         response_data['rtv_info'] = {
             'comment': rtv.comment or '',
-            'created_at': _fmt(rtv.created_at),
-            'rtv_marked_at': _fmt(rtv.rtv_marked_at),
+            'created_at': format_nepali_datetime_or_none(rtv.created_at) or '',
+            'rtv_marked_at': format_nepali_datetime_or_none(rtv.rtv_marked_at) or '',
+            'rtv_marked_at_trusted': rtv.rtv_marked_at_is_trusted,
+            'rtv_marked_at_source': rtv.get_rtv_marked_at_source_display(),
             'vendor_name': rtv.vendor.get_full_name() if rtv.vendor else 'Unknown',
             'product_description': rtv.product_description or '',
         }
@@ -20384,24 +25057,84 @@ def get_redirect_order_details(request, order_id):
     try:
         order = Order.objects.select_related(
             'customer', 'branch', 'status_setup', 'payment_status_setup', 'payment_setup'
-        ).prefetch_related('items', 'activity_logs').get(id=order_id, is_deleted=False)
+        ).prefetch_related('items').get(id=order_id, is_deleted=False)
 
-        # Get the latest redirection activity log
-        redirection_log = order.activity_logs.filter(action_type='redirected').first()
+        # Filter by action_type at the DB level rather than prefetching every
+        # activity log on the order — orders with a long NCM webhook/status
+        # history can accumulate hundreds of unrelated log rows, and pulling
+        # all of them just to discard everything but 'redirected' entries is
+        # wasted query time on exactly the orders this page cares about most.
+        redirection_logs = list(
+            order.activity_logs.filter(action_type='redirected').select_related('user')
+        )
+
+        nepal_tz = pytz.timezone('Asia/Kathmandu')
 
         old_customer_info = {}
         redirect_history = []
 
-        if redirection_log:
-            old_customer_info = redirection_log.metadata or {}
+        # Walk every redirect log (newest first) so a later log written with empty
+        # metadata doesn't hide the snapshot captured by an earlier one.
+        is_destination = False
+        for log in redirection_logs:
+            role = _redirect_log_role(log, order)
+            # A destination log's metadata is this order's own current customer,
+            # not a pre-redirect snapshot — reading it as one is what made the
+            # modal show the same person under both "Original" and "Redirected To".
+            snapshot = (
+                _redirect_old_customer(log.metadata)
+                if role == REDIRECT_ROLE_SOURCE
+                else {'name': '', 'phone': '', 'email': '', 'branch': '', 'address': ''}
+            )
 
-            # Get all redirection logs for history
-            for log in order.activity_logs.filter(action_type='redirected').order_by('-created_at'):
-                redirect_history.append({
-                    'redirect_user': log.user.username if log.user else 'System',
-                    'redirect_timestamp': log.created_at.isoformat(),
-                    'redirect_reason': log.description or '',
-                })
+            entry = {
+                'redirect_user': (log.user.get_full_name() or log.user.username) if log.user else 'System',
+                'redirect_timestamp': log.created_at.isoformat(),
+                'redirect_timestamp_display': log.effective_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
+                'redirect_reason': log.description or '',
+                'old_customer': snapshot,
+                'role': role,
+            }
+            if role == REDIRECT_ROLE_DESTINATION:
+                entry['source'] = _redirect_source_reference(log)
+                is_destination = True
+            redirect_history.append(entry)
+
+            if not old_customer_info and any(snapshot.values()):
+                old_customer_info = dict(snapshot)
+
+        # Only a log that actually redirected this order away makes it a source.
+        is_destination = is_destination and not any(
+            _entry['role'] == REDIRECT_ROLE_SOURCE for _entry in redirect_history
+        )
+
+        if old_customer_info:
+            # Email is never captured in redirect metadata — recover it from the
+            # customer record matching the old phone number, when one exists.
+            if not old_customer_info['email'] and old_customer_info['phone']:
+                try:
+                    _old_cust = Customer.objects.filter(
+                        phone=old_customer_info['phone']
+                    ).exclude(email__isnull=True).exclude(email='').only('email').first()
+                    if _old_cust:
+                        old_customer_info['email'] = _old_cust.email
+                except Exception:
+                    pass
+
+            # Keep the legacy prefixed keys in the payload for any older consumer.
+            old_customer_info.update({
+                'old_customer_name': old_customer_info['name'],
+                'old_customer_phone': old_customer_info['phone'],
+                'old_customer_email': old_customer_info['email'],
+                'old_branch_city': old_customer_info['branch'],
+                'old_shipping_address': old_customer_info['address'],
+            })
+
+        # The customer the order was redirected TO. Resolved through the same
+        # fallback chain the order detail page uses, so a redirect that only
+        # persisted part of the destination details still renders a complete
+        # block instead of a column of em dashes.
+        new_customer_info = _redirect_new_customer(order, redirection_logs)
 
         # Get all order items
         items = []
@@ -20412,10 +25145,6 @@ def get_redirect_order_details(request, order_id):
                 'price': str(item.price or '0'),
                 'total': str(item.total or '0'),
             })
-
-        # Format dates
-        import pytz
-        nepal_tz = pytz.timezone('Asia/Kathmandu')
 
         data = {
             'success': True,
@@ -20429,17 +25158,35 @@ def get_redirect_order_details(request, order_id):
                 'discount_amount': str(order.discount_amount or '0'),
                 'shipping_charge': str(order.shipping_charge or '0'),
                 'tax_percent': str(order.tax_percent or '0'),
-                'customer_name': order.customer_name or '',
-                'customer_phone': order.customer_phone or '',
-                'customer_email': order.customer_email or '',
-                'branch_city': order.branch_city or '',
-                'shipping_address': order.shipping_address or '',
-                'landmark': order.landmark or '',
-                'in_out': order.in_out or '',
+                # Top-level customer_* keys stay on the resolved values, not the
+                # raw columns — they are what the modal's "Redirected To" block
+                # reads, and any consumer wanting the raw row can hit the order
+                # detail endpoint.
+                'customer_name': new_customer_info['name'],
+                'customer_phone': new_customer_info['phone'],
+                'customer_email': new_customer_info['email'],
+                'branch_city': new_customer_info['branch'],
+                'shipping_address': new_customer_info['address'],
+                'landmark': new_customer_info['landmark'],
+                'in_out': order.get_in_out_display() if order.in_out else '',
                 'delivery_type': order.ncm_delivery_type or '',
+                'payment_status': order.payment_status or '',
+                'tracking_number': order.tracking_number or '',
+                'delivery_charge': str(order.delivery_charge or '0'),
+                'cod_collected': str(order.cod_collected or '0'),
+                'branch_name': order.branch.name if order.branch else '',
                 'created_at': order.created_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
                 'updated_at': order.updated_at.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
                 'old_customer_info': old_customer_info,
+                'new_customer_info': new_customer_info,
+                # True when this order only ever RECEIVED a redirected package —
+                # its own customer never changed, so the modal must not present
+                # it as a redirection with an old and a new customer.
+                'is_redirect_destination': is_destination,
+                'redirect_source': (
+                    _redirect_source_reference(redirection_logs[0])
+                    if is_destination and redirection_logs else {}
+                ),
                 'redirect_history': redirect_history,
                 'items': items,
             }
@@ -20450,4 +25197,3999 @@ def get_redirect_order_details(request, order_id):
         return JsonResponse({'success': False, 'error': 'Order not found'}, status=404)
     except Exception as e:
         logger.error(f"Error fetching redirect order details: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@login_required
+def purchase_edit(request, purchase_id):
+    """Edit an existing purchase, excluding item modifications for stock integrity"""
+    if not (request.user.is_superuser or request.user.role == 'administrator' or getattr(request.user, 'can_create_purchases', False)):
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        return redirect('dashboard')
+
+    purchase = get_object_or_404(Purchase, id=purchase_id)
+    suppliers = Supplier.objects.filter(is_active=True)
+    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+
+    if request.method == 'POST':
+        supplier_id = request.POST.get('supplier')
+        purchase_date = request.POST.get('purchase_date', '')
+        invoice_number = request.POST.get('invoice_number', '').strip()
+        payment_method = request.POST.get('payment_method', '').strip()
+        notes = request.POST.get('notes', '').strip()
+
+        # Check duplicate invoice number
+        if Purchase.objects.filter(invoice_number=invoice_number).exclude(id=purchase.id).exists():
+            messages.error(request, f"Invoice number '{invoice_number}' already exists.")
+            return redirect('purchase_edit', purchase_id=purchase.id)
+
+        try:
+            p_date = datetime.strptime(purchase_date, '%Y-%m-%d').date() if purchase_date else timezone.now().date()
+        except ValueError:
+            p_date = purchase.purchase_date
+
+        supplier = get_object_or_404(Supplier, id=supplier_id)
+
+        with transaction.atomic():
+            purchase.supplier = supplier
+            purchase.purchase_date = p_date
+            purchase.invoice_number = invoice_number
+            purchase.payment_method = payment_method
+            purchase.notes = notes
+            purchase.save()
+
+            # REVERT old items
+            for item in purchase.purchase_items.all():
+                if item.product.product_type == 'bundle':
+                    components = item.product.bundle_components.select_related('component_product').all()
+                    for comp in components:
+                        comp_product = comp.component_product
+                        sub_qty = comp.quantity_required * item.quantity
+                        comp_product.stock -= sub_qty
+                        if comp_product.stock <= 0:
+                            comp_product.stock_status = 'out_of_stock'
+                        comp_product.save(update_fields=['stock', 'stock_status'])
+                        
+                        if item.rate > 0 and components.count() > 0:
+                            comp_rate = item.rate / Decimal(str(components.count()))
+                            pp = ProductPurchase.objects.filter(product=comp_product, cost_price=comp_rate, quantity=sub_qty).first()
+                            if pp:
+                                pp.delete()
+                            if comp_product.cost_price_type == 'variable':
+                                comp_product.refresh_from_db()
+                                comp_product.cost_price = comp_product.average_cost
+                                comp_product.save(update_fields=['cost_price'])
+                else:
+                    if item.product_variation:
+                        item.product_variation.stock -= item.quantity
+                        if item.product_variation.stock <= 0:
+                            item.product_variation.status = 'out_of_stock'
+                        item.product_variation.save(update_fields=['stock', 'status'])
+                    item.product.stock -= item.quantity
+                    if item.product.stock <= 0:
+                        item.product.stock_status = 'out_of_stock'
+                    item.product.save(update_fields=['stock', 'stock_status'])
+
+                    if item.rate > 0:
+                        pp = ProductPurchase.objects.filter(product=item.product, cost_price=item.rate, quantity=item.quantity).first()
+                        if pp:
+                            pp.delete()
+                        if item.product.cost_price_type == 'variable':
+                            item.product.refresh_from_db()
+                            item.product.cost_price = item.product.average_cost
+                            item.product.save(update_fields=['cost_price'])
+
+            # Delete old items
+            purchase.purchase_items.all().delete()
+            
+            # ADD NEW ITEMS
+            product_ids = request.POST.getlist('product_id[]')
+            quantities = request.POST.getlist('quantity[]')
+            rates = request.POST.getlist('rate[]')
+            variation_ids = request.POST.getlist('variation_id[]')
+
+            total_amount = Decimal('0')
+            for i in range(len(product_ids)):
+                if not product_ids[i]:
+                    continue
+                try:
+                    product = Product.objects.get(id=product_ids[i])
+                    qty = int(quantities[i]) if i < len(quantities) and quantities[i] else 1
+                    rate = Decimal(rates[i]) if i < len(rates) and rates[i] else Decimal('0')
+
+                    variation = None
+                    variation_id_val = variation_ids[i] if i < len(variation_ids) else ''
+                    if variation_id_val and product.product_type == 'variable':
+                        try:
+                            variation = ProductVariation.objects.get(id=int(variation_id_val), product=product)
+                        except (ProductVariation.DoesNotExist, ValueError):
+                            pass
+
+                    item = PurchaseItem.objects.create(
+                        purchase=purchase,
+                        product=product,
+                        product_variation=variation,
+                        quantity=qty,
+                        rate=rate,
+                    )
+                    total_amount += item.total
+
+                    if product.product_type == 'bundle':
+                        components = product.bundle_components.select_related('component_product').all()
+                        if components.exists():
+                            for comp in components:
+                                comp_product = comp.component_product
+                                add_qty = comp.quantity_required * qty
+                                comp_product.stock += add_qty
+                                if comp_product.stock > 0:
+                                    comp_product.stock_status = 'in_stock'
+                                comp_product.save(update_fields=['stock', 'stock_status'])
+                                
+                                if rate > 0:
+                                    comp_rate = rate / Decimal(str(components.count()))
+                                    ProductPurchase.objects.create(
+                                        product=comp_product,
+                                        cost_price=comp_rate,
+                                        quantity=add_qty,
+                                    )
+                                    if comp_product.cost_price_type == 'variable':
+                                        comp_product.refresh_from_db()
+                                        comp_product.cost_price = comp_product.average_cost
+                                        comp_product.save(update_fields=['cost_price'])
+                    else:
+                        if variation:
+                            variation.stock += qty
+                            if variation.stock > 0:
+                                variation.status = 'active'
+                            variation.save(update_fields=['stock', 'status'])
+                        product.stock += qty
+                        if product.stock > 0:
+                            product.stock_status = 'in_stock'
+                        product.save(update_fields=['stock', 'stock_status'])
+                        
+                        if rate > 0:
+                            ProductPurchase.objects.create(
+                                product=product,
+                                cost_price=rate,
+                                quantity=qty,
+                            )
+                            if product.cost_price_type == 'variable':
+                                product.refresh_from_db()
+                                product.cost_price = product.average_cost
+                                product.save(update_fields=['cost_price'])
+                except Exception as e:
+                    logger.error(f"Error updating item: {e}")
+
+            purchase.total_amount = total_amount
+            purchase.save()
+            purchase.update_payment_status()
+        return redirect('purchase_dashboard')
+
+    # Build context for GET
+    form_data = {
+        'supplier_id': str(purchase.supplier.id),
+        'invoice_number': purchase.invoice_number,
+        'purchase_date': purchase.purchase_date.isoformat() if hasattr(purchase.purchase_date, 'isoformat') else purchase.purchase_date,
+        'payment_method': purchase.payment_method,
+        'notes': purchase.notes,
+        'item_rows': [
+            {
+                'product_id': str(item.product.id) if item.product else '',
+                'variation_id': str(item.product_variation.id) if getattr(item, 'product_variation', None) else '',
+                'quantity': str(item.quantity),
+                'rate': str(item.rate),
+            } for item in purchase.purchase_items.all()
+        ]
+    }
+
+    # Build product variations map for JS
+    variable_products = products.filter(product_type='variable').prefetch_related('variations')
+    product_variations_map = {}
+    for vp in variable_products:
+        product_variations_map[vp.id] = [
+            {'id': v.id, 'name': v.variation_name or v.sku, 'sku': v.sku, 'stock': v.stock}
+            for v in vp.variations.filter(Q(is_active=True) | Q(status='active')).order_by('variation_name')
+        ]
+
+    # Build bundle components map for JS
+    bundle_products = products.filter(product_type='bundle').prefetch_related(
+        'bundle_components__component_product'
+    )
+    bundle_components_map = {}
+    for bp in bundle_products:
+        bundle_components_map[bp.id] = [
+            {
+                'name': comp.component_product.name,
+                'qty': comp.quantity_required,
+                'stock': comp.component_product.stock,
+            }
+            for comp in bp.bundle_components.select_related('component_product').all()
+        ]
+
+    context = {
+        'purchase': purchase,
+        'suppliers': suppliers,
+        'products': products,
+        'today': timezone.now().date().isoformat(),
+        'form_data': form_data,
+        'product_variations_json': json.dumps(product_variations_map),
+        'bundle_components_json': json.dumps(bundle_components_map),
+    }
+    return render(request, 'purchase/purchase_form.html', context)
+
+
+# ==================== GLOBAL NOTICE API ====================
+
+@login_required
+def get_active_notice(request):
+    from .models import GlobalNotice
+    from django.utils import timezone
+    from django.db.models import Q
+    
+    # Do not show notice to admin/superusers as requested
+    if request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator':
+        return JsonResponse({'status': 'no_notice'})
+        
+    now = timezone.now()
+    
+    try:
+        # Get the latest active notice that has started and hasn't expired
+        # If display_from is null, we assume it starts immediately
+        notice = GlobalNotice.objects.filter(
+            is_active=True,
+            display_until__gt=now
+        ).filter(
+            Q(display_from__isnull=True) | Q(display_from__lte=now)
+        ).order_by('-created_at').first()
+    except Exception as e:
+        if 'Unknown column' in str(e):
+            try:
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    try:
+                        cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_from datetime(6) NULL;")
+                    except Exception:
+                        pass
+                    try:
+                        cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_until datetime(6) NULL;")
+                    except Exception:
+                        pass
+                    try:
+                        cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_frequency varchar(20) DEFAULT 'every_refresh';")
+                    except Exception:
+                        pass
+                        
+                notice = GlobalNotice.objects.filter(
+                    is_active=True,
+                    display_until__gt=now
+                ).filter(
+                    Q(display_from__isnull=True) | Q(display_from__lte=now)
+                ).order_by('-created_at').first()
+            except Exception:
+                return JsonResponse({'status': 'no_notice'})
+        else:
+            return JsonResponse({'status': 'no_notice'})
+    
+    if notice:
+        return JsonResponse({
+            'status': 'success',
+            'notice': {
+                'id': notice.id,
+                'content': notice.content,
+                'display_frequency': getattr(notice, 'display_frequency', 'every_refresh'),
+                'created_by': notice.created_by.get_full_name() or notice.created_by.username if notice.created_by else 'Admin'
+            }
+        })
+    return JsonResponse({'status': 'no_notice'})
+
+
+@login_required
+def create_notice(request):
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'status': 'error', 'message': 'Permission denied'}, status=403)
+        
+    if request.method == 'POST':
+        import json
+        from .models import GlobalNotice
+        from django.utils import timezone
+        from django.utils.dateparse import parse_datetime
+        
+        try:
+            data = json.loads(request.body)
+            content = data.get('content')
+            display_from_str = data.get('display_from')
+            display_until_str = data.get('display_until')
+            display_frequency = data.get('display_frequency', 'every_refresh')
+            
+            if not content:
+                return JsonResponse({'status': 'error', 'message': 'Content is required'})
+            from datetime import datetime
+            
+            def flexible_parse(dt_str):
+                if not dt_str: return None
+                parsed = parse_datetime(dt_str)
+                if parsed: return parsed
+                # Try common formats
+                for fmt in ('%m/%d/%Y %I:%M %p', '%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M'):
+                    try:
+                        return datetime.strptime(dt_str, fmt)
+                    except ValueError:
+                        pass
+                return None
+
+            if not display_until_str:
+                return JsonResponse({'status': 'error', 'message': 'End time is required'})
+                
+            display_until = flexible_parse(display_until_str)
+            if not display_until:
+                return JsonResponse({'status': 'error', 'message': f'Invalid end date format: {display_until_str}'})
+                
+            if display_until and timezone.is_naive(display_until):
+                display_until = timezone.make_aware(display_until)
+
+            display_from = flexible_parse(display_from_str) if display_from_str else None
+            if display_from and timezone.is_naive(display_from):
+                display_from = timezone.make_aware(display_from)
+                
+            if display_until < (display_from or timezone.now()):
+                return JsonResponse({'status': 'error', 'message': 'End time must be after start time'})
+            
+            # Deactivate all previous notices
+            GlobalNotice.objects.filter(is_active=True).update(is_active=False)
+            
+            try:
+                notice = GlobalNotice.objects.create(
+                    content=content,
+                    created_by=request.user,
+                    display_from=display_from,
+                    display_until=display_until,
+                    display_frequency=display_frequency,
+                    is_active=True
+                )
+            except Exception as e:
+                if 'Unknown column' in str(e):
+                    try:
+                        # Fallback: force add the columns using raw SQL in case migrations are out of sync
+                        from django.db import connection
+                        with connection.cursor() as cursor:
+                            try:
+                                cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_from datetime(6) NULL;")
+                            except Exception:
+                                pass
+                            try:
+                                cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_until datetime(6) NULL;")
+                            except Exception:
+                                pass
+                            try:
+                                cursor.execute("ALTER TABLE dashboard_globalnotice ADD COLUMN display_frequency varchar(20) DEFAULT 'every_refresh';")
+                            except Exception:
+                                pass
+                                
+                        # Retry creation
+                        notice = GlobalNotice.objects.create(
+                            content=content,
+                            created_by=request.user,
+                            display_from=display_from,
+                            display_until=display_until,
+                            display_frequency=display_frequency,
+                            is_active=True
+                        )
+                    except Exception as inner_e:
+                        return JsonResponse({'status': 'error', 'message': f'Auto-migration failed: {str(inner_e)}'})
+                else:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error creating notice: {str(e)}", exc_info=True)
+                    return JsonResponse({'status': 'error', 'message': f'Error creating notice: {str(e)}'})
+            
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Notice created successfully',
+                'notice_id': notice.id
+            })
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+            
+    return JsonResponse({'status': 'error', 'message': 'Invalid method'})
+
+
+@login_required
+def update_notice(request, notice_id):
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'status': 'error', 'message': 'Permission denied'}, status=403)
+        
+    if request.method == 'POST':
+        import json
+        from .models import GlobalNotice
+        from django.utils.dateparse import parse_datetime
+        from django.utils import timezone
+        
+        try:
+            notice = GlobalNotice.objects.get(id=notice_id)
+            data = json.loads(request.body)
+            content = data.get('content')
+            display_from_str = data.get('display_from')
+            display_until_str = data.get('display_until')
+            display_frequency = data.get('display_frequency', 'every_refresh')
+            
+            if not content:
+                return JsonResponse({'status': 'error', 'message': 'Content is required'})
+            if not display_until_str:
+                return JsonResponse({'status': 'error', 'message': 'End time is required'})
+                
+            def flexible_parse(dt_str):
+                if not dt_str: return None
+                parsed = parse_datetime(dt_str)
+                if parsed: return parsed
+                from datetime import datetime
+                for fmt in ('%m/%d/%Y %I:%M %p', '%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M'):
+                    try:
+                        return datetime.strptime(dt_str, fmt)
+                    except ValueError:
+                        pass
+                return None
+                
+            display_until = flexible_parse(display_until_str)
+            if not display_until:
+                return JsonResponse({'status': 'error', 'message': f'Invalid end date format: {display_until_str}'})
+                
+            if display_until and timezone.is_naive(display_until):
+                display_until = timezone.make_aware(display_until)
+
+            display_from = flexible_parse(display_from_str) if display_from_str else None
+            if display_from and timezone.is_naive(display_from):
+                display_from = timezone.make_aware(display_from)
+                
+            if display_until < (display_from or timezone.now()):
+                return JsonResponse({'status': 'error', 'message': 'End time must be after start time'})
+                
+            notice.content = content
+            notice.display_from = display_from
+            notice.display_until = display_until
+            notice.display_frequency = display_frequency
+            notice.is_active = True
+            notice.save()
+            
+            # Deactivate all other notices
+            GlobalNotice.objects.exclude(id=notice_id).filter(is_active=True).update(is_active=False)
+            
+            return JsonResponse({'status': 'success', 'message': 'Notice updated successfully'})
+        except GlobalNotice.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Notice not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+            
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
+
+
+@login_required
+def get_notice_history(request):
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'status': 'error', 'message': 'Permission denied'}, status=403)
+        
+    from .models import GlobalNotice
+    from django.utils import timezone
+    
+    now = timezone.now()
+    
+    try:
+        notices = list(GlobalNotice.objects.all().order_by('-created_at')[:20])
+        data = []
+        for n in notices:
+            if not n.is_active:
+                status = 'Stopped'
+            elif n.display_until and n.display_until < now:
+                status = 'Expired'
+            elif getattr(n, 'display_from', None) and n.display_from > now:
+                status = 'Scheduled'
+            else:
+                status = 'Active'
+                
+            from django.utils.html import strip_tags
+            plain = strip_tags(n.content or '').replace('&nbsp;', ' ').strip()
+            snippet = plain[:50] + ('...' if len(plain) > 50 else '')
+            if not snippet:
+                # Image-only notice: strip_tags leaves nothing to show.
+                snippet = 'Image notice' if '<img' in (n.content or '') else '(empty)'
+            
+            display_from_val = getattr(n, 'display_from', None)
+            
+            try:
+                # display_from is null means "show immediately" -> the real start time is when it was created
+                display_from_str = timezone.localtime(display_from_val).strftime('%b %d, %Y %I:%M %p') if display_from_val else (timezone.localtime(n.created_at).strftime('%b %d, %Y %I:%M %p') + ' (Immediate)')
+                raw_display_from = timezone.localtime(display_from_val).strftime('%Y-%m-%dT%H:%M') if display_from_val else ''
+                display_until_str = timezone.localtime(n.display_until).strftime('%b %d, %Y %I:%M %p') if n.display_until else 'Never'
+                raw_display_until = timezone.localtime(n.display_until).strftime('%Y-%m-%dT%H:%M') if n.display_until else ''
+            except Exception:
+                display_from_str = n.display_from.strftime('%b %d, %Y %I:%M %p') if display_from_val else (n.created_at.strftime('%b %d, %Y %I:%M %p') + ' (Immediate)')
+                raw_display_from = n.display_from.strftime('%Y-%m-%dT%H:%M') if display_from_val else ''
+                display_until_str = n.display_until.strftime('%b %d, %Y %I:%M %p') if n.display_until else 'Never'
+                raw_display_until = n.display_until.strftime('%Y-%m-%dT%H:%M') if n.display_until else ''
+                
+            data.append({
+                'id': n.id,
+                'snippet': snippet,
+                'raw_content': n.content,
+                'status': status,
+                'display_from': display_from_str,
+                'raw_display_from': raw_display_from,
+                'display_until': display_until_str,
+                'raw_display_until': raw_display_until,
+                # The edit dialog repopulates the Display Frequency select from this;
+                # without it the select always fell back to 'every_refresh'.
+                'display_frequency': getattr(n, 'display_frequency', 'every_refresh') or 'every_refresh',
+                'created_by': n.created_by.get_full_name() or n.created_by.username if n.created_by else 'Admin'
+            })
+            
+        return JsonResponse({'status': 'success', 'notices': data})
+        
+    except Exception as e:
+        if 'Unknown column' in str(e) or 'no such column' in str(e).lower() or 'does not exist' in str(e).lower():
+            return JsonResponse({'status': 'success', 'notices': []})
+        else:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting notice history: {str(e)}", exc_info=True)
+            return JsonResponse({'status': 'error', 'message': 'An internal error occurred'})
+
+
+@login_required
+def stop_notice(request, notice_id):
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'status': 'error', 'message': 'Permission denied'}, status=403)
+        
+    if request.method == 'POST':
+        from .models import GlobalNotice
+        try:
+            notice = GlobalNotice.objects.get(id=notice_id)
+            notice.is_active = False
+            notice.save()
+            return JsonResponse({'status': 'success'})
+        except GlobalNotice.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Notice not found'})
+            
+    return JsonResponse({'status': 'error', 'message': 'Invalid method'}, status=405)
+
+#: Human labels for WooCommerce's seven core statuses plus the custom ones this
+#: store registers. Anything else is title-cased from its slug at render time.
+WOO_STATUS_LABELS = {
+    'pending': 'Pending Payment',
+    'processing': 'Processing',
+    'on-hold': 'On Hold',
+    'completed': 'Completed',
+    'cancelled': 'Cancelled',
+    'refunded': 'Refunded',
+    'failed': 'Failed',
+    'delivered': 'Delivered',
+    'shipped': 'Shipped',
+}
+
+WOO_PER_PAGE_CHOICES = [25, 50, 100, 200]
+
+#: Sortable columns, keyed by the `sort` query param. Every ordering falls back
+#: to woo_order_id so pagination stays stable across ties (thousands of these
+#: orders share a date, and an unstable sort silently repeats/drops rows
+#: between pages).
+WOO_SORT_FIELDS = {
+    '-date': ['-woo_date_created', '-woo_order_id'],
+    'date': ['woo_date_created', 'woo_order_id'],
+    '-total': ['-total', '-woo_order_id'],
+    'total': ['total', 'woo_order_id'],
+    '-id': ['-woo_order_id'],
+    'id': ['woo_order_id'],
+    'status': ['status', '-woo_order_id'],
+    '-status': ['-status', '-woo_order_id'],
+    'customer': ['customer_name', '-woo_order_id'],
+    '-customer': ['-customer_name', '-woo_order_id'],
+}
+
+
+def _apply_woo_order_filters(queryset, *, search='', status='', sync='',
+                             date_from='', date_to=''):
+    """Shared filter pipeline for the WooCommerce order list and its CSV
+    export, so "export" always means exactly the rows on screen."""
+    from django.utils.dateparse import parse_date
+    from .timezone_utils import nepali_day_start, nepali_day_end_exclusive
+
+    if search:
+        search_filter = Q(customer_name__icontains=search) | \
+            Q(customer_email__icontains=search) | \
+            Q(billing_phone__icontains=search)
+        if search.isdigit():
+            search_filter |= Q(woo_order_id=search)
+        queryset = queryset.filter(search_filter)
+
+    if status:
+        queryset = queryset.filter(status=status)
+
+    if sync == 'synced':
+        queryset = queryset.filter(order__isnull=False)
+    elif sync == 'failed':
+        queryset = queryset.filter(order__isnull=True)
+
+    # Dates filter on when the shopper placed the order in WooCommerce, not on
+    # when we happened to sync the row - for a backfilled store the latter is
+    # the same day for every order and the filter would be meaningless.
+    #
+    # Compared as explicit Nepal-time boundaries rather than with __date__gte:
+    # that lookup compiles to CONVERT_TZ() on MySQL, which returns NULL on this
+    # server (mysql.time_zone_name is empty) and silently matches zero rows.
+    # See dashboard/timezone_utils.nepali_day_start().
+    parsed_from = parse_date(date_from) if date_from else None
+    if parsed_from:
+        queryset = queryset.filter(woo_date_created__gte=nepali_day_start(parsed_from))
+
+    parsed_to = parse_date(date_to) if date_to else None
+    if parsed_to:
+        queryset = queryset.filter(woo_date_created__lt=nepali_day_end_exclusive(parsed_to))
+
+    return queryset
+
+
+@login_required
+def woocommerce_orders_list(request):
+    """View to list WooCommerce orders received via webhook/API poll, with
+    search, status/sync/date filtering and pagination."""
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        from django.contrib import messages
+        messages.error(request, "Permission denied.", extra_tags='permission_denied')
+        from django.shortcuts import redirect
+        return redirect('dashboard')
+
+    from integrations.models import WooCommerceOrder
+    from .timezone_utils import format_nepali_datetime
+
+    all_orders = WooCommerceOrder.objects.all()
+
+    search = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    sync_filter = request.GET.get('sync', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+    sort = request.GET.get('sort', '').strip() or '-date'
+
+    orders = _apply_woo_order_filters(
+        all_orders, search=search, status=status_filter, sync=sync_filter,
+        date_from=date_from, date_to=date_to,
+    ).order_by(*WOO_SORT_FIELDS.get(sort, WOO_SORT_FIELDS['-date']))
+
+    stats = {
+        'total': all_orders.count(),
+        'synced': all_orders.filter(order__isnull=False).count(),
+        'failed': all_orders.filter(order__isnull=True).count(),
+        'total_revenue': all_orders.aggregate(total=Sum('total'))['total'] or 0,
+    }
+
+    try:
+        per_page = int(request.GET.get('per_page', 25))
+    except (TypeError, ValueError):
+        per_page = 25
+    if per_page not in WOO_PER_PAGE_CHOICES:
+        per_page = 25
+
+    paginator = Paginator(orders, per_page)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    querystring = request.GET.copy()
+    querystring.pop('page', None)
+
+    # Sortable column headers rebuild the sort param themselves, and the export
+    # link must not carry paging.
+    querystring_nosort = querystring.copy()
+    querystring_nosort.pop('sort', None)
+
+    # The status chips replace the status param rather than appending to it.
+    querystring_nostatus = querystring.copy()
+    querystring_nostatus.pop('status', None)
+
+    # Status filter options come from what's actually in the store, not a fixed
+    # list - this WooCommerce install adds custom statuses (`delivered`,
+    # `shipped`) on top of the seven core ones, and a hardcoded list would hide
+    # thousands of orders behind an "All Statuses" the operator can't narrow.
+    status_counts = {
+        row['status']: row['count']
+        for row in all_orders.values('status').annotate(count=Count('id'))
+    }
+    seen = set()
+    status_choices = []
+    for value in list(WOO_STATUS_LABELS) + sorted(status_counts):
+        if value in seen:
+            continue
+        seen.add(value)
+        count = status_counts.get(value, 0)
+        if count or value in WOO_STATUS_LABELS:
+            status_choices.append({
+                'value': value,
+                'label': WOO_STATUS_LABELS.get(value, value.replace('-', ' ').replace('_', ' ').title()),
+                'count': count,
+            })
+
+    woo_site_url = (getattr(settings, 'WOOCOMMERCE_SITE_URL', '') or '').rstrip('/')
+
+    orders_detail_map = {
+        str(o.woo_order_id): {
+            'order_number': o.order.order_number if o.order_id else None,
+            'status': o.status,
+            'status_label': WOO_STATUS_LABELS.get(o.status, o.status.replace('-', ' ').title()),
+            'currency': o.currency,
+            'total': str(o.total),
+            'customer_name': o.customer_name,
+            'customer_email': o.customer_email,
+            'billing_phone': o.billing_phone,
+            'billing': o.billing_data,
+            'shipping': o.shipping_data,
+            'items': o.line_items_json,
+            'sync_source': o.sync_source,
+            'placed_at': format_nepali_datetime(o.woo_date_created) if o.woo_date_created else '',
+            'synced_at': format_nepali_datetime(o.created_at) if o.created_at else '',
+            'payment_method': (o.raw_payload or {}).get('payment_method_title', ''),
+            'customer_note': (o.raw_payload or {}).get('customer_note', ''),
+            # Deep link straight into wp-admin for this order, so an operator
+            # can jump from a suspicious row to the source of truth.
+            'wc_admin_url': (
+                f'{woo_site_url}/wp-admin/post.php?post={o.woo_order_id}&action=edit'
+                if woo_site_url else ''
+            ),
+        }
+        for o in page_obj.object_list
+    }
+
+    context = {
+        'page_obj': page_obj,
+        'orders': page_obj.object_list,
+        'stats': stats,
+        'status_choices': status_choices,
+        'search': search,
+        'status_filter': status_filter,
+        'sync_filter': sync_filter,
+        'date_from': date_from,
+        'date_to': date_to,
+        'querystring': querystring.urlencode(),
+        'result_count': paginator.count,
+        'orders_detail_map': orders_detail_map,
+        'per_page': per_page,
+        'per_page_choices': WOO_PER_PAGE_CHOICES,
+        'sort': sort,
+        'woo_site_url': woo_site_url,
+        'querystring_nosort': querystring_nosort.urlencode(),
+        'querystring_nostatus': querystring_nostatus.urlencode(),
+        # A store with thousands of orders yields hundreds of pages; hand the
+        # template a windowed range instead of making it walk page_range.
+        'page_window': paginator.get_elided_page_range(page_obj.number, on_each_side=2, on_ends=1),
+    }
+    return render(request, 'woocommerce_orders.html', context)
+
+
+@login_required
+def woocommerce_orders_export(request):
+    """Stream the current filter selection out as CSV.
+
+    Goes through the same _apply_woo_order_filters() the list page uses, so the
+    file always contains exactly the rows the operator was looking at - just
+    without the paging. Streamed because an unfiltered export is ~5k rows.
+    """
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
+
+    import csv
+    from django.http import StreamingHttpResponse
+    from integrations.models import WooCommerceOrder
+    from .timezone_utils import format_nepali_datetime, get_nepali_now
+
+    sort = request.GET.get('sort', '').strip() or '-date'
+    orders = _apply_woo_order_filters(
+        WooCommerceOrder.objects.select_related('order'),
+        search=request.GET.get('q', '').strip(),
+        status=request.GET.get('status', '').strip(),
+        sync=request.GET.get('sync', '').strip(),
+        date_from=request.GET.get('date_from', '').strip(),
+        date_to=request.GET.get('date_to', '').strip(),
+    ).order_by(*WOO_SORT_FIELDS.get(sort, WOO_SORT_FIELDS['-date']))
+
+    class Echo:
+        def write(self, value):
+            return value
+
+    writer = csv.writer(Echo())
+
+    def rows():
+        yield writer.writerow([
+            'WooCommerce ID', 'Order Date', 'Customer', 'Email', 'Phone',
+            'Status', 'Total', 'Currency', 'Internal Order', 'Sync Source', 'Synced At',
+        ])
+        for o in orders.iterator(chunk_size=500):
+            yield writer.writerow([
+                o.woo_order_id,
+                format_nepali_datetime(o.woo_date_created) if o.woo_date_created else '',
+                o.customer_name,
+                o.customer_email,
+                o.billing_phone,
+                WOO_STATUS_LABELS.get(o.status, o.status),
+                o.total,
+                o.currency,
+                o.order.order_number if o.order_id else '',
+                o.sync_source,
+                format_nepali_datetime(o.created_at) if o.created_at else '',
+            ])
+
+    stamp = get_nepali_now().strftime('%Y%m%d_%H%M')
+    response = StreamingHttpResponse(rows(), content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="woocommerce_orders_{stamp}.csv"'
+    return response
+
+
+@login_required
+def woocommerce_orders_sync(request):
+    """Pull orders from the WooCommerce REST API on demand.
+
+    Two modes, both driven by the on-page sync controls:
+    - mode=recent (default): last 30 days, in one request - the quick
+      "Refresh Data" action, for use before the push webhook is set up.
+    - mode=full: crawls the *entire* order history, one small batch of
+      pages per request. A store with thousands of orders takes minutes to
+      fully page through - far longer than a single request/gunicorn worker
+      should be held open - so the frontend calls this repeatedly with an
+      advancing `page` cursor (returned as `next_page`) until `done: true`,
+      showing progress from `total_pages`/`total_count` along the way.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'}, status=405)
+    if not (request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'):
+        return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
+
+    from integrations.services import ingest_polled_order
+    from services.woocommerce_service import WooCommerceService
+
+    mode = request.POST.get('mode', 'recent')
+    try:
+        start_page = max(1, int(request.POST.get('page', 1)))
+    except (TypeError, ValueError):
+        start_page = 1
+
+    try:
+        service = WooCommerceService()
+
+        if mode == 'full':
+            batch = service.fetch_orders_batch(start_page=start_page, batch_pages=4, per_page=50)
+        else:
+            since = timezone.now() - timezone.timedelta(days=30)
+            batch = service.fetch_orders_batch(
+                start_page=start_page, batch_pages=10, per_page=50,
+                modified_after=since.isoformat(),
+            )
+
+        synced = 0
+        for raw in batch['orders']:
+            ingest_polled_order(raw)
+            synced += 1
+
+        return JsonResponse({
+            'success': True,
+            'synced': synced,
+            'next_page': batch['next_page'],
+            'done': batch['next_page'] is None,
+            'total_pages': batch['total_pages'],
+            'total_count': batch['total_count'],
+        })
+    except Exception as e:
+        logger.exception('WooCommerce manual sync failed')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+# ==================== FOLLOW-UP LIST: FILTERS, SORTING, EXPORT ====================
+#
+# The list page, the live-sync poll, the "select all matching" helper and the
+# export all have to agree on what "the current filter" means, or a bulk action
+# silently operates on a different set of rows than the one on screen. They all
+# go through _followup_filter_params() / _apply_followup_filters() below.
+
+#: Date-range presets, in the order they appear in the dropdown. Each resolves
+#: to an inclusive pair of *local* (Asia/Kathmandu) dates.
+FOLLOWUP_DATE_PRESETS = [
+    ('', 'All time'),
+    ('today', 'Today'),
+    ('yesterday', 'Yesterday'),
+    ('last_7_days', 'Last 7 days'),
+    ('last_30_days', 'Last 30 days'),
+    ('this_month', 'This month'),
+    ('last_month', 'Last month'),
+    ('this_year', 'This year'),
+    ('custom', 'Custom range'),
+]
+
+#: Which timestamp the date filter applies to.
+FOLLOWUP_DATE_FIELDS = {
+    'created_at': 'Date Added',
+    'updated_at': 'Last Activity',
+}
+
+#: Everything the list can be sorted by: (key, menu label, kind). `kind` drives
+#: both the ORM ordering below and the direction labels in the UI ("Newest
+#: first" reads very differently from "A → Z"). Anything not in here falls back
+#: to created_at, so a hand-edited ?sort= can never reach an arbitrary field.
+FOLLOWUP_SORT_OPTIONS = [
+    ('created_at',       'Date Added',       'date'),
+    ('updated_at',       'Last Activity',    'date'),
+    ('last_followup_at', 'Last Follow-up',   'date'),
+    ('followup_count',   'Follow-up Count',  'number'),
+    ('name',             'Name',             'text'),
+    ('phone',            'Phone Number',     'text'),
+    ('lead_source',      'Lead Source',      'text'),
+    ('status',           'Status',           'text'),
+]
+
+FOLLOWUP_SORT_KINDS = {key: kind for key, _, kind in FOLLOWUP_SORT_OPTIONS}
+FOLLOWUP_SORT_LABELS = {key: label for key, label, _ in FOLLOWUP_SORT_OPTIONS}
+
+#: Upper bound on a single bulk delete / "select all matching" request, so a
+#: runaway click can't try to rewrite the whole table in one transaction.
+FOLLOWUP_BULK_LIMIT = 2000
+
+
+def _followup_parse_date(value):
+    """Parse a YYYY-MM-DD string, returning None for anything unusable."""
+    from datetime import date as _date
+    try:
+        return _date.fromisoformat((value or '').strip())
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def _followup_day_bounds(day, end=False):
+    """Local calendar day -> tz-aware datetime at its start (or very end)."""
+    from datetime import time as _time
+    moment = _time.max if end else _time.min
+    return timezone.make_aware(datetime.combine(day, moment))
+
+
+def _followup_filter_params(request):
+    """Read every follow-up list filter/sort knob off the querystring, once."""
+    today = timezone.localdate()
+
+    date_field = (request.GET.get('date_field') or 'created_at').strip()
+    if date_field not in FOLLOWUP_DATE_FIELDS:
+        date_field = 'created_at'
+
+    raw_from = (request.GET.get('date_from') or '').strip()
+    raw_to = (request.GET.get('date_to') or '').strip()
+
+    preset = (request.GET.get('date_range') or '').strip()
+    if preset not in {key for key, _ in FOLLOWUP_DATE_PRESETS}:
+        preset = ''
+    # Bare ?date_from=/&date_to= (a bookmarked/shared URL, or the datepickers
+    # used before the preset select was touched) is a custom range.
+    if not preset and (raw_from or raw_to):
+        preset = 'custom'
+
+    start = end = None
+    if preset == 'today':
+        start = end = today
+    elif preset == 'yesterday':
+        start = end = today - timedelta(days=1)
+    elif preset == 'last_7_days':
+        start, end = today - timedelta(days=6), today
+    elif preset == 'last_30_days':
+        start, end = today - timedelta(days=29), today
+    elif preset == 'this_month':
+        start, end = today.replace(day=1), today
+    elif preset == 'last_month':
+        end = today.replace(day=1) - timedelta(days=1)
+        start = end.replace(day=1)
+    elif preset == 'this_year':
+        start, end = today.replace(month=1, day=1), today
+    elif preset == 'custom':
+        start = _followup_parse_date(raw_from)
+        end = _followup_parse_date(raw_to)
+        # A one-sided custom range is legitimate ("everything since 1 Aug").
+        # A reversed one is a slip, so swap it instead of returning nothing.
+        if start and end and start > end:
+            start, end = end, start
+        if not start and not end:
+            preset = ''   # both fields empty/garbage: no date filter at all
+
+    sort = (request.GET.get('sort') or 'created_at').strip()
+    if sort not in FOLLOWUP_SORT_KINDS:
+        sort = 'created_at'
+    direction = (request.GET.get('dir') or 'desc').strip().lower()
+    if direction not in ('asc', 'desc'):
+        direction = 'desc'
+
+    if preset == 'custom':
+        if start and end:
+            label = f"{start.strftime('%d %b %Y')} – {end.strftime('%d %b %Y')}"
+        elif start:
+            label = f"From {start.strftime('%d %b %Y')}"
+        else:
+            label = f"Until {end.strftime('%d %b %Y')}"
+    else:
+        label = dict(FOLLOWUP_DATE_PRESETS).get(preset, 'All time')
+        if start and end and preset:
+            label = f"{label} ({start.strftime('%d %b')} – {end.strftime('%d %b %Y')})"
+
+    return {
+        'q': (request.GET.get('q') or '').strip(),
+        'lead_source': (request.GET.get('lead_source') or '').strip(),
+        'status': (request.GET.get('status') or '').strip(),
+        'date_field': date_field,
+        'date_range': preset,
+        'date_from': start.isoformat() if start else '',
+        'date_to': end.isoformat() if end else '',
+        'date_start': start,
+        'date_end': end,
+        'date_label': label,
+        'sort': sort,
+        'dir': direction,
+    }
+
+
+def _apply_followup_filters(qs, params):
+    """Apply the search / lead source / status / date-range filters."""
+    if params['q']:
+        qs = qs.filter(
+            Q(name__icontains=params['q']) |
+            Q(phone__icontains=params['q']) |
+            Q(remarks__icontains=params['q'])
+        )
+    if params['lead_source']:
+        qs = qs.filter(lead_source__iexact=params['lead_source'])
+    if params['status']:
+        qs = qs.filter(status__iexact=params['status'])
+
+    field = params['date_field']
+    if params['date_start']:
+        qs = qs.filter(**{f'{field}__gte': _followup_day_bounds(params['date_start'])})
+    if params['date_end']:
+        qs = qs.filter(**{f'{field}__lte': _followup_day_bounds(params['date_end'], end=True)})
+    return qs
+
+
+def _apply_followup_sort(qs, params):
+    """Order by the requested column, with a stable tie-break.
+
+    Rows with nothing in the sorted column — no name, no follow-up yet — always
+    sink to the bottom, in either direction. An unnamed lead heading an A-Z
+    sort is never what the person who clicked the header wanted.
+    """
+    from django.db.models import CharField
+    from django.db.models.functions import Lower
+
+    sort = params['sort']
+    descending = params['dir'] == 'desc'
+    kind = FOLLOWUP_SORT_KINDS[sort]
+
+    # The two derived columns are annotated only when they're the one being
+    # sorted on, so an ordinary page load doesn't pay for a join it won't use.
+    if sort == 'followup_count':
+        qs = qs.annotate(_fu_key=Count(
+            'logs', filter=Q(logs__field_changed__startswith='Followup'), distinct=True,
+        ))
+    elif sort == 'last_followup_at':
+        qs = qs.annotate(_fu_key=Max(
+            'logs__timestamp', filter=Q(logs__field_changed__startswith='Followup'),
+        ))
+    elif kind == 'text':
+        # Case-insensitive, with '' treated the same way NULL is below.
+        qs = qs.annotate(
+            _fu_key=Case(
+                When(**{sort: ''}, then=Value(None)),
+                default=Lower(sort),
+                output_field=CharField(),
+            )
+        )
+    else:
+        qs = qs.annotate(_fu_key=F(sort))
+
+    key = F('_fu_key')
+    ordering = key.desc(nulls_last=True) if descending else key.asc(nulls_last=True)
+    return qs.order_by(ordering, F('created_at').desc(), F('id').desc())
+
+
+def _followup_action_queryset(request, params, base=None):
+    """Rows a bulk action / export should act on.
+
+    An explicit `ids=` selection always wins over the ambient filters: the user
+    ticked those specific boxes, possibly across several pages or before
+    changing a filter, so it is an "act on exactly these" request.
+    """
+    from .models import FollowUp
+
+    qs = base if base is not None else FollowUp.objects.filter(is_deleted=False)
+    raw_ids = (request.GET.get('ids') or '').strip()
+    if raw_ids:
+        selected = []
+        for chunk in raw_ids.split(','):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            try:
+                selected.append(int(chunk))
+            except ValueError:
+                continue
+        return qs.filter(id__in=selected).order_by('-created_at'), len(set(selected))
+
+    return _apply_followup_sort(_apply_followup_filters(qs, params), params), None
+
+
+@login_required
+def follow_ups_list(request):
+    """View to display and manage follow-ups."""
+    # Check permissions
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        messages.error(request, 'You do not have permission to access Follow-ups.')
+        return redirect('dashboard')
+    from .models import FollowUp, Product, Setup, ProductVariation
+
+    from django.core.paginator import Paginator
+    from urllib.parse import urlencode
+
+    params = _followup_filter_params(request)
+
+    follow_ups = FollowUp.objects.prefetch_related('products', 'product_variations', 'product_variations__product', 'logs', 'logs__user').select_related('product').filter(is_deleted=False)
+    follow_ups = _apply_followup_filters(follow_ups, params)
+    total_matching = follow_ups.count()
+    follow_ups = _apply_followup_sort(follow_ups, params)
+
+    # Pagination
+    per_page = request.GET.get('per_page', 200)
+    try:
+        per_page = int(per_page)
+    except ValueError:
+        per_page = 200
+
+    paginator = Paginator(follow_ups, per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    products = Product.objects.filter(is_deleted=False, is_active=True).prefetch_related('variations').order_by('name')
+    statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('sort_order', 'name')
+    action_statuses = statuses.exclude(name__iexact='Converted')
+    order_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('sort_order', 'name')
+
+    # Seed the live-sync cursors from the SERVER clock / log head. Seeding them
+    # in JS from `new Date()` meant a browser running behind the server replayed
+    # already-rendered activity as a burst of duplicate toasts on every load.
+    from .models import FollowUpLog
+    from django.db.models import Max
+    from django.utils import timezone as dj_timezone
+    sync_cursor = dj_timezone.now().isoformat()
+    event_cursor = FollowUpLog.objects.aggregate(max_id=Max('id'))['max_id'] or 0
+
+    # Every filter except `page`, so pagination links and the export button can
+    # carry the full filter/sort state without rebuilding it piece by piece.
+    filter_query = urlencode({
+        k: v for k, v in (
+            ('per_page', per_page),
+            ('q', params['q']),
+            ('lead_source', params['lead_source']),
+            ('status', params['status']),
+            ('date_field', params['date_field']),
+            ('date_range', params['date_range']),
+            ('date_from', params['date_from']),
+            ('date_to', params['date_to']),
+            ('sort', params['sort']),
+            ('dir', params['dir']),
+        ) if v not in ('', None)
+    })
+
+    context = {
+        'follow_ups': page_obj,
+        'page_obj': page_obj,
+        'products': products,
+        'statuses': statuses,
+        'action_statuses': action_statuses,
+        'order_sources': order_sources,
+        'per_page': per_page,
+        'search_query': params['q'],
+        'lead_source': params['lead_source'],
+        'filter_status': params['status'],
+        'date_field': params['date_field'],
+        'date_range': params['date_range'],
+        'date_from': params['date_from'],
+        'date_to': params['date_to'],
+        'date_label': params['date_label'],
+        'date_presets': FOLLOWUP_DATE_PRESETS,
+        'date_fields': sorted(FOLLOWUP_DATE_FIELDS.items()),
+        'today_iso': timezone.localdate().isoformat(),
+        'sort_by': params['sort'],
+        'sort_dir': params['dir'],
+        'sort_options': FOLLOWUP_SORT_OPTIONS,
+        'sort_label': FOLLOWUP_SORT_LABELS[params['sort']],
+        'sort_kind': FOLLOWUP_SORT_KINDS[params['sort']],
+        'total_matching': total_matching,
+        'filter_query': filter_query,
+        'bulk_limit': FOLLOWUP_BULK_LIMIT,
+        'sync_cursor': sync_cursor,
+        'event_cursor': event_cursor,
+    }
+    return render(request, 'dashboard/follow_ups.html', context)
+
+
+@login_required
+@require_POST
+def api_update_product_price(request, product_id):
+    try:
+        user = request.user
+        has_access = (
+            user.is_superuser
+            or getattr(user, 'role', None) == 'administrator'
+            or getattr(user, 'can_access_offer_price', False)
+        )
+        if not has_access:
+            return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+            
+        new_price = request.POST.get('price')
+        if new_price is None:
+            return JsonResponse({'success': False, 'error': 'Price is required.'}, status=400)
+            
+        new_price = Decimal(new_price)
+        if new_price < 0:
+            return JsonResponse({'success': False, 'error': 'Price cannot be negative.'}, status=400)
+            
+        product = get_object_or_404(Product, id=product_id)
+        product.price = new_price
+        product.save()
+        
+        return JsonResponse({'success': True, 'message': 'Price updated successfully.', 'new_price': float(product.price)})
+    except ValueError:
+        return JsonResponse({'success': False, 'error': 'Invalid price format.'}, status=400)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+
+@login_required
+@require_POST
+def add_follow_up(request):
+    """AJAX endpoint to add a new follow-up entry."""
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+    from .models import FollowUp, Product
+    try:
+        data = json.loads(request.body)
+        
+        name = data.get('name', '').strip()
+        phone = data.get('phone', '').strip()
+        lead_source = data.get('lead_source', '').strip()
+        product_ids = data.get('product_ids', [])  # list of IDs (new M2M)
+        followup_note = data.get('new_followup_note', '').strip()
+        status = data.get('status', '').strip()
+        remarks = data.get('remarks', '').strip()
+        
+        if not phone:
+            return JsonResponse({'success': False, 'error': 'Phone number is required.'})
+            
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        time_threshold = timezone.now() - timedelta(hours=24)
+        if FollowUp.objects.filter(phone=phone, created_at__gte=time_threshold, is_deleted=False).exists():
+            return JsonResponse({'success': False, 'error': 'This phone number was already added in the last 24 hours.'})
+            
+        new_follow_up = FollowUp.objects.create(
+            name=name,
+            phone=phone,
+            lead_source=lead_source,
+            status=status,
+            remarks=remarks
+        )
+        
+        # Set multiple products and variations via M2M
+        if product_ids:
+            p_ids = [int(p) for p in product_ids if not str(p).startswith('v_')]
+            v_ids = [int(str(p)[2:]) for p in product_ids if str(p).startswith('v_')]
+            
+            valid_products = Product.objects.filter(id__in=p_ids, is_deleted=False)
+            new_follow_up.products.set(valid_products)
+            
+            if v_ids:
+                from .models import ProductVariation
+                valid_variations = ProductVariation.objects.filter(id__in=v_ids)
+                new_follow_up.product_variations.set(valid_variations)
+            
+        from .models import FollowUpLog
+
+        FollowUpLog.objects.create(
+            follow_up=new_follow_up, user=request.user, field_changed='Entry Created',
+            old_value='-', new_value='Entry Created'
+        )
+        if followup_note:
+            FollowUpLog.objects.create(
+                follow_up=new_follow_up, user=request.user, field_changed='Followup 1',
+                old_value='-', new_value=followup_note
+            )
+        if status:
+            FollowUpLog.objects.create(
+                follow_up=new_follow_up, user=request.user, field_changed='Status',
+                old_value='-', new_value=status
+            )
+        if remarks:
+            FollowUpLog.objects.create(
+                follow_up=new_follow_up, user=request.user, field_changed='Remarks',
+                old_value='-', new_value=remarks
+            )
+
+        products_data = [
+            {'id': str(p.id), 'name': p.name, 'price': float(p.price)}
+            for p in new_follow_up.products.all()
+        ]
+        products_data.extend([
+            {'id': f"v_{v.id}", 'name': f"{v.product.name} - {v.variation_name or v.sku}", 'price': float(v.price)}
+            for v in new_follow_up.product_variations.all()
+        ])
+        
+        from django.utils import timezone
+        all_logs = []
+        for log in new_follow_up.logs.all():
+            if log.field_changed == 'Entry Created' or log.field_changed.startswith('Followup'):
+                all_logs.append({
+                    'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
+                    'user': log.user.username if log.user else 'System',
+                    'new_value': log.new_value,
+                    'field_changed': log.field_changed
+                })
+            
+        response_data = {
+            'id': new_follow_up.id,
+            'name': new_follow_up.name,
+            'phone': new_follow_up.phone,
+            'lead_source': new_follow_up.lead_source,
+            'products': products_data,
+            'products_display': ', '.join(p['name'] for p in products_data) or '-',
+            'status': new_follow_up.status,
+            'remarks': new_follow_up.remarks,
+            'all_logs': all_logs,
+            'created_at': timezone.localtime(new_follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
+            'created_at_iso': new_follow_up.created_at.isoformat(),
+            'version': getattr(new_follow_up, 'version', 1)
+        }
+
+        # Removed Channels WebSocket broadcast for cPanel compatibility
+            
+        return JsonResponse({
+            'success': True,
+            'data': response_data
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+@require_POST
+def edit_follow_up(request, pk):
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+    from .models import FollowUp, Product, FollowUpLog
+    try:
+        follow_up = get_object_or_404(FollowUp, pk=pk)
+        data = json.loads(request.body)
+        
+        incoming_version = data.get('version')
+        if incoming_version is not None:
+            if getattr(follow_up, 'version', 1) != int(incoming_version):
+                return JsonResponse({
+                    'success': False, 
+                    'error': 'Order already updated by another user, please review.'
+                }, status=409)
+
+        
+        new_followup_note = data.get('new_followup_note', '').strip()
+        
+        old_status = follow_up.status
+        old_name = follow_up.name
+        old_phone = follow_up.phone
+        old_lead_source = follow_up.lead_source
+        old_remarks = follow_up.remarks
+
+        follow_up.name = data.get('name', follow_up.name).strip()
+        phone = data.get('phone', follow_up.phone).strip()
+        
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        if phone != follow_up.phone:
+            time_threshold = timezone.now() - timedelta(hours=24)
+            if FollowUp.objects.filter(phone=phone, created_at__gte=time_threshold, is_deleted=False).exists():
+                return JsonResponse({'success': False, 'error': 'This phone number is already present in another follow-up added within the last 24 hours.'})
+            
+        follow_up.phone = phone
+        follow_up.lead_source = data.get('lead_source', follow_up.lead_source).strip()
+        follow_up.status = data.get('status', follow_up.status).strip()
+        follow_up.remarks = data.get('remarks', follow_up.remarks).strip()
+        if hasattr(follow_up, 'version'):
+            follow_up.version += 1
+        follow_up.save()
+
+        # Log changes
+        changes = [
+            ('Status', old_status, follow_up.status),
+            ('Name', old_name, follow_up.name),
+            ('Phone', old_phone, follow_up.phone),
+            ('Lead Source', old_lead_source, follow_up.lead_source),
+            ('Remarks', old_remarks, follow_up.remarks)
+        ]
+        for field, old_val, new_val in changes:
+            if old_val != new_val:
+                FollowUpLog.objects.create(
+                    follow_up=follow_up, user=request.user, field_changed=field,
+                    old_value=old_val or '-', new_value=new_val or '-'
+                )
+        
+        if new_followup_note:
+            count = follow_up.logs.filter(field_changed__startswith='Followup').count()
+            next_num = count + 1
+            FollowUpLog.objects.create(
+                follow_up=follow_up, user=request.user, field_changed=f'Followup {next_num}',
+                old_value='-', new_value=new_followup_note
+            )
+        
+        # Handle multiple products and variations (M2M)
+        product_ids = data.get('product_ids')
+        if product_ids is not None:  # explicit list sent (even if empty = clear all)
+            p_ids = [int(p) for p in product_ids if not str(p).startswith('v_')]
+            v_ids = [int(str(p)[2:]) for p in product_ids if str(p).startswith('v_')]
+            
+            valid_products = Product.objects.filter(id__in=p_ids, is_deleted=False) if p_ids else []
+            follow_up.products.set(valid_products)
+            
+            from .models import ProductVariation
+            valid_variations = ProductVariation.objects.filter(id__in=v_ids) if v_ids else []
+            follow_up.product_variations.set(valid_variations)
+        
+        products_data = [
+            {'id': str(p.id), 'name': p.name, 'price': float(p.price)}
+            for p in follow_up.products.all()
+        ]
+        products_data.extend([
+            {'id': f"v_{v.id}", 'name': f"{v.product.name} - {v.variation_name or v.sku}", 'price': float(v.price)}
+            for v in follow_up.product_variations.all()
+        ])
+        
+        from django.utils import timezone
+        all_logs = []
+        for log in follow_up.logs.all():
+            if log.field_changed == 'Entry Created' or log.field_changed.startswith('Followup'):
+                all_logs.append({
+                    'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
+                    'user': log.user.username if log.user else 'System',
+                    'new_value': log.new_value,
+                    'field_changed': log.field_changed
+                })
+            
+        response_data = {
+            'id': follow_up.id,
+            'name': follow_up.name,
+            'phone': follow_up.phone,
+            'lead_source': follow_up.lead_source,
+            'products': products_data,
+            'products_display': ', '.join(p['name'] for p in products_data) or '-',
+            'status': follow_up.status,
+            'remarks': follow_up.remarks,
+            'all_logs': all_logs,
+            'created_at': timezone.localtime(follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
+            'created_at_iso': follow_up.created_at.isoformat(),
+            'version': getattr(follow_up, 'version', 1)
+        }
+        # Removed Channels WebSocket broadcast for cPanel compatibility
+
+        return JsonResponse({
+            'success': True,
+            'data': response_data
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+@require_POST
+def delete_follow_up(request, pk):
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+    from .models import FollowUp, FollowUpLog
+    try:
+        follow_up = get_object_or_404(FollowUp, pk=pk)
+        follow_up.is_deleted = True
+        follow_up.save()
+
+        FollowUpLog.objects.create(
+            follow_up=follow_up, user=request.user, field_changed='Deleted',
+            old_value=follow_up.status or '-', new_value='Deleted'
+        )
+
+        # Removed Channels WebSocket broadcast for cPanel compatibility
+
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+@require_POST
+def bulk_delete_follow_ups(request):
+    """Soft-delete every follow-up in the posted id list, in one transaction."""
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+    from .models import FollowUp, FollowUpLog
+
+    try:
+        data = json.loads(request.body or '{}')
+    except ValueError:
+        return JsonResponse({'success': False, 'error': 'Invalid request body.'}, status=400)
+
+    ids = []
+    for raw in (data.get('ids') or []):
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    ids = list(dict.fromkeys(ids))   # de-dupe, keep order for a stable response
+
+    if not ids:
+        return JsonResponse({'success': False, 'error': 'No follow-ups selected.'}, status=400)
+    if len(ids) > FOLLOWUP_BULK_LIMIT:
+        return JsonResponse({
+            'success': False,
+            'error': f'Too many rows selected ({len(ids)}). Delete at most {FOLLOWUP_BULK_LIMIT} at a time.'
+        }, status=400)
+
+    try:
+        with transaction.atomic():
+            # Lock and read first: the log rows need each entry's status *before*
+            # it was deleted, and rows already deleted by someone else in the
+            # meantime must not be logged (or counted) a second time.
+            targets = list(
+                FollowUp.objects.select_for_update()
+                .filter(id__in=ids, is_deleted=False)
+                .values_list('id', 'status')
+            )
+            target_ids = [t[0] for t in targets]
+
+            if target_ids:
+                # .update() skips auto_now, so updated_at is set by hand —
+                # the live-sync poll cursors on it to notice the deletions.
+                FollowUp.objects.filter(id__in=target_ids).update(
+                    is_deleted=True,
+                    updated_at=timezone.now(),
+                    version=F('version') + 1,
+                )
+                FollowUpLog.objects.bulk_create([
+                    FollowUpLog(
+                        follow_up_id=fu_id, user=request.user, field_changed='Deleted',
+                        old_value=status or '-', new_value='Deleted',
+                    )
+                    for fu_id, status in targets
+                ])
+    except Exception as e:
+        logger.exception('Bulk follow-up delete failed')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+    return JsonResponse({
+        'success': True,
+        'deleted': len(target_ids),
+        'ids': target_ids,
+        'skipped': len(ids) - len(target_ids),
+    })
+
+
+@login_required
+def follow_ups_filtered_ids(request):
+    """Ids of every follow-up matching the active filters.
+
+    Backs "select all N matching this filter" in the bulk toolbar, so the user
+    can act on rows that live on other pages without loading them.
+    """
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+    from .models import FollowUp
+
+    params = _followup_filter_params(request)
+    qs = _apply_followup_filters(FollowUp.objects.filter(is_deleted=False), params)
+    total = qs.count()
+    ids = list(qs.order_by('-created_at').values_list('id', flat=True)[:FOLLOWUP_BULK_LIMIT])
+
+    return JsonResponse({
+        'success': True,
+        'ids': ids,
+        'count': len(ids),
+        'total': total,
+        'truncated': total > len(ids),
+        'limit': FOLLOWUP_BULK_LIMIT,
+    })
+
+
+@login_required
+def export_follow_ups(request):
+    """Export follow-ups to Excel (default) or CSV.
+
+    Exports the whole filtered queryset — not just the page the paginator is
+    showing — or, when `ids=` is present, exactly the ticked rows.
+    """
+    is_admin = request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    has_access = is_admin or (
+        getattr(request.user, 'can_access_follow_ups', False)
+        and getattr(request.user, 'can_export_follow_ups', False)
+    )
+    if not has_access:
+        messages.error(request, 'You do not have permission to export Follow-ups.')
+        return redirect('dashboard')
+    from .models import FollowUp
+    from .timezone_utils import convert_to_nepali, get_nepali_now
+
+    params = _followup_filter_params(request)
+    base = FollowUp.objects.filter(is_deleted=False).prefetch_related(
+        'products', 'product_variations', 'product_variations__product', 'logs', 'logs__user'
+    ).select_related('product')
+    qs, selection_count = _followup_action_queryset(request, params, base=base)
+
+    export_format = (request.GET.get('format') or 'xlsx').strip().lower()
+    if export_format not in ('xlsx', 'csv'):
+        export_format = 'xlsx'
+
+    def _clean(value):
+        """Excel rejects control characters; strip them rather than 500."""
+        if value is None:
+            return ''
+        return ILLEGAL_CHARACTERS_RE.sub('', str(value))
+
+    def _local(dt):
+        """Nepali wall clock, naive — Excel has no concept of tz-aware values."""
+        local = convert_to_nepali(dt)
+        return local.replace(tzinfo=None) if local else None
+
+    HEADERS = [
+        'S.N.', 'Name', 'Phone Number', 'Lead Source', 'Products', 'Status',
+        'Remarks', 'Follow-ups', 'Latest Follow-up', 'Latest Follow-up By',
+        'Latest Follow-up At', 'Date Added', 'Last Activity',
+    ]
+
+    rows = []
+    note_rows = []
+    status_counts = {}
+
+    for index, fu in enumerate(qs, start=1):
+        products = ', '.join(p['name'] for p in fu.get_formatted_products()) or ''
+
+        # logs are ordered newest-first by FollowUpLog.Meta.
+        followup_logs = [
+            log for log in fu.logs.all()
+            if (log.field_changed or '').startswith('Followup')
+        ]
+        latest = followup_logs[0] if followup_logs else None
+
+        rows.append([
+            index,
+            _clean(fu.name),
+            _clean(fu.phone),
+            _clean(fu.lead_source),
+            _clean(products),
+            _clean((fu.status or '').title()),
+            _clean(fu.remarks),
+            len(followup_logs),
+            _clean(latest.new_value) if latest else '',
+            _clean(latest.user.username if latest and latest.user else ('System' if latest else '')),
+            _local(latest.timestamp) if latest else None,
+            _local(fu.created_at),
+            _local(fu.updated_at),
+        ])
+
+        key = (fu.status or 'No Status').title()
+        status_counts[key] = status_counts.get(key, 0) + 1
+
+        for log in reversed(followup_logs):   # oldest first reads as a timeline
+            note_rows.append([
+                _clean(fu.name),
+                _clean(fu.phone),
+                _clean(log.field_changed),
+                _clean(log.new_value),
+                _clean(log.user.username if log.user else 'System'),
+                _local(log.timestamp),
+            ])
+
+    exported_at = get_nepali_now().replace(tzinfo=None)
+    stamp = exported_at.strftime('%Y%m%d_%H%M%S')
+    prefix = 'followups_selection' if selection_count is not None else 'followups'
+
+    if export_format == 'csv':
+        import csv
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename={prefix}_{stamp}.csv'
+        response.write('﻿')   # BOM so Excel opens the UTF-8 file correctly
+        writer = csv.writer(response)
+        writer.writerow(HEADERS)
+        for row in rows:
+            writer.writerow([
+                cell.strftime('%Y-%m-%d %I:%M %p') if hasattr(cell, 'strftime') else cell
+                for cell in row
+            ])
+        return response
+
+    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    DATE_FMT = 'yyyy-mm-dd hh:mm AM/PM'
+
+    def write_sheet(ws, headers, data_rows, date_cols=(), wrap_cols=()):
+        ws.append(headers)
+        for col_num in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        for row in data_rows:
+            ws.append(row)
+        for col_idx in date_cols:
+            for row_idx in range(2, ws.max_row + 1):
+                ws.cell(row=row_idx, column=col_idx).number_format = DATE_FMT
+        for col_idx in wrap_cols:
+            for row_idx in range(2, ws.max_row + 1):
+                ws.cell(row=row_idx, column=col_idx).alignment = Alignment(wrap_text=True, vertical='top')
+        for column in ws.columns:
+            width = max(
+                [len(str(headers[column[0].column - 1]))] +
+                [len(str(c.value)) for c in column[1:] if c.value is not None],
+                default=10,
+            )
+            ws.column_dimensions[column[0].column_letter].width = min(width + 3, 55)
+        ws.freeze_panes = 'A2'
+        if ws.max_row > 1:
+            ws.auto_filter.ref = ws.dimensions
+
+    wb = Workbook()
+    write_sheet(
+        wb.active, HEADERS, rows,
+        date_cols=(11, 12, 13),
+        wrap_cols=(5, 7, 9),
+    )
+    wb.active.title = 'Follow-ups'
+
+    write_sheet(
+        wb.create_sheet('Follow-up Notes'),
+        ['Name', 'Phone Number', 'Entry', 'Note', 'By', 'At'],
+        note_rows,
+        date_cols=(6,),
+        wrap_cols=(4,),
+    )
+
+    write_sheet(
+        wb.create_sheet('Status Summary'),
+        ['Status', 'Follow-ups', 'Share %'],
+        [
+            [status, count, round(count * 100.0 / len(rows), 1) if rows else 0]
+            for status, count in sorted(status_counts.items(), key=lambda kv: -kv[1])
+        ],
+    )
+
+    info_rows = [['Report', 'Follow-ups']]
+    if selection_count is not None:
+        # A manual checkbox export ignores the ambient filters (see
+        # _followup_action_queryset), so say that plainly rather than listing
+        # filter values that didn't actually scope this file.
+        info_rows.append(['Selection', f'Manual selection ({selection_count} row{"s" if selection_count != 1 else ""} requested)'])
+    else:
+        info_rows += [
+            ['Search', params['q'] or '—'],
+            ['Lead Source', params['lead_source'] or 'All Lead Sources'],
+            ['Status', params['status'] or 'All Statuses'],
+            ['Date Filter', f"{FOLLOWUP_DATE_FIELDS[params['date_field']]}: {params['date_label']}"],
+            ['Sorted By', f"{FOLLOWUP_SORT_LABELS[params['sort']]} ({params['dir'].upper()})"],
+        ]
+    info_rows += [
+        ['Total Follow-ups', len(rows)],
+        ['Total Follow-up Notes', len(note_rows)],
+        ['Exported By', request.user.get_full_name() or request.user.username],
+        ['Exported At', exported_at.strftime('%Y-%m-%d %I:%M %p') + ' (NPT)'],
+    ]
+    write_sheet(wb.create_sheet('Report Info'), ['Field', 'Value'], info_rows)
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename={prefix}_{stamp}.xlsx'
+    wb.save(response)
+    return response
+
+
+@login_required
+def get_follow_up_logs(request, pk):
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+    from .models import FollowUpLog
+    from django.utils import timezone
+    logs = FollowUpLog.objects.filter(follow_up_id=pk).select_related('user').order_by('-timestamp')
+    data = [{
+        'user': log.user.username if log.user else 'System',
+        'field_changed': log.field_changed,
+        'old_value': log.old_value,
+        'new_value': log.new_value,
+        'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p")
+    } for log in logs]
+    return JsonResponse({'success': True, 'data': data})
+
+
+@login_required
+def follow_ups_trash(request):
+    """View to display soft-deleted follow-ups."""
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        messages.error(request, 'You do not have permission to access Follow-ups Trash.')
+        return redirect('dashboard')
+    from .models import FollowUp
+    
+    deleted_follow_ups = FollowUp.objects.prefetch_related('products').select_related('product').filter(is_deleted=True).order_by('-created_at')
+    
+    context = {
+        'deleted_follow_ups': deleted_follow_ups,
+    }
+    return render(request, 'dashboard/follow_ups_trash.html', context)
+
+
+@login_required
+@require_POST
+def restore_follow_up(request, pk):
+    """Restore a soft-deleted follow-up."""
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        messages.error(request, 'Permission denied.')
+        return redirect('dashboard')
+    from .models import FollowUp
+    try:
+        follow_up = get_object_or_404(FollowUp, pk=pk, is_deleted=True)
+        follow_up.is_deleted = False
+        follow_up.save()
+        messages.success(request, 'Follow-up restored successfully.')
+    except Exception as e:
+        messages.error(request, f'Error restoring follow-up: {str(e)}')
+    
+    return redirect('follow_ups_trash')
+
+
+@login_required
+@require_POST
+def hard_delete_follow_up(request, pk):
+    """Permanently delete a follow-up."""
+    has_access = getattr(request.user, 'can_access_follow_ups', False) or request.user.is_superuser or getattr(request.user, 'role', '') == 'administrator'
+    if not has_access:
+        messages.error(request, 'Permission denied.')
+        return redirect('dashboard')
+    from .models import FollowUp
+    try:
+        follow_up = get_object_or_404(FollowUp, pk=pk, is_deleted=True)
+        follow_up.delete()
+        messages.success(request, 'Follow-up permanently deleted.')
+    except Exception as e:
+        messages.error(request, f'Error deleting follow-up: {str(e)}')
+        
+    return redirect('follow_ups_trash')
+
+# ==================== CONTENT MANAGEMENT ====================
+import json
+from django.http import JsonResponse
+from .models import ContentAccount
+
+@login_required
+@permission_required('can_view_content_management')
+def content_accounts_list(request):
+    from hrm.models import Employee
+    employees = Employee.objects.all().order_by('full_name')
+    accounts = ContentAccount.objects.filter(is_deleted=False).order_by('order', '-id')
+    statuses = [{'name': s} for s in ['Active', 'new', 'inactive', 'deleted', 'Blocked']]
+    return render(request, 'dashboard/content_accounts.html', {
+        'accounts': accounts,
+        'statuses': statuses,
+        'employees': employees
+    })
+
+@login_required
+@permission_required('can_view_content_management')
+def update_content_account_order(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            order_data = data.get('order_data', [])
+            
+            # Use bulk_update for better performance
+            accounts_to_update = []
+            for item in order_data:
+                account_id = item.get('id')
+                order = item.get('order')
+                if account_id is not None and order is not None:
+                    account = ContentAccount(id=account_id, order=order)
+                    accounts_to_update.append(account)
+                    
+            if accounts_to_update:
+                ContentAccount.objects.bulk_update(accounts_to_update, ['order'])
+                
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+@permission_required('can_view_content_management')
+def add_content_account(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            account = ContentAccount.objects.create(
+                account_id=data.get('account_id', ''),
+                user_name=data.get('user_name', ''),
+                gmail=data.get('gmail', ''),
+                phone=data.get('phone', ''),
+                password=data.get('password', ''),
+                managed_by=data.get('managed_by', ''),
+                status=data.get('status', ''),
+                account_type=data.get('account_type', '')
+            )
+            return JsonResponse({'success': True, 'data': {
+                'id': account.id,
+                'account_id': account.account_id,
+                'user_name': account.user_name,
+                'gmail': account.gmail,
+                'phone': account.phone,
+                'password': account.password,
+                'managed_by': account.managed_by,
+                'status': account.status,
+                'account_type': account.account_type,
+            }})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+@permission_required('can_view_content_management')
+def edit_content_account(request, pk):
+    if request.method == 'POST':
+        try:
+            account = ContentAccount.objects.get(pk=pk)
+            data = json.loads(request.body)
+            account.account_id = data.get('account_id', account.account_id)
+            account.user_name = data.get('user_name', account.user_name)
+            account.gmail = data.get('gmail', account.gmail)
+            account.phone = data.get('phone', account.phone)
+            account.password = data.get('password', account.password)
+            account.managed_by = data.get('managed_by', account.managed_by)
+            account.status = data.get('status', account.status)
+            account.account_type = data.get('account_type', account.account_type)
+            account.save()
+            return JsonResponse({'success': True, 'data': {
+                'id': account.id,
+                'account_id': account.account_id,
+                'user_name': account.user_name,
+                'gmail': account.gmail,
+                'phone': account.phone,
+                'password': account.password,
+                'managed_by': account.managed_by,
+                'status': account.status,
+                'account_type': account.account_type,
+            }})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+@permission_required('can_view_content_management')
+def delete_content_account(request, pk):
+    if request.method == 'POST':
+        try:
+            account = ContentAccount.objects.get(pk=pk)
+            account.is_deleted = True
+            account.save()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+@permission_required('can_view_content_management')
+def content_accounts_trash(request):
+    accounts = ContentAccount.objects.filter(is_deleted=True).order_by('-id')
+    return render(request, 'dashboard/content_accounts_trash.html', {
+        'accounts': accounts,
+    })
+
+@login_required
+@permission_required('can_view_content_management')
+def restore_content_account(request, pk):
+    if request.method == 'POST':
+        try:
+            account = ContentAccount.objects.get(pk=pk, is_deleted=True)
+            account.is_deleted = False
+            account.save()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+@permission_required('can_view_content_management')
+def hard_delete_content_account(request, pk):
+    if request.method == 'POST':
+        try:
+            account = ContentAccount.objects.get(pk=pk, is_deleted=True)
+            account.delete()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+# ==================== STAFF REPORTS ====================
+from .models import StaffReport
+
+@login_required
+def staff_reports_list(request):
+    from hrm.models import Employee
+    reports = StaffReport.objects.filter(is_deleted=False).order_by('-id')
+    employees = Employee.objects.filter(employee_status='active').order_by('full_name')
+    return render(request, 'dashboard/staff_reports.html', {
+        'reports': reports,
+        'employees': employees,
+    })
+
+@login_required
+def add_staff_report(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            report = StaffReport.objects.create(
+                staff_name=data.get('staff_name', ''),
+                report_date=data.get('report_date', ''),
+                platform=data.get('platform', ''),
+                no_of_posts=data.get('no_of_posts', ''),
+                views=data.get('views', ''),
+                likes=data.get('likes', ''),
+                comments=data.get('comments', ''),
+                follower_growth=data.get('follower_growth', ''),
+                punctuality=data.get('punctuality', ''),
+                behaviour=data.get('behaviour', ''),
+                leave_and_wfh=data.get('leave_and_wfh', ''),
+                notes_remarks=data.get('notes_remarks', '')
+            )
+            return JsonResponse({'success': True, 'data': {
+                'id': report.id,
+                'staff_name': report.staff_name,
+                'report_date': report.report_date
+            }})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+def edit_staff_report(request, pk):
+    if request.method == 'POST':
+        try:
+            report = StaffReport.objects.get(pk=pk, is_deleted=False)
+            data = json.loads(request.body)
+            report.staff_name = data.get('staff_name', report.staff_name)
+            report.report_date = data.get('report_date', report.report_date)
+            report.platform = data.get('platform', report.platform)
+            report.no_of_posts = data.get('no_of_posts', report.no_of_posts)
+            report.views = data.get('views', report.views)
+            report.likes = data.get('likes', report.likes)
+            report.comments = data.get('comments', report.comments)
+            report.follower_growth = data.get('follower_growth', report.follower_growth)
+            report.punctuality = data.get('punctuality', report.punctuality)
+            report.behaviour = data.get('behaviour', report.behaviour)
+            report.leave_and_wfh = data.get('leave_and_wfh', report.leave_and_wfh)
+            report.notes_remarks = data.get('notes_remarks', report.notes_remarks)
+            report.save()
+            return JsonResponse({'success': True, 'data': {
+                'id': report.id,
+                'staff_name': report.staff_name,
+                'report_date': report.report_date
+            }})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@login_required
+def delete_staff_report(request, pk):
+    if request.method == 'POST':
+        try:
+            report = StaffReport.objects.get(pk=pk)
+            report.is_deleted = True
+            report.save()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+
+# ==================== RTV REPORT ====================
+
+#: Keyword rules that turn a free-text NCM RTV comment into a reason bucket.
+#: NCM staff type these by hand — English, Romanised Nepali, or a mix — so this
+#: is a best-effort classifier, not a taxonomy the courier guarantees. Rules are
+#: tried in order and the first hit wins, so specific reasons come before vague
+#: ones: "customer cancelled after not responding" should land in Cancelled.
+#: Anything that matches nothing falls into "Uncategorised", and the report
+#: surfaces the most common uncategorised comments so these rules can be grown
+#: from what the courier actually writes rather than from guesswork.
+RTV_REASON_RULES = [
+    # NCM's own canned reason. Its own bucket because "the customer says they
+    # never placed this" is the one RTV reason that points at how the order was
+    # taken rather than at the customer or the courier.
+    ('not_ordered', 'Customer Denies Ordering', '#be123c', (
+        'did not order', 'did not ordered', 'didnt order', "didn't order",
+        'never order', 'not ordered by', 'no order placed', 'not my order',
+    )),
+    ('wrong_number', 'Wrong Phone Number', '#e11d48', (
+        'wrong number', 'wrong contact', 'invalid number', 'number is wrong',
+        'incorrect number', 'fake number',
+    )),
+    ('cancelled', 'Customer Cancelled', '#ef4444', (
+        'cancel', 'refus', 'reject', 'denied', 'deny', 'dispute', 'not want',
+        'dont want', "don't want", 'no need', 'not needed', 'no longer',
+        'nachahiyo', 'chahidaina', 'nalinu', 'linna',
+    )),
+    ('unreachable', 'Unreachable / No Response', '#f59e0b', (
+        # PNR/PUR/PSO is NCM's shorthand for the phone-contact failures and is
+        # by far the most common comment they send, so it must not sit in
+        # Uncategorised. The slashed form and each code on its own are matched
+        # because NCM sometimes sends only one of them.
+        'pnr/pur/pso', 'pnr', 'pur/pso', 'pso',
+        'not respond', 'no response', 'not receiv', 'not pick', 'not answer',
+        'no answer', 'not attend', 'switch off', 'switched off', 'phone off',
+        'number off', 'unreachable', 'not reachable', 'out of reach', 'call not',
+        'not contact', 'uthaena', 'uthdaina',
+    )),
+    ('unavailable', 'Customer Unavailable', '#8b5cf6', (
+        'out of station', 'not at home', 'not available', 'not in home',
+        'abroad', 'foreign', 'travel', 'hospital', 'out of valley', 'gharma chaina',
+        'bahira',
+    )),
+    ('address', 'Address / Location Issue', '#3b82f6', (
+        'address', 'location', 'wrong place', 'not found', 'unable to locate',
+        'incomplete detail', 'thegana',
+    )),
+    ('area', 'Out of Delivery Area', '#06b6d4', (
+        'out of delivery', 'out of area', 'out of coverage', 'no branch',
+        'branch nadeliver', 'service not', 'not deliverable', 'no service',
+    )),
+    ('payment', 'Payment / Price Issue', '#f97316', (
+        'no cash', 'cash not', 'insufficient', 'expensive', 'costly', 'too high',
+        'price', 'payment', 'paisa', 'cod issue', 'advance',
+    )),
+    ('damaged', 'Damaged / Wrong Item', '#dc2626', (
+        'damage', 'broken', 'defect', 'faulty', 'quality', 'wrong item',
+        'wrong product', 'wrong size', 'size', 'not match', 'mismatch', 'leak',
+    )),
+    ('duplicate', 'Duplicate / Mistake Order', '#64748b', (
+        'duplicate', 'double order', 'same order', 'test order', 'by mistake',
+        'mistakenly', 'wrong order', 'fake order', 'prank',
+    )),
+    ('delayed', 'Held Too Long / Expired', '#a855f7', (
+        'long time', 'too long', 'hold', 'holding', 'expire', 'delay', 'late',
+        'overdue', 'no update', 'many days',
+    )),
+    # NCM's canned "As per vendor request": the return was this business's own
+    # decision, so it is not a delivery failure and does not belong against a
+    # staff member's record the way the buckets above do.
+    ('vendor_request', 'Vendor Requested Return', '#0891b2', (
+        'as per vendor', 'vendor request', 'per vendor',
+    )),
+    # Last: nearly every RTV comment mentions returning something, so these
+    # keywords would swallow the specific buckets above if they ran earlier.
+    ('return_request', 'Return Requested', '#14b8a6', (
+        'return', 'rtv', 'send back', 'sent back', 'vendor',
+    )),
+]
+
+#: NCM's own shipment status for the RTV, unlike RTVStatus which is a local
+#: workflow tag. Anything NCM sends that is not listed falls back to grey.
+NCM_STATUS_COLOURS = {
+    'Delivered': '#10b981',
+    'Returned to Warehouse': '#3b82f6',
+    'Sent to Vendor': '#8b5cf6',
+    'Arrived': '#f59e0b',
+    'Dispatched': '#6366f1',
+    'Drop off Order Created': '#64748b',
+    'Pickup Complete': '#0ea5e9',
+    'Pickup Pending': '#94a3b8',
+}
+NCM_STATUS_FALLBACK = '#94a3b8'
+
+#: A parcel back at the courier's return counter — "Arrived at RETURN (BRANCH)".
+#: Its own colour rather than Arrived's amber, because it is the opposite fact:
+#: the return leg is over and the parcel can no longer be redirected.
+NCM_STATUS_RETURN_ARRIVED = '#dc2626'
+
+
+def ncm_status_colour(status):
+    """Chart/badge colour for one NCM status string.
+
+    RTVOrder.last_status arrives from two endpoints with different vocabularies:
+    NCM's vendor/orders answers with the bare word ("Arrived"), while the
+    tracking endpoint — which the redirection page's refresh writes back —
+    answers branch-qualified ("Arrived at RETURN NAYA BUSPARK", "Returned to
+    Warehouse (TINKUNE)"). An exact-match lookup coloured the second group grey,
+    so the same parcel changed colour depending on which sync last touched it.
+    """
+    from services.ncm_service import NCMService
+
+    text = (status or '').strip()
+    if not text:
+        return NCM_STATUS_FALLBACK
+    if text in NCM_STATUS_COLOURS:
+        return NCM_STATUS_COLOURS[text]
+    if NCMService.is_return_arrival(text):
+        return NCM_STATUS_RETURN_ARRIVED
+    lowered = text.lower()
+    for known, colour in NCM_STATUS_COLOURS.items():
+        if lowered.startswith(known.lower()):
+            return colour
+    return NCM_STATUS_FALLBACK
+
+RTV_REASON_NO_COMMENT = ('no_comment', 'No Comment Recorded', '#cbd5e1')
+RTV_REASON_OTHER = ('other', 'Uncategorised', '#94a3b8')
+
+#: Hard ceiling on how many RTV rows one report will resolve and aggregate.
+#: Attribution and reason classification happen in Python, so an unbounded
+#: "All time" range on a large database would otherwise build a very large list
+#: in memory. Past this the newest rows are kept and the page says so.
+RTV_REPORT_MAX_ROWS = 20000
+
+
+def classify_rtv_reason(comment):
+    """Return ``(key, label, colour)`` for one RTV comment. See RTV_REASON_RULES."""
+    text = (comment or '').strip().lower()
+    # '—' is what the RTV list substitutes for an empty comment; treat both the
+    # placeholder and a genuinely blank string as "nothing was written".
+    if not text or text == '—':
+        return RTV_REASON_NO_COMMENT
+    for key, label, colour, keywords in RTV_REASON_RULES:
+        if any(k in text for k in keywords):
+            return (key, label, colour)
+    return RTV_REASON_OTHER
+
+
+@login_required
+def rtv_report(request):
+    """Staff-performance view of Return-to-Vendor orders.
+
+    The RTV list page answers "which orders came back"; this page answers
+    "whose orders came back, and why". Both read the same RTVOrder rows through
+    the same resolve_rtv_order_by attribution, so a figure here always
+    reconciles with the "Order By" column there.
+
+    Everything past the database filters is computed in Python. Attribution is
+    not a database relation — an RTV carries only NCM's order id, never a FK to
+    a local Order — so it cannot be grouped in SQL, and the reason buckets are
+    keyword rules over free text rather than a stored column.
+    """
+    from collections import Counter
+    from django.db.models import CharField
+    from dashboard.models import RTVOrder, LogisticsAPIConfig, RTVStatus, RTVFollowUp
+    from dashboard.timezone_utils import (
+        convert_to_nepali, format_nepali_datetime_or_none, get_nepali_now,
+        nepali_day_start, nepali_day_end_exclusive,
+    )
+
+    has_access = (
+        request.user.is_superuser
+        or getattr(request.user, 'role', '') == 'administrator'
+        or getattr(request.user, 'can_view_rtv_report', False)
+    )
+    if not has_access:
+        messages.error(request, 'You do not have permission to view the RTV Report.')
+        return redirect('dashboard')
+
+    today_nepal = get_nepali_now().date()
+
+    # ---------- Period ----------
+    period = request.GET.get('period', 'last30').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    def _default_range():
+        return today_nepal - timedelta(days=29), today_nepal
+
+    if period == 'today':
+        start_day = end_day = today_nepal
+    elif period == 'yesterday':
+        start_day = end_day = today_nepal - timedelta(days=1)
+    elif period == 'last7':
+        start_day, end_day = today_nepal - timedelta(days=6), today_nepal
+    elif period == 'last30':
+        start_day, end_day = _default_range()
+    elif period == 'last90':
+        start_day, end_day = today_nepal - timedelta(days=89), today_nepal
+    elif period == 'thismonth':
+        start_day, end_day = today_nepal.replace(day=1), today_nepal
+    elif period == 'lastmonth':
+        end_day = today_nepal.replace(day=1) - timedelta(days=1)
+        start_day = end_day.replace(day=1)
+    elif period == 'thisyear':
+        start_day, end_day = today_nepal.replace(month=1, day=1), today_nepal
+    elif period == 'all':
+        start_day = end_day = None
+    elif period == 'custom' and date_from and date_to:
+        try:
+            start_day = datetime.strptime(date_from, '%Y-%m-%d').date()
+            end_day = datetime.strptime(date_to, '%Y-%m-%d').date()
+            if start_day > end_day:
+                start_day, end_day = end_day, start_day
+        except ValueError:
+            period = 'last30'
+            start_day, end_day = _default_range()
+    else:
+        period = 'last30'
+        start_day, end_day = _default_range()
+
+    date_from = start_day.isoformat() if start_day else ''
+    date_to = end_day.isoformat() if end_day else ''
+
+    period_labels = {
+        'today': 'Today', 'yesterday': 'Yesterday', 'last7': 'Last 7 Days',
+        'last30': 'Last 30 Days', 'last90': 'Last 90 Days',
+        'thismonth': 'This Month', 'lastmonth': 'Last Month',
+        'thisyear': 'This Year', 'all': 'All Time',
+    }
+    if period == 'custom':
+        period_label = (
+            start_day.strftime('%b %d, %Y') if start_day == end_day
+            else f"{start_day.strftime('%b %d')} → {end_day.strftime('%b %d, %Y')}"
+        )
+    else:
+        period_label = period_labels.get(period, 'Last 30 Days')
+
+    # ---------- Database-level filters ----------
+    api_config_id = request.GET.get('api_config_id', '').strip()
+    rtv_status_id = request.GET.get('rtv_status_id', '').strip()
+    search = request.GET.get('search', '').strip()
+
+    selected_config = None
+    if api_config_id:
+        try:
+            selected_config = LogisticsAPIConfig.objects.get(
+                id=int(api_config_id), logistics_provider='ncm'
+            )
+        except (LogisticsAPIConfig.DoesNotExist, ValueError, TypeError):
+            api_config_id = ''
+
+    def apply_db_filters(qs):
+        """Portal / status / text filters — everything expressible in SQL."""
+        if api_config_id:
+            qs = qs.filter(api_config_id=int(api_config_id))
+        if rtv_status_id == 'not_set':
+            qs = qs.filter(rtv_status__isnull=True)
+        elif rtv_status_id:
+            try:
+                qs = qs.filter(rtv_status_id=int(rtv_status_id))
+            except (ValueError, TypeError):
+                pass
+        if search:
+            qs = qs.annotate(
+                _oid_str=Cast('order_id', output_field=CharField())
+            ).filter(
+                Q(_oid_str__icontains=search) |
+                Q(comment__icontains=search) |
+                Q(receiver_name__icontains=search) |
+                Q(receiver_phone__icontains=search)
+            )
+        return qs
+
+    if rtv_status_id and rtv_status_id != 'not_set':
+        try:
+            int(rtv_status_id)
+        except (ValueError, TypeError):
+            rtv_status_id = ''
+
+    base_qs = apply_db_filters(
+        RTVOrder.objects.select_related('vendor', 'api_config', 'rtv_status')
+    )
+
+    # RTVs NCM never gave us a marked-at date for drop out of every dated range.
+    # Counting them here lets the page admit to the omission instead of quietly
+    # under-reporting — see RTVOrder.rtv_marked_at_source for why they exist.
+    undated_count = base_qs.filter(rtv_marked_at__isnull=True).count()
+
+    scoped_qs = base_qs
+    if start_day:
+        scoped_qs = scoped_qs.filter(
+            rtv_marked_at__gte=nepali_day_start(start_day),
+            rtv_marked_at__lt=nepali_day_end_exclusive(end_day),
+        )
+
+    scoped_qs = scoped_qs.order_by(
+        F('rtv_marked_at').desc(nulls_last=True), '-created_at', '-id'
+    )
+
+    total_in_scope = scoped_qs.count()
+    truncated = total_in_scope > RTV_REPORT_MAX_ROWS
+    rtv_objs = list(scoped_qs[:RTV_REPORT_MAX_ROWS])
+
+    # ---------- Attribution + reason classification ----------
+    attribution = resolve_rtv_order_by(rtv_objs)
+
+    # How long an order sat before it bounced. Only attributed RTVs have a local
+    # order to measure from, and only NCM-confirmed marked-at dates are worth
+    # measuring against, so this is reported as a coverage-limited average.
+    attributed_pks = {
+        info['order_pk'] for info in attribution.values() if info.get('order_pk')
+    }
+    order_created_at = dict(
+        Order.objects.filter(id__in=attributed_pks).values_list('id', 'created_at')
+    ) if attributed_pks else {}
+
+    # Which RTVs anyone actually chased. Follow-ups are the one activity signal
+    # this page has that is not inherited from NCM.
+    followed_up_ids = set(
+        RTVFollowUp.objects.filter(
+            rtv_order_id__in=[r.id for r in rtv_objs]
+        ).values_list('rtv_order_id', flat=True)
+    ) if rtv_objs else set()
+
+    CONFIRMED_MATCHES = ('exact', 'bulk_log')
+    records = []
+    for rtv in rtv_objs:
+        info = attribution.get(rtv.order_id) or {}
+        match = info.get('match') or 'none'
+        # A local order was found but nobody is recorded as having created it.
+        # Demote it to unlinked: counting it as confirmed coverage would inflate
+        # the attribution rate for a row the leaderboard has no name to file
+        # under. The order link survives so the row is still traceable by hand.
+        no_creator = bool(info) and not info.get('username')
+        if no_creator:
+            match = 'none'
+        reason_key, reason_label, reason_colour = classify_rtv_reason(rtv.comment)
+        marked_local = convert_to_nepali(rtv.rtv_marked_at) if rtv.rtv_marked_at else None
+
+        age_days = None
+        placed = order_created_at.get(info.get('order_pk'))
+        if placed and rtv.rtv_marked_at:
+            delta = (rtv.rtv_marked_at - placed).days
+            # A negative age means the ids were linked to the wrong order, or
+            # the marked-at date is one of the untrusted approximations. Either
+            # way it is not a measurement — drop it rather than skew the mean.
+            if delta >= 0:
+                age_days = delta
+
+        records.append({
+            'rtv_id': rtv.id,
+            'order_id': rtv.order_id,
+            'comment': (rtv.comment or '').strip(),
+            'reason_key': reason_key,
+            'reason_label': reason_label,
+            'reason_colour': reason_colour,
+            'staff_name': info.get('name'),
+            'staff_username': info.get('username'),
+            'staff_user_id': info.get('user_id'),
+            'staff_role': info.get('role'),
+            'order_number': info.get('order_number'),
+            'order_pk': info.get('order_pk'),
+            'order_from': info.get('order_from') or '',
+            'match': match,
+            'confirmed': match in CONFIRMED_MATCHES,
+            'no_creator': no_creator,
+            'ambiguous': bool(info.get('ambiguous')),
+            # Two different things both called "status". NCM's last_status is
+            # where the parcel actually is and arrives on every row; RTVStatus
+            # is a local workflow tag someone has to set by hand and is unset on
+            # nearly everything. The report leads with NCM's and keeps the local
+            # one alongside rather than showing an empty column.
+            'ncm_status': (rtv.last_status or '').strip(),
+            'ncm_status_colour': ncm_status_colour(rtv.last_status),
+            'status_name': rtv.rtv_status.name if rtv.rtv_status else None,
+            'status_colour': rtv.rtv_status.color if rtv.rtv_status else None,
+            'portal': rtv.api_config.api_name if rtv.api_config else None,
+            'marked_at': format_nepali_datetime_or_none(rtv.rtv_marked_at),
+            'marked_day': marked_local.date() if marked_local else None,
+            'marked_trusted': rtv.rtv_marked_at_is_trusted,
+            'receiver_name': rtv.receiver_name,
+            'receiver_phone': rtv.receiver_phone,
+            'phone_key': _normalize_np_phone(rtv.receiver_phone),
+            'age_days': age_days,
+            'has_followup': rtv.id in followed_up_ids,
+        })
+
+    # ---------- Python-level filters (attribution is not a SQL column) ----------
+    staff_filter = request.GET.get('staff', '').strip()
+    confidence_filter = request.GET.get('confidence', '').strip()
+    reason_filter = request.GET.get('reason', '').strip()
+    ncm_status_filter = request.GET.get('ncm_status', '').strip()
+
+    UNATTRIBUTED = '__none__'
+
+    def keep(rec):
+        if ncm_status_filter and rec['ncm_status'] != ncm_status_filter:
+            return False
+        if staff_filter == UNATTRIBUTED:
+            if rec['staff_username']:
+                return False
+        elif staff_filter and rec['staff_username'] != staff_filter:
+            return False
+        if confidence_filter == 'confirmed' and not rec['confirmed']:
+            return False
+        if confidence_filter == 'probable' and rec['match'] != 'phone':
+            return False
+        if confidence_filter == 'none' and rec['match'] != 'none':
+            return False
+        if reason_filter and rec['reason_key'] != reason_filter:
+            return False
+        return True
+
+    rows = [r for r in records if keep(r)]
+    drilled_down = bool(
+        staff_filter or confidence_filter or reason_filter or ncm_status_filter
+    )
+
+    # Dropdown options come from the pre-drill-down set, so picking a staff
+    # member never removes everyone else from the list you picked them from.
+    option_counts = Counter(
+        r['staff_username'] or UNATTRIBUTED for r in records
+    )
+    option_names = {}
+    for r in records:
+        key = r['staff_username'] or UNATTRIBUTED
+        option_names.setdefault(key, r['staff_name'] or 'Not linked to a local order')
+    staff_options = sorted(
+        (
+            {'value': k, 'label': option_names[k], 'count': c}
+            for k, c in option_counts.items()
+        ),
+        key=lambda o: (o['value'] == UNATTRIBUTED, -o['count'], o['label'].lower()),
+    )
+    reason_options = sorted(
+        (
+            {'value': k, 'label': lbl, 'count': c}
+            for (k, lbl), c in Counter(
+                (r['reason_key'], r['reason_label']) for r in records
+            ).items()
+        ),
+        key=lambda o: -o['count'],
+    )
+    ncm_status_options = [
+        {'value': v, 'label': v, 'count': c}
+        for v, c in Counter(
+            r['ncm_status'] for r in records if r['ncm_status']
+        ).most_common()
+    ]
+
+    # ---------- Excel export (of exactly what is on screen) ----------
+    if request.GET.get('export') == 'xlsx':
+        return _rtv_report_export(rows, period_label)
+
+    # ---------- Per-staff aggregation ----------
+    staff_stats = {}
+    for rec in rows:
+        key = rec['staff_username'] or UNATTRIBUTED
+        s = staff_stats.get(key)
+        if s is None:
+            s = staff_stats[key] = {
+                'key': key,
+                'name': rec['staff_name'] or 'Not linked to a local order',
+                'role': rec['staff_role'] or '',
+                'user_id': rec['staff_user_id'],
+                'unattributed': key == UNATTRIBUTED,
+                'total': 0, 'confirmed': 0, 'probable': 0,
+                'followed_up': 0,
+                'reasons': Counter(),
+                'ages': [],
+                'last_day': None,
+            }
+        s['total'] += 1
+        if rec['confirmed']:
+            s['confirmed'] += 1
+        elif rec['match'] == 'phone':
+            s['probable'] += 1
+        if rec['has_followup']:
+            s['followed_up'] += 1
+        s['reasons'][(rec['reason_key'], rec['reason_label'], rec['reason_colour'])] += 1
+        if rec['age_days'] is not None:
+            s['ages'].append(rec['age_days'])
+        if rec['marked_day'] and (s['last_day'] is None or rec['marked_day'] > s['last_day']):
+            s['last_day'] = rec['marked_day']
+
+    total_rtvs = len(rows)
+
+    # Orders each staff member created inside the same window. This is the
+    # denominator people reach for, but the two dates are not comparable: an
+    # RTV is marked weeks after the order was placed, so a window contains RTVs
+    # for orders taken before it. The ratio is carried through as indicative
+    # only and the template says so — see the tooltip on the RTV Rate column.
+    orders_in_window = {}
+    if start_day:
+        window_orders = Order.objects.filter(
+            created_at__gte=nepali_day_start(start_day),
+            created_at__lt=nepali_day_end_exclusive(end_day),
+            is_deleted=False,
+            created_by__isnull=False,
+        )
+    else:
+        window_orders = Order.objects.filter(is_deleted=False, created_by__isnull=False)
+    for username, count in window_orders.values_list(
+        'created_by__username'
+    ).annotate(n=Count('id')).values_list('created_by__username', 'n'):
+        orders_in_window[username] = count
+
+    staff_rows = []
+    for s in staff_stats.values():
+        top_reasons = [
+            {'key': k, 'label': lbl, 'colour': col, 'count': c,
+             'share': round(c * 100.0 / s['total'], 1) if s['total'] else 0}
+            for (k, lbl, col), c in s['reasons'].most_common(3)
+        ]
+        placed = orders_in_window.get(s['key']) if not s['unattributed'] else None
+        staff_rows.append({
+            **s,
+            'share': round(s['total'] * 100.0 / total_rtvs, 1) if total_rtvs else 0,
+            'top_reasons': top_reasons,
+            'top_reason_label': top_reasons[0]['label'] if top_reasons else '—',
+            'avg_age_days': round(sum(s['ages']) / len(s['ages'])) if s['ages'] else None,
+            'orders_placed': placed,
+            'rtv_rate': round(s['total'] * 100.0 / placed, 1) if placed else None,
+            'followup_share': (
+                round(s['followed_up'] * 100.0 / s['total']) if s['total'] else 0
+            ),
+            'last_day_display': s['last_day'].strftime('%b %d, %Y') if s['last_day'] else '—',
+        })
+
+    staff_rows.sort(key=lambda s: (s['unattributed'], -s['total'], s['name'].lower()))
+    max_staff_total = max((s['total'] for s in staff_rows), default=0)
+    for i, s in enumerate(staff_rows, start=1):
+        s['rank'] = i if not s['unattributed'] else None
+        s['bar_pct'] = round(s['total'] * 100.0 / max_staff_total, 1) if max_staff_total else 0
+
+    attributed_staff = [s for s in staff_rows if not s['unattributed']]
+
+    # ---------- Reason aggregation ----------
+    reason_counter = Counter(
+        (r['reason_key'], r['reason_label'], r['reason_colour']) for r in rows
+    )
+    reason_top_staff = {}
+    for rec in rows:
+        if rec['staff_username']:
+            reason_top_staff.setdefault(rec['reason_key'], Counter())[rec['staff_name']] += 1
+
+    reason_rows = []
+    for (key, label, colour), count in reason_counter.most_common():
+        leader = reason_top_staff.get(key)
+        top_name, top_count = leader.most_common(1)[0] if leader else ('—', 0)
+        reason_rows.append({
+            'key': key, 'label': label, 'colour': colour, 'count': count,
+            'share': round(count * 100.0 / total_rtvs, 1) if total_rtvs else 0,
+            'top_staff': top_name,
+            'top_staff_count': top_count,
+        })
+    max_reason_count = max((r['count'] for r in reason_rows), default=0)
+    for r in reason_rows:
+        r['bar_pct'] = round(r['count'] * 100.0 / max_reason_count, 1) if max_reason_count else 0
+
+    # The comments no rule matched, most repeated first. This is the feedback
+    # loop for RTV_REASON_RULES: whatever shows up here is a rule worth adding.
+    unmatched_comments = [
+        {'comment': c, 'count': n}
+        for c, n in Counter(
+            r['comment'] for r in rows if r['reason_key'] == 'other' and r['comment']
+        ).most_common(8)
+    ]
+
+    # ---------- Staff × reason matrix ----------
+    # Reasons across the top, staff down the side, so a column that is dark for
+    # one person and pale for everyone else points straight at a coachable habit.
+    matrix_reasons = [
+        {'key': r['key'], 'label': r['label'], 'colour': r['colour']}
+        for r in reason_rows[:7]
+    ]
+    matrix_keys = [r['key'] for r in matrix_reasons]
+    matrix_rows = []
+    for s in attributed_staff[:12]:
+        by_key = {k: c for (k, _lbl, _col), c in s['reasons'].items()}
+        cells = [{'key': k, 'count': by_key.get(k, 0)} for k in matrix_keys]
+        matrix_rows.append({'name': s['name'], 'total': s['total'], 'cells': cells})
+    max_cell = max(
+        (c['count'] for row in matrix_rows for c in row['cells']), default=0
+    )
+    for row in matrix_rows:
+        for c in row['cells']:
+            c['intensity'] = round(c['count'] / max_cell, 3) if max_cell else 0
+
+    # ---------- Trend ----------
+    # Daily buckets while they stay readable, monthly once the window is long.
+    dated = [r['marked_day'] for r in rows if r['marked_day']]
+    trend_start = start_day or (min(dated) if dated else today_nepal)
+    trend_end = end_day or (max(dated) if dated else today_nepal)
+    span_days = (trend_end - trend_start).days + 1
+    trend_granularity = 'day' if span_days <= 92 else 'month'
+
+    if trend_granularity == 'day':
+        counts = Counter(dated)
+        trend_labels, trend_values = [], []
+        cursor = trend_start
+        while cursor <= trend_end:
+            trend_labels.append(cursor.strftime('%b %d'))
+            trend_values.append(counts.get(cursor, 0))
+            cursor += timedelta(days=1)
+    else:
+        counts = Counter((d.year, d.month) for d in dated)
+        trend_labels, trend_values = [], []
+        y, m = trend_start.year, trend_start.month
+        while (y, m) <= (trend_end.year, trend_end.month):
+            trend_labels.append(datetime(y, m, 1).strftime('%b %Y'))
+            trend_values.append(counts.get((y, m), 0))
+            y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+
+    # On "All Time" the row set can contain RTVs NCM never dated, which have no
+    # bucket to sit in. Carrying the count means the trend can say why its bars
+    # add up to less than the headline total instead of quietly disagreeing.
+    trend_undated = sum(1 for r in rows if not r['marked_day'])
+
+    peak_count = max(trend_values, default=0)
+    peak_label = trend_labels[trend_values.index(peak_count)] if peak_count else '—'
+    avg_per_day = round(total_rtvs / span_days, 1) if span_days else 0
+
+    # ---------- Previous-period comparison ----------
+    # Only meaningful against the same slice of data, so it is withheld while a
+    # Python-side drill-down is active rather than compared against a whole
+    # period it does not correspond to.
+    prev_total = None
+    delta_pct = None
+    if start_day and not drilled_down:
+        prev_end = start_day - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=span_days - 1)
+        prev_total = base_qs.filter(
+            rtv_marked_at__gte=nepali_day_start(prev_start),
+            rtv_marked_at__lt=nepali_day_end_exclusive(prev_end),
+        ).count()
+        if prev_total:
+            delta_pct = round((total_rtvs - prev_total) * 100.0 / prev_total, 1)
+        elif total_rtvs:
+            delta_pct = 100.0
+
+    # ---------- Repeat customers ----------
+    # The same phone bouncing repeatedly is a customer problem, not a staff one;
+    # separating it keeps it from being read as anyone's performance.
+    phone_counter = Counter(r['phone_key'] for r in rows if r['phone_key'])
+    repeat_rows = []
+    for phone_key, count in phone_counter.most_common(8):
+        if count < 2:
+            break
+        sample = next(r for r in rows if r['phone_key'] == phone_key)
+        repeat_rows.append({
+            'name': sample['receiver_name'] or '—',
+            'phone': sample['receiver_phone'],
+            'count': count,
+            'staff': sorted({
+                r['staff_name'] for r in rows
+                if r['phone_key'] == phone_key and r['staff_name']
+            }),
+        })
+
+    # ---------- Headline numbers ----------
+    confirmed_count = sum(1 for r in rows if r['confirmed'])
+    probable_count = sum(1 for r in rows if r['match'] == 'phone')
+    unattributed_count = sum(1 for r in rows if r['match'] == 'none')
+    followed_up_count = sum(1 for r in rows if r['has_followup'])
+    ages = [r['age_days'] for r in rows if r['age_days'] is not None]
+
+    top_staff = attributed_staff[0] if attributed_staff else None
+    portal_counter = Counter(r['portal'] or 'Unassigned' for r in rows)
+
+    # NCM's shipment status — the one that is actually populated. Ordered by
+    # frequency so the chart legend leads with what dominates.
+    ncm_status_counter = Counter(r['ncm_status'] or 'Unknown' for r in rows)
+    ncm_status_colours = {
+        (r['ncm_status'] or 'Unknown'): (
+            r['ncm_status_colour'] if r['ncm_status'] else NCM_STATUS_FALLBACK
+        )
+        for r in rows
+    }
+
+    # The local workflow tag, kept as its own small breakdown so the fact that
+    # almost nothing is tagged stays visible instead of masquerading as a chart.
+    local_status_counter = Counter(r['status_name'] for r in rows if r['status_name'])
+    local_status_colours = {
+        r['status_name']: r['status_colour'] or '#cbd5e1'
+        for r in rows if r['status_name']
+    }
+    local_status_rows = [
+        {'name': name, 'count': count, 'colour': local_status_colours[name]}
+        for name, count in local_status_counter.most_common()
+    ]
+    local_status_unset = total_rtvs - sum(local_status_counter.values())
+
+    kpis = {
+        'total': total_rtvs,
+        'prev_total': prev_total,
+        'delta_pct': delta_pct,
+        'attributed': confirmed_count + probable_count,
+        'coverage_pct': (
+            round((confirmed_count + probable_count) * 100.0 / total_rtvs) if total_rtvs else 0
+        ),
+        'confirmed': confirmed_count,
+        'probable': probable_count,
+        'unattributed': unattributed_count,
+        'staff_count': len(attributed_staff),
+        'avg_per_day': avg_per_day,
+        'peak_label': peak_label,
+        'peak_count': peak_count,
+        'avg_age_days': round(sum(ages) / len(ages)) if ages else None,
+        'followed_up': followed_up_count,
+        'followup_pct': round(followed_up_count * 100.0 / total_rtvs) if total_rtvs else 0,
+        'top_staff_name': top_staff['name'] if top_staff else '—',
+        'top_staff_count': top_staff['total'] if top_staff else 0,
+        'top_staff_share': top_staff['share'] if top_staff else 0,
+        'top_reason_label': reason_rows[0]['label'] if reason_rows else '—',
+        'top_reason_count': reason_rows[0]['count'] if reason_rows else 0,
+        'top_reason_share': reason_rows[0]['share'] if reason_rows else 0,
+    }
+
+    # ---------- Chart payloads ----------
+    chart_data = {
+        'trend': {
+            'labels': trend_labels,
+            'values': trend_values,
+            'granularity': trend_granularity,
+            'undated': trend_undated,
+        },
+        'reasons': {
+            'labels': [r['label'] for r in reason_rows],
+            'values': [r['count'] for r in reason_rows],
+            'colours': [r['colour'] for r in reason_rows],
+        },
+        'staff': {
+            'labels': [s['name'] for s in attributed_staff[:10]],
+            'confirmed': [s['confirmed'] for s in attributed_staff[:10]],
+            'probable': [s['probable'] for s in attributed_staff[:10]],
+        },
+        'statuses': {
+            'labels': [k for k, _ in ncm_status_counter.most_common()],
+            'values': [v for _, v in ncm_status_counter.most_common()],
+            'colours': [
+                ncm_status_colours.get(k, NCM_STATUS_FALLBACK)
+                for k, _ in ncm_status_counter.most_common()
+            ],
+        },
+    }
+
+    # ---------- Detail table ----------
+    # Page size is the reader's call. "All" is capped at the analysis ceiling
+    # rather than being unbounded, so the option can never render more rows than
+    # the page actually loaded.
+    PER_PAGE_CHOICES = [25, 50, 100, 250, 500]
+    per_page_raw = request.GET.get('per_page', '50').strip()
+    if per_page_raw == 'all':
+        per_page = max(len(rows), 1)
+    else:
+        try:
+            per_page = int(per_page_raw)
+        except (ValueError, TypeError):
+            per_page = 50
+        if per_page not in PER_PAGE_CHOICES:
+            per_page = 50
+        per_page_raw = str(per_page)
+
+    paginator = Paginator(rows, per_page)
+    try:
+        page_number = int(request.GET.get('page', 1))
+    except (ValueError, TypeError):
+        page_number = 1
+    page_obj = paginator.get_page(page_number)
+
+    querystring = request.GET.copy()
+    querystring.pop('page', None)
+    querystring.pop('export', None)
+
+    # The leaderboard and reason table each append their own key. Handing them a
+    # querystring that already dropped that key keeps every other filter intact
+    # while stopping repeated clicks from piling up duplicate parameters.
+    def without(*keys):
+        qd = querystring.copy()
+        for k in keys:
+            qd.pop(k, None)
+        return qd.urlencode()
+
+    context = {
+        'kpis': kpis,
+        'staff_rows': staff_rows,
+        'attributed_staff_count': len(attributed_staff),
+        'reason_rows': reason_rows,
+        'unmatched_comments': unmatched_comments,
+        'matrix_reasons': matrix_reasons,
+        'matrix_rows': matrix_rows,
+        'repeat_rows': repeat_rows,
+        'portal_rows': portal_counter.most_common(),
+        'chart_data': chart_data,
+        'page_obj': page_obj,
+        'sn_offset': (page_obj.number - 1) * paginator.per_page,
+        'querystring': querystring.urlencode(),
+        'querystring_no_staff': without('staff'),
+        'querystring_no_reason': without('reason'),
+        'querystring_no_per_page': without('per_page'),
+        'per_page': per_page_raw,
+        'per_page_choices': PER_PAGE_CHOICES,
+        # filter state
+        'period': period,
+        'period_label': period_label,
+        'date_from': date_from,
+        'date_to': date_to,
+        'search': search,
+        'api_config_id': api_config_id,
+        'selected_config': selected_config,
+        'rtv_status_id': rtv_status_id,
+        'staff_filter': staff_filter,
+        'confidence_filter': confidence_filter,
+        'reason_filter': reason_filter,
+        'ncm_status_filter': ncm_status_filter,
+        'drilled_down': drilled_down,
+        'staff_options': staff_options,
+        'reason_options': reason_options,
+        'ncm_status_options': ncm_status_options,
+        'local_status_rows': local_status_rows,
+        'local_status_unset': local_status_unset,
+        'ncm_api_configs': list(
+            LogisticsAPIConfig.objects.filter(logistics_provider='ncm')
+            .values('id', 'api_name').order_by('api_name')
+        ),
+        'rtv_statuses': list(
+            RTVStatus.objects.filter(is_active=True).order_by('name')
+            .values('id', 'name', 'color')
+        ),
+        # data-quality disclosures
+        'undated_count': undated_count,
+        'date_filter_active': bool(start_day),
+        'truncated': truncated,
+        'total_in_scope': total_in_scope,
+        'max_rows': RTV_REPORT_MAX_ROWS,
+    }
+    return render(request, 'rtv_report.html', context)
+
+
+def _rtv_report_export(rows, period_label):
+    """Write the on-screen RTV report to a three-sheet workbook.
+
+    Exports `rows` — the filtered set, not the current page — so the file
+    matches what the filters say rather than what happens to be paginated.
+    """
+    from collections import Counter
+
+    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+
+    def write_sheet(ws, headers, data_rows):
+        ws.append(headers)
+        for col_num in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        for r in data_rows:
+            ws.append(r)
+        for column in ws.columns:
+            width = max((len(str(c.value)) for c in column if c.value is not None), default=0)
+            ws.column_dimensions[column[0].column_letter].width = min(width + 2, 55)
+        ws.freeze_panes = 'A2'
+
+    confidence_label = {
+        'exact': 'Confirmed (NCM order id)',
+        'bulk_log': 'Confirmed (bulk-send log)',
+        'phone': 'Probable (phone match)',
+        'none': 'Not linked',
+    }
+
+    wb = Workbook()
+    write_sheet(
+        wb.active,
+        ['NCM Order ID', 'Order By', 'Role', 'Local Order', 'Attribution',
+         'Reason', 'Comment', 'NCM Status', 'Local RTV Status', 'Portal',
+         'Receiver', 'Phone', 'Marked At', 'Days Order → RTV', 'Followed Up'],
+        [
+            [
+                r['order_id'],
+                r['staff_name'] or 'Not linked',
+                r['staff_role'] or '',
+                r['order_number'] or '',
+                confidence_label.get(r['match'], r['match']),
+                r['reason_label'],
+                r['comment'],
+                r['ncm_status'] or '',
+                r['status_name'] or '',
+                r['portal'] or '',
+                r['receiver_name'],
+                r['receiver_phone'],
+                r['marked_at'] or '',
+                r['age_days'] if r['age_days'] is not None else '',
+                'Yes' if r['has_followup'] else 'No',
+            ]
+            for r in rows
+        ],
+    )
+    wb.active.title = 'RTV Detail'
+
+    total = len(rows)
+    staff_counter = Counter(r['staff_name'] or 'Not linked' for r in rows)
+    staff_reason = {}
+    for r in rows:
+        staff_reason.setdefault(r['staff_name'] or 'Not linked', Counter())[r['reason_label']] += 1
+    write_sheet(
+        wb.create_sheet('Staff Summary'),
+        ['Order By', 'RTVs', 'Share %', 'Top Reason', 'Top Reason Count'],
+        [
+            [
+                name, count,
+                round(count * 100.0 / total, 1) if total else 0,
+                staff_reason[name].most_common(1)[0][0],
+                staff_reason[name].most_common(1)[0][1],
+            ]
+            for name, count in staff_counter.most_common()
+        ],
+    )
+
+    reason_counter = Counter(r['reason_label'] for r in rows)
+    write_sheet(
+        wb.create_sheet('Reason Summary'),
+        ['Reason', 'RTVs', 'Share %'],
+        [
+            [label, count, round(count * 100.0 / total, 1) if total else 0]
+            for label, count in reason_counter.most_common()
+        ],
+    )
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    response['Content-Disposition'] = f'attachment; filename=rtv_report_{stamp}.xlsx'
+    wb.save(response)
+    return response
+
+
+# ==================== FOLLOW-UPS REPORT ====================
+
+@login_required
+def follow_up_report(request):
+    """Professional Follow-ups Report page with full analytics."""
+    from .models import FollowUp, FollowUpLog, Setup, Product
+
+    has_access = (
+        request.user.is_superuser
+        or getattr(request.user, 'role', '') == 'administrator'
+        or getattr(request.user, 'can_view_follow_up_report', False)
+    )
+    if not has_access:
+        messages.error(request, 'You do not have permission to view the Follow-ups Report.')
+        return redirect('dashboard')
+
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    today_local = timezone.now().astimezone(nepal_tz).date()
+
+    # --- Period Calculation ---
+    period = request.GET.get('period', 'this_month')
+    start_date_str = request.GET.get('start_date', '')
+    end_date_str   = request.GET.get('end_date', '')
+
+    if period == 'today':
+        start_date = end_date = today_local
+    elif period == 'yesterday':
+        start_date = end_date = today_local - timedelta(days=1)
+    elif period == 'this_week':
+        start_date = today_local - timedelta(days=today_local.weekday())
+        end_date = today_local
+    elif period == 'last_7':
+        start_date = today_local - timedelta(days=6)
+        end_date = today_local
+    elif period == 'last_15':
+        start_date = today_local - timedelta(days=14)
+        end_date = today_local
+    elif period == 'custom' and start_date_str and end_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date   = datetime.strptime(end_date_str,   '%Y-%m-%d').date()
+        except ValueError:
+            start_date = today_local.replace(day=1)
+            end_date = today_local
+        period = 'custom'
+    else:  # this_month
+        start_date = today_local.replace(day=1)
+        end_date = today_local
+        period = 'this_month'
+
+    # Convert to aware datetimes for filter
+    start_dt = nepal_tz.localize(datetime.combine(start_date, datetime.min.time()))
+    end_dt   = nepal_tz.localize(datetime.combine(end_date,   datetime.max.time()))
+
+    from django.db.models import Q
+    # --- Base queryset ---
+    qs = FollowUp.objects.filter(
+        Q(created_at__range=(start_dt, end_dt)) | Q(logs__timestamp__range=(start_dt, end_dt)),
+        is_deleted=False
+    ).prefetch_related('logs', 'logs__user', 'products').select_related('product').distinct()
+
+    # --- Filters ---
+    filter_staff_id = request.GET.get('staff_id', '')
+    filter_source   = request.GET.get('source', '')
+    filter_status   = request.GET.get('status', '')
+    filter_product  = request.GET.get('product_id', '')
+    search_query    = request.GET.get('q', '').strip()
+
+    if search_query:
+        terms = search_query.split()
+        staff_q = Q()
+        for term in terms:
+            staff_q &= (Q(logs__user__first_name__icontains=term) | 
+                        Q(logs__user__last_name__icontains=term) | 
+                        Q(logs__user__username__icontains=term))
+
+        qs = qs.filter(
+            Q(name__icontains=search_query) |
+            Q(phone__icontains=search_query) |
+            Q(remarks__icontains=search_query) |
+            Q(logs__new_value__icontains=search_query) |
+            Q(logs__field_changed__icontains=search_query) |
+            staff_q
+        ).distinct()
+    if filter_source:
+        qs = qs.filter(lead_source=filter_source)
+    if filter_status:
+        qs = qs.filter(status=filter_status)
+
+    all_follow_ups = list(qs)
+
+    def get_creator_actions(fu):
+        users = []
+        for log in fu.logs.all():
+            if log.timestamp and start_dt <= log.timestamp <= end_dt:
+                if log.user:
+                    users.append(log.user)
+        return users
+
+    # Attach creator to each follow-up from earliest log
+    def get_creator(fu):
+        logs = list(fu.logs.all())
+        if logs:
+            logs.sort(key=lambda x: x.timestamp or timezone.now())
+            return logs[0].user
+        return None
+
+    # Apply staff filter after fetching (since creator is inferred from logs in period)
+    if filter_staff_id:
+        try:
+            filter_staff_id_int = int(filter_staff_id)
+            filtered_by_staff = []
+            for fu in all_follow_ups:
+                user_actions = get_creator_actions(fu)
+                if any(u.id == filter_staff_id_int for u in user_actions):
+                    filtered_by_staff.append(fu)
+            all_follow_ups = filtered_by_staff
+        except (ValueError, TypeError):
+            pass
+
+    # Apply product filter
+    if filter_product:
+        try:
+            pid = int(filter_product)
+            filtered = []
+            for fu in all_follow_ups:
+                product_ids = list(fu.products.values_list('id', flat=True))
+                if not product_ids and fu.product_id:
+                    product_ids = [fu.product_id]
+                if pid in product_ids:
+                    filtered.append(fu)
+            all_follow_ups = filtered
+        except (ValueError, TypeError):
+            pass
+
+    total_count = len(all_follow_ups)
+
+    # --- KPI: Today count ---
+    today_start = nepal_tz.localize(datetime.combine(today_local, datetime.min.time()))
+    today_end = nepal_tz.localize(datetime.combine(today_local, datetime.max.time()))
+    today_count = FollowUp.objects.filter(
+        Q(created_at__range=(today_start, today_end)) | Q(logs__timestamp__range=(today_start, today_end)),
+        is_deleted=False
+    ).distinct().count()
+
+    # --- Staff breakdown ---
+    staff_counter = {}
+    staff_entries_created_counter = {}
+    staff_status_counter = {}
+    entries_created_details = {}
+
+    
+    for fu in all_follow_ups:
+        for log in fu.logs.all():
+            if log.timestamp and start_dt <= log.timestamp <= end_dt:
+                user = log.user
+                if user:
+                    key = (user.id, user.get_full_name() or user.username)
+                else:
+                    key = (0, 'Unknown')
+                
+                if key not in staff_counter:
+                    staff_counter[key] = 0
+                if key not in staff_entries_created_counter:
+                    staff_entries_created_counter[key] = 0
+                if key not in staff_status_counter:
+                    staff_status_counter[key] = {}
+                if key not in entries_created_details:
+                    entries_created_details[key] = {'products': {}, 'sources': {}}
+                    
+                if log.field_changed == 'Entry Created':
+                    staff_entries_created_counter[key] += 1
+                    
+                    products_list = list(fu.products.all())
+                    if not products_list and fu.product:
+                        products_list = [fu.product]
+                    products_list_names = [p.name for p in products_list] if products_list else ['No Product']
+                    for pname in products_list_names:
+                        entries_created_details[key]['products'][pname] = entries_created_details[key]['products'].get(pname, 0) + 1
+                        
+                    src = fu.lead_source or 'Unknown'
+                    entries_created_details[key]['sources'][src] = entries_created_details[key]['sources'].get(src, 0) + 1
+                    
+                elif log.field_changed.startswith('Followup') or log.field_changed == 'Follow-up Note Added':
+                    staff_counter[key] += 1
+                elif log.field_changed == 'Status':
+                    staff_status_counter[key][log.new_value] = staff_status_counter[key].get(log.new_value, 0) + 1
+
+    staff_leaderboard = sorted(
+        [{'id': k[0], 'name': k[1], 'count': staff_counter[k], 'entries_created': staff_entries_created_counter[k], 'statuses': dict(sorted(staff_status_counter[k].items(), key=lambda item: item[1], reverse=True)[:3])}
+         for k in staff_counter.keys() if staff_counter[k] > 0 or staff_entries_created_counter[k] > 0],
+        key=lambda x: (x['count'] + x['entries_created']), reverse=True
+    )
+    most_active_staff = staff_leaderboard[0] if staff_leaderboard else None
+    active_staff_count = len(staff_leaderboard)
+
+    # Build the entry creation summary
+    entry_creation_summary = sorted(
+        [{
+            'name': k[1],
+            'count': staff_entries_created_counter[k],
+            'top_products': dict(sorted(entries_created_details[k]['products'].items(), key=lambda item: item[1], reverse=True)[:3]),
+            'top_sources': dict(sorted(entries_created_details[k]['sources'].items(), key=lambda item: item[1], reverse=True)[:3])
+         }
+         for k in staff_entries_created_counter.keys() if staff_entries_created_counter[k] > 0],
+        key=lambda x: x['count'], reverse=True
+    )
+
+    # --- Source breakdown ---
+    source_counter = {}
+    source_status = {}
+    for fu in all_follow_ups:
+        src = fu.lead_source or 'Unknown'
+        source_counter[src] = source_counter.get(src, 0) + 1
+        if src not in source_status:
+            source_status[src] = {}
+        s = fu.status or 'Unknown'
+        source_status[src][s] = source_status[src].get(s, 0) + 1
+
+    source_breakdown = sorted(
+        [{'source': k, 'count': v, 'statuses': source_status[k]} for k, v in source_counter.items()],
+        key=lambda x: x['count'], reverse=True
+    )
+    top_source = source_breakdown[0]['source'] if source_breakdown else '-'
+
+    # --- Product breakdown ---
+    product_counter = {}
+    product_status_data = {}
+    for fu in all_follow_ups:
+        products_list = list(fu.products.all())
+        if not products_list and fu.product:
+            products_list = [fu.product]
+        products_list_names = [p.name for p in products_list] if products_list else ['No Product']
+        for pname in products_list_names:
+            product_counter[pname] = product_counter.get(pname, 0) + 1
+            if pname not in product_status_data:
+                product_status_data[pname] = {}
+            s = fu.status or 'Unknown'
+            product_status_data[pname][s] = product_status_data[pname].get(s, 0) + 1
+
+    product_breakdown = sorted(
+        [{'product': k, 'count': v, 'statuses': product_status_data[k]} for k, v in product_counter.items()],
+        key=lambda x: x['count'], reverse=True
+    )
+    top_product = product_breakdown[0]['product'] if product_breakdown else '-'
+
+    # --- Status distribution ---
+    status_counter = {}
+    for fu in all_follow_ups:
+        s = fu.status or 'Unknown'
+        status_counter[s] = status_counter.get(s, 0) + 1
+
+    status_breakdown = sorted(
+        [{'status': k, 'count': v} for k, v in status_counter.items()],
+        key=lambda x: x['count'], reverse=True
+    )
+
+    # --- Daily trend data (for chart) ---
+    from collections import defaultdict
+    daily_trend = defaultdict(int)
+    for fu in all_follow_ups:
+        activity_dates = set()
+        if start_dt <= fu.created_at <= end_dt:
+            activity_dates.add(fu.created_at.astimezone(nepal_tz).strftime('%Y-%m-%d'))
+        for log in fu.logs.all():
+            if log.timestamp and start_dt <= log.timestamp <= end_dt:
+                activity_dates.add(log.timestamp.astimezone(nepal_tz).strftime('%Y-%m-%d'))
+                
+        for day_str in activity_dates:
+            daily_trend[day_str] += 1
+
+    num_days = (end_date - start_date).days + 1
+    trend_labels = []
+    trend_data = []
+    for i in range(num_days):
+        d = (start_date + timedelta(days=i)).strftime('%Y-%m-%d')
+        trend_labels.append(d)
+        trend_data.append(daily_trend.get(d, 0))
+
+    # --- Entry Creation Summary ---
+    entries_created_data = {}
+    for fu in all_follow_ups:
+        if start_dt <= fu.created_at <= end_dt:
+            creator = get_creator(fu)
+            if creator:
+                c_name = creator.get_full_name() or creator.username
+                if c_name not in entries_created_data:
+                    entries_created_data[c_name] = {
+                        'count': 0,
+                        'products': {},
+                        'sources': {},
+                        'logs': []
+                    }
+                entries_created_data[c_name]['count'] += 1
+                
+                entry_created_log = None
+                for log in fu.logs.all():
+                    if log.field_changed == 'Entry Created':
+                        entry_created_log = log
+                        break
+                        
+                if entry_created_log:
+                    entries_created_data[c_name]['logs'].append({
+                        'timestamp': entry_created_log.timestamp,
+                        'name': fu.name or fu.phone,
+                        'fu_id': fu.id
+                    })
+
+                products_list = list(fu.products.all())
+                if not products_list and fu.product:
+                    products_list = [fu.product]
+                products_list_names = [getattr(p, 'name', str(p)) for p in products_list] if products_list else ['No Product']
+                for pname in products_list_names:
+                    entries_created_data[c_name]['products'][pname] = entries_created_data[c_name]['products'].get(pname, 0) + 1
+                
+                s_name = fu.lead_source if fu.lead_source else 'Unknown'
+                entries_created_data[c_name]['sources'][s_name] = entries_created_data[c_name]['sources'].get(s_name, 0) + 1
+
+    entry_creation_summary = []
+    for c_name, data in entries_created_data.items():
+        sorted_prods = dict(sorted(data['products'].items(), key=lambda x: x[1], reverse=True)[:3])
+        sorted_srcs = dict(sorted(data['sources'].items(), key=lambda x: x[1], reverse=True)[:3])
+        sorted_logs = sorted(data['logs'], key=lambda x: x['timestamp'], reverse=True) if data['logs'] else []
+        
+        formatted_logs = [{
+            'timestamp': log['timestamp'].astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p') if log['timestamp'] else '',
+            'name': log['name'],
+            'fu_id': log['fu_id']
+        } for log in sorted_logs]
+        
+        entry_creation_summary.append({
+            'name': c_name,
+            'count': data['count'],
+            'top_products': sorted_prods,
+            'top_sources': sorted_srcs,
+            'logs_json': json.dumps(formatted_logs)
+        })
+    entry_creation_summary.sort(key=lambda x: x['count'], reverse=True)
+
+    summary_page_num = request.GET.get('summary_page', 1)
+    summary_page_size_str = request.GET.get('summary_page_size', '10')
+    try:
+        summary_page_size = int(summary_page_size_str)
+    except ValueError:
+        summary_page_size = 10
+        
+    summary_paginator = Paginator(entry_creation_summary, summary_page_size)
+    try:
+        summary_page_obj = summary_paginator.page(summary_page_num)
+    except Exception:
+        summary_page_obj = summary_paginator.page(1)
+        
+    summary_total_count = len(entry_creation_summary)
+
+    # Pre-fetch the filtered user if applicable
+    filtered_user = None
+    if filter_staff_id:
+        try:
+            filtered_user = User.objects.get(id=int(filter_staff_id))
+        except (ValueError, TypeError, User.DoesNotExist):
+            pass
+
+    # --- Paginated detailed table ---
+    page_num = request.GET.get('page', 1)
+    
+    try:
+        page_size = int(request.GET.get('page_size', 25))
+    except ValueError:
+        page_size = 25
+        
+    paginator = Paginator(all_follow_ups, page_size)
+    try:
+        page_obj = paginator.page(page_num)
+    except Exception:
+        page_obj = paginator.page(1)
+
+    # Annotate page items with creator info
+    detailed_rows = []
+    for fu in page_obj.object_list:
+        if filtered_user:
+            creator = filtered_user
+        else:
+            creator = get_creator(fu)
+            
+        products_list = list(fu.products.all())
+        if not products_list and fu.product:
+            products_list = [fu.product]
+            
+        latest_note = None
+        entry_created_log = None
+        for log in fu.logs.all():
+            if log.user == creator:
+                if (log.field_changed.startswith('Followup') or log.field_changed == 'Follow-up Note Added') and not latest_note:
+                    latest_note = log
+                elif log.field_changed == 'Entry Created' and not entry_created_log:
+                    entry_created_log = log
+                
+        if not latest_note and entry_created_log:
+            latest_note = entry_created_log
+                
+        if creator:
+            creator_logs = [log for log in fu.logs.all() if log.user == creator]
+        else:
+            creator_logs = [log for log in fu.logs.all() if log.user is None]
+        log_count = len([log for log in creator_logs if log.field_changed != 'Entry Created'])
+
+        detailed_rows.append({
+            'fu': fu,
+            'creator': creator,
+            'products_display': ', '.join(p.name for p in products_list) if products_list else '-',
+            'log_count': log_count,
+            'latest_note': latest_note,
+        })
+
+    # --- Dropdowns for filters ---
+    all_staff = User.objects.filter(is_active=True).order_by('first_name', 'username')
+    all_sources = Setup.objects.filter(setup_type='order_source', is_active=True).order_by('sort_order', 'name')
+    all_statuses = Setup.objects.filter(setup_type='followup_status', is_active=True).order_by('sort_order', 'name')
+    all_products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+
+    context = {
+        'period': period,
+        'start_date': start_date.strftime('%Y-%m-%d'),
+        'end_date': end_date.strftime('%Y-%m-%d'),
+        'filter_staff_id': filter_staff_id,
+        'filter_source': filter_source,
+        'filter_status': filter_status,
+        'filter_product': filter_product,
+        'search_query': search_query,
+        'page_size': str(page_size),
+        'total_count': total_count,
+        'today_count': today_count,
+        'active_staff_count': active_staff_count,
+        'most_active_staff': most_active_staff,
+        'top_source': top_source,
+        'top_product': top_product,
+        'staff_leaderboard': staff_leaderboard,
+        'source_breakdown': source_breakdown,
+        'product_breakdown': product_breakdown,
+        'status_breakdown': status_breakdown,
+        'entry_creation_summary': entry_creation_summary,
+        'trend_labels': json.dumps(trend_labels),
+        'trend_data': json.dumps(trend_data),
+        'page_obj': page_obj,
+        'detailed_rows': detailed_rows,
+        'entry_creation_summary': entry_creation_summary,
+        'summary_page_obj': summary_page_obj,
+        'summary_total_count': summary_total_count,
+        'summary_page_size': str(summary_page_size),
+        'all_staff': all_staff,
+        'all_sources': all_sources,
+        'all_statuses': all_statuses,
+        'all_products': all_products,
+    }
+    return render(request, 'dashboard/followup_report.html', context)
+
+
+@login_required
+def follow_up_report_logs_api(request, pk):
+    """AJAX: return all FollowUpLog entries for a given FollowUp row."""
+    has_access = (
+        request.user.is_superuser
+        or getattr(request.user, 'role', '') == 'administrator'
+        or getattr(request.user, 'can_view_follow_up_report', False)
+    )
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+    from .models import FollowUp
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    try:
+        fu = FollowUp.objects.prefetch_related('logs', 'logs__user').get(pk=pk, is_deleted=False)
+    except FollowUp.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Not found'}, status=404)
+
+    logs = fu.logs.select_related('user').order_by('-timestamp')
+    
+    staff_id = request.GET.get('staff_id')
+    if staff_id:
+        if staff_id == 'null' or staff_id == 'None':
+            logs = logs.filter(user__isnull=True)
+        else:
+            logs = logs.filter(user_id=staff_id)
+
+    data = []
+    for log in logs:
+        data.append({
+            'user': log.user.get_full_name() or log.user.username if log.user else 'System',
+            'field_changed': log.field_changed,
+            'old_value': log.old_value or '',
+            'new_value': log.new_value or '',
+            'timestamp': log.timestamp.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
+        })
+    return JsonResponse({'success': True, 'logs': data, 'name': fu.name or fu.phone})
+
+
+@login_required
+def staff_follow_up_logs_api(request, staff_id):
+    """AJAX: return all FollowUpLog entries for a given staff member within a specific period."""
+    has_access = (
+        request.user.is_superuser
+        or getattr(request.user, 'role', '') == 'administrator'
+        or getattr(request.user, 'can_view_follow_up_report', False)
+    )
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+        
+    from .models import FollowUpLog
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    
+    staff = None
+    if staff_id == 0:
+        pass # staff remains None for Unknown
+    else:
+        try:
+            staff = User.objects.get(pk=staff_id)
+        except User.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Staff member not found.'}, status=404)
+
+    period = request.GET.get('period', 'today')
+    start_date_str = request.GET.get('start_date')
+    end_date_str = request.GET.get('end_date')
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    today_local = timezone.now().astimezone(nepal_tz).date()
+
+    if period == 'today':
+        start_date = today_local
+        end_date = today_local
+    elif period == 'yesterday':
+        start_date = today_local - timedelta(days=1)
+        end_date = today_local - timedelta(days=1)
+    elif period == 'this_week':
+        start_date = today_local - timedelta(days=today_local.weekday())
+        end_date = today_local
+    elif period == 'last_7':
+        start_date = today_local - timedelta(days=6)
+        end_date = today_local
+    elif period == 'last_15':
+        start_date = today_local - timedelta(days=14)
+        end_date = today_local
+    elif period == 'custom' and start_date_str and end_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date   = datetime.strptime(end_date_str,   '%Y-%m-%d').date()
+        except ValueError:
+            start_date = today_local.replace(day=1)
+            end_date = today_local
+    else:  # this_month
+        start_date = today_local.replace(day=1)
+        end_date = today_local
+
+    start_dt = nepal_tz.localize(datetime.combine(start_date, datetime.min.time()))
+    end_dt   = nepal_tz.localize(datetime.combine(end_date,   datetime.max.time()))
+
+    logs = FollowUpLog.objects.filter(
+        user=staff,
+        timestamp__range=(start_dt, end_dt),
+        follow_up__is_deleted=False
+    ).select_related('follow_up').order_by('-timestamp')
+
+    data = []
+    for log in logs:
+        fu = log.follow_up
+        customer_name = fu.name or fu.phone or 'Unknown'
+        data.append({
+            'customer_id': fu.id,
+            'customer_name': customer_name,
+            'field_changed': log.field_changed,
+            'old_value': log.old_value or '',
+            'new_value': log.new_value or '',
+            'timestamp': log.timestamp.astimezone(nepal_tz).strftime('%b %d, %Y %I:%M %p'),
+        })
+
+    staff_name_display = staff.get_full_name() or staff.username if staff else 'Unknown System'
+    
+    return JsonResponse({
+        'success': True, 
+        'logs': data, 
+        'staff_name': staff_name_display,
+        'period_display': f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}" if start_date != end_date else start_date.strftime('%b %d, %Y')
+    })
+
+
+@login_required
+def status_follow_up_logs_api(request):
+    """AJAX: return FollowUpLog entries where status changed to a specific status within a specific period."""
+    has_access = (
+        request.user.is_superuser
+        or getattr(request.user, 'role', '') == 'administrator'
+        or getattr(request.user, 'can_view_follow_up_report', False)
+    )
+    if not has_access:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+        
+    from .models import FollowUp, FollowUpLog
+    from django.db.models import Q
+    
+    status_name = request.GET.get('status_name')
+    if not status_name:
+        return JsonResponse({'success': False, 'error': 'Status name is required.'}, status=400)
+
+    period = request.GET.get('period', 'today')
+    start_date_str = request.GET.get('start_date')
+    end_date_str = request.GET.get('end_date')
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    today_local = timezone.now().astimezone(nepal_tz).date()
+
+    if period == 'today':
+        start_date = today_local
+        end_date = today_local
+    elif period == 'yesterday':
+        start_date = today_local - timedelta(days=1)
+        end_date = today_local - timedelta(days=1)
+    elif period == 'this_week':
+        start_date = today_local - timedelta(days=today_local.weekday())
+        end_date = today_local
+    elif period == 'last_7':
+        start_date = today_local - timedelta(days=6)
+        end_date = today_local
+    elif period == 'last_15':
+        start_date = today_local - timedelta(days=14)
+        end_date = today_local
+    elif period == 'custom' and start_date_str and end_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date   = datetime.strptime(end_date_str,   '%Y-%m-%d').date()
+        except ValueError:
+            start_date = today_local.replace(day=1)
+            end_date = today_local
+    else:  # this_month
+        start_date = today_local.replace(day=1)
+        end_date = today_local
+
+    start_dt = nepal_tz.localize(datetime.combine(start_date, datetime.min.time()))
+    end_dt   = nepal_tz.localize(datetime.combine(end_date,   datetime.max.time()))
+
+    fu_qs = FollowUp.objects.filter(is_deleted=False)
+    if status_name == 'Unknown':
+        fu_qs = fu_qs.filter(Q(status__isnull=True) | Q(status=''))
+    else:
+        fu_qs = fu_qs.filter(status=status_name)
+    
+    fu_qs = fu_qs.filter(
+        Q(created_at__range=(start_dt, end_dt)) | 
+        Q(logs__timestamp__range=(start_dt, end_dt))
+    ).distinct()
+
+    data = []
+    # Pre-fetch logs to avoid N+1 inside the loop
+    fu_list = list(fu_qs.prefetch_related('logs__user'))
+    
+    for fu in fu_list:
+        logs_in_period = [log for log in fu.logs.all() if log.timestamp and start_dt <= log.timestamp <= end_dt]
+        logs_in_period.sort(key=lambda x: x.timestamp, reverse=True)
+        
+        customer_name = fu.name or fu.phone or 'Unknown'
+        
+        if logs_in_period:
+            latest_log = logs_in_period[0]
+            user_display = latest_log.user.get_full_name() or latest_log.user.username if latest_log.user else 'Unknown System'
+            dt = latest_log.timestamp.astimezone(nepal_tz)
+            if latest_log.field_changed == 'Entry Created':
+                action_desc = "Entry Created"
+            elif latest_log.field_changed == 'Status':
+                action_desc = f"Status updated to {latest_log.new_value}"
+            elif latest_log.field_changed == 'Followup':
+                action_desc = "Follow-up added"
+            else:
+                action_desc = f"{latest_log.field_changed} updated"
+        else:
+            user_display = 'System'
+            dt = fu.created_at.astimezone(nepal_tz)
+            action_desc = "Created in period"
+            
+        data.append({
+            'customer_id': fu.id,
+            'customer_name': customer_name,
+            'action_desc': action_desc,
+            'timestamp': dt.strftime('%b %d, %Y %I:%M %p'),
+            'timestamp_raw': dt.isoformat(),
+            'user': user_display
+        })
+
+    # Sort data by descending timestamp_raw
+    data.sort(key=lambda x: x['timestamp_raw'], reverse=True)
+
+    return JsonResponse({
+        'success': True, 
+        'logs': data, 
+        'status_name': status_name,
+        'period_display': f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}" if start_date != end_date else start_date.strftime('%b %d, %Y')
+    })
+
+
+@login_required
+@require_POST
+def update_presence(request):
+    """AJAX endpoint to update user presence (typing/viewing) on a follow-up."""
+    from .models import FollowUp, FollowUpPresence
+    try:
+        data = json.loads(request.body)
+        followup_id = data.get('id')
+        action = data.get('type')  # 'viewing', 'typing', 'stopped_typing'
+
+        if not followup_id or action not in ['viewing', 'typing', 'stopped_typing', 'closed_modal']:
+            return JsonResponse({'success': False, 'error': 'Invalid parameters'})
+
+        if action == 'closed_modal':
+            FollowUpPresence.objects.filter(followup_id=followup_id, user=request.user).delete()
+        elif action == 'stopped_typing':
+            FollowUpPresence.objects.update_or_create(
+                followup_id=followup_id,
+                user=request.user,
+                defaults={'action': 'viewing'}
+            )
+        else:
+            FollowUpPresence.objects.update_or_create(
+                followup_id=followup_id,
+                user=request.user,
+                defaults={'action': action}
+            )
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def sync_follow_ups(request):
+    """AJAX endpoint to silently fetch updated rows and active presences."""
+    from .models import FollowUp, FollowUpPresence, FollowUpLog
+    from django.utils import timezone
+    from django.db.models import Q, Max
+    import dateutil.parser
+    from datetime import timedelta
+
+    # Hard caps on how much one poll will return, so a bulk edit (or a tab that
+    # sat in the background for hours) can't dump an unbounded payload. Both
+    # cursors are advanced only as far as was actually read, so a backlog
+    # drains over consecutive polls instead of being skipped.
+    MAX_EVENT_LOGS = 200
+    MAX_UPDATE_ROWS = 200
+
+    # Mirror the follow_ups_list filters — including the date range — so the
+    # client can tell whether a live-updated row still belongs under the
+    # filters it is currently showing.
+    sync_params = _followup_filter_params(request)
+
+    def apply_list_filters(qs):
+        return _apply_followup_filters(qs, sync_params)
+
+    try:
+        last_sync_str = request.GET.get('last_sync')
+        updates = []
+        deleted_ids = []
+        events = []
+
+        # Snapshot the clock ONCE, before touching the DB, and bound every
+        # cursor query with it. Reading "now" after the queries (as this used
+        # to) left rows written mid-request on the wrong side of the cursor,
+        # so they were never delivered by any poll.
+        now = timezone.now()
+        next_sync_ts = now
+
+        # A presence is stale once its owner has missed several heartbeats.
+        # This has to stay comfortably above PRESENCE_INTERVAL_MS in
+        # follow_ups.html (10s) or a live user's own record would expire
+        # between their heartbeats and "X is viewing" would flicker.
+        stale_threshold = now - timedelta(seconds=STALE_PRESENCE_SECONDS)
+
+        # Purging is housekeeping, not correctness: the read below filters by
+        # last_seen itself, so a stale row is never reported even if it is
+        # still on disk. That lets the DELETE be rate-limited - it used to run
+        # on every poll, i.e. once every 2 seconds per open tab, writing to the
+        # table constantly whether or not anything had actually expired.
+        if cache.add('followup_presence_purge', 1, STALE_PRESENCE_SECONDS):
+            FollowUpPresence.objects.filter(last_seen__lt=stale_threshold).delete()
+
+        # Fetch active presences
+        active_presences = list(
+            FollowUpPresence.objects.filter(last_seen__gte=stale_threshold)
+            .select_related('user')
+            .values('followup_id', 'user__username', 'action')
+        )
+
+        # ------------------------------------------------------------------
+        # Notification events.
+        #
+        # These are cursored on the log's primary key rather than on a
+        # timestamp. A timestamp cursor re-delivered the same logs whenever
+        # two polls overlapped or the browser clock ran behind the server's,
+        # which is what caused the same toast to pop up over and over.
+        # ------------------------------------------------------------------
+        try:
+            last_event_id = int(request.GET.get('last_event_id'))
+        except (TypeError, ValueError):
+            last_event_id = None
+
+        max_event_id = FollowUpLog.objects.aggregate(max_id=Max('id'))['max_id'] or 0
+
+        if last_event_id is None:
+            # First poll after a page load: start at the head of the log so a
+            # freshly opened page never replays notifications for activity
+            # that happened before it was opened.
+            next_event_id = max_event_id
+            recent_logs = []
+        else:
+            recent_logs = list(
+                FollowUpLog.objects
+                .filter(id__gt=last_event_id, id__lte=max_event_id)
+                .exclude(user=request.user)
+                .select_related('user', 'follow_up')
+                .order_by('id')[:MAX_EVENT_LOGS]
+            )
+            # When the batch is truncated, only advance as far as we actually
+            # read; otherwise jump to the head so the requester's own logs
+            # (excluded above) don't get re-scanned every poll.
+            if len(recent_logs) == MAX_EVENT_LOGS:
+                next_event_id = recent_logs[-1].id
+            else:
+                next_event_id = max_event_id
+
+        if last_sync_str:
+            last_sync = dateutil.parser.parse(last_sync_str)
+            if timezone.is_naive(last_sync):
+                last_sync = timezone.make_aware(last_sync, timezone.get_default_timezone())
+
+            # Find recently updated rows, oldest first, so a truncated batch can
+            # be resumed from where it stopped on the next poll.
+            updated_rows = list(
+                FollowUp.objects.filter(
+                    updated_at__gt=last_sync, updated_at__lte=now, is_deleted=False
+                )
+                .prefetch_related('products', 'product_variations', 'logs')
+                .order_by('updated_at')[:MAX_UPDATE_ROWS]
+            )
+            if len(updated_rows) == MAX_UPDATE_ROWS:
+                next_sync_ts = updated_rows[-1].updated_at
+
+            # Determine which of those rows still match the requester's active
+            # list filters, so the client can add/keep or drop them accordingly
+            # instead of showing entries that don't belong to the current filter.
+            matching_ids = set(
+                apply_list_filters(
+                    FollowUp.objects.filter(id__in=[r.id for r in updated_rows])
+                ).values_list('id', flat=True)
+            ) if updated_rows else set()
+
+            for follow_up in updated_rows:
+                products_data = [
+                    {'id': str(p.id), 'name': p.name, 'price': float(p.price)}
+                    for p in follow_up.products.all()
+                ]
+                products_data.extend([
+                    {'id': f"v_{v.id}", 'name': f"{v.product.name} - {v.variation_name or v.sku}", 'price': float(v.price)}
+                    for v in follow_up.product_variations.all()
+                ])
+                
+                all_logs = []
+                for log in follow_up.logs.all():
+                    if log.field_changed == 'Entry Created' or log.field_changed.startswith('Followup'):
+                        all_logs.append({
+                            'timestamp': timezone.localtime(log.timestamp).strftime("%b %d, %Y %I:%M %p"),
+                            'user': log.user.username if log.user else 'System',
+                            'new_value': log.new_value,
+                            'field_changed': log.field_changed
+                        })
+
+                updates.append({
+                    'id': follow_up.id,
+                    'name': follow_up.name,
+                    'phone': follow_up.phone,
+                    'lead_source': follow_up.lead_source,
+                    'products': products_data,
+                    'products_display': ', '.join(p['name'] for p in products_data) or '-',
+                    'status': follow_up.status,
+                    'remarks': follow_up.remarks,
+                    'all_logs': all_logs,
+                    'created_at': timezone.localtime(follow_up.created_at).strftime("%b %d, %Y %I:%M %p"),
+                    'created_at_iso': follow_up.created_at.isoformat(),
+                    'version': getattr(follow_up, 'version', 1),
+                    'matches_filter': follow_up.id in matching_ids,
+                })
+
+            # Find recently deleted rows (bounded by the same cursor the client
+            # will send back, so nothing falls into a gap)
+            deleted_rows = FollowUp.objects.filter(
+                updated_at__gt=last_sync, updated_at__lte=next_sync_ts, is_deleted=True
+            ).values_list('id', flat=True)
+            deleted_ids = list(deleted_rows)
+
+        # Build lightweight notification events from other users' activity, so
+        # the requester can be alerted about changes even when they don't match
+        # (and therefore aren't shown under) the requester's current list
+        # filters. Own actions are excluded since the client already reflects
+        # those instantly.
+        #
+        # Grouping is per (follow-up, actor): two people editing the same entry
+        # in one window must produce two toasts, otherwise every change gets
+        # attributed to whoever happened to write the last log.
+        events_by_key = {}
+        event_order = []
+        for log in recent_logs:
+            fu = log.follow_up
+            if fu is None:
+                continue
+            key = (fu.id, log.user_id)
+            if key not in events_by_key:
+                events_by_key[key] = {
+                    'event_key': f"{fu.id}:{log.user_id or 0}:{log.id}",
+                    'followup_id': fu.id,
+                    'name': fu.name,
+                    'phone': fu.phone,
+                    'lead_source': fu.lead_source,
+                    'status': fu.status,
+                    'is_deleted': fu.is_deleted,
+                    'user': log.user.username if log.user else 'System',
+                    'changes': [],
+                }
+                event_order.append(key)
+            ev = events_by_key[key]
+            ev['timestamp'] = timezone.localtime(log.timestamp).strftime("%I:%M %p")
+            ev['changes'].append({
+                'field': log.field_changed,
+                'old': log.old_value,
+                'new': log.new_value,
+            })
+
+        if event_order:
+            # Re-check filter membership against the follow-ups the events
+            # actually reference; `matching_ids` above only covers rows whose
+            # updated_at fell inside this poll's window.
+            event_fu_ids = {key[0] for key in event_order}
+            visible_event_ids = set(
+                apply_list_filters(
+                    FollowUp.objects.filter(id__in=event_fu_ids, is_deleted=False)
+                ).values_list('id', flat=True)
+            )
+            for key in event_order:
+                ev = events_by_key[key]
+                ev['is_new'] = any(c['field'] == 'Entry Created' for c in ev['changes'])
+                ev['matches_filter'] = (not ev['is_deleted']) and (ev['followup_id'] in visible_event_ids)
+                events.append(ev)
+
+        return JsonResponse({
+            'success': True,
+            'timestamp': next_sync_ts.isoformat(),
+            'last_event_id': next_event_id,
+            'updates': updates,
+            'deleted_ids': deleted_ids,
+            'presences': active_presences,
+            'events': events
+        })
+    except Exception as e:
+        logger.error(f"Error in sync_follow_ups: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)

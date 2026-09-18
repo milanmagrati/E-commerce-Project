@@ -1,0 +1,1092 @@
+{% extends "base.html" %}
+{% load static humanize %}
+
+{% block title %}Imports — Google Sheets Sync{% endblock %}
+
+{% block content %}
+<style>
+/* ════════════════════════════════════════════════════
+   IMPORTS PAGE  — Premium Google Sheets Sync UI
+════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+* { font-family: 'Inter', sans-serif; }
+
+/* ── Hero ──────────────────────────────────────────── */
+.gs-hero {
+  background: linear-gradient(135deg, #0f5c2a 0%, #137333 50%, #1a9c3e 100%);
+  border-radius: 18px;
+  padding: 30px 36px 28px;
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.gs-hero::before {
+  content: '';
+  position: absolute;
+  top: -50px; right: -50px;
+  width: 240px; height: 240px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  pointer-events: none;
+}
+.gs-hero::after {
+  content: '';
+  position: absolute;
+  bottom: -70px; right: 120px;
+  width: 180px; height: 180px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.04);
+  pointer-events: none;
+}
+.hero-icon-box {
+  width: 50px; height: 50px;
+  border-radius: 13px;
+  background: rgba(255,255,255,0.15);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  margin-bottom: 10px;
+  backdrop-filter: blur(4px);
+}
+.hero-title { font-size: 1.9rem; font-weight: 800; margin: 0; line-height: 1; }
+.hero-sub { font-size: 0.9rem; opacity: 0.75; margin-top: 4px; }
+
+.stat-row { display: flex; align-items: center; gap: 24px; margin-top: 18px; }
+.stat-item { text-align: center; }
+.stat-val { display: block; font-size: 1.65rem; font-weight: 800; line-height: 1; }
+.stat-lbl { display: block; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.65; margin-top: 2px; }
+.stat-div { width: 1px; height: 34px; background: rgba(255,255,255,0.2); }
+
+.btn-add-conn {
+  border: 2px solid rgba(255,255,255,0.6);
+  color: #fff;
+  background: transparent;
+  border-radius: 11px;
+  padding: 10px 20px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-add-conn:hover { background: rgba(255,255,255,0.15); border-color: #fff; color: #fff; }
+
+/* ── Guide Banner ──────────────────────────────────── */
+.guide-banner {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 14px;
+  padding: 16px 20px 16px 16px;
+  margin-bottom: 22px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.guide-banner .guide-icon {
+  width: 34px; height: 34px; min-width: 34px;
+  background: #fef3c7;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: #d97706;
+  font-size: 16px;
+}
+
+/* ── Connection Cards ──────────────────────────────── */
+.conn-card {
+  background: #fff;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 20px 22px;
+  height: 100%;
+  transition: all 0.22s;
+  position: relative;
+}
+.conn-card:hover {
+  border-color: #86efac;
+  box-shadow: 0 6px 28px rgba(19,115,51,0.1);
+  transform: translateY(-3px);
+}
+.conn-card .top-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.badge-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 4px 11px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.bp-csv      { background: #dbeafe; color: #1d4ed8; }
+.bp-apps     { background: #d1fae5; color: #065f46; }
+.bp-active   { background: #dcfce7; color: #166534; }
+.bp-inactive { background: #fee2e2; color: #991b1b; }
+.bp-success  { background: #dcfce7; color: #166534; }
+.bp-failed   { background: #fee2e2; color: #991b1b; }
+.bp-partial  { background: #fef3c7; color: #92400e; }
+
+.conn-name { font-size: 1.05rem; font-weight: 700; color: #111827; margin: 10px 0 3px; }
+.conn-meta { font-size: 0.8rem; color: #6b7280; }
+.conn-sync-info { font-size: 0.76rem; color: #9ca3af; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f3f4f6; }
+.conn-sync-info strong { color: #374151; }
+
+.conn-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+.btn-gs-primary {
+  background: #137333; color: #fff;
+  border: none; border-radius: 8px;
+  padding: 7px 15px; font-size: 0.82rem; font-weight: 600;
+  cursor: pointer; transition: all 0.18s;
+}
+.btn-gs-primary:hover { background: #0d5c2a; }
+.btn-gs-primary:disabled { opacity: 0.6; cursor: wait; }
+.btn-gs-outline {
+  background: transparent;
+  border: 1.5px solid #e5e7eb; color: #374151;
+  border-radius: 8px;
+  padding: 6px 13px; font-size: 0.82rem; font-weight: 500;
+  cursor: pointer; transition: all 0.18s;
+}
+.btn-gs-outline:hover { background: #f9fafb; border-color: #d1d5db; }
+.btn-gs-danger {
+  background: transparent;
+  border: 1.5px solid #fecaca; color: #dc2626;
+  border-radius: 8px;
+  padding: 6px 12px; font-size: 0.82rem;
+  cursor: pointer; transition: all 0.18s;
+}
+.btn-gs-danger:hover { background: #fee2e2; border-color: #f87171; }
+
+/* ── Empty State ───────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 70px 20px;
+}
+.empty-icon-circle {
+  width: 88px; height: 88px;
+  background: linear-gradient(135deg, #d1fae5, #bbf7d0);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 22px;
+  font-size: 36px; color: #137333;
+}
+.empty-state h5 { font-size: 1.2rem; font-weight: 700; color: #111827; }
+.empty-state p { color: #6b7280; font-size: 0.88rem; max-width: 360px; margin: 8px auto 22px; }
+
+/* ── Modals ─────────────────────────────────────────── */
+.modal-content { border: none; border-radius: 16px; overflow: hidden; }
+.modal-header-gs {
+  background: linear-gradient(135deg, #0f5c2a, #137333);
+  color: #fff; padding: 18px 24px;
+  border: none;
+}
+.modal-header-gs .btn-close { filter: brightness(0) invert(1); opacity: 0.75; }
+.modal-header-gs .btn-close:hover { opacity: 1; }
+
+.form-label-sm { font-size: 0.82rem; font-weight: 600; color: #374151; margin-bottom: 5px; display: block; }
+.form-ctrl {
+  border: 1.5px solid #e5e7eb;
+  border-radius: 9px;
+  padding: 9px 13px;
+  font-size: 0.88rem;
+  width: 100%;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  background: #fff;
+  color: #111827;
+}
+.form-ctrl:focus {
+  border-color: #137333;
+  box-shadow: 0 0 0 3px rgba(19,115,51,0.12);
+  outline: none;
+}
+select.form-ctrl { cursor: pointer; }
+
+/* Test result */
+.test-box {
+  border-radius: 9px; padding: 11px 14px;
+  font-size: 0.82rem; margin-top: 8px;
+}
+.test-ok  { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+.test-err { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.test-loading { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+
+/* Apps Script code block */
+.script-block {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: 10px;
+  font-size: 0.73rem;
+  font-family: 'Consolas', 'JetBrains Mono', monospace;
+  padding: 14px 16px;
+  max-height: 190px;
+  overflow-y: auto;
+  white-space: pre;
+  line-height: 1.5;
+}
+.script-steps {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 12px 14px;
+  font-size: 0.8rem;
+  color: #374151;
+  margin-top: 8px;
+  line-height: 1.8;
+}
+
+/* Data Table */
+.data-wrap { overflow-x: auto; max-height: 440px; overflow-y: auto; }
+.gs-table { min-width: 600px; border-collapse: collapse; width: 100%; }
+.gs-table thead th {
+  background: #f8fafc;
+  font-size: 0.75rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 11px 14px; color: #374151;
+  white-space: nowrap; border-bottom: 2px solid #e5e7eb;
+  position: sticky; top: 0; z-index: 2;
+}
+.gs-table tbody td {
+  padding: 9px 14px; font-size: 0.83rem; color: #374151;
+  border-bottom: 1px solid #f3f4f6; vertical-align: middle;
+  max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.gs-table tbody tr:hover { background: #f9fafb; }
+
+/* Logs Table */
+.log-status {
+  font-size: 0.72rem; font-weight: 700;
+  text-transform: uppercase; padding: 3px 9px; border-radius: 12px;
+}
+.log-success { background: #dcfce7; color: #166534; }
+.log-failed  { background: #fee2e2; color: #991b1b; }
+.log-partial { background: #fef3c7; color: #92400e; }
+
+/* Toast */
+#toastCont {
+  position: fixed; top: 18px; right: 18px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.gs-toast {
+  border-radius: 11px;
+  padding: 13px 16px;
+  font-size: 0.86rem; font-weight: 500;
+  display: flex; align-items: center; gap: 10px;
+  min-width: 280px; max-width: 380px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.14);
+  animation: toastIn 0.28s cubic-bezier(0.34,1.56,0.64,1);
+  cursor: pointer;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(40px) scale(0.9); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+.t-success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.t-error   { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.t-info    { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+.t-warning { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+
+/* Spinner */
+.spin { display: inline-block; animation: spinning 0.8s linear infinite; }
+@keyframes spinning { to { transform: rotate(360deg); } }
+
+/* Save btn */
+.btn-save-gs {
+  background: linear-gradient(135deg, #137333, #0d5c2a);
+  color: #fff; border: none; border-radius: 10px;
+  padding: 10px 26px; font-weight: 700; font-size: 0.88rem;
+  cursor: pointer; transition: all 0.2s;
+  min-width: 140px;
+}
+.btn-save-gs:hover { background: linear-gradient(135deg, #0d5c2a, #0a4a22); box-shadow: 0 4px 16px rgba(19,115,51,0.3); }
+.btn-save-gs:disabled { opacity: 0.65; cursor: wait; }
+
+/* ── Field Mapping Table ────────────────────────────────── */
+.mapping-section {
+  border: 1.5px solid #d1fae5;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f9fafb;
+}
+.mapping-header {
+  background: linear-gradient(90deg, #ecfdf5, #d1fae5);
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #065f46;
+  border-bottom: 1px solid #d1fae5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mapping-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-top: 1px solid #f0fdf4;
+  background: #fff;
+}
+.mapping-row:nth-child(odd) { background: #f9fafb; }
+.mapping-col-name {
+  font-size: 0.81rem;
+  font-weight: 600;
+  color: #374151;
+  min-width: 130px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #f3f4f6;
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-family: monospace;
+}
+.mapping-arrow { color: #9ca3af; font-size: 0.85rem; flex-shrink: 0; }
+.mapping-sel {
+  flex: 1;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  background: #fff;
+  color: #111827;
+  cursor: pointer;
+}
+.mapping-sel:focus { border-color: #137333; outline: none; box-shadow: 0 0 0 2px rgba(19,115,51,0.1); }
+.mapping-sel.mapped { border-color: #6ee7b7; background: #f0fdf4; }
+</style>
+
+<!-- Toast Container -->
+<div id="toastCont"></div>
+
+<!-- ══════════ HERO ══════════════════════════════════════════════════════════ -->
+<div class="gs-hero mb-4">
+  <div class="d-flex align-items-start justify-content-between">
+    <div>
+      <div class="hero-icon-box">
+        <i class="fas fa-table-cells"></i>
+      </div>
+      <h1 class="hero-title">Imports</h1>
+      <p class="hero-sub">Two-way sync between your data and Google Sheets</p>
+      <div class="stat-row">
+        <div class="stat-item">
+          <span class="stat-val">{{ connections.count }}</span>
+          <span class="stat-lbl">Connections</span>
+        </div>
+        <div class="stat-div"></div>
+        <div class="stat-item">
+          <span class="stat-val">{{ active_count }}</span>
+          <span class="stat-lbl">Active</span>
+        </div>
+        <div class="stat-div"></div>
+        <div class="stat-item">
+          <span class="stat-val">{{ total_syncs|default:"—" }}</span>
+          <span class="stat-lbl">Total Syncs</span>
+        </div>
+        <div class="stat-div"></div>
+        <div class="stat-item">
+          <span class="stat-val">{% if last_log %}{{ last_log.synced_at|timesince }} ago{% else %}—{% endif %}</span>
+          <span class="stat-lbl">Last Sync</span>
+        </div>
+      </div>
+    </div>
+    <button class="btn-add-conn mt-1" onclick="openAddModal()">
+      <i class="fas fa-plus me-1"></i> Add Connection
+    </button>
+  </div>
+</div>
+
+<!-- ══════════ QUICK SETUP GUIDE BANNER ═══════════════════════════════════ -->
+<div class="guide-banner" id="guideBanner">
+  <div class="guide-icon"><i class="fas fa-lightbulb"></i></div>
+  <div class="flex-grow-1">
+    <div class="fw-bold mb-1" style="font-size:0.9rem; color:#92400e;">Quick Setup Guide</div>
+    <div style="font-size:0.82rem; color:#374151; line-height:1.7;">
+      <strong>CSV (Read-Only):</strong> Google Sheet → <em>File → Share → Publish to web</em> → Choose <em>CSV</em> → Copy the link.<br>
+      <strong>Two-Way Sync:</strong> Google Sheet → <em>Extensions → Apps Script</em> → Paste the code (click "Show Code" in the add modal) → <em>Deploy → New Web App → "Who has access: Anyone"</em> → Copy the Web App URL.
+    </div>
+  </div>
+  <button class="btn-close btn-sm ms-2 mt-1" onclick="document.getElementById('guideBanner').remove()" style="font-size:0.7rem;"></button>
+</div>
+
+<!-- ══════════ CONNECTION CARDS ═══════════════════════════════════════════ -->
+<div id="connectionsGrid">
+  {% if connections %}
+  <div class="row g-3" id="cardsRow">
+    {% for conn in connections %}
+    <div class="col-12 col-md-6 col-xl-4" id="connCard-{{ conn.id }}">
+      <div class="conn-card">
+        <!-- Badges -->
+        <div class="top-badges">
+          <span class="badge-pill {% if conn.connection_type == 'csv' %}bp-csv{% else %}bp-apps{% endif %}">
+            <i class="fas {% if conn.connection_type == 'csv' %}fa-file-csv{% else %}fa-arrows-rotate{% endif %}"></i>
+            {% if conn.connection_type == 'csv' %}CSV Read-Only{% else %}Two-Way Sync{% endif %}
+          </span>
+          <span class="badge-pill {% if conn.is_active %}bp-active{% else %}bp-inactive{% endif %}">
+            <i class="fas {% if conn.is_active %}fa-circle-check{% else %}fa-circle-xmark{% endif %}"></i>
+            {% if conn.is_active %}Active{% else %}Inactive{% endif %}
+          </span>
+          {% if conn.last_sync_status %}
+          <span class="badge-pill bp-{{ conn.last_sync_status }}">
+            {% if conn.last_sync_status == 'success' %}<i class="fas fa-check"></i> OK
+            {% elif conn.last_sync_status == 'partial' %}<i class="fas fa-bolt"></i> Partial
+            {% elif conn.last_sync_status == 'failed' %}<i class="fas fa-xmark"></i> Failed
+            {% endif %}
+          </span>
+          {% endif %}
+        </div>
+        <!-- Name & Meta -->
+        <div class="conn-name">{{ conn.name }}</div>
+        <div class="conn-meta">
+          <i class="fas fa-table-cells me-1"></i>{{ conn.sheet_name }}
+          &nbsp;&middot;&nbsp;
+          <i class="fas fa-database me-1"></i>{{ conn.get_sync_model_display }}
+        </div>
+        <!-- Sync Info -->
+        <div class="conn-sync-info">
+          <i class="fas fa-clock me-1"></i>
+          Last sync: <strong>{{ conn.get_last_sync_ago }}</strong>
+          {% if conn.spreadsheet_url %}
+          &nbsp;&middot;&nbsp;
+          <a href="{{ conn.spreadsheet_url }}" target="_blank" rel="noopener" style="color:#137333; font-size:0.75rem;">
+            <i class="fas fa-arrow-up-right-from-square me-1"></i>Open Sheet
+          </a>
+          {% endif %}
+        </div>
+        <!-- Actions -->
+        <div class="conn-actions">
+          {% if conn.connection_type == 'apps_script' %}
+            {% if conn.sync_model == 'custom' %}
+            <button class="btn-gs-primary" id="syncBtn-{{ conn.id }}"
+              onclick="syncNow({{ conn.id }}, 'from_sheet', this)">
+              <i class="fas fa-plug-circle-check me-1"></i>Test Connection
+            </button>
+            {% else %}
+            <button class="btn-gs-primary" id="syncBtn-{{ conn.id }}"
+              onclick="syncNow({{ conn.id }}, 'both', this)">
+              <i class="fas fa-arrows-rotate me-1"></i>Sync Now
+            </button>
+            {% endif %}
+          {% else %}
+            {% if conn.sync_model == 'custom' %}
+            <button class="btn-gs-primary" id="syncBtn-{{ conn.id }}"
+              onclick="syncNow({{ conn.id }}, 'from_sheet', this)">
+              <i class="fas fa-plug-circle-check me-1"></i>Test Connection
+            </button>
+            {% else %}
+            <button class="btn-gs-primary" id="syncBtn-{{ conn.id }}"
+              onclick="syncNow({{ conn.id }}, 'from_sheet', this)">
+              <i class="fas fa-cloud-arrow-down me-1"></i>Import
+            </button>
+            {% endif %}
+          {% endif %}
+          <a href="{% url 'google_sheets:view_connection_sheet' conn.id %}" class="btn-gs-outline text-decoration-none">
+            <i class="fas fa-eye me-1"></i>View Data
+          </a>
+          <button class="btn-gs-outline" onclick="viewLogs({{ conn.id }}, '{{ conn.name|escapejs }}')">
+            <i class="fas fa-list-check me-1"></i>Logs
+          </button>
+          <button class="btn-gs-outline" onclick="openEditModal({{ conn.id }})">
+            <i class="fas fa-pen me-1"></i>Edit
+          </button>
+          <button class="btn-gs-danger" onclick="confirmDelete({{ conn.id }}, '{{ conn.name|escapejs }}')">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state" id="emptyState">
+    <div class="empty-icon-circle">
+      <i class="fas fa-table-cells-large"></i>
+    </div>
+    <h5>No Google Sheet Connections Yet</h5>
+    <p>Connect your Google Sheets to sync orders, products, or customers automatically in one click.</p>
+    <button class="btn-gs-primary" onclick="openAddModal()" style="padding:11px 24px; border-radius:10px; font-size:0.88rem;">
+      <i class="fas fa-plus me-1"></i>Add Your First Connection
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+
+<!-- ════════════════════ ADD / EDIT MODAL ═══════════════════════════════════ -->
+<div class="modal fade" id="connModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header modal-header-gs">
+        <h5 class="modal-title fw-bold" id="connModalTitle">
+          <i class="fas fa-plug me-2"></i>Add Google Sheet Connection
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <input type="hidden" id="editingId" value="">
+        <div class="row g-3">
+
+          <!-- Connection Name -->
+          <div class="col-12">
+            <label class="form-label-sm">Connection Name <span class="text-danger">*</span></label>
+            <input type="text" id="mName" class="form-ctrl" placeholder="e.g. My Orders Sheet">
+          </div>
+
+          <!-- Type + Model -->
+          <div class="col-md-6">
+            <label class="form-label-sm">Connection Type <span class="text-danger">*</span></label>
+            <select id="mType" class="form-ctrl" onchange="onTypeChange()">
+              <option value="csv">CSV – Published URL (Read-Only)</option>
+              <option value="apps_script">Apps Script Web App (Two-Way Sync)</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label-sm">Data Model to Sync</label>
+            <select id="mModel" class="form-ctrl">
+              <option value="orders">Orders</option>
+              <option value="products">Products</option>
+              <option value="customers">Customers</option>
+              <option value="custom">Custom / Any Sheet</option>
+            </select>
+          </div>
+
+          <!-- URL -->
+          <div class="col-12">
+            <label class="form-label-sm" id="urlLabel">Published CSV URL <span class="text-danger">*</span></label>
+            <div class="d-flex gap-2">
+              <input type="url" id="mUrl" class="form-ctrl flex-grow-1"
+                placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv">
+              <button type="button" class="btn-gs-outline" style="white-space:nowrap; padding:8px 16px; border-radius:9px;"
+                onclick="testConn()" id="testBtn">
+                <i class="fas fa-plug me-1"></i>Test
+              </button>
+            </div>
+            <div id="testResult" style="display:none;"></div>
+          </div>
+
+          <!-- Apps Script Code Guide -->
+          <div class="col-12" id="scriptSection" style="display:none;">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <label class="form-label-sm mb-0">
+                <i class="fas fa-code me-1"></i>Apps Script Code — Paste in your Sheet
+              </label>
+              <button type="button" onclick="copyScript()" class="btn-gs-outline"
+                style="font-size:0.75rem; padding:4px 12px; border-radius:7px;">
+                <i class="fas fa-copy me-1"></i>Copy
+              </button>
+            </div>
+            <div class="script-block" id="scriptCode">{{ apps_script_code }}</div>
+            <div class="script-steps mt-2">
+              <strong>How to deploy:</strong>&nbsp;
+              Google Sheet → <em>Extensions → Apps Script</em> → Paste code → <em>Deploy → New Deployment → Web App</em><br>
+              → Execute as: <strong>Me</strong> → Who has access: <strong>Anyone</strong> → <em>Deploy</em> → Copy the URL above.
+            </div>
+          </div>
+
+          <!-- Sheet Name + Spreadsheet URL -->
+          <div class="col-md-6">
+            <label class="form-label-sm">Sheet Tab Name</label>
+            <input type="text" id="mSheet" class="form-ctrl" placeholder="Sheet1" value="Sheet1">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label-sm">Spreadsheet URL <span class="text-muted fw-normal">(optional — for "Open Sheet" link)</span></label>
+            <input type="url" id="mSpreadsheetUrl" class="form-ctrl"
+              placeholder="https://docs.google.com/spreadsheets/d/...">
+          </div>
+
+          <!-- ── FIELD MAPPING ─────────────────────────────────────── -->
+          <div class="col-12" id="mappingSection" style="display:none;">
+            <div class="mapping-section">
+              <div class="mapping-header">
+                <span><i class="fas fa-sliders me-1"></i>Column Mapping <span id="mappingCount" style="font-weight:400; opacity:0.8;"></span></span>
+                <button type="button" onclick="autoMapAll()" class="btn-gs-outline"
+                  style="font-size:0.72rem; padding:3px 10px; border-radius:6px; border-color:#6ee7b7; color:#065f46;">
+                  <i class="fas fa-wand-magic-sparkles me-1"></i>Auto-Map
+                </button>
+              </div>
+              <div id="mappingRows"></div>
+            </div>
+            <p style="font-size:0.76rem; color:#6b7280; margin-top:6px;">
+              <i class="fas fa-info-circle me-1 text-success"></i>
+              Map each sheet column to a Django field. Select <em>— Skip</em> to ignore a column.
+              Only mapped columns will be synced.
+            </p>
+          </div>
+
+          <!-- Notes -->
+          <div class="col-12">
+            <label class="form-label-sm">Notes <span class="text-muted fw-normal">(optional)</span></label>
+            <textarea id="mNotes" class="form-ctrl" rows="2"
+              placeholder="What does this connection sync? Any notes..."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 px-4 pb-4 pt-2">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal"
+          style="border-radius:9px; font-size:0.87rem;">Cancel</button>
+        <button class="btn-save-gs" onclick="saveConnection()" id="saveBtn">
+          <i class="fas fa-save me-1"></i>Save Connection
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- ════════════════════ SYNC LOGS MODAL ════════════════════════════════════ -->
+<div class="modal fade" id="logsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header modal-header-gs">
+        <h5 class="modal-title fw-bold" id="logsModalTitle">
+          <i class="fas fa-list-check me-2"></i>Sync Logs
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div id="logsWrap" style="overflow-x:auto; max-height:460px; overflow-y:auto;">
+          <div class="text-center py-5 text-muted">
+            <span class="spin" style="font-size:2rem; color:#137333;"><i class="fas fa-spinner"></i></span>
+            <p class="mt-3">Loading logs...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════════ SYNC RESULT MODAL ══════════════════════════════════ -->
+<div class="modal fade" id="syncResultModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
+    <div class="modal-content" style="border-radius:16px; border:none;">
+      <div class="modal-body text-center p-5">
+        <div id="srIcon" style="font-size:3.5rem; margin-bottom:14px;"></div>
+        <h5 class="fw-bold" id="srTitle"></h5>
+        <div id="srBody" style="font-size:0.85rem; color:#374151; text-align:left;"></div>
+        <button class="btn-gs-primary mt-4" data-bs-dismiss="modal" style="border-radius:10px; padding:10px 32px;">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════════ DELETE CONFIRM MODAL ═══════════════════════════════ -->
+<div class="modal fade" id="delModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:400px;">
+    <div class="modal-content" style="border-radius:16px; border:none;">
+      <div class="modal-body text-center p-5">
+        <div style="width:68px;height:68px;background:#fee2e2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:26px;color:#dc2626;">
+          <i class="fas fa-trash"></i>
+        </div>
+        <h5 class="fw-bold">Delete Connection?</h5>
+        <p class="text-muted" id="delConnDesc" style="font-size:0.87rem;"></p>
+        <div class="d-flex gap-3 justify-content-center mt-4">
+          <button class="btn btn-outline-secondary" data-bs-dismiss="modal" style="border-radius:9px; min-width:90px;">Cancel</button>
+          <button class="btn btn-danger" id="delConfirmBtn" style="border-radius:9px; min-width:90px;">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════════ JAVASCRIPT ═════════════════════════════════════════ -->
+<script>
+/* ── Globals ────────────────────────────────────────────────────────── */
+const CSRF = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '{{ csrf_token }}';
+const MODEL_FIELDS = {{ model_field_defs_json|safe }};
+let currentDataId = null, dataPage = 1, dataTotalPages = 1;
+let deleteTargetId = null;
+let detectedHeaders = [];  // headers from last successful test
+let currentMapping = {};   // current field_mapping object
+
+/* ── Toast ──────────────────────────────────────────────────────────── */
+function showToast(msg, type = 'success') {
+  const icons = {
+    success: 'fa-circle-check', error: 'fa-circle-xmark',
+    info: 'fa-circle-info', warning: 'fa-triangle-exclamation'
+  };
+  const t = document.createElement('div');
+  t.className = `gs-toast t-${type}`;
+  t.innerHTML = `<i class="fas ${icons[type] || icons.success}" style="font-size:1rem;"></i><span>${msg}</span>`;
+  t.onclick = () => t.remove();
+  document.getElementById('toastCont').appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(() => t.remove(), 400); }, 4500);
+}
+
+/* ── Add Modal ─────────────────────────────────────────────────────── */
+function openAddModal() {
+  document.getElementById('editingId').value = '';
+  document.getElementById('mName').value = '';
+  document.getElementById('mType').value = 'csv';
+  document.getElementById('mUrl').value = '';
+  document.getElementById('mSheet').value = 'Sheet1';
+  document.getElementById('mModel').value = 'orders';
+  document.getElementById('mSpreadsheetUrl').value = '';
+  document.getElementById('mNotes').value = '';
+  document.getElementById('testResult').style.display = 'none';
+  document.getElementById('connModalTitle').innerHTML = '<i class="fas fa-plug me-2"></i>Add Google Sheet Connection';
+  detectedHeaders = [];
+  currentMapping = {};
+  document.getElementById('mappingSection').style.display = 'none';
+  onTypeChange();
+  new bootstrap.Modal(document.getElementById('connModal')).show();
+}
+
+/* ── Edit Modal ─────────────────────────────────────────────────────── */
+async function openEditModal(id) {
+  try {
+    const resp = await fetch(`/imports/connections/${id}/get/`);
+    const data = await resp.json();
+    if (!data.success) { showToast('Failed to load connection.', 'error'); return; }
+    const c = data.connection;
+    document.getElementById('editingId').value = c.id;
+    document.getElementById('mName').value = c.name;
+    document.getElementById('mType').value = c.connection_type;
+    document.getElementById('mUrl').value = c.connection_type === 'csv' ? c.csv_url : c.apps_script_url;
+    document.getElementById('mSheet').value = c.sheet_name;
+    document.getElementById('mModel').value = c.sync_model;
+    document.getElementById('mSpreadsheetUrl').value = c.spreadsheet_url || '';
+    document.getElementById('mNotes').value = c.notes || '';
+    document.getElementById('testResult').style.display = 'none';
+    document.getElementById('connModalTitle').innerHTML = '<i class="fas fa-pen me-2"></i>Edit Connection';
+    // Restore existing field mapping
+    currentMapping = c.field_mapping || {};
+    const existingHeaders = Object.keys(currentMapping);
+    if (existingHeaders.length > 0) {
+      detectedHeaders = existingHeaders;
+      renderMappingTable(existingHeaders, currentMapping);
+    } else {
+      detectedHeaders = [];
+      document.getElementById('mappingSection').style.display = 'none';
+    }
+    onTypeChange();
+    new bootstrap.Modal(document.getElementById('connModal')).show();
+  } catch(e) {
+    showToast('Network error loading connection.', 'error');
+  }
+}
+
+/* ── Type Change ────────────────────────────────────────────────────── */
+function onTypeChange() {
+  const t = document.getElementById('mType').value;
+  const lbl = document.getElementById('urlLabel');
+  const inp = document.getElementById('mUrl');
+  const sec = document.getElementById('scriptSection');
+  if (t === 'csv') {
+    lbl.innerHTML = 'Published CSV URL <span class="text-danger">*</span>';
+    inp.placeholder = 'https://docs.google.com/spreadsheets/d/.../pub?output=csv';
+    sec.style.display = 'none';
+  } else {
+    lbl.innerHTML = 'Apps Script Web App URL <span class="text-danger">*</span>';
+    inp.placeholder = 'https://script.google.com/macros/s/.../exec';
+    sec.style.display = 'block';
+  }
+}
+
+/* ── Test Connection ─────────────────────────────────────────────── */
+async function testConn() {
+  const url = document.getElementById('mUrl').value.trim();
+  const type = document.getElementById('mType').value;
+  const btn = document.getElementById('testBtn');
+  const res = document.getElementById('testResult');
+
+  if (!url) { showToast('Enter a URL first.', 'warning'); return; }
+
+  btn.innerHTML = '<span class="spin"><i class="fas fa-spinner"></i></span>';
+  btn.disabled = true;
+  res.style.display = 'block';
+  res.className = 'test-box test-loading';
+  res.innerHTML = '<i class="fas fa-spinner spin me-1"></i> Testing connection...';
+
+  try {
+    const resp = await fetch(`/imports/test-connection/?url=${encodeURIComponent(url)}&connection_type=${type}&_t=${Date.now()}`);
+    const data = await resp.json();
+    if (data.success) {
+      res.className = 'test-box test-ok';
+      const hdrs = data.headers || [];
+      const hdrPreview = hdrs.slice(0, 8).join(', ') + (hdrs.length > 8 ? '...' : '');
+      res.innerHTML = `<i class="fas fa-circle-check me-1"></i><strong>Connected!</strong> Found <strong>${data.row_count}</strong> rows, <strong>${hdrs.length}</strong> columns.${hdrPreview ? `<br><small style="opacity:0.8;">Columns: ${hdrPreview}</small>` : ''}`;
+      // Build mapping table from detected headers
+      if (hdrs.length > 0) {
+        detectedHeaders = hdrs;
+        const autoMap = buildAutoMapping(hdrs, document.getElementById('mModel').value);
+        // Merge: keep any existing manual mapping, fill gaps with auto
+        const merged = { ...autoMap, ...currentMapping };
+        renderMappingTable(hdrs, merged);
+      }
+    } else {
+      res.className = 'test-box test-err';
+      res.innerHTML = `<i class="fas fa-circle-xmark me-1"></i>${data.error}`;
+      document.getElementById('mappingSection').style.display = 'none';
+    }
+  } catch(e) {
+    res.className = 'test-box test-err';
+    res.innerHTML = `<i class="fas fa-circle-xmark me-1"></i>Network error: ${e.message}`;
+    document.getElementById('mappingSection').style.display = 'none';
+  } finally {
+    btn.innerHTML = '<i class="fas fa-plug me-1"></i>Test';
+    btn.disabled = false;
+  }
+}
+
+/* ── Field Mapping Helpers ────────────────────────────────────────── */
+function buildAutoMapping(headers, model) {
+  const fields = MODEL_FIELDS[model] || [];
+  const mapping = {};
+  headers.forEach(header => {
+    const headerStr = String(header || '');
+    const h = headerStr.toLowerCase().replace(/[\s\-]/g, '_');
+    // Exact key match
+    let match = fields.find(f => f.key === h);
+    if (!match) match = fields.find(f => h.includes(f.key) || f.key.includes(h));
+    if (!match) match = fields.find(f =>
+      headerStr.toLowerCase().includes(f.label.toLowerCase()) ||
+      f.label.toLowerCase().includes(headerStr.toLowerCase())
+    );
+    if (match) mapping[header] = match.key;
+  });
+  return mapping;
+}
+
+function autoMapAll() {
+  const model = document.getElementById('mModel').value;
+  const autoMap = buildAutoMapping(detectedHeaders, model);
+  renderMappingTable(detectedHeaders, autoMap);
+  showToast('Auto-mapped columns based on field names.', 'info');
+}
+
+function renderMappingTable(headers, existingMapping = {}) {
+  const model = document.getElementById('mModel').value;
+  const fields = MODEL_FIELDS[model] || [];
+  const section = document.getElementById('mappingSection');
+  const rowsEl = document.getElementById('mappingRows');
+
+  if (!headers.length) { section.style.display = 'none'; return; }
+
+  const mappedCount = Object.keys(existingMapping).filter(k => existingMapping[k]).length;
+  document.getElementById('mappingCount').textContent = `(${mappedCount}/${headers.length} mapped)`;
+
+  let html = '';
+  headers.forEach((header, i) => {
+    const headerStr = String(header || '');
+    const current = existingMapping[header] || '';
+    let opts = '<option value="">— Skip this column</option>';
+    fields.forEach(f => {
+      opts += `<option value="${f.key}" ${f.key === current ? 'selected' : ''}>${f.label}</option>`;
+    });
+    html += `
+      <div class="mapping-row">
+        <span class="mapping-col-name" title="${headerStr.replace(/"/g,'&quot;')}">${headerStr}</span>
+        <span class="mapping-arrow"><i class="fas fa-arrow-right"></i></span>
+        <select class="mapping-sel ${current ? 'mapped' : ''}" data-header="${headerStr.replace(/"/g,'&quot;')}"
+          onchange="this.classList.toggle('mapped', !!this.value); updateMappingCount();">
+          ${opts}
+        </select>
+      </div>`;
+  });
+
+  rowsEl.innerHTML = html;
+  section.style.display = 'block';
+  updateMappingCount();
+}
+
+function updateMappingCount() {
+  const sels = document.querySelectorAll('.mapping-sel');
+  const mapped = [...sels].filter(s => s.value).length;
+  const el = document.getElementById('mappingCount');
+  if (el) el.textContent = `(${mapped}/${sels.length} mapped)`;
+}
+
+function getFieldMapping() {
+  const mapping = {};
+  document.querySelectorAll('.mapping-sel').forEach(sel => {
+    if (sel.value) mapping[sel.dataset.header] = sel.value;
+  });
+  return mapping;
+}
+
+/* ── Copy Script ────────────────────────────────────────────────────── */
+function copyScript() {
+  const text = document.getElementById('scriptCode').textContent;
+  navigator.clipboard.writeText(text)
+    .then(() => showToast('Apps Script code copied!', 'info'))
+    .catch(() => showToast('Copy failed — please select & copy manually.', 'warning'));
+}
+
+/* ── Save Connection ────────────────────────────────────────────────── */
+async function saveConnection() {
+  const id = document.getElementById('editingId').value;
+  const name = document.getElementById('mName').value.trim();
+  const type = document.getElementById('mType').value;
+  const url = document.getElementById('mUrl').value.trim();
+  const sheet = document.getElementById('mSheet').value.trim() || 'Sheet1';
+  const model = document.getElementById('mModel').value;
+
+  if (!name) { showToast('Connection name is required.', 'warning'); document.getElementById('mName').focus(); return; }
+  if (!url)  { showToast('URL is required.', 'warning'); document.getElementById('mUrl').focus(); return; }
+
+  // Collect field mapping from the table dropdowns
+  const fieldMapping = getFieldMapping();
+  const mappedCount = Object.keys(fieldMapping).length;
+  // For non-custom models, warn if no mapping but don't block
+  if (model !== 'custom' && mappedCount === 0) {
+    const proceed = confirm(`No column mapping set yet.\n\nSyncing without a mapping will fail.\n\nClick OK to save anyway (you can add mapping later), or Cancel to set the mapping now.`);
+    if (!proceed) return;
+  }
+
+  const payload = {
+    name,
+    connection_type: type,
+    csv_url: type === 'csv' ? url : '',
+    apps_script_url: type === 'apps_script' ? url : '',
+    sheet_name: sheet,
+    sync_model: model,
+    spreadsheet_url: document.getElementById('mSpreadsheetUrl').value.trim(),
+    notes: document.getElementById('mNotes').value.trim(),
+    field_mapping: fieldMapping,
+  };
+
+  const btn = document.getElementById('saveBtn');
+  btn.innerHTML = '<span class="spin"><i class="fas fa-spinner me-1"></i></span> Saving...';
+  btn.disabled = true;
+
+  const endpoint = id ? `/imports/connections/${id}/edit/` : `/imports/connections/add/`;
+  try {
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (data.success) {
+      bootstrap.Modal.getInstance(document.getElementById('connModal')).hide();
+      showToast(id ? `"${name}" updated!` : `"${name}" added!`, 'success');
+      setTimeout(() => location.reload(), 900);
+    } else {
+      showToast(data.error || 'Save failed. Please try again.', 'error');
+    }
+  } catch(e) {
+    showToast('Network error: ' + e.message, 'error');
+  } finally {
+    btn.innerHTML = '<i class="fas fa-save me-1"></i>Save Connection';
+    btn.disabled = false;
+  }
+}
+
+/* ── Sync Now ───────────────────────────────────────────────────────── */
+async function syncNow(id, direction, btn) {
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spin"><i class="fas fa-arrows-rotate"></i></span>';
+  btn.disabled = true;
+  try {
+    const resp = await fetch(`/imports/connections/${id}/sync/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify({ direction }),
+    });
+    const data = await resp.json();
+    if (data.success) {
+      const r = data.result;
+      const statusMap = {
+        success: { icon: '✅', title: 'Sync Complete!',     cls: 'success' },
+        partial: { icon: '⚡', title: 'Partially Synced',   cls: 'warning' },
+        failed:  { icon: '❌', title: 'Sync Failed',        cls: 'error'   },
+      };
+      const s = statusMap[r.status] || statusMap.success;
+      document.getElementById('srIcon').textContent = s.icon;
+      document.getElementById('srTitle').textContent = s.title;
+      document.getElementById('srBody').innerHTML = `
+        <div style="background:#f8fafc; border-radius:10px; padding:14px 16px; margin-top:10px;">
+          <div style="margin:4px 0;"><strong>Rows synced:</strong> ${r.rows_synced}</div>
+          <div style="margin:4px 0;"><strong>Rows failed:</strong> ${r.rows_failed}</div>
+          ${r.rows_skipped ? `<div style="margin:4px 0;"><strong>Rows skipped:</strong> ${r.rows_skipped}</div>` : ''}
+          <div style="margin:4px 0;"><strong>Last sync:</strong> ${data.last_synced_ago}</div>
+          ${r.error_message ? `<div style="margin-top:8px; color:#dc2626;"><i class="fas fa-triangle-exclamation me-1"></i>${r.error_message}</div>` : ''}
+        </div>`;
+      new bootstrap.Modal(document.getElementById('syncResultModal')).show();
+      showToast(s.title, s.cls === 'warning' ? 'warning' : s.cls === 'error' ? 'error' : 'success');
+    } else {
+      showToast(data.error || 'Sync failed.', 'error');
+    }
+  } catch(e) {
+    showToast('Network error during sync.', 'error');
+  } finally {
+    btn.innerHTML = orig;
+    btn.disabled = false;
+  }
+}
+
+/* ── Sync Logs ──────────────────────────────────────────────────────── */
+async function viewLogs(id, name) {
+  document.getElementById('logsModalTitle').innerHTML = `<i class="fas fa-list-check me-2"></i>Sync Logs — ${name}`;
+  document.getElementById('logsWrap').innerHTML = '<div class="text-center py-5"><span class="spin" style="font-size:2rem;color:#137333;"><i class="fas fa-spinner"></i></span></div>';
+  new bootstrap.Modal(document.getElementById('logsModal')).show();
+  try {
+    const resp = await fetch(`/imports/connections/${id}/logs/`);
+    const data = await resp.json();
+    if (!data.success || !data.logs.length) {
+      document.getElementById('logsWrap').innerHTML = '<div class="text-center py-5 text-muted"><i class="fas fa-inbox" style="font-size:2rem;"></i><p class="mt-2">No sync logs yet.</p></div>';
+      return;
+    }
+    let html = `<table class="gs-table">
+      <thead><tr>
+        <th>Date</th><th>Direction</th><th>Status</th>
+        <th>Synced</th><th>Failed</th><th>Triggered By</th><th>Note</th>
+      </tr></thead><tbody>`;
+    data.logs.forEach(l => {
+      const cls = l.status === 'success' ? 'log-success' : l.status === 'failed' ? 'log-failed' : 'log-partial';
+      html += `<tr>
+        <td style="white-space:nowrap;">${l.synced_at}</td>
+        <td>${l.direction}</td>
+        <td><span class="log-status ${cls}">${l.status}</span></td>
+        <td>${l.rows_synced}</td>
+        <td>${l.rows_failed}</td>
+        <td>${l.triggered_by}</td>
+        <td style="color:#dc2626; font-size:0.78rem; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${l.error_message}">${l.error_message || '—'}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('logsWrap').innerHTML = html;
+  } catch(e) {
+    document.getElementById('logsWrap').innerHTML = `<div class="text-center py-5 text-danger">${e.message}</div>`;
+  }
+}
+
+/* ── Delete ─────────────────────────────────────────────────────────── */
+function confirmDelete(id, name) {
+  deleteTargetId = id;
+  document.getElementById('delConnDesc').textContent = `Delete "${name}"? This will also remove all sync logs and cannot be undone.`;
+  const modal = new bootstrap.Modal(document.getElementById('delModal'));
+  document.getElementById('delConfirmBtn').onclick = async () => {
+    try {
+      const resp = await fetch(`/imports/connections/${id}/delete/`, {
+        method: 'POST', headers: { 'X-CSRFToken': CSRF }
+      });
+      const data = await resp.json();
+      if (data.success) {
+        modal.hide();
+        const card = document.getElementById(`connCard-${id}`);
+        if (card) {
+          card.style.transition = 'opacity .3s, transform .3s';
+          card.style.opacity = '0';
+          card.style.transform = 'scale(0.95)';
+          setTimeout(() => card.remove(), 320);
+        }
+        showToast(`"${name}" deleted.`, 'info');
+      } else {
+        showToast(data.error || 'Delete failed.', 'error');
+      }
+    } catch(e) { showToast('Network error.', 'error'); }
+  };
+  modal.show();
+}
+
+/* ── Init ─────────────────────────────────────────────────────────── */
+onTypeChange();
+</script>
+{% endblock %}

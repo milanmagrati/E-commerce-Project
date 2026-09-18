@@ -18,6 +18,9 @@ def order_badge(status):
         'delivered': 'success',
         'cancelled': 'danger',
         'returned': 'dark',
+        'return': 'dark',
+        'return_processing': 'warning',
+        'return_arrived': 'danger',
     }
     return badge_classes.get(status, 'secondary')
 
@@ -34,6 +37,9 @@ def get_badge_class(status):
         'delivered': 'success',
         'cancelled': 'danger',
         'returned': 'dark',
+        'return': 'dark',
+        'return_processing': 'warning',
+        'return_arrived': 'danger',
         'in_stock': 'success',
         'low_stock': 'warning',
         'out_of_stock': 'danger',
@@ -119,6 +125,9 @@ def status_icon(status):
         'delivered': 'fa-check-double',
         'cancelled': 'fa-times-circle',
         'returned': 'fa-undo',
+        'return': 'fa-box-open',
+        'return_processing': 'fa-truck',
+        'return_arrived': 'fa-warehouse',
     }
     return icons.get(status, 'fa-question-circle')
 
@@ -149,6 +158,9 @@ def get_order_status_color(status):
         'delivered': '#28a745',
         'cancelled': '#dc3545',
         'returned': '#343a40',
+        'return': '#343a40',
+        'return_processing': '#fd7e14',
+        'return_arrived': '#c2410c',
     }
     return colors.get(status, '#6c757d')
 
@@ -284,3 +296,37 @@ def followup_type_icon(ftype):
         'visit': '\U0001F3EA',
     }
     return icons.get(ftype, '')
+
+
+@register.filter(name='logistics_badge_class')
+def logistics_badge_class_filter(status, logistics=None):
+    """Badge classes for an NCM/PND status.
+
+    Thin wrapper over dashboard.logistics_status so the template and the AJAX
+    endpoint that repaints these badges share one colour table - see that
+    module for why it isn't duplicated in JavaScript.
+
+    Usage: {{ order.ncm_status|logistics_badge_class:order.logistics }}
+    """
+    from dashboard.logistics_status import logistics_badge_class
+    return logistics_badge_class(status, logistics)
+
+
+@register.filter(name='logistics_status_text')
+def logistics_status_text_filter(status, logistics=None):
+    """The displayed status string, with the provider's default for a blank value."""
+    from dashboard.logistics_status import logistics_status_text
+    return logistics_status_text(status, logistics)
+
+@register.inclusion_tag('invoice/_document.html')
+def invoice_document(context_dict):
+    """Render one invoice from a `build_invoice_context()` dictionary.
+
+    The bulk print sheet holds a *list* of those dictionaries, and Django has
+    no way to spread one back into a template's namespace — `{% include ...
+    with a=x.a b=x.b %}` would mean re-listing every key at the call site, so
+    a key added to `build_invoice_context` would render on the single-order
+    invoice and silently vanish from the bulk sheet. An inclusion tag returns
+    its context wholesale, which is exactly the spread that is missing.
+    """
+    return context_dict

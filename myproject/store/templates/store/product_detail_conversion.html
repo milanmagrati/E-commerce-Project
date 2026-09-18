@@ -1,0 +1,660 @@
+{% extends "store/base_pdp.html" %}
+{% load static store_tags %}
+
+{% comment %}
+Theme 2 — the conversion product landing page.
+
+Three sticky columns: media and long-form content on the left, the buy box in
+the middle, an info rail on the right. Column A is ordered as a funnel, not as
+a CMS: show it, prove it, teach it, describe it, then let other people vouch
+for it.
+
+Every block renders nothing at all when the administrator has filled nothing
+in, so a store that configures none of this gets a clean product page rather
+than ten empty cards. All copy comes from Setup › Product Page Theme, resolved
+in `store/theme2.py`.
+
+The sticky bar and the checkout modal sit *outside* the grid on purpose: one is
+fixed to the viewport and the other covers it, and nesting either inside a
+`position: sticky` column would trap it in that column's stacking context.
+{% endcomment %}
+
+{% block title %}{{ product.name }}{% endblock %}
+
+{% block content %}
+<div class="lx-p2"
+     data-p2-root
+     data-product-id="{{ product.id }}"
+     data-price="{{ product.price|stringformat:'s' }}"
+     data-max-stock="{{ available_stock }}"
+     data-use-modal="{% if t2_use_modal %}1{% else %}0{% endif %}"
+     {% if has_variations %}data-has-variations="1"{% endif %}>
+
+    <script type="application/json" data-p2-bulk-map>{{ bulk_tiers_json|safe }}</script>
+
+    <div class="lx-p2-grid">
+
+        <!-- ═══════════════ A1 · Gallery ═══════════════ -->
+        <section class="lx-p2-card lx-p2-gallery" data-p2-gallery aria-label="Product images">
+            <div class="lx-p2-stage" data-p2-stage>
+                <div class="lx-p2-slides" data-p2-slides>
+                    {% if product.image %}
+                    <figure class="lx-p2-slide is-active" data-p2-slide data-full="{{ product.image.url }}">
+                        <img src="{{ product.image.url }}" alt="{{ product.name }}" width="900" height="900">
+                    </figure>
+                    {% endif %}
+                    {% for img in images %}
+                    <figure class="lx-p2-slide{% if not product.image and forloop.first %} is-active{% endif %}"
+                            data-p2-slide data-full="{{ img.image.url }}">
+                        <img src="{{ img.image.url }}" alt="{{ img.alt_text|default:product.name }}"
+                             loading="lazy" width="900" height="900">
+                    </figure>
+                    {% endfor %}
+                    {% if not product.image and not images %}
+                    <figure class="lx-p2-slide is-active lx-p2-slide-empty" data-p2-slide>
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                    </figure>
+                    {% endif %}
+                </div>
+
+                <button type="button" class="lx-p2-gnav is-prev" data-p2-prev aria-label="Previous image">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <button type="button" class="lx-p2-gnav is-next" data-p2-next aria-label="Next image">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+
+                <span class="lx-p2-gcount" data-p2-count>1 / 1</span>
+
+                {% comment %}
+                The hover magnifier. Its background-size is set in *pixels* by
+                the script, computed from the photo's own rendered box — a
+                percentage is a share of this panel, so it only magnifies
+                honestly when the panel's aspect ratio happens to match the
+                photo's, and stretches every other one.
+                {% endcomment %}
+                <div class="lx-p2-zoom" data-p2-zoom aria-hidden="true"><div data-p2-zoom-inner></div></div>
+            </div>
+
+            {% if images or product.image %}
+            <div class="lx-p2-thumbs" data-p2-thumbs role="list">
+                {% if product.image %}
+                <button type="button" class="lx-p2-thumb is-active" data-p2-thumb role="listitem"
+                        aria-label="Show image 1"><img src="{{ product.image.url }}" alt="" loading="lazy"></button>
+                {% endif %}
+                {% for img in images %}
+                <button type="button" class="lx-p2-thumb{% if not product.image and forloop.first %} is-active{% endif %}"
+                        data-p2-thumb role="listitem"
+                        aria-label="Show image {% if product.image %}{{ forloop.counter|add:1 }}{% else %}{{ forloop.counter }}{% endif %}"><img src="{{ img.image.url }}" alt="" loading="lazy"></button>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </section>
+
+        <!-- ═══════════════ B · Buy box ═══════════════ -->
+        <div class="lx-p2-buy">
+        <section class="lx-p2-card lx-p2-buybox" data-p2-buybox aria-label="Buy this product">
+
+            <h1 class="lx-p2-title">{{ product.name }}</h1>
+
+            {% if review_count %}
+            <div class="lx-p2-rating">
+                {% comment %}
+                Stars round *down* — 4 filled for a 4.4, never 5. The exact
+                figure is on the reviews block, which is where somebody who
+                wants the decimal is going anyway.
+                {% endcomment %}
+                <span class="lx-p2-stars" aria-hidden="true">{% for i in "12345" %}<span class="{% if forloop.counter <= avg_rating %}on{% endif %}">&#9733;</span>{% endfor %}</span>
+                <a href="#lx-p2-reviews">{{ review_count }} review{{ review_count|pluralize }}</a>
+            </div>
+            {% endif %}
+
+            <hr class="lx-p2-rule">
+
+            <div class="lx-p2-pricerow">
+                <div class="lx-p2-pricecol">
+                    <span class="lx-p2-micro">NPR</span>
+                    <span class="lx-p2-price" data-p2-price>{% if t2_quote %}{% p2_amount t2_quote.unit %}{% else %}{% p2_amount product.price %}{% endif %}</span>
+                    <span class="lx-p2-badge" data-p2-badge {% if not t2_quote.discount_percent %}hidden{% endif %}>&#127991; {{ t2_quote.discount_percent|default:0 }}%</span>
+                    <span class="lx-p2-was" data-p2-was {% if not t2_quote.discount_percent %}hidden{% endif %}>Rs. {% p2_amount t2_quote.base_unit %}</span>
+                </div>
+                <div class="lx-p2-qtycol">
+                    <span class="lx-p2-micro">Quantity</span>
+                    <div class="lx-p2-stepper">
+                        <button type="button" data-p2-minus aria-label="Decrease quantity">&minus;</button>
+                        <input type="number" data-p2-qty value="{{ preselect_qty }}" min="1"
+                               {% if available_stock > 0 %}max="{{ available_stock }}"{% endif %}
+                               inputmode="numeric" aria-label="Quantity">
+                        <button type="button" data-p2-plus aria-label="Increase quantity">+</button>
+                    </div>
+                </div>
+            </div>
+
+            <p class="lx-p2-stock" data-p2-stock>
+                {% if has_variations %}Availability depends on the option you pick
+                {% elif available_stock > 0 %}In stock — {{ available_stock }} available
+                {% elif product.backorders_allowed %}Available on backorder
+                {% else %}Sold out{% endif %}
+            </p>
+
+            {% comment %}
+            Bundle & Save. The skip condition is whether *this page* has some
+            other buy surface — never `has_variations`: Theme 2 draws its own
+            option cards, so a variable product that skipped the ladder here
+            would simply lose its quantity break with nothing to replace it.
+            The rungs are re-rendered per option from `data-p2-bulk-map`.
+            {% endcomment %}
+            {% if product.storefront_available %}
+            <div class="lx-p2-bundle" data-p2-bundle{% if not t2_ladder and not has_variations %} hidden{% endif %}>
+                <div class="lx-p2-bundle-head"><span>Bundle &amp; Save</span></div>
+                {% comment %}
+                Each rung quotes the line total for its own quantity, not a
+                unit price: the total is the number that will be charged, and
+                a ladder of unit prices makes the shopper do the multiplication
+                to find out what they are actually choosing between. The first
+                rung is "Buy 1", so this is a chooser and not a column of
+                upsells with no way to say "just the one".
+                {% endcomment %}
+                <div class="lx-p2-tiers" data-p2-tiers role="group" aria-label="Quantity offers">
+                    {% for row in t2_ladder %}
+                    <button type="button" class="lx-p2-tier{% if row.popular %} is-popular{% endif %}{% if row.selected %} is-selected{% endif %}"
+                            data-p2-tier data-min-qty="{{ row.qty }}"
+                            aria-pressed="{% if row.selected %}true{% else %}false{% endif %}">
+                        <span class="lx-p2-tier-thumb">
+                            {% if product_image_url %}<img src="{{ product_image_url }}" alt="" loading="lazy">{% endif %}
+                            <span class="lx-p2-tier-qty">{{ row.qty }}×</span>
+                        </span>
+                        <span class="lx-p2-tier-text">
+                            <span class="lx-p2-tier-name">{{ row.name }}</span>
+                            {% if row.save %}<span class="lx-p2-tier-save">{{ row.save }}</span>{% endif %}
+                        </span>
+                        <span class="lx-p2-tier-price">
+                            <span class="now">Rs. {% p2_amount row.total %}</span>
+                            {% if row.discounted %}<span class="was">Rs. {% p2_amount row.was %}</span>{% endif %}
+                        </span>
+                    </button>
+                    {% endfor %}
+                </div>
+                {% if has_variations %}
+                <p class="lx-p2-bundle-await" data-p2-bundle-await>Pick an option to see its bundle price.</p>
+                {% endif %}
+            </div>
+
+            {% if has_variations %}
+            <div class="lx-p2-variants" data-p2-variants>
+                <span class="lx-p2-micro">Variant: <b data-p2-variant-label>{% if t2_quote.variant_label %}{{ t2_quote.variant_label }}{% else %}not chosen yet{% endif %}</b></span>
+                <div class="lx-p2-variant-grid">
+                    {% for v in variations %}
+                    <button type="button"
+                            class="lx-p2-variant{% if not v.in_stock %} is-out{% endif %}{% if t2_quote.variant_label == v.label %} is-selected{% endif %}"
+                            data-p2-variant
+                            data-variation-id="{{ v.id }}"
+                            data-price="{{ v.price|stringformat:'s' }}"
+                            data-stock="{{ v.stock }}"
+                            data-image="{{ v.image }}"
+                            data-label="{{ v.label }}"
+                            aria-pressed="{% if t2_quote.variant_label == v.label %}true{% else %}false{% endif %}"
+                            {% if preselect_variation_id and v.id|stringformat:'s' == preselect_variation_id %}data-preselect="1"{% endif %}
+                            {% if not v.in_stock %}disabled aria-disabled="true"{% endif %}>
+                        <span class="lx-p2-variant-media">
+                            {% if v.image %}<img src="{{ v.image }}" alt="" loading="lazy">{% endif %}
+                        </span>
+                        <span class="lx-p2-variant-text">
+                            <span class="lx-p2-variant-name">{{ v.label }}</span>
+                            {% if not v.in_stock %}<span class="lx-p2-variant-out">Sold out</span>
+                            {% else %}<span class="lx-p2-variant-price">{{ v.price_display }}</span>{% endif %}
+                        </span>
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% comment %}
+            One hook, `data-p2-buy`, shared by this button and the sticky bar's,
+            so there is exactly one Buy Now code path rather than two that can
+            drift. `.lx-p2-buybtn`, not `.lx-p2-buy` — the latter is the sticky
+            grid column this button sits inside, and sharing the class would
+            make the button sticky too.
+            {% endcomment %}
+            <button type="button" class="lx-p2-buybtn" data-p2-buy
+                    {% if has_variations %}data-needs-variation{% endif %}>
+                {{ t2.buy_label|default:"Buy now" }}
+            </button>
+            <p class="lx-p2-buyhint" data-p2-buyhint hidden role="status"></p>
+
+            {% else %}
+            <button type="button" class="lx-p2-buybtn is-disabled" disabled>Sold out</button>
+            <form class="lx-p2-restock" method="POST"
+                  action="{% url 'store:notify_back_in_stock' product_id=product.id %}"
+                  data-p2-restock>
+                {% csrf_token %}
+                <label class="lx-p2-micro" for="lx-p2-restock-email">Tell me when it is back</label>
+                <div class="lx-p2-restock-row">
+                    <input type="email" id="lx-p2-restock-email" name="email" required
+                           placeholder="you@example.com"
+                           {% if customer %}value="{{ customer.email }}"{% endif %}>
+                    <button type="submit">Notify me</button>
+                </div>
+                <p class="lx-p2-restock-msg" data-p2-restock-msg hidden role="status"></p>
+            </form>
+            {% endif %}
+
+            {% if t2.trust_row %}
+            <div class="lx-p2-trust">
+                {% for item in t2.trust_row %}
+                <div class="lx-p2-trust-item">
+                    {% include "store/partials/p2_icon.html" with icon=item.icon %}
+                    <span>{{ item.text }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </section>
+        </div>
+
+        <!-- ═══════════════ C · Info rail ═══════════════ -->
+        <div class="lx-p2-rail">
+        <aside class="lx-p2-card lx-p2-railcard" aria-label="Product information">
+            {% if t2.rail.highlights %}
+            <h3 class="lx-p2-railhead">Product highlights</h3>
+            <ul class="lx-p2-dots">
+                {% for line in t2.rail.highlights %}<li>{{ line }}</li>{% endfor %}
+            </ul>
+            {% endif %}
+
+            {% if t2.rail.pay_chips or t2.rail.pay_bullets %}
+            <h3 class="lx-p2-railhead">Payment &amp; offers</h3>
+            {% if t2.rail.pay_chips %}
+            <div class="lx-p2-chips">
+                {% for chip in t2.rail.pay_chips %}<span class="lx-p2-chip">{{ chip }}</span>{% endfor %}
+            </div>
+            {% endif %}
+            {% if t2.rail.pay_bullets %}
+            <ul class="lx-p2-dots">
+                {% for line in t2.rail.pay_bullets %}<li>{{ line }}</li>{% endfor %}
+            </ul>
+            {% endif %}
+            {% endif %}
+
+            <hr class="lx-p2-rule">
+
+            {% for row in t2.rail.rows %}
+            {% if row.value %}
+            <div class="lx-p2-railrow">
+                <span class="lx-p2-railicon">{% include "store/partials/p2_icon.html" with icon=row.icon %}</span>
+                <span class="lx-p2-railtext">
+                    <span class="lx-p2-micro">{{ row.label }}</span>
+                    <span class="{% if row.accent %}lx-p2-railvalue is-accent{% else %}lx-p2-railvalue{% endif %}">{{ row.value }}</span>
+                </span>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </aside>
+        </div>
+
+        <!-- ═══════════════ A2 · Content, in funnel order ═══════════════ -->
+        <div class="lx-p2-content">
+
+            {% if t2.videos %}
+            <section class="lx-p2-card lx-p2-block">
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.video_title }}</h2>
+                <div class="lx-p2-videos">
+                    {% for clip in t2.videos %}
+                    <figure class="lx-p2-vcard">
+                    <div class="lx-p2-video" data-p2-video>
+                        <video playsinline muted loop preload="metadata"
+                               {% if clip.poster %}poster="{{ clip.poster }}"{% endif %}>
+                            <source src="{{ clip.src }}">
+                        </video>
+                        {% if clip.is_creator %}<span class="lx-p2-vbadge">Creator</span>{% endif %}
+                        <button type="button" class="lx-p2-vplay" data-p2-play aria-label="Play video">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7 4 20 12 7 20"/></svg>
+                        </button>
+                        <button type="button" class="lx-p2-vmute" data-p2-mute aria-label="Unmute video">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><polygon points="4 9 8 9 13 5 13 19 8 15 4 15" fill="currentColor" stroke="none"/><line x1="17" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="17" y2="15"/></svg>
+                        </button>
+                        <button type="button" class="lx-p2-vexpand" data-p2-expand aria-label="Expand video">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                        </button>
+                    </div>
+                        {% if clip.title or clip.note %}
+                        <figcaption class="lx-p2-vcap">
+                            {% if clip.title %}<span class="lx-p2-vcap-t">{{ clip.title }}</span>{% endif %}
+                            {% if clip.note %}<span class="lx-p2-vcap-n">{{ clip.note }}</span>{% endif %}
+                        </figcaption>
+                        {% endif %}
+                    </figure>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
+            {% if t2.stat %}
+            <section class="lx-p2-card lx-p2-block lx-p2-stat">
+                <div class="lx-p2-stat-text">
+                    <p class="lx-p2-stat-figure">{{ t2.stat.figure }}</p>
+                    {% for line in t2.stat.body %}<p class="lx-p2-stat-sub">{{ line }}</p>{% endfor %}
+                </div>
+                {% if t2.stat.image %}
+                <div class="lx-p2-stat-img"><img src="{{ t2.stat.image }}" alt="" loading="lazy"></div>
+                {% endif %}
+            </section>
+            {% endif %}
+
+            {% if t2.benefit %}
+            <section class="lx-p2-card lx-p2-block lx-p2-benefit">
+                {% if t2.benefit.text %}<p class="lx-p2-benefit-text">{{ t2.benefit.text }}</p>{% endif %}
+                {% if t2.benefit.image %}<img src="{{ t2.benefit.image }}" alt="" loading="lazy">{% endif %}
+            </section>
+            {% endif %}
+
+            {% if t2.before_after %}
+            <section class="lx-p2-card lx-p2-block">
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.before_after_title }}</h2>
+                <div class="lx-p2-bas">
+                    {% for pair in t2.before_after %}
+                    <div class="lx-p2-ba">
+                        <figure><img src="{{ pair.before }}" alt="Before" loading="lazy"><figcaption class="is-before">Before</figcaption></figure>
+                        <figure><img src="{{ pair.after }}" alt="After" loading="lazy"><figcaption class="is-after">After</figcaption></figure>
+                        {% if pair.caption %}<p class="lx-p2-ba-cap">{{ pair.caption }}</p>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
+            {% if t2.steps %}
+            <section class="lx-p2-card lx-p2-block">
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.steps_title }}</h2>
+                <ol class="lx-p2-steps">
+                    {% for step in t2.steps %}
+                    <li class="lx-p2-step">
+                        <span class="lx-p2-step-n" aria-hidden="true">{{ step.number }}</span>
+                        <div class="lx-p2-step-body">
+                            <h3><span class="lx-p2-step-lead">Step {{ step.number }}:</span>{% if step.title %} {{ step.title }}{% endif %}</h3>
+                            {% if step.instruction %}<p>{{ step.instruction }}</p>{% endif %}
+                        </div>
+                        {% if step.image %}<img src="{{ step.image }}" alt="" loading="lazy">{% endif %}
+                    </li>
+                    {% endfor %}
+                </ol>
+            </section>
+            {% endif %}
+
+            {% if t2.ingredients %}
+            <section class="lx-p2-card lx-p2-block">
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.ingredients_title }}</h2>
+                <div class="lx-p2-ing-grid">
+                    {% for ing in t2.ingredients %}
+                    <figure class="lx-p2-ing">
+                        {% if ing.image %}<img src="{{ ing.image }}" alt="" loading="lazy">{% endif %}
+                        <figcaption>
+                            <span class="lx-p2-ing-name">{{ ing.name }}</span>
+                            {% if ing.note %}<span class="lx-p2-ing-note">{{ ing.note }}</span>{% endif %}
+                        </figcaption>
+                    </figure>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
+            {% if t2.features %}
+            <section class="lx-p2-card lx-p2-block">
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.features_title }}</h2>
+                <ul class="lx-p2-feats">
+                    {% for feat in t2.features %}
+                    <li class="lx-p2-feat">
+                        <span class="lx-p2-feat-tick" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        </span>
+                        <div>
+                            {% if feat.title %}<strong>{{ feat.title }}</strong>{% endif %}
+                            {% if feat.text %}<p>{{ feat.text }}</p>{% endif %}
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </section>
+            {% endif %}
+
+            {% comment %}
+            The description block carries the uploaded gallery as well as the
+            product's own copy, so a store that writes no description but
+            uploads three annotated photos still gets the section — and one
+            that does neither still gets nothing.
+            {% endcomment %}
+            {% if t2.info_media or product.description %}
+            <section class="lx-p2-card lx-p2-block">
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>{{ t2.info_title }}</h2>
+                {% for block in t2.info_media %}
+                <figure class="lx-p2-shot">
+                    {% if block.image %}<img src="{{ block.image }}" alt="{{ block.heading }}" loading="lazy">{% endif %}
+                    {% if block.heading or block.text %}
+                    <figcaption>
+                        {% if block.heading %}<strong>{{ block.heading }}</strong>{% endif %}
+                        {% if block.text %}<span>{{ block.text }}</span>{% endif %}
+                    </figcaption>
+                    {% endif %}
+                </figure>
+                {% endfor %}
+                {% if product.description %}
+                <div class="lx-p2-prose">{{ product.description|linebreaks }}</div>
+                {% endif %}
+            </section>
+            {% endif %}
+        </div>
+
+        <!-- ═══════════════ A3 · Reviews ═══════════════ -->
+        <div class="lx-p2-reviews" id="lx-p2-reviews">
+            <section class="lx-p2-card lx-p2-block">
+                <h2 class="lx-p2-blockhead"><span class="lx-p2-blockicon" aria-hidden="true"></span>Customer reviews</h2>
+
+                <div class="lx-p2-rev-head">
+                    <div class="lx-p2-rev-score">
+                        <span class="lx-p2-micro">Total rating</span>
+                        <span class="lx-p2-rev-num">{{ avg_rating }}</span>
+                        {% comment %}
+                        Stars round *down* to whole stars and the exact decimal
+                        is printed beside them — rounding up makes a 4.4 look
+                        like a 4.5.
+                        {% endcomment %}
+                        <span class="lx-p2-stars" aria-hidden="true">{% for i in "12345" %}<span class="{% if forloop.counter <= avg_rating %}on{% endif %}">&#9733;</span>{% endfor %}</span>
+                        <span class="lx-p2-micro">Based on {{ review_count }} review{{ review_count|pluralize }}</span>
+                    </div>
+                    <div class="lx-p2-rev-bars">
+                        {% for rd in rating_dist %}
+                        <div class="lx-p2-rev-row">
+                            <span>{{ rd.star }} &#9733;</span>
+                            <span class="lx-p2-rev-track"><span class="lx-p2-rev-fill" style="width: {{ rd.bar }}%"></span></span>
+                            <span class="lx-p2-rev-count">{{ rd.count }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="lx-p2-rev-list">
+                    {% for review in reviews %}
+                    <article class="lx-p2-rev" data-p2-review="{{ review.id }}">
+                        <div class="lx-p2-rev-meta">
+                            <strong>{{ review.display_name }}</strong>
+                            <span class="lx-p2-stars" aria-label="{{ review.rating }} out of 5">{% for i in "12345" %}<span class="{% if forloop.counter <= review.rating %}on{% endif %}">&#9733;</span>{% endfor %}</span>
+                        </div>
+                        {% if review.comment %}<p class="lx-p2-rev-body">{{ review.comment }}</p>{% endif %}
+                        <div class="lx-p2-rev-foot">
+                            <span class="lx-p2-rev-date">{{ review.created_at|date:"M j, Y" }}</span>
+                            <button type="button" class="lx-p2-vote" data-p2-vote="up"
+                                    {% if review.id in t2_voted %}disabled{% endif %}>
+                                &#128077; <span data-p2-vote-count>{{ review.up_votes }}</span>
+                            </button>
+                            <button type="button" class="lx-p2-vote" data-p2-vote="down"
+                                    {% if review.id in t2_voted %}disabled{% endif %}>
+                                &#128078; <span data-p2-vote-count>{{ review.down_votes }}</span>
+                            </button>
+                        </div>
+                    </article>
+                    {% empty %}
+                    <p class="lx-p2-rev-empty">No reviews yet. Be the first to write one.</p>
+                    {% endfor %}
+                </div>
+
+                <form class="lx-p2-rev-form" method="POST"
+                      action="{% url 'store:add_review' product_id=product.id %}"
+                      data-p2-review-form>
+                    {% csrf_token %}
+                    <h3>Write a review</h3>
+                    {% if store_customer %}<p class="lx-p2-micro">Posting as {{ store_customer.full_name }}</p>{% endif %}
+                    <div class="lx-p2-starpick" data-p2-starpick role="radiogroup" aria-label="Rating">
+                        <span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span>
+                    </div>
+                    <input type="hidden" name="rating" value="5" data-p2-starvalue>
+                    {% if not store_customer %}
+                    <input type="text" name="guest_name" placeholder="Your name" autocomplete="name" required>
+                    {% endif %}
+                    <textarea name="comment" rows="4" placeholder="Share your thoughts on this product…"></textarea>
+                    <p class="lx-p2-rev-msg" data-p2-review-msg hidden role="alert"></p>
+                    <button type="submit">Submit review</button>
+                </form>
+            </section>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ Sticky buy bar — outside the grid ═══════════════ -->
+{% if product.storefront_available %}
+<div class="lx-p2-sticky" data-p2-sticky hidden>
+    <div class="lx-p2-sticky-info">
+        <span class="lx-p2-sticky-name">{{ product.name }}</span>
+        <span class="lx-p2-sticky-price">Rs. <span data-p2-sticky-price>{% if t2_quote %}{% p2_amount t2_quote.unit %}{% else %}{% p2_amount product.price %}{% endif %}</span></span>
+    </div>
+    <button type="button" class="lx-p2-buybtn" data-p2-buy
+            {% if has_variations %}data-needs-variation{% endif %}>{{ t2.buy_label|default:"Buy now" }}</button>
+</div>
+{% endif %}
+
+<!-- ═══════════════ One-step COD checkout — outside the grid ═══════════════ -->
+{% if t2_use_modal %}
+<div class="lx-p2-modal" data-p2-modal role="dialog" aria-modal="true"
+     aria-labelledby="lx-p2-co-title" hidden>
+    <div class="lx-p2-veil" data-p2-modal-close></div>
+    <div class="lx-p2-sheet">
+        <div class="lx-p2-sheet-head">
+            <h2 id="lx-p2-co-title">{{ t2.checkout.title }}</h2>
+            <button type="button" class="lx-p2-sheet-x" data-p2-modal-close aria-label="Close">&times;</button>
+        </div>
+
+        <form class="lx-p2-sheet-body" method="POST"
+              action="{% url 'store:theme2_place_order' product_id=product.id %}"
+              data-p2-co-form novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="variation" value="{% if t2_quote.variation %}{{ t2_quote.variation.id }}{% endif %}" data-p2-co-variation>
+            <input type="hidden" name="quantity" value="{{ t2_quote.qty }}" data-p2-co-qty-field>
+
+            <div class="lx-p2-co-item">
+                {% if product_image_url %}<img src="{{ product_image_url }}" alt="" data-p2-co-image>{% endif %}
+                <div class="lx-p2-co-item-text">
+                    <span class="lx-p2-co-name">{{ product.name }}</span>
+                    <span class="lx-p2-co-variant" data-p2-co-variant {% if not t2_quote.variant_label %}hidden{% endif %}>{{ t2_quote.variant_label }}</span>
+                </div>
+                <div class="lx-p2-stepper is-small">
+                    <button type="button" data-p2-co-minus aria-label="Decrease quantity">&minus;</button>
+                    <input type="number" data-p2-co-qty value="{{ t2_quote.qty }}" min="1"
+                           max="{{ t2_quote.ceiling }}" inputmode="numeric" aria-label="Quantity">
+                    <button type="button" data-p2-co-plus aria-label="Increase quantity">+</button>
+                </div>
+            </div>
+
+            <div class="lx-p2-co-nudge" data-p2-co-nudge {% if not t2_quote.nudge %}hidden{% endif %}>
+                <p data-p2-co-nudge-text>{% if t2_quote.nudge %}Add {{ t2_quote.nudge.need }} more to save Rs. {% p2_amount t2_quote.nudge.save_total %}{% endif %}</p>
+                <span class="lx-p2-co-bar"><span data-p2-co-nudge-bar style="width: {{ t2_quote.nudge.progress|default:0 }}%"></span></span>
+                <span class="lx-p2-micro" data-p2-co-nudge-count>{% if t2_quote.nudge %}{{ t2_quote.qty }} of {{ t2_quote.nudge.min_qty }}{% endif %}</span>
+            </div>
+
+            <dl class="lx-p2-co-rows">
+                <div><dt>Subtotal</dt><dd data-p2-co-subtotal>Rs. {% p2_amount t2_quote.subtotal %}</dd></div>
+                <div><dt>Delivery</dt><dd data-p2-co-shipping>{% if t2_quote.shipping_is_free %}Free{% else %}Rs. {% p2_amount t2_quote.shipping %}{% endif %}</dd></div>
+                <div class="is-total"><dt>Total payable</dt><dd data-p2-co-total>Rs. {% p2_amount t2_quote.total %}</dd></div>
+            </dl>
+
+            <div class="lx-p2-co-field">
+                <label for="lx-p2-co-name">Full name</label>
+                <span class="lx-p2-co-input">
+                    {% include "store/partials/p2_icon.html" with icon="support" %}
+                    <input type="text" id="lx-p2-co-name" name="full_name" autocomplete="name"
+                           value="{% of_value order_form 'full_name' %}" placeholder="Your name" required>
+                </span>
+            </div>
+
+            <div class="lx-p2-co-field">
+                <label for="lx-p2-co-phone">Mobile number</label>
+                <span class="lx-p2-co-input">
+                    {% if t2.checkout.phone_prefix %}<span class="lx-p2-co-prefix">{{ t2.checkout.phone_prefix }}</span>{% endif %}
+                    <input type="tel" id="lx-p2-co-phone" name="phone" inputmode="numeric"
+                           autocomplete="tel" value="{% of_value order_form 'phone' %}"
+                           placeholder="98XXXXXXXX" required>
+                </span>
+                {% if t2.checkout.phone_hint %}<span class="lx-p2-co-hint">{{ t2.checkout.phone_hint }}</span>{% endif %}
+            </div>
+
+            {% comment %}
+            District and courier branch are not optional extras here: delivery
+            is priced per district (and per branch inside it) by Setup ›
+            Delivery Charge Setup, and the parcel is handed to NCM at the branch
+            named below. Branches load on first open from the same endpoint the
+            classic order form uses.
+            {% endcomment %}
+            <div class="lx-p2-co-two">
+                <div class="lx-p2-co-field">
+                    <label for="lx-p2-co-district">District</label>
+                    <span class="lx-p2-co-input">
+                        <select id="lx-p2-co-district" name="district" data-p2-co-district required>
+                            <option value="">Select district</option>
+                            {% for d in t2_districts %}
+                            <option value="{{ d.name|upper }}"
+                                    {% if order_form.initial.district|upper == d.name|upper %}selected{% endif %}>{{ d.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </span>
+                </div>
+                <div class="lx-p2-co-field">
+                    <label for="lx-p2-co-branch">Courier branch</label>
+                    <span class="lx-p2-co-input">
+                        <select id="lx-p2-co-branch" name="courier_branch" data-p2-co-branch>
+                            <option value="">Nearest branch</option>
+                        </select>
+                    </span>
+                    <input type="hidden" name="courier_branch_code" value="" data-p2-co-branch-code>
+                </div>
+            </div>
+
+            <div class="lx-p2-co-field">
+                <label for="lx-p2-co-address">Delivery address</label>
+                <span class="lx-p2-co-input">
+                    {% include "store/partials/p2_icon.html" with icon="delivery" %}
+                    <input type="text" id="lx-p2-co-address" name="address" autocomplete="street-address"
+                           value="{% of_value order_form 'address' %}"
+                           placeholder="Tole, street, landmark" required>
+                </span>
+            </div>
+
+            {% comment %}
+            A checked radio, not a line of text: it is the shape a shopper reads
+            as "this is what will happen", and it stays correct the day a second
+            payment method is added.
+            {% endcomment %}
+            <fieldset class="lx-p2-co-pay">
+                <legend class="lx-p2-micro">Payment method</legend>
+                <label class="lx-p2-co-radio">
+                    <input type="radio" name="payment_method" value="cod" checked>
+                    <span>{{ t2.checkout.cod_label }}</span>
+                </label>
+            </fieldset>
+
+            <p class="lx-p2-co-error" data-p2-co-error role="alert" hidden></p>
+
+            <button type="submit" class="lx-p2-buybtn" data-p2-co-submit>{{ t2.checkout.place_label }}</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
