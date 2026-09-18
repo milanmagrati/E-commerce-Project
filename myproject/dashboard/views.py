@@ -3010,22 +3010,39 @@ def order_create(request):
                     city.valley_status = 'out_valley'
                     city.save()
 
-                customer, created = Customer.objects.get_or_create(
-                    phone=customer_phone,
-                    defaults={
-                        "name": customer_name,
-                        "email": customer_email or None,
-                        "city": branch_city_name,
-                        "address": shipping_address,
-                        "landmark": landmark,
-                    },
-                )
-                customer.name = customer_name
-                customer.email = customer_email or None
-                customer.city = branch_city_name
-                customer.address = shipping_address
-                customer.landmark = landmark
-                customer.save()
+                # Futureproof safe customer lookup - never raises MultipleObjectsReturned
+                existing_customers = Customer.objects.filter(phone=customer_phone).order_by('id')
+                if existing_customers.exists():
+                    customer = existing_customers.first()
+                    created = False
+                    updated = False
+                    if customer_name and customer.name != customer_name:
+                        customer.name = customer_name
+                        updated = True
+                    if customer_email and customer.email != customer_email:
+                        customer.email = customer_email or None
+                        updated = True
+                    if shipping_address and not customer.address:
+                        customer.address = shipping_address
+                        updated = True
+                    if branch_city_name and not customer.city:
+                        customer.city = branch_city_name
+                        updated = True
+                    if landmark and not customer.landmark:
+                        customer.landmark = landmark
+                        updated = True
+                    if updated:
+                        customer.save()
+                else:
+                    customer = Customer.objects.create(
+                        phone=customer_phone,
+                        name=customer_name,
+                        email=customer_email or None,
+                        city=branch_city_name,
+                        address=shipping_address,
+                        landmark=landmark,
+                    )
+                    created = True
 
                 # ✅ FIXED: Generate unique order number with race condition handling
                 from .decimal_utils import safe_decimal
@@ -7233,17 +7250,37 @@ def import_orders_excel(request):
                         payment_method = default_payment_method
                         row_payment_setup = default_payment_setup
 
-                    # Get or create customer
-                    customer, _ = Customer.objects.get_or_create(
-                        phone=customer_phone,
-                        defaults={
-                            'name': customer_name,
-                            'email': customer_email or None,
-                            'city': branch_city,
-                            'address': shipping_address,
-                            'landmark': landmark,
-                        }
-                    )
+                    # Get or create customer - safe against duplicate phone numbers
+                    existing_customers = Customer.objects.filter(phone=customer_phone).order_by('id')
+                    if existing_customers.exists():
+                        customer = existing_customers.first()
+                        _updated = False
+                        if customer_name and customer.name != customer_name:
+                            customer.name = customer_name
+                            _updated = True
+                        if customer_email and customer.email != customer_email:
+                            customer.email = customer_email or None
+                            _updated = True
+                        if shipping_address and not customer.address:
+                            customer.address = shipping_address
+                            _updated = True
+                        if branch_city and not customer.city:
+                            customer.city = branch_city
+                            _updated = True
+                        if landmark and not customer.landmark:
+                            customer.landmark = landmark
+                            _updated = True
+                        if _updated:
+                            customer.save()
+                    else:
+                        customer = Customer.objects.create(
+                            phone=customer_phone,
+                            name=customer_name,
+                            email=customer_email or None,
+                            city=branch_city,
+                            address=shipping_address,
+                            landmark=landmark,
+                        )
 
                     # Get or create city
                     City.objects.get_or_create(
