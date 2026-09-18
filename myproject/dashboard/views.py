@@ -3182,7 +3182,9 @@ def customer_advanced_report(request):
     }
 
     # -- Top-selling cities (by revenue, within the same filtered orders) --
-    city_data = list(
+    # Every city with at least one order, not just a top-N slice, so a shop
+    # owner can see the full spread of where revenue actually comes from.
+    city_data_full = list(
         orders_qs
         .exclude(branch_city='')
         .values('branch_city')
@@ -3191,9 +3193,30 @@ def customer_advanced_report(request):
             total_revenue=Coalesce(Sum('total_amount'), Decimal('0')),
             unique_customers=Count('customer', distinct=True),
         )
-        .order_by('-total_revenue')[:15]
+        .order_by('-total_revenue')
     )
-    top_city = city_data[0] if city_data else None
+    top_city = city_data_full[0] if city_data_full else None
+
+    city_paginator = Paginator(city_data_full, PAGE_SIZE)
+    city_page_obj = city_paginator.get_page(request.GET.get('city_page'))
+
+    # -- Top products sold in the selected city (only computed when a city filter
+    # is active) — answers "of the orders from this city, what actually sells" --
+    city_products = []
+    if selected_city:
+        city_order_ids = orders_qs.values_list('id', flat=True)
+        city_products = list(
+            OrderItem.objects.filter(order_id__in=city_order_ids)
+            # Group by the item's own snapshot name, not a join to the live Product —
+            # a product deleted from the catalog after the sale must still show up here.
+            .values('product_name')
+            .annotate(
+                units_sold=Coalesce(Sum('quantity'), 0),
+                revenue=Coalesce(Sum('total'), Decimal('0')),
+                orders_count=Count('order', distinct=True),
+            )
+            .order_by('-revenue')[:20]
+        )
 
     # -- Customer location breakdown, scoped to the SAME filtered orders (product/city/date)
     # so it answers "where are the customers behind this filter", not just "all customers on file" --
@@ -3246,8 +3269,9 @@ def customer_advanced_report(request):
         'buyers_page_obj': buyers_page_obj,
         'repeat_page_obj': repeat_page_obj,
         'followup_page_obj': followup_page_obj,
-        'city_data': city_data,
+        'city_page_obj': city_page_obj,
         'top_city': top_city,
+        'city_products': city_products,
         'location_breakdown': location_breakdown,
     }
     return render(request, 'customer_advanced_report.html', context)
