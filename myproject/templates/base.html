@@ -1177,6 +1177,11 @@
                             <a href="{% url 'customer_add' %}">Add Customer</a>
                         </li>
                         {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_customer_reports %}
+                        <li class="{% if request.resolver_match.url_name == 'customer_advanced_report' %}active{% endif %}">
+                            <a href="{% url 'customer_advanced_report' %}"><i class="fas fa-chart-pie me-1"></i>Advanced Report</a>
+                        </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}
@@ -1645,6 +1650,11 @@
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_rtv_report %}
                         <li class="{% if request.resolver_match.url_name == 'rtv_report' %}active{% endif %}">
                             <a href="{% url 'rtv_report' %}"><i class="fas fa-undo-alt me-1"></i>RTV Report</a>
+                        </li>
+                        {% endif %}
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_customer_reports %}
+                        <li class="{% if request.resolver_match.url_name == 'customer_advanced_report' %}active{% endif %}">
+                            <a href="{% url 'customer_advanced_report' %}"><i class="fas fa-users me-1"></i>Customer Advanced Report</a>
                         </li>
                         {% endif %}
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_payroll %}

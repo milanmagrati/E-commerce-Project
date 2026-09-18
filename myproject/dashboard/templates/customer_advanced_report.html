@@ -1,0 +1,621 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load dashboard_extras %}
+
+{% block title %}Customer Advanced Report{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+<li class="breadcrumb-item"><a href="{% url 'customers_list' %}">Customers</a></li>
+<li class="breadcrumb-item active">Advanced Report</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.car-page { background: #f5f7fa; min-height: 100vh; }
+
+.filter-bar {
+    background: #fff;
+    border-radius: 14px;
+    padding: 20px 28px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    margin-bottom: 24px;
+}
+.filter-bar .form-label {
+    font-size: .78rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 6px;
+}
+.filter-bar .form-select,
+.filter-bar .form-control {
+    border-radius: 10px;
+    border: 1.5px solid #e5e7eb;
+    padding: 10px 14px;
+    font-size: .9rem;
+}
+.filter-bar .form-select:focus,
+.filter-bar .form-control:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+}
+.filter-bar .btn-apply {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    border: none;
+    color: #fff;
+    border-radius: 10px;
+    padding: 10px 28px;
+    font-weight: 600;
+    font-size: .9rem;
+}
+.filter-bar .btn-apply:hover { color: #fff; }
+.filter-bar .btn-reset {
+    background: #f3f4f6;
+    border: 1.5px solid #e5e7eb;
+    color: #6b7280;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-weight: 600;
+    font-size: .9rem;
+}
+
+.quick-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.quick-filters .btn-quick {
+    background: #fff;
+    border: 1.5px solid #e5e7eb;
+    color: #6b7280;
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-size: .82rem;
+    font-weight: 600;
+}
+.quick-filters .btn-quick.active,
+.quick-filters .btn-quick:hover {
+    background: #6366f1;
+    border-color: #6366f1;
+    color: #fff;
+}
+
+.summary-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 22px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    transition: transform .2s, box-shadow .2s;
+}
+.summary-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.1); }
+.summary-card .card-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.25rem;
+    margin-bottom: 14px;
+}
+.summary-card .card-value { font-size: 1.6rem; font-weight: 800; color: #111827; line-height: 1.2; }
+.summary-card .card-label {
+    font-size: .8rem; color: #9ca3af; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .5px; margin-top: 4px;
+}
+.icon-blue { background: #eff6ff; color: #3b82f6; }
+.icon-green { background: #ecfdf5; color: #10b981; }
+.icon-purple { background: #f5f3ff; color: #8b5cf6; }
+.icon-amber { background: #fffbeb; color: #f59e0b; }
+.icon-rose { background: #fff1f2; color: #f43f5e; }
+
+.report-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    overflow: hidden;
+    margin-bottom: 24px;
+}
+.report-card .card-header-custom {
+    padding: 18px 24px;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; flex-wrap: wrap;
+}
+.report-card .card-header-custom h6 { font-weight: 700; color: #1f2937; margin: 0; font-size: 1rem; }
+.report-card .card-header-custom .hint { font-size: .78rem; color: #9ca3af; }
+.report-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.report-table thead th {
+    background: #f9fafb;
+    padding: 12px 16px;
+    font-size: .75rem;
+    font-weight: 700;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    text-align: left;
+    border-bottom: 1px solid #f3f4f6;
+}
+.report-table tbody td {
+    padding: 12px 16px;
+    font-size: .87rem;
+    color: #374151;
+    border-bottom: 1px solid #f9fafb;
+}
+.report-table tbody tr.expandable-row { cursor: pointer; }
+.report-table tbody tr.expandable-row:hover { background: #f9fafb; }
+.report-table tbody tr.expandable-row.expanded { background: #f5f3ff; }
+.expand-chevron { color: #9ca3af; transition: transform .15s; font-size: .75rem; }
+.expandable-row.expanded .expand-chevron { transform: rotate(90deg); color: #6366f1; }
+.order-detail-row td { background: #fbfbfe; padding: 0 !important; border-bottom: 1px solid #f3f4f6; }
+.order-detail-body { padding: 14px 24px 18px 46px; }
+.order-mini-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.order-mini-table th {
+    text-align: left; padding: 6px 10px; color: #9ca3af;
+    font-size: .68rem; text-transform: uppercase; letter-spacing: .4px; font-weight: 700;
+}
+.order-mini-table td { padding: 7px 10px; color: #374151; background: #fff; border-bottom: 1px solid #f3f4f6; }
+.order-mini-table tr:first-child td { border-top: 1px solid #f3f4f6; }
+.status-pill {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    font-size: .72rem; font-weight: 700; background: #eff6ff; color: #3b82f6;
+}
+.rank-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: #eff6ff; color: #3b82f6; font-weight: 700; font-size: .8rem;
+}
+.empty-note { padding: 32px 24px; text-align: center; color: #9ca3af; font-size: .88rem; }
+
+.location-bar-row { display: flex; align-items: center; gap: 12px; padding: 10px 24px; }
+.location-bar-row .loc-name { width: 140px; flex-shrink: 0; font-size: .85rem; font-weight: 600; color: #374151; }
+.location-bar-track { flex: 1; height: 8px; background: #f3f4f6; border-radius: 6px; overflow: hidden; }
+.location-bar-fill { height: 100%; background: linear-gradient(90deg, #6366f1, #8b5cf6); border-radius: 6px; }
+.location-bar-count { width: 40px; text-align: right; font-size: .85rem; font-weight: 700; color: #1f2937; }
+
+.car-pagination {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 24px; border-top: 1px solid #f3f4f6; font-size: .82rem; color: #6b7280;
+}
+.car-pagination .btn-page {
+    background: #f3f4f6; border: 1px solid #e5e7eb; color: #374151;
+    border-radius: 8px; padding: 5px 14px; font-size: .8rem; font-weight: 600;
+}
+.car-pagination .btn-page.disabled { opacity: .45; pointer-events: none; }
+.call-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #ecfdf5; color: #10b981; border-radius: 8px;
+    padding: 5px 12px; font-size: .78rem; font-weight: 700; text-decoration: none;
+}
+.call-btn:hover { background: #10b981; color: #fff; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="car-page">
+    <div class="container-fluid py-3">
+
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+            <div>
+                <h4 class="fw-bold mb-1" style="color:#1f2937;">Customer Advanced Report</h4>
+                <p class="text-muted mb-0" style="font-size:.88rem;">Top buyers, repeat customers, follow-up opportunities, location breakdown & top-selling cities</p>
+            </div>
+            <div class="quick-filters">
+                <button type="button" class="btn-quick{% if active_filter == 'today' %} active{% endif %}" data-filter="today">Today</button>
+                <button type="button" class="btn-quick{% if active_filter == '7days' %} active{% endif %}" data-filter="7days">7 Days</button>
+                <button type="button" class="btn-quick{% if active_filter == '15days' %} active{% endif %}" data-filter="15days">15 Days</button>
+                <button type="button" class="btn-quick{% if active_filter == '1month' %} active{% endif %}" data-filter="1month">1 Month</button>
+            </div>
+        </div>
+
+        <form method="get" class="filter-bar" id="filterForm">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-3 col-md-6">
+                    <label class="form-label">Product</label>
+                    <select class="form-select" name="product_id">
+                        <option value="">All Products</option>
+                        {% for p in products %}
+                        <option value="{{ p.id }}" {% if selected_product_id == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-3">
+                    <label class="form-label">City</label>
+                    <select class="form-select" name="city">
+                        <option value="">All Cities</option>
+                        {% for c in cities_for_filter %}
+                        <option value="{{ c }}" {% if selected_city == c %}selected{% endif %}>{{ c }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-3 col-6">
+                    <label class="form-label">From Date</label>
+                    <input type="date" class="form-control" name="from_date" value="{{ from_date }}">
+                </div>
+                <div class="col-lg-2 col-md-3 col-6">
+                    <label class="form-label">To Date</label>
+                    <input type="date" class="form-control" name="to_date" value="{{ to_date }}">
+                </div>
+                <div class="col-lg-3 col-md-12 d-flex gap-2">
+                    <button type="submit" class="btn btn-apply">
+                        <i class="fas fa-search me-1"></i> Generate Report
+                    </button>
+                    <a href="{% url 'customer_advanced_report' %}" class="btn btn-reset">
+                        <i class="fas fa-undo me-1"></i> Reset
+                    </a>
+                </div>
+            </div>
+            {% if selected_product %}
+            <div class="mt-2" style="font-size:.85rem; color:#6b7280;">
+                <i class="fas fa-filter me-1"></i> Showing customers who bought <strong>{{ selected_product.name }}</strong>
+            </div>
+            {% endif %}
+        </form>
+
+        <!-- Summary Cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-xl-3 col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-blue"><i class="fas fa-shopping-cart"></i></div>
+                    <div class="card-value">{{ summary.total_orders|default:"0" }}</div>
+                    <div class="card-label">Total Orders</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-green"><i class="fas fa-money-bill-wave"></i></div>
+                    <div class="card-value">{{ summary.total_revenue|currency }}</div>
+                    <div class="card-label">Total Revenue</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-purple"><i class="fas fa-users"></i></div>
+                    <div class="card-value">{{ summary.unique_customers|default:"0" }}</div>
+                    <div class="card-label">Buying Customers</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="summary-card">
+                    <div class="card-icon icon-amber"><i class="fas fa-redo"></i></div>
+                    <div class="card-value">{{ summary.repeat_customer_count|default:"0" }}</div>
+                    <div class="card-label">Repeat Customers</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Top Buying Customers -->
+            <div class="col-lg-6">
+                <div class="report-card">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-crown me-2" style="color:#f59e0b;"></i>Top Buying Customers</h6>
+                        <span class="hint">Click a row for their orders &middot; {{ buyers_page_obj.paginator.count }} total</span>
+                    </div>
+                    {% if buyers_page_obj.object_list %}
+                    <div style="overflow-x:auto;">
+                        <table class="report-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Customer</th>
+                                    <th>City</th>
+                                    <th>Orders</th>
+                                    <th>Total Spent</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in buyers_page_obj.object_list %}
+                                <tr class="expandable-row" data-customer-id="{{ row.customer__id }}">
+                                    <td><span class="rank-badge">{{ buyers_page_obj.start_index|add:forloop.counter0 }}</span></td>
+                                    <td>
+                                        <div style="font-weight:600;">{{ row.customer__name }} <i class="fas fa-chevron-right expand-chevron ms-1"></i></div>
+                                        <div style="font-size:.78rem; color:#9ca3af;">{{ row.customer__phone|default:"—" }}</div>
+                                    </td>
+                                    <td>{{ row.customer__city|default:"—" }}</td>
+                                    <td>{{ row.order_count }}</td>
+                                    <td style="font-weight:700; color:#10b981;">{{ row.total_spent|currency }}</td>
+                                </tr>
+                                <tr class="order-detail-row" style="display:none;">
+                                    <td colspan="5"><div class="order-detail-body"></div></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if buyers_page_obj.paginator.num_pages > 1 %}
+                    <div class="car-pagination">
+                        <span>Page {{ buyers_page_obj.number }} of {{ buyers_page_obj.paginator.num_pages }}</span>
+                        <div class="d-flex gap-2">
+                            {% if buyers_page_obj.has_previous %}<a class="btn-page" href="{% querystring buyers_page=buyers_page_obj.previous_page_number %}">Prev</a>{% else %}<span class="btn-page disabled">Prev</span>{% endif %}
+                            {% if buyers_page_obj.has_next %}<a class="btn-page" href="{% querystring buyers_page=buyers_page_obj.next_page_number %}">Next</a>{% else %}<span class="btn-page disabled">Next</span>{% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <div class="empty-note">No purchases found for this filter.</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Repeat / Recurring Customers -->
+            <div class="col-lg-6">
+                <div class="report-card">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-redo me-2" style="color:#8b5cf6;"></i>Repeat Customers</h6>
+                        <span class="hint">Click a row for their orders &middot; {{ repeat_page_obj.paginator.count }} total</span>
+                    </div>
+                    {% if repeat_page_obj.object_list %}
+                    <div style="overflow-x:auto;">
+                        <table class="report-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Customer</th>
+                                    <th>City</th>
+                                    <th>Orders</th>
+                                    <th>Total Spent</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in repeat_page_obj.object_list %}
+                                <tr class="expandable-row" data-customer-id="{{ row.customer__id }}">
+                                    <td><span class="rank-badge" style="background:#f5f3ff; color:#8b5cf6;">{{ repeat_page_obj.start_index|add:forloop.counter0 }}</span></td>
+                                    <td>
+                                        <div style="font-weight:600;">{{ row.customer__name }} <i class="fas fa-chevron-right expand-chevron ms-1"></i></div>
+                                        <div style="font-size:.78rem; color:#9ca3af;">{{ row.customer__phone|default:"—" }}</div>
+                                    </td>
+                                    <td>{{ row.customer__city|default:"—" }}</td>
+                                    <td><span class="badge bg-purple text-white" style="background:#8b5cf6;">{{ row.order_count }}x</span></td>
+                                    <td style="font-weight:700; color:#10b981;">{{ row.total_spent|currency }}</td>
+                                </tr>
+                                <tr class="order-detail-row" style="display:none;">
+                                    <td colspan="5"><div class="order-detail-body"></div></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if repeat_page_obj.paginator.num_pages > 1 %}
+                    <div class="car-pagination">
+                        <span>Page {{ repeat_page_obj.number }} of {{ repeat_page_obj.paginator.num_pages }}</span>
+                        <div class="d-flex gap-2">
+                            {% if repeat_page_obj.has_previous %}<a class="btn-page" href="{% querystring repeat_page=repeat_page_obj.previous_page_number %}">Prev</a>{% else %}<span class="btn-page disabled">Prev</span>{% endif %}
+                            {% if repeat_page_obj.has_next %}<a class="btn-page" href="{% querystring repeat_page=repeat_page_obj.next_page_number %}">Next</a>{% else %}<span class="btn-page disabled">Next</span>{% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <div class="empty-note">No repeat customers found for this filter.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Follow-Up Opportunities (one-time buyers, to increase sales) -->
+            <div class="col-lg-12">
+                <div class="report-card">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-bullseye me-2" style="color:#f43f5e;"></i>Follow-Up Opportunities <span class="badge bg-danger ms-1" style="font-size:.65rem;">GROWTH</span></h6>
+                        <span class="hint">One-time buyers, highest spend first — call them back to earn a repeat order &middot; {{ followup_page_obj.paginator.count }} total</span>
+                    </div>
+                    {% if followup_page_obj.object_list %}
+                    <div style="overflow-x:auto;">
+                        <table class="report-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Customer</th>
+                                    <th>City</th>
+                                    <th>Last Order</th>
+                                    <th>Total Spent</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in followup_page_obj.object_list %}
+                                <tr class="expandable-row" data-customer-id="{{ row.customer__id }}">
+                                    <td><span class="rank-badge" style="background:#fff1f2; color:#f43f5e;">{{ followup_page_obj.start_index|add:forloop.counter0 }}</span></td>
+                                    <td><div style="font-weight:600;">{{ row.customer__name }} <i class="fas fa-chevron-right expand-chevron ms-1"></i></div></td>
+                                    <td>{{ row.customer__city|default:"—" }}</td>
+                                    <td>{% if row.days_since_last_order is not None %}{{ row.days_since_last_order }} day{{ row.days_since_last_order|pluralize }} ago{% else %}—{% endif %}</td>
+                                    <td style="font-weight:700; color:#10b981;">{{ row.total_spent|currency }}</td>
+                                    <td onclick="event.stopPropagation();">
+                                        {% if row.customer__phone %}
+                                        <a class="call-btn" href="tel:{{ row.customer__phone }}"><i class="fas fa-phone-alt"></i> Call</a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr class="order-detail-row" style="display:none;">
+                                    <td colspan="6"><div class="order-detail-body"></div></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if followup_page_obj.paginator.num_pages > 1 %}
+                    <div class="car-pagination">
+                        <span>Page {{ followup_page_obj.number }} of {{ followup_page_obj.paginator.num_pages }}</span>
+                        <div class="d-flex gap-2">
+                            {% if followup_page_obj.has_previous %}<a class="btn-page" href="{% querystring followup_page=followup_page_obj.previous_page_number %}">Prev</a>{% else %}<span class="btn-page disabled">Prev</span>{% endif %}
+                            {% if followup_page_obj.has_next %}<a class="btn-page" href="{% querystring followup_page=followup_page_obj.next_page_number %}">Next</a>{% else %}<span class="btn-page disabled">Next</span>{% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <div class="empty-note">No one-time buyers found for this filter.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Top Selling Cities -->
+            <div class="col-lg-6">
+                <div class="report-card">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-map-marker-alt me-2" style="color:#3b82f6;"></i>Top Selling Cities</h6>
+                        {% if top_city %}
+                        <span class="badge bg-primary">Top: {{ top_city.branch_city }}</span>
+                        {% endif %}
+                    </div>
+                    {% if city_data %}
+                    <div style="overflow-x:auto;">
+                        <table class="report-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>City</th>
+                                    <th>Orders</th>
+                                    <th>Customers</th>
+                                    <th>Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in city_data %}
+                                <tr>
+                                    <td><span class="rank-badge" style="background:#eff6ff; color:#3b82f6;">{{ forloop.counter }}</span></td>
+                                    <td style="font-weight:600;">{{ row.branch_city }}</td>
+                                    <td>{{ row.order_count }}</td>
+                                    <td>{{ row.unique_customers }}</td>
+                                    <td style="font-weight:700; color:#10b981;">{{ row.total_revenue|currency }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="empty-note">No sales found for this filter.</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Customer Location Breakdown -->
+            <div class="col-lg-6">
+                <div class="report-card">
+                    <div class="card-header-custom">
+                        <h6><i class="fas fa-globe-asia me-2" style="color:#10b981;"></i>Customers by Location</h6>
+                        <span class="hint">Matches the current product / city / date filter</span>
+                    </div>
+                    {% if location_breakdown %}
+                    <div class="py-2">
+                        {% with max_count=location_breakdown.0.customer_count %}
+                        {% for row in location_breakdown %}
+                        <div class="location-bar-row">
+                            <div class="loc-name">{{ row.customer__city }}</div>
+                            <div class="location-bar-track">
+                                <div class="location-bar-fill" style="width: {% widthratio row.customer_count max_count 100 %}%;"></div>
+                            </div>
+                            <div class="location-bar-count">{{ row.customer_count }}</div>
+                        </div>
+                        {% endfor %}
+                        {% endwith %}
+                    </div>
+                    {% else %}
+                    <div class="empty-note">No customer location data available for this filter.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.btn-quick[data-filter]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var filter = this.dataset.filter;
+            var today = new Date();
+            var fromDate = new Date();
+
+            if (filter === 'today') {
+                fromDate = today;
+            } else if (filter === '7days') {
+                fromDate.setDate(today.getDate() - 6);
+            } else if (filter === '15days') {
+                fromDate.setDate(today.getDate() - 14);
+            } else if (filter === '1month') {
+                fromDate = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+            }
+
+            var fmt = function(d) {
+                var y = d.getFullYear();
+                var m = String(d.getMonth() + 1).padStart(2, '0');
+                var dd = String(d.getDate()).padStart(2, '0');
+                return y + '-' + m + '-' + dd;
+            };
+
+            var form = document.getElementById('filterForm');
+            form.querySelector('input[name="from_date"]').value = fmt(fromDate);
+            form.querySelector('input[name="to_date"]').value = fmt(today);
+            form.submit();
+        });
+    });
+
+    // ========== Expandable customer rows: AJAX order drill-down ==========
+    function escapeHtml(str) {
+        return String(str == null ? '' : str)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function currentFilterParams() {
+        var src = new URLSearchParams(window.location.search);
+        var out = new URLSearchParams();
+        ['product_id', 'city', 'from_date', 'to_date'].forEach(function(key) {
+            if (src.has(key)) out.set(key, src.get(key));
+        });
+        return out;
+    }
+
+    document.querySelectorAll('tr.expandable-row').forEach(function(row) {
+        row.addEventListener('click', function() {
+            var detailRow = row.nextElementSibling;
+            if (!detailRow || !detailRow.classList.contains('order-detail-row')) return;
+
+            var isOpen = detailRow.style.display !== 'none';
+            if (isOpen) {
+                detailRow.style.display = 'none';
+                row.classList.remove('expanded');
+                return;
+            }
+            row.classList.add('expanded');
+            detailRow.style.display = 'table-row';
+
+            var body = detailRow.querySelector('.order-detail-body');
+            if (body.dataset.loaded === '1') return;
+
+            body.innerHTML = '<div class="text-muted small py-2"><i class="fas fa-spinner fa-spin me-1"></i> Loading orders...</div>';
+
+            var customerId = row.dataset.customerId;
+            var params = currentFilterParams();
+
+            fetch('/customers/advanced-report/orders/' + customerId + '/?' + params.toString())
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    body.dataset.loaded = '1';
+                    if (!data.orders || !data.orders.length) {
+                        body.innerHTML = '<div class="text-muted small py-2">No orders found for this filter.</div>';
+                        return;
+                    }
+                    var html = '<table class="order-mini-table"><thead><tr>' +
+                        '<th>Order #</th><th>Date</th><th>Items</th><th>Status</th><th>Total</th></tr></thead><tbody>';
+                    data.orders.forEach(function(o) {
+                        html += '<tr>' +
+                            '<td><a href="' + escapeHtml(o.detail_url) + '" target="_blank">' + escapeHtml(o.order_number) + '</a></td>' +
+                            '<td>' + escapeHtml(o.created_at) + '</td>' +
+                            '<td>' + escapeHtml(o.items_summary) + '</td>' +
+                            '<td><span class="status-pill">' + escapeHtml(o.status) + '</span></td>' +
+                            '<td style="font-weight:700;color:#10b981;">Rs ' + parseFloat(o.total_amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</td>' +
+                            '</tr>';
+                    });
+                    html += '</tbody></table>';
+                    body.innerHTML = html;
+                })
+                .catch(function() {
+                    body.innerHTML = '<div class="text-danger small py-2">Failed to load orders.</div>';
+                });
+        });
+    });
+});
+</script>
+{% endblock %}

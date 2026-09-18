@@ -446,6 +446,10 @@
                                                 <label for="can_view_rtv_report">RTV Report</label>
                                             </div>
                                             <div class="perm-item">
+                                                <input type="checkbox" class="form-check-input" name="can_view_customer_reports" id="can_view_customer_reports" {% if edit_user.can_view_customer_reports %}checked{% endif %}>
+                                                <label for="can_view_customer_reports">Customer Advanced Report</label>
+                                            </div>
+                                            <div class="perm-item">
                                                 <input type="checkbox" class="form-check-input" name="can_export_data" id="can_export_data" {% if edit_user.can_export_data %}checked{% endif %}>
                                                 <label for="can_export_data">Export Data</label>
                                             </div>

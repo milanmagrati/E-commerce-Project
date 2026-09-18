@@ -3075,6 +3075,232 @@ def customer_delete(request, customer_id):
     return render(request, 'customer_delete.html', {'customer': customer})
 
 
+# ==================== CUSTOMER ADVANCED REPORT ====================
+def _customer_advanced_report_date_range(request, now):
+    """Shared date-range parsing for the report page and its AJAX endpoints."""
+    from_date_str = request.GET.get('from_date', '')
+    to_date_str = request.GET.get('to_date', '')
+    try:
+        from_date = timezone.make_aware(datetime.strptime(from_date_str, '%Y-%m-%d')) if from_date_str else now - timedelta(days=30)
+    except ValueError:
+        from_date = now - timedelta(days=30)
+    try:
+        to_date = timezone.make_aware(datetime.strptime(to_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)) if to_date_str else now
+    except ValueError:
+        to_date = now
+    return from_date_str, to_date_str, from_date, to_date
+
+
+@login_required
+@permission_required('can_view_customer_reports')
+def customer_advanced_report(request):
+    """Customer analytics: top buyers, repeat customers, follow-up (one-time
+    buyer) opportunities, location breakdown, top-selling cities — all
+    respecting a shared product / city / date-range filter, with each ranked
+    list paginated independently so a shop with hundreds of matches stays
+    browsable instead of dumping everything on one page."""
+    from django.db.models.functions import Coalesce
+    from django.core.paginator import Paginator
+
+    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+
+    selected_product_id = request.GET.get('product_id', '')
+    selected_city = request.GET.get('city', '')
+    now = timezone.now()
+    from_date_str, to_date_str, from_date, to_date = _customer_advanced_report_date_range(request, now)
+
+    selected_product = None
+    if selected_product_id:
+        try:
+            selected_product = Product.objects.get(id=selected_product_id, is_deleted=False)
+        except Product.DoesNotExist:
+            selected_product = None
+
+    # -- Base order queryset for the selected date range --
+    orders_qs = Order.objects.filter(
+        is_deleted=False,
+        created_at__gte=from_date,
+        created_at__lte=to_date,
+    )
+
+    if selected_product:
+        order_ids = OrderItem.objects.filter(
+            product=selected_product,
+            order__is_deleted=False,
+            order__created_at__gte=from_date,
+            order__created_at__lte=to_date,
+        ).values_list('order_id', flat=True).distinct()
+        orders_qs = orders_qs.filter(id__in=order_ids)
+
+    if selected_city:
+        orders_qs = orders_qs.filter(branch_city__iexact=selected_city)
+
+    # -- Summary cards (all orders in range, including guest/no-customer orders) --
+    summary_agg = orders_qs.aggregate(
+        total_orders=Count('id'),
+        total_revenue=Coalesce(Sum('total_amount'), Decimal('0')),
+    )
+
+    # -- Per-customer aggregation (only orders linked to a customer) --
+    customer_orders_qs = orders_qs.exclude(customer__isnull=True)
+    customer_rows = list(
+        customer_orders_qs
+        .values('customer__id', 'customer__name', 'customer__phone', 'customer__city')
+        .annotate(
+            order_count=Count('id', distinct=True),
+            total_spent=Coalesce(Sum('total_amount'), Decimal('0')),
+            last_order=Max('created_at'),
+        )
+    )
+    for row in customer_rows:
+        row['days_since_last_order'] = (now - row['last_order']).days if row['last_order'] else None
+
+    top_buying_customers_full = sorted(customer_rows, key=lambda r: r['total_spent'], reverse=True)
+    repeat_rows = [r for r in customer_rows if r['order_count'] >= 2]
+    repeat_customers_full = sorted(repeat_rows, key=lambda r: (r['order_count'], r['total_spent']), reverse=True)
+
+    # -- Follow-up opportunities: one-time buyers, ranked by spend — the
+    # highest-value customers who have not come back yet, for staff to target --
+    one_time_rows = [r for r in customer_rows if r['order_count'] == 1]
+    followup_opportunities_full = sorted(one_time_rows, key=lambda r: r['total_spent'], reverse=True)
+
+    PAGE_SIZE = 20
+    buyers_paginator = Paginator(top_buying_customers_full, PAGE_SIZE)
+    buyers_page_obj = buyers_paginator.get_page(request.GET.get('buyers_page'))
+
+    repeat_paginator = Paginator(repeat_customers_full, PAGE_SIZE)
+    repeat_page_obj = repeat_paginator.get_page(request.GET.get('repeat_page'))
+
+    followup_paginator = Paginator(followup_opportunities_full, PAGE_SIZE)
+    followup_page_obj = followup_paginator.get_page(request.GET.get('followup_page'))
+
+    summary = {
+        'total_orders': summary_agg['total_orders'],
+        'total_revenue': summary_agg['total_revenue'],
+        'unique_customers': len(customer_rows),
+        'repeat_customer_count': len(repeat_rows),
+    }
+
+    # -- Top-selling cities (by revenue, within the same filtered orders) --
+    city_data = list(
+        orders_qs
+        .exclude(branch_city='')
+        .values('branch_city')
+        .annotate(
+            order_count=Count('id'),
+            total_revenue=Coalesce(Sum('total_amount'), Decimal('0')),
+            unique_customers=Count('customer', distinct=True),
+        )
+        .order_by('-total_revenue')[:15]
+    )
+    top_city = city_data[0] if city_data else None
+
+    # -- Customer location breakdown, scoped to the SAME filtered orders (product/city/date)
+    # so it answers "where are the customers behind this filter", not just "all customers on file" --
+    location_breakdown = list(
+        customer_orders_qs
+        .exclude(customer__city='')
+        .values('customer__city')
+        .annotate(customer_count=Count('customer', distinct=True))
+        .order_by('-customer_count')[:15]
+    )
+
+    cities_for_filter = (
+        Order.objects.filter(is_deleted=False)
+        .exclude(branch_city='')
+        .values_list('branch_city', flat=True)
+        .distinct()
+        .order_by('branch_city')
+    )
+
+    # -- Determine active quick filter (for highlighting the matching button) --
+    active_filter = ''
+    if from_date_str and to_date_str:
+        today_str = now.strftime('%Y-%m-%d')
+        seven_days_ago = (now - timedelta(days=6)).strftime('%Y-%m-%d')
+        fifteen_days_ago = (now - timedelta(days=14)).strftime('%Y-%m-%d')
+        try:
+            one_month_ago = now.replace(month=now.month - 1)
+        except ValueError:
+            one_month_ago = now.replace(year=now.year - 1, month=12)
+        one_month_ago_str = one_month_ago.strftime('%Y-%m-%d')
+        if from_date_str == today_str and to_date_str == today_str:
+            active_filter = 'today'
+        elif from_date_str == seven_days_ago and to_date_str == today_str:
+            active_filter = '7days'
+        elif from_date_str == fifteen_days_ago and to_date_str == today_str:
+            active_filter = '15days'
+        elif from_date_str == one_month_ago_str and to_date_str == today_str:
+            active_filter = '1month'
+
+    context = {
+        'products': products,
+        'selected_product': selected_product,
+        'selected_product_id': selected_product_id,
+        'selected_city': selected_city,
+        'cities_for_filter': cities_for_filter,
+        'from_date': from_date.strftime('%Y-%m-%d'),
+        'to_date': to_date.strftime('%Y-%m-%d'),
+        'active_filter': active_filter,
+        'summary': summary,
+        'buyers_page_obj': buyers_page_obj,
+        'repeat_page_obj': repeat_page_obj,
+        'followup_page_obj': followup_page_obj,
+        'city_data': city_data,
+        'top_city': top_city,
+        'location_breakdown': location_breakdown,
+    }
+    return render(request, 'customer_advanced_report.html', context)
+
+
+@login_required
+@permission_required('can_view_customer_reports')
+def customer_advanced_report_orders(request, customer_id):
+    """AJAX drill-down: a customer's individual orders within the report's
+    current product/city/date filter, for the expandable row on each table."""
+    from django.urls import reverse
+    now = timezone.now()
+    _, _, from_date, to_date = _customer_advanced_report_date_range(request, now)
+    selected_product_id = request.GET.get('product_id', '')
+    selected_city = request.GET.get('city', '')
+
+    orders_qs = Order.objects.filter(
+        customer_id=customer_id,
+        is_deleted=False,
+        created_at__gte=from_date,
+        created_at__lte=to_date,
+    )
+
+    if selected_product_id:
+        order_ids = OrderItem.objects.filter(
+            product_id=selected_product_id,
+            order__is_deleted=False,
+        ).values_list('order_id', flat=True)
+        orders_qs = orders_qs.filter(id__in=order_ids)
+
+    if selected_city:
+        orders_qs = orders_qs.filter(branch_city__iexact=selected_city)
+
+    orders_qs = orders_qs.order_by('-created_at').prefetch_related('items')
+
+    orders_data = []
+    for order in orders_qs[:100]:
+        items_summary = ', '.join(
+            f"{item.product_name} x{item.quantity}" for item in order.items.all()
+        ) or '—'
+        orders_data.append({
+            'order_id': order.id,
+            'order_number': order.order_number,
+            'created_at': timezone.localtime(order.created_at).strftime('%Y-%m-%d %I:%M %p') if order.created_at else '',
+            'status': (order.order_status or '').replace('_', ' ').title(),
+            'total_amount': str(order.total_amount),
+            'items_summary': items_summary,
+            'detail_url': reverse('order_detail', args=[order.id]),
+        })
+
+    return JsonResponse({'orders': orders_data, 'count': len(orders_data)})
+
+
 # ============ ORDER VIEWS ============
 
 from django.db.models import Prefetch
