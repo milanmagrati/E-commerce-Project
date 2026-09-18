@@ -183,6 +183,31 @@
     padding: 5px 12px; font-size: .78rem; font-weight: 700; text-decoration: none;
 }
 .call-btn:hover { background: #10b981; color: #fff; }
+.export-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #eff6ff; color: #3b82f6; border-radius: 8px;
+    padding: 6px 14px; font-size: .78rem; font-weight: 700; text-decoration: none;
+    border: 1px solid #dbeafe;
+}
+.export-btn:hover { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+.header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Searchable select (product / city) */
+.search-select-wrapper { position: relative; }
+.search-dropdown {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: #fff; border: 1.5px solid #e5e7eb; border-top: none;
+    border-radius: 0 0 10px 10px; max-height: 260px; overflow-y: auto;
+    z-index: 1000; display: none; box-shadow: 0 8px 20px rgba(0,0,0,.12);
+}
+.search-dropdown.show { display: block; }
+.search-dropdown .dropdown-item {
+    padding: 9px 14px; cursor: pointer; font-size: .87rem; color: #374151;
+    border-bottom: 1px solid #f9fafb; transition: background .15s;
+}
+.search-dropdown .dropdown-item:hover,
+.search-dropdown .dropdown-item.highlighted { background: #eff6ff; color: #4f46e5; }
+.search-dropdown .no-results { padding: 12px; text-align: center; color: #9ca3af; font-size: .85rem; }
 </style>
 {% endblock %}
 
@@ -207,21 +232,31 @@
             <div class="row g-3 align-items-end">
                 <div class="col-lg-3 col-md-6">
                     <label class="form-label">Product</label>
-                    <select class="form-select" name="product_id">
-                        <option value="">All Products</option>
-                        {% for p in products %}
-                        <option value="{{ p.id }}" {% if selected_product_id == p.id|stringformat:"s" %}selected{% endif %}>{{ p.name }}</option>
-                        {% endfor %}
-                    </select>
+                    <div class="search-select-wrapper">
+                        <input type="text" class="form-control" id="productSearchInput" autocomplete="off"
+                               placeholder="Type to search products..."
+                               value="{% if selected_product %}{{ selected_product.name }}{% endif %}">
+                        <input type="hidden" name="product_id" id="productIdInput" value="{{ selected_product_id }}">
+                        <div class="search-dropdown" id="productSearchDropdown">
+                            {% for p in products %}
+                            <div class="dropdown-item" data-value="{{ p.id }}" data-label="{{ p.name }}">{{ p.name }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
                 </div>
                 <div class="col-lg-2 col-md-3">
                     <label class="form-label">City</label>
-                    <select class="form-select" name="city">
-                        <option value="">All Cities</option>
-                        {% for c in cities_for_filter %}
-                        <option value="{{ c }}" {% if selected_city == c %}selected{% endif %}>{{ c }}</option>
-                        {% endfor %}
-                    </select>
+                    <div class="search-select-wrapper">
+                        <input type="text" class="form-control" id="citySearchInput" autocomplete="off"
+                               placeholder="Type to search cities..."
+                               value="{{ selected_city }}">
+                        <input type="hidden" name="city" id="cityInput" value="{{ selected_city }}">
+                        <div class="search-dropdown" id="citySearchDropdown">
+                            {% for c in cities_for_filter %}
+                            <div class="dropdown-item" data-value="{{ c }}" data-label="{{ c }}">{{ c }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
                 </div>
                 <div class="col-lg-2 col-md-3 col-6">
                     <label class="form-label">From Date</label>
@@ -338,7 +373,10 @@
                 <div class="report-card">
                     <div class="card-header-custom">
                         <h6><i class="fas fa-redo me-2" style="color:#8b5cf6;"></i>Repeat Customers</h6>
-                        <span class="hint">Click a row for their orders &middot; {{ repeat_page_obj.paginator.count }} total</span>
+                        <div class="header-actions">
+                            <span class="hint">Click a row for their orders &middot; {{ repeat_page_obj.paginator.count }} total</span>
+                            <a class="export-btn" href="{% url 'customer_advanced_report_export' 'repeat' %}?{{ request.GET.urlencode }}"><i class="fas fa-file-csv"></i> Export CSV</a>
+                        </div>
                     </div>
                     {% if repeat_page_obj.object_list %}
                     <div style="overflow-x:auto;">
@@ -451,9 +489,12 @@
                 <div class="report-card">
                     <div class="card-header-custom">
                         <h6><i class="fas fa-map-marker-alt me-2" style="color:#3b82f6;"></i>Top Selling Cities</h6>
-                        {% if top_city %}
-                        <span class="badge bg-primary">Top: {{ top_city.branch_city }}</span>
-                        {% endif %}
+                        <div class="header-actions">
+                            {% if top_city %}
+                            <span class="badge bg-primary">Top: {{ top_city.branch_city }}</span>
+                            {% endif %}
+                            <a class="export-btn" href="{% url 'customer_advanced_report_export' 'cities' %}?{{ request.GET.urlencode }}"><i class="fas fa-file-csv"></i> Export CSV</a>
+                        </div>
                     </div>
                     {% if city_page_obj.object_list %}
                     <div style="overflow-x:auto;">
@@ -605,6 +646,82 @@ document.addEventListener('DOMContentLoaded', function() {
             form.submit();
         });
     });
+
+    // ========== Searchable Product / City selects (type "dha" to find Dharan) ==========
+    function initSearchSelect(inputId, dropdownId, hiddenId, noResultsText) {
+        var input = document.getElementById(inputId);
+        var dropdown = document.getElementById(dropdownId);
+        var hidden = document.getElementById(hiddenId);
+        var items = dropdown.querySelectorAll('.dropdown-item');
+        var highlighted = -1;
+
+        function filterList(query) {
+            var q = query.toLowerCase();
+            var hasResults = false;
+            items.forEach(function(item) {
+                var match = item.dataset.label.toLowerCase().includes(q);
+                item.style.display = match ? '' : 'none';
+                if (match) hasResults = true;
+            });
+            var old = dropdown.querySelector('.no-results');
+            if (old) old.remove();
+            if (!hasResults) {
+                var div = document.createElement('div');
+                div.className = 'no-results';
+                div.textContent = noResultsText;
+                dropdown.appendChild(div);
+            }
+            dropdown.classList.add('show');
+        }
+
+        function updateHighlight(visible) {
+            visible.forEach(function(el, i) {
+                el.classList.toggle('highlighted', i === highlighted);
+                if (i === highlighted) el.scrollIntoView({ block: 'nearest' });
+            });
+        }
+
+        input.addEventListener('focus', function() {
+            filterList(this.value);
+        });
+        input.addEventListener('input', function() {
+            hidden.value = '';
+            highlighted = -1;
+            filterList(this.value);
+        });
+        input.addEventListener('keydown', function(e) {
+            var visible = dropdown.querySelectorAll('.dropdown-item:not([style*="display: none"])');
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                highlighted = Math.min(highlighted + 1, visible.length - 1);
+                updateHighlight(visible);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                highlighted = Math.max(highlighted - 1, 0);
+                updateHighlight(visible);
+            } else if (e.key === 'Enter' && highlighted >= 0) {
+                e.preventDefault();
+                visible[highlighted].click();
+            } else if (e.key === 'Escape') {
+                dropdown.classList.remove('show');
+            }
+        });
+        items.forEach(function(item) {
+            item.addEventListener('click', function() {
+                input.value = this.dataset.label;
+                hidden.value = this.dataset.value;
+                dropdown.classList.remove('show');
+            });
+        });
+        document.addEventListener('click', function(e) {
+            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
+    }
+
+    initSearchSelect('productSearchInput', 'productSearchDropdown', 'productIdInput', 'No products found');
+    initSearchSelect('citySearchInput', 'citySearchDropdown', 'cityInput', 'No cities found');
 
     // ========== Expandable customer rows: AJAX order drill-down ==========
     function escapeHtml(str) {

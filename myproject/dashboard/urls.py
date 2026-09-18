@@ -71,6 +71,7 @@ urlpatterns = [
     path('customers/bulk-action/', views.customers_bulk_action, name='customers_bulk_action'),
     path('customers/advanced-report/', views.customer_advanced_report, name='customer_advanced_report'),
     path('customers/advanced-report/orders/<int:customer_id>/', views.customer_advanced_report_orders, name='customer_advanced_report_orders'),
+    path('customers/advanced-report/export/<str:kind>/', views.customer_advanced_report_export, name='customer_advanced_report_export'),
 
 
     # Orders

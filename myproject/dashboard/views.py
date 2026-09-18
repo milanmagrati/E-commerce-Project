@@ -3091,22 +3091,12 @@ def _customer_advanced_report_date_range(request, now):
     return from_date_str, to_date_str, from_date, to_date
 
 
-@login_required
-@permission_required('can_view_customer_reports')
-def customer_advanced_report(request):
-    """Customer analytics: top buyers, repeat customers, follow-up (one-time
-    buyer) opportunities, location breakdown, top-selling cities — all
-    respecting a shared product / city / date-range filter, with each ranked
-    list paginated independently so a shop with hundreds of matches stays
-    browsable instead of dumping everything on one page."""
-    from django.db.models.functions import Coalesce
-    from django.core.paginator import Paginator
-
-    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
-
+def _customer_advanced_report_filtered_orders(request, now):
+    """Shared product/city/date filter resolution + base Order queryset for
+    the customer advanced report page and its CSV exports, so the two never
+    drift apart on what counts as "in the current filter"."""
     selected_product_id = request.GET.get('product_id', '')
     selected_city = request.GET.get('city', '')
-    now = timezone.now()
     from_date_str, to_date_str, from_date, to_date = _customer_advanced_report_date_range(request, now)
 
     selected_product = None
@@ -3116,7 +3106,6 @@ def customer_advanced_report(request):
         except Product.DoesNotExist:
             selected_product = None
 
-    # -- Base order queryset for the selected date range --
     orders_qs = Order.objects.filter(
         is_deleted=False,
         created_at__gte=from_date,
@@ -3134,6 +3123,40 @@ def customer_advanced_report(request):
 
     if selected_city:
         orders_qs = orders_qs.filter(branch_city__iexact=selected_city)
+
+    return {
+        'selected_product': selected_product,
+        'selected_product_id': selected_product_id,
+        'selected_city': selected_city,
+        'from_date_str': from_date_str,
+        'to_date_str': to_date_str,
+        'from_date': from_date,
+        'to_date': to_date,
+        'orders_qs': orders_qs,
+    }
+
+
+@login_required
+@permission_required('can_view_customer_reports')
+def customer_advanced_report(request):
+    """Customer analytics: top buyers, repeat customers, follow-up (one-time
+    buyer) opportunities, location breakdown, top-selling cities — all
+    respecting a shared product / city / date-range filter, with each ranked
+    list paginated independently so a shop with hundreds of matches stays
+    browsable instead of dumping everything on one page."""
+    from django.db.models.functions import Coalesce
+    from django.core.paginator import Paginator
+
+    products = Product.objects.filter(is_deleted=False, is_active=True).order_by('name')
+
+    now = timezone.now()
+    f = _customer_advanced_report_filtered_orders(request, now)
+    selected_product = f['selected_product']
+    selected_product_id = f['selected_product_id']
+    selected_city = f['selected_city']
+    from_date_str, to_date_str = f['from_date_str'], f['to_date_str']
+    from_date, to_date = f['from_date'], f['to_date']
+    orders_qs = f['orders_qs']
 
     # -- Summary cards (all orders in range, including guest/no-customer orders) --
     summary_agg = orders_qs.aggregate(
@@ -3323,6 +3346,69 @@ def customer_advanced_report_orders(request, customer_id):
         })
 
     return JsonResponse({'orders': orders_data, 'count': len(orders_data)})
+
+
+@login_required
+@permission_required('can_view_customer_reports')
+def customer_advanced_report_export(request, kind):
+    """CSV export of a report table's FULL result set (not just the current
+    page), respecting whatever product/city/date filter is active. kind is
+    'cities' or 'repeat'."""
+    import csv
+    from django.db.models.functions import Coalesce
+
+    if kind not in ('cities', 'repeat'):
+        raise Http404('Unknown export')
+
+    now = timezone.now()
+    f = _customer_advanced_report_filtered_orders(request, now)
+    orders_qs = f['orders_qs']
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    # BOM so Excel on Windows reads UTF-8 (Nepali names/cities) instead of mangling it as ANSI.
+    response.write('﻿')
+    writer = csv.writer(response)
+
+    if kind == 'cities':
+        response['Content-Disposition'] = 'attachment; filename="top_selling_cities.csv"'
+        writer.writerow(['City', 'Orders', 'Customers', 'Revenue'])
+        rows = (
+            orders_qs
+            .exclude(branch_city='')
+            .values('branch_city')
+            .annotate(
+                order_count=Count('id'),
+                total_revenue=Coalesce(Sum('total_amount'), Decimal('0')),
+                unique_customers=Count('customer', distinct=True),
+            )
+            .order_by('-total_revenue')
+        )
+        for row in rows:
+            writer.writerow([row['branch_city'], row['order_count'], row['unique_customers'], row['total_revenue']])
+
+    else:  # repeat
+        response['Content-Disposition'] = 'attachment; filename="repeat_customers.csv"'
+        writer.writerow(['Customer', 'Phone', 'City', 'Orders', 'Total Spent', 'Last Order'])
+        rows = (
+            orders_qs
+            .exclude(customer__isnull=True)
+            .values('customer__name', 'customer__phone', 'customer__city')
+            .annotate(
+                order_count=Count('id', distinct=True),
+                total_spent=Coalesce(Sum('total_amount'), Decimal('0')),
+                last_order=Max('created_at'),
+            )
+            .filter(order_count__gte=2)
+            .order_by('-order_count', '-total_spent')
+        )
+        for row in rows:
+            last_order_str = timezone.localtime(row['last_order']).strftime('%Y-%m-%d') if row['last_order'] else ''
+            writer.writerow([
+                row['customer__name'], row['customer__phone'], row['customer__city'],
+                row['order_count'], row['total_spent'], last_order_str,
+            ])
+
+    return response
 
 
 # ============ ORDER VIEWS ============
