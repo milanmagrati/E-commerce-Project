@@ -3136,6 +3136,24 @@ def _customer_advanced_report_filtered_orders(request, now):
     }
 
 
+def _customer_products_map(orders_qs, customer_ids):
+    """{customer_id: 'Product A, Product B'} — distinct products each of these
+    customers bought within orders_qs. Grouped by OrderItem's own snapshot
+    product_name (not a live Product join), so a since-deleted product still
+    shows up in what a customer actually bought."""
+    if not customer_ids:
+        return {}
+    rows = (
+        OrderItem.objects.filter(order__in=orders_qs, order__customer_id__in=customer_ids)
+        .values('order__customer_id', 'product_name')
+        .distinct()
+    )
+    mapping = {}
+    for row in rows:
+        mapping.setdefault(row['order__customer_id'], set()).add(row['product_name'])
+    return {cid: ', '.join(sorted(names)) for cid, names in mapping.items()}
+
+
 @login_required
 @permission_required('can_view_customer_reports')
 def customer_advanced_report(request):
@@ -3190,6 +3208,14 @@ def customer_advanced_report(request):
     PAGE_SIZE = 20
     buyers_paginator = Paginator(top_buying_customers_full, PAGE_SIZE)
     buyers_page_obj = buyers_paginator.get_page(request.GET.get('buyers_page'))
+
+    # Products purchased — only computed for the customers actually shown on
+    # this page, not all of them, since a shop can have hundreds of buyers.
+    buyers_products_map = _customer_products_map(
+        orders_qs, [r['customer__id'] for r in buyers_page_obj.object_list]
+    )
+    for row in buyers_page_obj.object_list:
+        row['products'] = buyers_products_map.get(row['customer__id'], '')
 
     repeat_paginator = Paginator(repeat_customers_full, PAGE_SIZE)
     repeat_page_obj = repeat_paginator.get_page(request.GET.get('repeat_page'))
@@ -3353,11 +3379,11 @@ def customer_advanced_report_orders(request, customer_id):
 def customer_advanced_report_export(request, kind):
     """CSV export of a report table's FULL result set (not just the current
     page), respecting whatever product/city/date filter is active. kind is
-    'cities' or 'repeat'."""
+    'cities', 'repeat' or 'buyers'."""
     import csv
     from django.db.models.functions import Coalesce
 
-    if kind not in ('cities', 'repeat'):
+    if kind not in ('cities', 'repeat', 'buyers'):
         raise Http404('Unknown export')
 
     now = timezone.now()
@@ -3369,7 +3395,30 @@ def customer_advanced_report_export(request, kind):
     response.write('﻿')
     writer = csv.writer(response)
 
-    if kind == 'cities':
+    if kind == 'buyers':
+        response['Content-Disposition'] = 'attachment; filename="top_buying_customers.csv"'
+        writer.writerow(['Customer', 'Phone', 'City', 'Orders', 'Total Spent', 'Last Order', 'Products'])
+        rows = list(
+            orders_qs
+            .exclude(customer__isnull=True)
+            .values('customer__id', 'customer__name', 'customer__phone', 'customer__city')
+            .annotate(
+                order_count=Count('id', distinct=True),
+                total_spent=Coalesce(Sum('total_amount'), Decimal('0')),
+                last_order=Max('created_at'),
+            )
+            .order_by('-total_spent')
+        )
+        products_map = _customer_products_map(orders_qs, [r['customer__id'] for r in rows])
+        for row in rows:
+            last_order_str = timezone.localtime(row['last_order']).strftime('%Y-%m-%d') if row['last_order'] else ''
+            writer.writerow([
+                row['customer__name'], row['customer__phone'], row['customer__city'],
+                row['order_count'], row['total_spent'], last_order_str,
+                products_map.get(row['customer__id'], ''),
+            ])
+
+    elif kind == 'cities':
         response['Content-Disposition'] = 'attachment; filename="top_selling_cities.csv"'
         writer.writerow(['City', 'Orders', 'Customers', 'Revenue'])
         rows = (
@@ -3386,7 +3435,7 @@ def customer_advanced_report_export(request, kind):
         for row in rows:
             writer.writerow([row['branch_city'], row['order_count'], row['unique_customers'], row['total_revenue']])
 
-    else:  # repeat
+    else:  # kind == 'repeat'
         response['Content-Disposition'] = 'attachment; filename="repeat_customers.csv"'
         writer.writerow(['Customer', 'Phone', 'City', 'Orders', 'Total Spent', 'Last Order'])
         rows = (
