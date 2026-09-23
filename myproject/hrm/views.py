@@ -7372,9 +7372,17 @@ def _reverse_advance_deductions(slip):
     early. The per-advance amounts are stored on the payslip snapshot at
     generation so they can be reversed exactly rather than guessed at.
 
+    After crediting back this slip's share, the function re-derives the
+    advance's true amount_repaid by summing what every OTHER active (non-
+    deleted) payslip has recorded for the same advance. This prevents the
+    common scenario where deleting one payslip pushes a 'cleared' advance
+    back to 'repaying' even though other payslips for later months already
+    covered the full repayment — which would cause a duplicate deduction on
+    the next generate run.
+
     Returns the number of advances credited back.
     """
-    from .models import AdvancePayment
+    from .models import AdvancePayment, Payslip as _Payslip
 
     breakdown = (slip.salary_structure or {}).get('advance_breakdown') or {}
     if not breakdown:
@@ -7389,17 +7397,50 @@ def _reverse_advance_deductions(slip):
             continue
         if adv is None or amt <= 0:
             continue
-        new_repaid = max((adv.amount_repaid or Decimal('0')) - amt, Decimal('0'))
-        new_status = adv.status
-        if adv.status == 'cleared' and new_repaid < (adv.amount or Decimal('0')):
+
+        # Re-derive the true amount_repaid from all OTHER active payslips that
+        # reference this advance, rather than blindly subtracting. This way the
+        # advance status always reflects reality regardless of the order in which
+        # payslips are deleted or regenerated.
+        other_slips = _Payslip.objects.filter(
+            employee=adv.employee_id,
+            is_deleted=False,
+        ).exclude(pk=slip.pk)
+
+        true_repaid = Decimal('0')
+        new_installments = 0
+        for _other in other_slips:
+            _ob = (_other.salary_structure or {}).get('advance_breakdown') or {}
+            _contribution = _ob.get(str(adv.pk))
+            if _contribution:
+                try:
+                    _c = Decimal(str(_contribution))
+                    if _c > 0:
+                        true_repaid += _c
+                        new_installments += 1
+                except (TypeError, ValueError, ArithmeticError):
+                    pass
+
+        # Never go negative.
+        true_repaid = max(true_repaid, Decimal('0'))
+
+        # Determine correct status from the recalculated repaid amount.
+        if true_repaid >= (adv.amount or Decimal('0')):
+            new_status = 'cleared'
+        elif true_repaid > 0:
             new_status = 'repaying'
+        else:
+            new_status = adv.status if adv.status in ('disbursed',) else 'repaying'
+
         AdvancePayment.objects.filter(pk=adv.pk).update(
-            amount_repaid=new_repaid,
-            paid_installments=max((adv.paid_installments or 0) - 1, 0),
+            amount_repaid=true_repaid,
+            paid_installments=max(new_installments, 0),
             status=new_status,
         )
         reversed_count += 1
     return reversed_count
+
+
 
 
 @login_required
