@@ -9489,8 +9489,25 @@ def employee_period_attendance(request):
             weekend_day_count += 1
         _d += timedelta(days=1)
 
+    from .models import Holiday as _Holiday
+    _hol_qs = _Holiday.objects.filter(is_active=True, start_date__lte=date_to, end_date__gte=date_from)
+    active_holiday_dates = set()
+    for _h in _hol_qs:
+        _cs = max(_h.start_date, date_from)
+        _ce = min(_h.end_date, date_to)
+        _curr = _cs
+        while _curr <= _ce:
+            active_holiday_dates.add(_curr.isoformat())
+            _curr += timedelta(days=1)
+
+    # Union with any attendance records marked is_holiday
+    all_holiday_dates_set = active_holiday_dates | {r['date'] for r in records_data if r['is_holiday']}
+    for r in records_data:
+        if r['date'] in all_holiday_dates_set:
+            r['is_holiday'] = True
+
     # Holiday days count
-    holiday_days_count = sum(1 for r in records_data if r['is_holiday'])
+    holiday_days_count = len(all_holiday_dates_set)
 
     # Duty days = total - weekend - holiday (avoid double-count)
     duty_days = max(total_days_in_range - weekend_day_count - holiday_days_count, 0)
@@ -9619,7 +9636,7 @@ def employee_period_attendance(request):
         'month_first_weekday': date_from.weekday() if period == 'month' else None,
         'month_days': month_days,
         'weekend_nums': sorted(weekend_nums),
-        'holiday_dates': [r['date'] for r in records_data if r['is_holiday']],
+        'holiday_dates': sorted(all_holiday_dates_set),
         'records': records_data,
         'records_by_date': {r['date']: r for r in records_data},
         'summary': {

@@ -395,7 +395,8 @@
     .pv-status-on_leave { background:#f5f3ff; }
     .pv-status-no_record{ background:#fff; }
     .pv-status-weekend  { background:#fdf2f8; }
-    .pv-status-holiday  { background:#fefce8; }
+    .pv-status-holiday, .hol-cell { background:#fef08a !important; }
+    .hol-cell .cal-num  { color:#854d0e !important; }
     .pv-status-incomplete { background:#fff7ed; }
     /* Status chip colors */
     .cal-chip-present  { background:#16a34a; color:#fff; }
@@ -2114,11 +2115,15 @@ function renderWeekView(data) {
         const dayNumHtml = (color) => pvDayNumHtml(iso, color, 'week');
 
         if (rec) {
-            const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
-            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.bg};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+            const recIsHol = isHol || rec.is_holiday;
+            const sc = recIsHol ? STATUS_COLORS.holiday
+                : isWknd ? STATUS_COLORS.weekend
+                : (STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' });
+            const lbl = recIsHol ? 'Holiday' : isWknd ? 'Weekend' : esc(rec.status_display);
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
                 <div class="day-lbl">${dayNames[jsDay]}</div>
                 ${dayNumHtml(sc.color)}
-                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">${esc(rec.status_display)}</span>
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;font-weight:700;">${lbl}</span>
                 <div style="font-size:0.65rem;color:${sc.color};opacity:0.8;margin-top:4px;">${rec.clock_in || '–'} › ${rec.clock_out || '–'}</div>
                 <div style="font-size:0.68rem;font-weight:700;color:${sc.color};margin-top:2px;">${rec.working_hours ? rec.working_hours + 'h' : ''}</div>
             </div>`;
@@ -2215,11 +2220,15 @@ function renderCustomView(data) {
         const dayNumHtml = (color) => pvDayNumHtml(iso, color, 'week');
 
         if (rec) {
-            const sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
-            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.bg};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
+            const recIsHol = isHol || rec.is_holiday;
+            const sc = recIsHol ? STATUS_COLORS.holiday
+                : isWknd ? STATUS_COLORS.weekend
+                : (STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' });
+            const lbl = recIsHol ? 'Holiday' : isWknd ? 'Weekend' : esc(rec.status_display);
+            cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
                 <div class="day-lbl">${dayNames[jsDay]}</div>
                 ${dayNumHtml(sc.color)}
-                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;">${esc(rec.status_display)}</span>
+                <span class="day-status" style="background:${sc.bg};color:${sc.color};margin-top:2px;font-weight:700;">${lbl}</span>
                 <div style="font-size:0.65rem;color:${sc.color};opacity:0.8;margin-top:4px;">${rec.clock_in || '–'} › ${rec.clock_out || '–'}</div>
                 <div style="font-size:0.68rem;font-weight:700;color:${sc.color};margin-top:2px;">${rec.working_hours ? rec.working_hours + 'h' : ''}</div>
             </div>`;
@@ -2319,7 +2328,27 @@ function renderMonthView(data) {
             const ci  = rec.clock_in  || '–';
             const wh  = rec.working_hours ? rec.working_hours + 'h' : '';
             const lbl = (rec.status_display || rec.status).replace('_',' ');
-            cells += `<div class="pv-cal-cell has-record pv-status-${rec.status}${isTd?' today':''}${isWknd?' wknd-cell':''}"
+
+            // If the day is a company holiday, override the status display so
+            // the cell shows "Holiday" (amber background + chip) regardless of
+            // what attendance status the record carries. The clock-in time and
+            // hours are still shown so it's clear the employee worked.
+            // Same logic for weekend days — show the weekend colour but still
+            // expose the click-popup with the underlying status.
+            const recIsHol = isHol || rec.is_holiday;
+            let cellClass, chipHtml;
+            if (recIsHol) {
+                cellClass = `pv-cal-cell has-record pv-status-holiday hol-cell${isTd?' today':''}${isWknd?' wknd-cell':''}`;
+                chipHtml  = `<span class="cal-status-chip cal-chip-holiday">Holiday</span>`;
+            } else if (isWknd) {
+                cellClass = `pv-cal-cell has-record pv-status-weekend wknd-cell${isTd?' today':''}`;
+                chipHtml  = `<span class="cal-status-chip cal-chip-weekend">Weekend</span>`;
+            } else {
+                cellClass = `pv-cal-cell has-record pv-status-${rec.status}${isTd?' today':''}`;
+                chipHtml  = `<span class="cal-status-chip cal-chip-${rec.status}">${lbl}</span>`;
+            }
+
+            cells += `<div class="${cellClass}"
                           data-date="${iso}" data-status="${rec.status}" data-status-display="${lbl}"
                           data-clock-in="${ci}" data-clock-out="${rec.clock_out||'–'}"
                           data-working-hours="${rec.working_hours||''}"
@@ -2327,12 +2356,12 @@ function renderMonthView(data) {
                           data-shift="${rec.shift||''}"
                           data-is-late="${rec.is_late_arrival?'1':'0'}"
                           data-is-early="${rec.is_early_departure?'1':'0'}"
-                          data-is-holiday="${rec.is_holiday?'1':'0'}"
+                          data-is-holiday="${recIsHol?'1':'0'}"
                           data-is-incomplete="${rec.is_incomplete?'1':'0'}"
                           data-notes="${esc(rec.notes||'')}"
                           onclick="pvShowCalPopup(event,this)">
-                ${numHtml('inherit')}
-                <span class="cal-status-chip cal-chip-${rec.status}">${lbl}</span>
+                ${numHtml(recIsHol ? '#854d0e' : isWknd ? '#9d174d' : 'inherit')}
+                ${chipHtml}
                 <span class="cal-time"><i class="fas fa-sign-in-alt fa-xs me-1"></i>${ci}</span>
                 ${wh ? `<span class="cal-hours">${wh}</span>` : ''}
             </div>`;
@@ -2342,7 +2371,7 @@ function renderMonthView(data) {
                 <span class="cal-status-chip cal-chip-weekend">Weekend</span>
             </div>`;
         } else if (isHol) {
-            cells += `<div class="pv-cal-cell pv-status-holiday${isTd?' today':''}">
+            cells += `<div class="pv-cal-cell pv-status-holiday hol-cell${isTd?' today':''}">
                 ${numHtml('#854d0e')}
                 <span class="cal-status-chip cal-chip-holiday">Holiday</span>
             </div>`;
@@ -2425,7 +2454,9 @@ function pvNavMonth(delta) {
 function pvShowCalPopup(evt, el) {
     evt.stopPropagation();
     const d     = el.dataset;
-    const sc    = STATUS_COLORS[d.status] || { bg:'#f1f5f9', color:'#64748b', dot:'#94a3b8', label: d.status };
+    const isHoliday = d.isHoliday === '1';
+    const sc    = isHoliday ? STATUS_COLORS.holiday : (STATUS_COLORS[d.status] || { bg:'#f1f5f9', color:'#64748b', dot:'#94a3b8', label: d.status });
+    const dispLabel = isHoliday ? 'Holiday' : (d.statusDisplay || sc.label);
     let flags = '';
     if (d.isLate    === '1') flags += `<span class="badge me-1 mb-1" style="background:#fef3c7;color:#92400e;font-size:0.7rem;"><i class="fas fa-clock fa-xs me-1"></i>Late Arrival</span>`;
     if (d.isEarly   === '1') flags += `<span class="badge me-1 mb-1" style="background:#dbeafe;color:#1e3a8a;font-size:0.7rem;"><i class="fas fa-door-open fa-xs me-1"></i>Early Departure</span>`;
@@ -2449,7 +2480,7 @@ function pvShowCalPopup(evt, el) {
         </div>
         <div>
             <div style="font-weight:700;font-size:0.88rem;color:#fff;">${esc(pvDayCaption(d.date, d.date).main)}</div>
-            <div style="font-size:0.72rem;color:rgba(255,255,255,0.85);">${pvDayCaption(d.date, d.date).sub ? esc(pvDayCaption(d.date, d.date).sub) + ' &middot; ' : ''}${d.statusDisplay}</div>
+            <div style="font-size:0.72rem;color:rgba(255,255,255,0.85);">${pvDayCaption(d.date, d.date).sub ? esc(pvDayCaption(d.date, d.date).sub) + ' &middot; ' : ''}${dispLabel}</div>
         </div>
         <button onclick="document.getElementById('pvCalDayPopup').style.display='none'"
                 style="margin-left:auto;background:rgba(255,255,255,0.25);border:none;border-radius:6px;
