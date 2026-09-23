@@ -7562,25 +7562,56 @@ def generate_payslips(request, pk):
         def _serialize_list(lst):
             return [{'name': item['name'], 'amount': float(item['amount'])} for item in lst]
 
-        Payslip.objects.create(
-            payroll_run=run,
-            employee=employee,
-            gross_salary=gross_salary,
-            total_deductions=total_deductions_val,
-            advance_deduction=advance_deduction,
-            absent_deduction=_bd['absent_deduction'],
-            net_salary=net_salary,
-            basic_salary=_bd.get('basic_salary', Decimal('0')),
-            salary_structure={
-                'earnings_list': _serialize_list(_bd.get('earnings_list', [])),
-                'deductions_list': _serialize_list(_bd.get('deductions_list', [])),
-                'bonus_total_included': str(_bonus_total),
-                'gross_before_bonus': str(_bd['total_earnings'].quantize(Decimal('0.01'))),
-                'advance_breakdown': _adv_breakdown,
-            },
-            status='generated',
-            generated_on=today,
-        )
+        _salary_structure_val = {
+            'earnings_list': _serialize_list(_bd.get('earnings_list', [])),
+            'deductions_list': _serialize_list(_bd.get('deductions_list', [])),
+            'bonus_total_included': str(_bonus_total),
+            'gross_before_bonus': str(_bd['total_earnings'].quantize(Decimal('0.01'))),
+            'advance_breakdown': _adv_breakdown,
+        }
+
+        # If a soft-deleted payslip exists for this run+employee, restore and
+        # overwrite it with freshly-calculated values rather than inserting a
+        # new row, which would violate the unique_together(payroll_run, employee)
+        # DB constraint and cause a 500 error.
+        _trashed_slip = Payslip.objects.filter(payroll_run=run, employee=employee, is_deleted=True).first()
+        if _trashed_slip:
+            _trashed_slip.is_deleted = False
+            _trashed_slip.deleted_at = None
+            _trashed_slip.deleted_by = None
+            _trashed_slip.gross_salary = gross_salary
+            _trashed_slip.total_deductions = total_deductions_val
+            _trashed_slip.advance_deduction = advance_deduction
+            _trashed_slip.absent_deduction = _bd['absent_deduction']
+            _trashed_slip.net_salary = net_salary
+            _trashed_slip.basic_salary = _bd.get('basic_salary', Decimal('0'))
+            _trashed_slip.salary_structure = _salary_structure_val
+            _trashed_slip.status = 'generated'
+            _trashed_slip.generated_on = today
+            _trashed_slip.is_finalized = False
+            _trashed_slip.finalized_by = None
+            _trashed_slip.finalized_at = None
+            _trashed_slip.save(update_fields=[
+                'is_deleted', 'deleted_at', 'deleted_by',
+                'gross_salary', 'total_deductions', 'advance_deduction',
+                'absent_deduction', 'net_salary', 'basic_salary',
+                'salary_structure', 'status', 'generated_on',
+                'is_finalized', 'finalized_by', 'finalized_at', 'updated_at',
+            ])
+        else:
+            Payslip.objects.create(
+                payroll_run=run,
+                employee=employee,
+                gross_salary=gross_salary,
+                total_deductions=total_deductions_val,
+                advance_deduction=advance_deduction,
+                absent_deduction=_bd['absent_deduction'],
+                net_salary=net_salary,
+                basic_salary=_bd.get('basic_salary', Decimal('0')),
+                salary_structure=_salary_structure_val,
+                status='generated',
+                generated_on=today,
+            )
         created_count += 1
 
         # ── Mark approved bonuses as paid ──
