@@ -7477,14 +7477,16 @@ def generate_payslips(request, pk):
                 d += timedelta(days=1)
 
     for employee in employees:
-        # Skip if payslip already exists AND is finalized for this run + employee
-        _existing_slip = Payslip.objects.filter(payroll_run=run, employee=employee).first()
+        # Skip if a non-deleted payslip already exists for this run + employee.
+        # Soft-deleted payslips (is_deleted=True) are NOT counted so the user
+        # can delete a payslip and regenerate it by re-running Generate Payslips.
+        _existing_slip = Payslip.objects.filter(payroll_run=run, employee=employee, is_deleted=False).first()
         if _existing_slip:
             skipped_count += 1
             continue
-            
-        # Prevent duplicate runs for same cycle
-        _dup_slip = Payslip.objects.filter(employee=employee, payroll_run__month=_month, payroll_run__year=_year).exclude(payroll_run=run).exists()
+
+        # Prevent duplicate runs for same cycle (ignore soft-deleted slips here too)
+        _dup_slip = Payslip.objects.filter(employee=employee, payroll_run__month=_month, payroll_run__year=_year, is_deleted=False).exclude(payroll_run=run).exists()
         if _dup_slip:
             skipped_count += 1
             continue
