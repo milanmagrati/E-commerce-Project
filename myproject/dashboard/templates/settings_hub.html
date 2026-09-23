@@ -1711,6 +1711,8 @@ function confirmDelete() {
 
 /* ===================== ZEKTO TEST DEVICE STATUS ===================== */
 var currentTestingDeviceId = null;
+var isTestingSingleDevice = false;
+var isTestingAllDevices = false;
 
 function openTestDeviceTab() {
   var tabBtn = document.getElementById('testDeviceTabBtn');
@@ -1722,74 +1724,142 @@ function openTestDeviceTab() {
 }
 
 function testSingleDevice(deviceId) {
+  if (!deviceId) return;
+  if (isTestingSingleDevice) return;
+  isTestingSingleDevice = true;
+
   currentTestingDeviceId = deviceId;
   var modalEl = document.getElementById('deviceTestModal');
-  var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-  modal.show();
+  var modal = null;
+  if (modalEl) {
+    try {
+      modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      modal.show();
+    } catch(e) {}
+  }
 
-  document.getElementById('testModalSpinner').style.display = 'block';
-  document.getElementById('testModalContent').style.display = 'none';
+  var spinner = document.getElementById('testModalSpinner');
+  var content = document.getElementById('testModalContent');
+  if (spinner) spinner.style.display = 'block';
+  if (content) content.style.display = 'none';
 
-  fetch("{% url 'hrm:zekto_device_test' pk=0 %}".replace('0', deviceId), {
+  var testUrl = "{% url 'hrm:zekto_device_test' pk=0 %}".replace('/0/', '/' + deviceId + '/');
+  if (testUrl.indexOf('/' + deviceId + '/') === -1) {
+    testUrl = "{% url 'hrm:zekto_device_test' pk=0 %}".replace('0', deviceId);
+  }
+
+  fetch(testUrl, {
     method: 'GET',
-    headers: {'X-CSRFToken': getCsrf()}
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    document.getElementById('testModalSpinner').style.display = 'none';
-    document.getElementById('testModalContent').style.display = 'block';
-
-    if (data.success) {
-      document.getElementById('testModalDeviceName').textContent = data.device_name;
-      document.getElementById('testModalSerial').textContent = 'SN: ' + data.serial_number + ' • ' + data.model_name;
-      document.getElementById('testModalLastSeen').innerHTML = data.last_seen + ' <span class="text-muted">(' + data.last_seen_relative + ')</span>';
-      document.getElementById('testModalIP').textContent = data.ip_address;
-      document.getElementById('testModalTodayPunches').textContent = data.today_punches;
-      document.getElementById('testModalTotalTrans').textContent = data.transaction_count;
-
-      var badge = document.getElementById('testModalBadge');
-      var statusText = document.getElementById('testModalStatusText');
-      var alertBox = document.getElementById('testModalDetailAlert');
-
-      badge.className = 'badge px-3 py-2 fs-6';
-      statusText.className = 'fw-bold';
-
-      if (data.status === 'connected') {
-        badge.classList.add('bg-success');
-        badge.innerHTML = '<i class="fas fa-check-circle me-1"></i>CONNECTED / ONLINE';
-        statusText.classList.add('text-success');
-        statusText.textContent = 'Connected & Active';
-        alertBox.className = 'alert alert-success py-2 px-3 small mb-0';
-        alertBox.innerHTML = '<i class="fas fa-check-circle me-1"></i><strong>Device is Active:</strong> Real-time heartbeats are being received. Fingerprint punches will sync automatically.';
-      } else if (data.status === 'idle') {
-        badge.classList.add('bg-warning', 'text-dark');
-        badge.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>IDLE / DELAYED';
-        statusText.classList.add('text-warning');
-        statusText.textContent = 'Recently Active (Delayed)';
-        alertBox.className = 'alert alert-warning py-2 px-3 small mb-0';
-        alertBox.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i><strong>Heartbeat Delayed:</strong> ' + data.status_detail;
-      } else {
-        badge.classList.add('bg-danger');
-        badge.innerHTML = '<i class="fas fa-times-circle me-1"></i>DISCONNECTED / FAILED';
-        statusText.classList.add('text-danger');
-        statusText.textContent = 'Disconnected / Offline';
-        alertBox.className = 'alert alert-danger py-2 px-3 small mb-0';
-        alertBox.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i><strong>Connection Failed:</strong> ' + data.status_detail;
-      }
-    } else {
-      showToast(data.error || 'Failed to test device.', 'error');
-      modal.hide();
+    headers: {
+      'Accept': 'application/json',
+      'X-CSRFToken': getCsrf()
     }
   })
-  .catch(function() {
-    document.getElementById('testModalSpinner').style.display = 'none';
-    showToast('Network error while testing device.', 'error');
-    modal.hide();
+  .then(function(r) {
+    if (!r.ok) {
+      throw new Error('Server returned HTTP ' + r.status);
+    }
+    return r.json();
+  })
+  .then(function(data) {
+    if (spinner) spinner.style.display = 'none';
+
+    if (!data || !data.success) {
+      showToast((data && data.error) ? data.error : 'Failed to test device.', 'error');
+      if (modal) modal.hide();
+      return;
+    }
+
+    if (content) content.style.display = 'block';
+
+    var elDevName = document.getElementById('testModalDeviceName');
+    if (elDevName) elDevName.textContent = data.device_name || 'ZKTeco Device';
+
+    var elSerial = document.getElementById('testModalSerial');
+    if (elSerial) elSerial.textContent = 'SN: ' + (data.serial_number || '—') + (data.model_name ? (' • ' + data.model_name) : '');
+
+    var elLastSeen = document.getElementById('testModalLastSeen');
+    if (elLastSeen) elLastSeen.innerHTML = (data.last_seen || 'Never') + ' <span class="text-muted">(' + (data.last_seen_relative || '—') + ')</span>';
+
+    var elIP = document.getElementById('testModalIP');
+    if (elIP) elIP.textContent = data.ip_address || '—';
+
+    var elTodayPunches = document.getElementById('testModalTodayPunches');
+    if (elTodayPunches) elTodayPunches.textContent = (data.today_punches !== undefined) ? data.today_punches : 0;
+
+    var elTotalTrans = document.getElementById('testModalTotalTrans');
+    if (elTotalTrans) elTotalTrans.textContent = (data.transaction_count !== undefined) ? data.transaction_count : 0;
+
+    var badge = document.getElementById('testModalBadge');
+    var statusText = document.getElementById('testModalStatusText');
+    var alertBox = document.getElementById('testModalDetailAlert');
+
+    if (data.status === 'connected') {
+      if (badge) {
+        badge.className = 'badge px-3 py-2 fs-6 bg-success text-white';
+        badge.innerHTML = '<i class="fas fa-check-circle me-1"></i>CONNECTED / ONLINE';
+      }
+      if (statusText) {
+        statusText.className = 'fw-bold text-success';
+        statusText.textContent = 'Connected & Active';
+      }
+      if (alertBox) {
+        alertBox.className = 'alert alert-success py-2 px-3 small mb-0 mt-3';
+        alertBox.innerHTML = '<i class="fas fa-check-circle me-1"></i><strong>Device is Active:</strong> Real-time heartbeats are being received. Fingerprint punches will sync automatically.';
+        alertBox.style.display = 'block';
+      }
+    } else if (data.status === 'idle') {
+      if (badge) {
+        badge.className = 'badge px-3 py-2 fs-6 bg-warning text-dark';
+        badge.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>IDLE / DELAYED';
+      }
+      if (statusText) {
+        statusText.className = 'fw-bold text-warning';
+        statusText.textContent = 'Recently Active (Delayed)';
+      }
+      if (alertBox) {
+        alertBox.className = 'alert alert-warning py-2 px-3 small mb-0 mt-3';
+        alertBox.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i><strong>Heartbeat Delayed:</strong> ' + (data.status_detail || 'No recent ping.');
+        alertBox.style.display = 'block';
+      }
+    } else {
+      if (badge) {
+        badge.className = 'badge px-3 py-2 fs-6 bg-danger text-white';
+        badge.innerHTML = '<i class="fas fa-times-circle me-1"></i>DISCONNECTED / FAILED';
+      }
+      if (statusText) {
+        statusText.className = 'fw-bold text-danger';
+        statusText.textContent = 'Disconnected / Offline';
+      }
+      if (alertBox) {
+        alertBox.className = 'alert alert-danger py-2 px-3 small mb-0 mt-3';
+        alertBox.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i><strong>Connection Failed:</strong> ' + (data.status_detail || 'No recent heartbeat. Check power/network.');
+        alertBox.style.display = 'block';
+      }
+    }
+  })
+  .catch(function(err) {
+    console.error('Device test error:', err);
+    if (spinner) spinner.style.display = 'none';
+
+    // Only show error toast if the content was NOT successfully rendered
+    var contentEl = document.getElementById('testModalContent');
+    if (!contentEl || contentEl.style.display !== 'block') {
+      showToast('Network error while testing device. Please check connection.', 'error');
+      if (modal) modal.hide();
+    }
+  })
+  .finally(function() {
+    isTestingSingleDevice = false;
+    var retestBtn = document.getElementById('btnTestModalRetest');
+    if (retestBtn) retestBtn.disabled = false;
   });
 }
 
 function retestCurrentDevice() {
-  if (currentTestingDeviceId) {
+  if (currentTestingDeviceId && !isTestingSingleDevice) {
+    var retestBtn = document.getElementById('btnTestModalRetest');
+    if (retestBtn) retestBtn.disabled = true;
     testSingleDevice(currentTestingDeviceId);
   }
 }
@@ -1801,6 +1871,9 @@ function syncFromTestModal() {
 }
 
 function testAllDevices() {
+  if (isTestingAllDevices) return;
+  isTestingAllDevices = true;
+
   var loading = document.getElementById('testAllLoading');
   var results = document.getElementById('testAllResults');
   var icon = document.getElementById('testAllIcon');
@@ -1810,22 +1883,28 @@ function testAllDevices() {
 
   fetch("{% url 'hrm:zekto_device_test_all' %}", {
     method: 'GET',
-    headers: {'X-CSRFToken': getCsrf()}
+    headers: {
+      'Accept': 'application/json',
+      'X-CSRFToken': getCsrf()
+    }
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
   .then(function(data) {
     if (icon) icon.classList.remove('fa-spin');
     if (loading) loading.style.display = 'none';
 
-    if (data.success && data.devices) {
+    if (data && data.success && data.devices) {
       if (data.devices.length === 0) {
-        results.innerHTML = '<div class="col-12 text-center text-muted py-4">No registered devices to test.</div>';
+        if (results) results.innerHTML = '<div class="col-12 text-center text-muted py-4">No registered devices to test.</div>';
         return;
       }
 
       var html = '';
       data.devices.forEach(function(dev) {
-        var badgeClass = dev.status === 'connected' ? 'bg-success' : (dev.status === 'idle' ? 'bg-warning text-dark' : 'bg-danger');
+        var badgeClass = dev.status === 'connected' ? 'bg-success text-white' : (dev.status === 'idle' ? 'bg-warning text-dark' : 'bg-danger text-white');
         var iconClass = dev.status === 'connected' ? 'fa-check-circle' : (dev.status === 'idle' ? 'fa-exclamation-triangle' : 'fa-times-circle');
         var borderClass = dev.status === 'connected' ? 'border-success' : (dev.status === 'idle' ? 'border-warning' : 'border-danger');
 
@@ -1834,8 +1913,8 @@ function testAllDevices() {
             '<div class="card-body p-3">' +
               '<div class="d-flex justify-content-between align-items-start mb-2">' +
                 '<div>' +
-                  '<h6 class="fw-bold mb-0 text-truncate" style="max-width:180px;">' + dev.device_name + '</h6>' +
-                  '<span class="font-monospace text-muted" style="font-size:.78rem;">' + dev.serial_number + '</span>' +
+                  '<h6 class="fw-bold mb-0 text-truncate" style="max-width:180px;">' + (dev.device_name || 'Biometric Device') + '</h6>' +
+                  '<span class="font-monospace text-muted" style="font-size:.78rem;">' + (dev.serial_number || '—') + '</span>' +
                 '</div>' +
                 '<span class="badge ' + badgeClass + ' px-2 py-1"><i class="fas ' + iconClass + ' me-1"></i>' + dev.status_label + '</span>' +
               '</div>' +
@@ -1844,7 +1923,7 @@ function testAllDevices() {
                 '<div><i class="fas fa-network-wired me-1"></i><strong>Device IP:</strong> ' + dev.ip_address + '</div>' +
                 '<div><i class="fas fa-fingerprint me-1"></i><strong>Today Punches:</strong> <span class="badge bg-primary">' + dev.today_punches + '</span></div>' +
               '</div>' +
-              '<p class="small text-muted border-top pt-2 mb-3" style="font-size:.8rem; min-height:36px;">' + dev.status_detail + '</p>' +
+              '<p class="small text-muted border-top pt-2 mb-3" style="font-size:.8rem; min-height:36px;">' + (dev.status_detail || '') + '</p>' +
               '<div class="d-flex gap-2">' +
                 '<button class="btn btn-sm btn-outline-primary flex-fill" onclick="testSingleDevice(' + dev.device_id + ')">' +
                   '<i class="fas fa-stethoscope me-1"></i>Diagnose' +
@@ -1858,15 +1937,19 @@ function testAllDevices() {
         '</div>';
       });
 
-      results.innerHTML = html;
+      if (results) results.innerHTML = html;
     } else {
       if (results) results.innerHTML = '<div class="col-12 text-center text-danger py-4">Failed to load device test results.</div>';
     }
   })
-  .catch(function() {
+  .catch(function(err) {
+    console.error('Test all devices error:', err);
     if (icon) icon.classList.remove('fa-spin');
     if (loading) loading.style.display = 'none';
     if (results) results.innerHTML = '<div class="col-12 text-center text-danger py-4">Network error during test.</div>';
+  })
+  .finally(function() {
+    isTestingAllDevices = false;
   });
 }
 
