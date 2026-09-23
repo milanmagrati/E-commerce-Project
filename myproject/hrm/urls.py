@@ -169,6 +169,8 @@ urlpatterns = [
     path('settings/zekto/device/<int:pk>/update/', views.zekto_device_update, name='zekto_device_update'),
     path('settings/zekto/device/<int:pk>/delete/', views.zekto_device_delete, name='zekto_device_delete'),
     path('settings/zekto/device/<int:pk>/sync/', views.zekto_device_sync, name='zekto_device_sync'),
+    path('settings/zekto/device/<int:pk>/test/', views.zekto_device_test, name='zekto_device_test'),
+    path('settings/zekto/test-all/', views.zekto_device_test_all, name='zekto_device_test_all'),
 
     # Payroll Management
     path('payroll/', views.payroll_management, name='payroll_management'),

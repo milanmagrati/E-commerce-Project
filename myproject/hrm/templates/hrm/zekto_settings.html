@@ -97,7 +97,17 @@
   .btn-action:hover { background: #f3f4f6; }
   .btn-action.edit-btn { color: #4f46e5; }
   .btn-action.sync-btn { color: #059669; }
+  .btn-action.test-btn { color: #0284c7; }
   .btn-action.delete-btn { color: #ef4444; }
+
+  .status-idle {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #fef3c7; color: #92400e; font-size: .76rem; font-weight: 600;
+    padding: .25rem .65rem; border-radius: 20px;
+  }
+  .status-idle::before {
+    content: ''; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b;
+  }
 
   /* modal form */
   .modal-field label {
@@ -207,6 +217,11 @@
       </button>
     </li>
     <li class="nav-item" role="presentation">
+      <button class="nav-link" id="testDeviceTab" data-bs-toggle="tab" data-bs-target="#testDevicePane" type="button" role="tab" onclick="testAllDevices()">
+        <i class="fas fa-satellite-dish me-1"></i>Test Device Status
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
       <button class="nav-link" id="setupTab" data-bs-toggle="tab" data-bs-target="#setupPane" type="button" role="tab">
         <i class="fas fa-cog me-1"></i>Device Setup
       </button>
@@ -263,6 +278,9 @@
               <td><span class="count-badge" style="background:#d1fae5; color:#065f46;" data-trans="{{ dev.transaction_count }}">{{ dev.transaction_count }}</span></td>
               <td><span class="count-badge" style="background:#ede9fe; color:#6d28d9;">{{ dev.user_count }}</span></td>
               <td>
+                <button class="btn-action test-btn" title="Test Connection Status" onclick="testSingleDevice({{ dev.id }})">
+                  <i class="fas fa-heartbeat"></i>
+                </button>
                 <button class="btn-action edit-btn" title="Edit Device" onclick="openEditModal({{ dev.id }})">
                   <i class="fas fa-edit"></i>
                 </button>
@@ -318,6 +336,9 @@
                 <td id="syncTrans_{{ dev.id }}">{{ dev.transaction_count }}</td>
                 <td id="syncUsers_{{ dev.id }}">{{ dev.user_count }}</td>
                 <td>
+                  <button class="btn btn-sm btn-outline-info me-1" onclick="testSingleDevice({{ dev.id }})">
+                    <i class="fas fa-heartbeat me-1"></i>Test Status
+                  </button>
                   <button class="btn btn-sm btn-outline-success" onclick="syncDevice({{ dev.id }})">
                     <i class="fas fa-sync-alt me-1"></i>Sync
                   </button>
@@ -361,6 +382,112 @@
       </div>
     </div>
 
+    <!-- TEST DEVICE STATUS TAB -->
+    <div class="tab-pane fade" id="testDevicePane" role="tabpanel">
+      <div class="p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+          <div>
+            <h6 class="fw-bold mb-1" style="color:#1e293b;"><i class="fas fa-satellite-dish text-primary me-2"></i>Live Device Connectivity Diagnostics</h6>
+            <p class="text-muted mb-0" style="font-size:.85rem;">Instantly check whether each biometric machine is actively connected, its last heartbeat time, and today's punch activity.</p>
+          </div>
+          <div>
+            <button class="btn btn-primary btn-sm" id="btnTestAllDevices" onclick="testAllDevices()">
+              <i class="fas fa-redo-alt me-1" id="testAllIcon"></i>Test All Devices Now
+            </button>
+          </div>
+        </div>
+
+        <div id="testAllLoading" class="text-center py-4" style="display:none;">
+          <div class="spinner-border text-primary mb-2" role="status" style="width:2rem; height:2rem;"></div>
+          <div class="text-muted small">Pinging registered devices and verifying server heartbeats...</div>
+        </div>
+
+        <div id="testAllResults" class="row g-3">
+          <!-- Rendered via JS -->
+        </div>
+
+        <div class="mt-4 p-3 border rounded-3 bg-light">
+          <h6 class="fw-bold mb-2" style="font-size:.85rem; color:#475569;"><i class="fas fa-info-circle me-1 text-info"></i>What do the status results mean?</h6>
+          <div class="row g-2 small text-muted">
+            <div class="col-md-4">
+              <span class="badge bg-success me-1">Connected / Online</span> Device sent a heartbeat within the last 3 minutes. Punches will sync in real time.
+            </div>
+            <div class="col-md-4">
+              <span class="badge bg-warning text-dark me-1">Idle / Warning</span> Last seen 3–15 minutes ago. Check if the device is powered on or network is slow.
+            </div>
+            <div class="col-md-4">
+              <span class="badge bg-danger me-1">Disconnected / Failed</span> No heartbeat received recently. Check network wire/Wi-Fi, DNS, and ADMS Server IP settings.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Device Test Status Modal -->
+<div class="modal fade" id="deviceTestModal" tabindex="-1" aria-labelledby="deviceTestModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-radius:14px; border:none; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,.15);">
+      <div class="modal-header" id="testModalHeader" style="background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border:none; padding:1rem 1.5rem;">
+        <h5 class="modal-title text-white fw-bold" id="deviceTestModalLabel">
+          <i class="fas fa-heartbeat me-2"></i>Device Connection Test
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div id="testModalSpinner" class="text-center py-4">
+          <div class="spinner-border text-info mb-2" role="status" style="width:2.5rem; height:2.5rem;"></div>
+          <div class="text-muted fw-semibold">Testing device heartbeat and connection...</div>
+        </div>
+        <div id="testModalContent" style="display:none;">
+          <div class="text-center mb-3">
+            <span id="testModalBadge" class="badge px-3 py-2 fs-6">Connected</span>
+            <h5 id="testModalDeviceName" class="fw-bold mt-2 mb-0">ZKTeco Device</h5>
+            <div class="text-muted small" id="testModalSerial">SN: CQTW224560219</div>
+          </div>
+
+          <div class="list-group list-group-flush border rounded-3 mb-3 small">
+            <div class="list-group-item d-flex justify-content-between py-2">
+              <span class="text-muted">Connection Status</span>
+              <strong id="testModalStatusText" class="text-success">Connected / Online</strong>
+            </div>
+            <div class="list-group-item d-flex justify-content-between py-2">
+              <span class="text-muted">Last Connected</span>
+              <span id="testModalLastSeen" class="fw-semibold">Just now</span>
+            </div>
+            <div class="list-group-item d-flex justify-content-between py-2">
+              <span class="text-muted">Device IP Address</span>
+              <span id="testModalIP" class="font-monospace">103.190.40.48</span>
+            </div>
+            <div class="list-group-item d-flex justify-content-between py-2">
+              <span class="text-muted">Today's Raw Punches</span>
+              <span id="testModalTodayPunches" class="badge bg-primary rounded-pill">0</span>
+            </div>
+            <div class="list-group-item d-flex justify-content-between py-2">
+              <span class="text-muted">Total DB Transactions</span>
+              <span id="testModalTotalTrans" class="fw-semibold">0</span>
+            </div>
+          </div>
+
+          <div id="testModalDetailAlert" class="alert alert-info py-2 px-3 small mb-0">
+            <!-- Diagnostic advice -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer bg-light border-0 py-2 px-4 d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        <div>
+          <button type="button" class="btn btn-outline-primary btn-sm me-1" id="btnTestModalRetest" onclick="retestCurrentDevice()">
+            <i class="fas fa-redo-alt me-1"></i>Re-Test
+          </button>
+          <button type="button" class="btn btn-success btn-sm" id="btnTestModalSync" onclick="syncFromTestModal()">
+            <i class="fas fa-sync-alt me-1"></i>Sync Device Now
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -728,6 +855,158 @@ function confirmDelete() {
     }
   })
   .catch(function() { showToast('Delete failed.', 'error'); });
+}
+
+// --- Test Device Status ---
+var currentTestingDeviceId = null;
+
+function testSingleDevice(deviceId) {
+  currentTestingDeviceId = deviceId;
+  var modalEl = document.getElementById('deviceTestModal');
+  var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+
+  document.getElementById('testModalSpinner').style.display = 'block';
+  document.getElementById('testModalContent').style.display = 'none';
+
+  fetch("{% url 'hrm:zekto_device_test' pk=0 %}".replace('0', deviceId), {
+    method: 'GET',
+    headers: {'X-CSRFToken': getCsrf()}
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    document.getElementById('testModalSpinner').style.display = 'none';
+    document.getElementById('testModalContent').style.display = 'block';
+
+    if (data.success) {
+      document.getElementById('testModalDeviceName').textContent = data.device_name;
+      document.getElementById('testModalSerial').textContent = 'SN: ' + data.serial_number + ' • ' + data.model_name;
+      document.getElementById('testModalLastSeen').innerHTML = data.last_seen + ' <span class="text-muted">(' + data.last_seen_relative + ')</span>';
+      document.getElementById('testModalIP').textContent = data.ip_address;
+      document.getElementById('testModalTodayPunches').textContent = data.today_punches;
+      document.getElementById('testModalTotalTrans').textContent = data.transaction_count;
+
+      var badge = document.getElementById('testModalBadge');
+      var statusText = document.getElementById('testModalStatusText');
+      var alertBox = document.getElementById('testModalDetailAlert');
+
+      badge.className = 'badge px-3 py-2 fs-6';
+      statusText.className = 'fw-bold';
+
+      if (data.status === 'connected') {
+        badge.classList.add('bg-success');
+        badge.innerHTML = '<i class="fas fa-check-circle me-1"></i>CONNECTED / ONLINE';
+        statusText.classList.add('text-success');
+        statusText.textContent = 'Connected & Active';
+        alertBox.className = 'alert alert-success py-2 px-3 small mb-0';
+        alertBox.innerHTML = '<i class="fas fa-check-circle me-1"></i><strong>Device is Active:</strong> Real-time heartbeats are being received. Fingerprint punches will sync automatically.';
+      } else if (data.status === 'idle') {
+        badge.classList.add('bg-warning', 'text-dark');
+        badge.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>IDLE / DELAYED';
+        statusText.classList.add('text-warning');
+        statusText.textContent = 'Recently Active (Delayed)';
+        alertBox.className = 'alert alert-warning py-2 px-3 small mb-0';
+        alertBox.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i><strong>Heartbeat Delayed:</strong> ' + data.status_detail;
+      } else {
+        badge.classList.add('bg-danger');
+        badge.innerHTML = '<i class="fas fa-times-circle me-1"></i>DISCONNECTED / FAILED';
+        statusText.classList.add('text-danger');
+        statusText.textContent = 'Disconnected / Offline';
+        alertBox.className = 'alert alert-danger py-2 px-3 small mb-0';
+        alertBox.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i><strong>Connection Failed:</strong> ' + data.status_detail;
+      }
+    } else {
+      showToast(data.error || 'Failed to test device.', 'error');
+      modal.hide();
+    }
+  })
+  .catch(function() {
+    document.getElementById('testModalSpinner').style.display = 'none';
+    showToast('Network error while testing device.', 'error');
+    modal.hide();
+  });
+}
+
+function retestCurrentDevice() {
+  if (currentTestingDeviceId) {
+    testSingleDevice(currentTestingDeviceId);
+  }
+}
+
+function syncFromTestModal() {
+  if (currentTestingDeviceId) {
+    syncDevice(currentTestingDeviceId);
+  }
+}
+
+function testAllDevices() {
+  var loading = document.getElementById('testAllLoading');
+  var results = document.getElementById('testAllResults');
+  var icon = document.getElementById('testAllIcon');
+  if (icon) icon.classList.add('fa-spin');
+  if (loading) loading.style.display = 'block';
+  if (results) results.innerHTML = '';
+
+  fetch("{% url 'hrm:zekto_device_test_all' %}", {
+    method: 'GET',
+    headers: {'X-CSRFToken': getCsrf()}
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (icon) icon.classList.remove('fa-spin');
+    if (loading) loading.style.display = 'none';
+
+    if (data.success && data.devices) {
+      if (data.devices.length === 0) {
+        results.innerHTML = '<div class="col-12 text-center text-muted py-4">No registered devices to test.</div>';
+        return;
+      }
+
+      var html = '';
+      data.devices.forEach(function(dev) {
+        var badgeClass = dev.status === 'connected' ? 'bg-success' : (dev.status === 'idle' ? 'bg-warning text-dark' : 'bg-danger');
+        var iconClass = dev.status === 'connected' ? 'fa-check-circle' : (dev.status === 'idle' ? 'fa-exclamation-triangle' : 'fa-times-circle');
+        var borderClass = dev.status === 'connected' ? 'border-success' : (dev.status === 'idle' ? 'border-warning' : 'border-danger');
+
+        html += '<div class="col-md-6 col-lg-4">' +
+          '<div class="card h-100 shadow-sm border ' + borderClass + '" style="border-radius:12px; transition:transform .2s;">' +
+            '<div class="card-body p-3">' +
+              '<div class="d-flex justify-content-between align-items-start mb-2">' +
+                '<div>' +
+                  '<h6 class="fw-bold mb-0 text-truncate" style="max-width:180px;">' + dev.device_name + '</h6>' +
+                  '<span class="font-monospace text-muted" style="font-size:.78rem;">' + dev.serial_number + '</span>' +
+                '</div>' +
+                '<span class="badge ' + badgeClass + ' px-2 py-1"><i class="fas ' + iconClass + ' me-1"></i>' + dev.status_label + '</span>' +
+              '</div>' +
+              '<div class="small text-muted mb-2">' +
+                '<div><i class="fas fa-clock me-1"></i><strong>Last Seen:</strong> ' + dev.last_seen + ' (' + dev.last_seen_relative + ')</div>' +
+                '<div><i class="fas fa-network-wired me-1"></i><strong>Device IP:</strong> ' + dev.ip_address + '</div>' +
+                '<div><i class="fas fa-fingerprint me-1"></i><strong>Today Punches:</strong> <span class="badge bg-primary">' + dev.today_punches + '</span></div>' +
+              '</div>' +
+              '<p class="small text-muted border-top pt-2 mb-3" style="font-size:.8rem; min-height:36px;">' + dev.status_detail + '</p>' +
+              '<div class="d-flex gap-2">' +
+                '<button class="btn btn-sm btn-outline-primary flex-fill" onclick="testSingleDevice(' + dev.device_id + ')">' +
+                  '<i class="fas fa-stethoscope me-1"></i>Diagnose' +
+                '</button>' +
+                '<button class="btn btn-sm btn-outline-success flex-fill" onclick="syncDevice(' + dev.device_id + ')">' +
+                  '<i class="fas fa-sync-alt me-1"></i>Sync Punches' +
+                '</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      });
+
+      results.innerHTML = html;
+    } else {
+      if (results) results.innerHTML = '<div class="col-12 text-center text-danger py-4">Failed to load device test results.</div>';
+    }
+  })
+  .catch(function() {
+    if (icon) icon.classList.remove('fa-spin');
+    if (loading) loading.style.display = 'none';
+    if (results) results.innerHTML = '<div class="col-12 text-center text-danger py-4">Network error during test.</div>';
+  });
 }
 </script>
 {% endblock %}

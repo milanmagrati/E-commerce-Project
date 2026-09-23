@@ -6248,6 +6248,159 @@ def zekto_device_sync(request, pk):
     })
 
 
+
+@login_required
+def zekto_device_test(request, pk):
+    """Test live connectivity and status of a specific ZKTeco device."""
+    from .models import ZKDevice, BiometricAttendance
+    from django.utils import timezone
+    from datetime import datetime, timedelta
+    import pytz
+
+    try:
+        device = ZKDevice.objects.get(pk=pk)
+    except ZKDevice.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Device not found.'})
+
+    now = timezone.now()
+    local_tz = pytz.timezone('Asia/Kathmandu')
+    now_local = now.astimezone(local_tz)
+
+    last_seen_formatted = 'Never connected'
+    last_seen_relative = 'Never'
+    diff_seconds = None
+
+    if device.last_seen:
+        ls_local = device.last_seen.astimezone(local_tz)
+        last_seen_formatted = ls_local.strftime('%Y-%m-%d %I:%M:%S %p')
+        diff = now - device.last_seen
+        diff_seconds = int(diff.total_seconds())
+
+        if diff_seconds < 60:
+            last_seen_relative = f'{diff_seconds}s ago'
+        elif diff_seconds < 3600:
+            last_seen_relative = f'{diff_seconds // 60}m ago'
+        elif diff_seconds < 86400:
+            last_seen_relative = f'{diff_seconds // 3600}h ago'
+        else:
+            last_seen_relative = f'{diff_seconds // 86400}d ago'
+
+    if diff_seconds is not None and diff_seconds <= 180:
+        status = 'connected'
+        status_label = 'Connected / Online'
+        status_class = 'success'
+        status_detail = 'Device is actively communicating with the server (heartbeat healthy).'
+    elif diff_seconds is not None and diff_seconds <= 900:
+        status = 'idle'
+        status_label = 'Idle / Warning'
+        status_class = 'warning'
+        status_detail = f'Device was seen {last_seen_relative}, but heartbeat is delayed.'
+    else:
+        status = 'disconnected'
+        status_label = 'Disconnected / Failed'
+        status_class = 'danger'
+        status_detail = f'No recent heartbeat. Last connected: {last_seen_formatted} ({last_seen_relative}). Check power, network cable/Wi-Fi, and ADMS settings.'
+
+    today_start = local_tz.localize(datetime.combine(now_local.date(), datetime.min.time()))
+    today_punches = BiometricAttendance.objects.filter(device=device, timestamp__gte=today_start).count()
+
+    return JsonResponse({
+        'success': True,
+        'device_id': device.id,
+        'device_name': device.name or device.serial_number,
+        'serial_number': device.serial_number,
+        'model_name': device.model_name or 'ZKTeco ADMS',
+        'ip_address': device.ip_address or '—',
+        'status': status,
+        'status_label': status_label,
+        'status_class': status_class,
+        'status_detail': status_detail,
+        'last_seen': last_seen_formatted,
+        'last_seen_relative': last_seen_relative,
+        'today_punches': today_punches,
+        'transaction_count': device.transaction_count,
+        'user_count': device.user_count,
+        'tested_at': now_local.strftime('%I:%M:%S %p NST'),
+    })
+
+
+@login_required
+def zekto_device_test_all(request):
+    """Test live connectivity and status of all ZKTeco devices."""
+    from .models import ZKDevice, BiometricAttendance
+    from django.utils import timezone
+    from datetime import datetime, timedelta
+    import pytz
+
+    devices = ZKDevice.objects.all().order_by('name', 'serial_number')
+    now = timezone.now()
+    local_tz = pytz.timezone('Asia/Kathmandu')
+    now_local = now.astimezone(local_tz)
+    today_start = local_tz.localize(datetime.combine(now_local.date(), datetime.min.time()))
+
+    results = []
+    for dev in devices:
+        diff_seconds = None
+        last_seen_formatted = 'Never connected'
+        last_seen_relative = 'Never'
+
+        if dev.last_seen:
+            ls_local = dev.last_seen.astimezone(local_tz)
+            last_seen_formatted = ls_local.strftime('%Y-%m-%d %I:%M:%S %p')
+            diff = now - dev.last_seen
+            diff_seconds = int(diff.total_seconds())
+
+            if diff_seconds < 60:
+                last_seen_relative = f'{diff_seconds}s ago'
+            elif diff_seconds < 3600:
+                last_seen_relative = f'{diff_seconds // 60}m ago'
+            elif diff_seconds < 86400:
+                last_seen_relative = f'{diff_seconds // 3600}h ago'
+            else:
+                last_seen_relative = f'{diff_seconds // 86400}d ago'
+
+        if diff_seconds is not None and diff_seconds <= 180:
+            status = 'connected'
+            status_label = 'Connected / Online'
+            status_class = 'success'
+            status_detail = 'Device actively communicating with server.'
+        elif diff_seconds is not None and diff_seconds <= 900:
+            status = 'idle'
+            status_label = 'Idle / Warning'
+            status_class = 'warning'
+            status_detail = f'Seen {last_seen_relative}. Heartbeat delayed.'
+        else:
+            status = 'disconnected'
+            status_label = 'Disconnected / Failed'
+            status_class = 'danger'
+            status_detail = f'No recent heartbeat. Last seen: {last_seen_formatted}.'
+
+        today_punches = BiometricAttendance.objects.filter(device=dev, timestamp__gte=today_start).count()
+
+        results.append({
+            'device_id': dev.id,
+            'device_name': dev.name or dev.serial_number,
+            'serial_number': dev.serial_number,
+            'model_name': dev.model_name or 'ZKTeco ADMS',
+            'ip_address': dev.ip_address or '—',
+            'status': status,
+            'status_label': status_label,
+            'status_class': status_class,
+            'status_detail': status_detail,
+            'last_seen': last_seen_formatted,
+            'last_seen_relative': last_seen_relative,
+            'today_punches': today_punches,
+            'transaction_count': dev.transaction_count,
+            'user_count': dev.user_count,
+        })
+
+    return JsonResponse({
+        'success': True,
+        'devices': results,
+        'tested_at': now_local.strftime('%I:%M:%S %p NST'),
+    })
+
+
 @login_required
 def zekto_device_detail(request, pk):
     """Return device detail as JSON for the update modal."""
