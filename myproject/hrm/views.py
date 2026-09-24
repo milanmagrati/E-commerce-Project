@@ -6952,6 +6952,19 @@ def active_employees_api(request):
     return JsonResponse({'success': True, 'employees': data})
 
 
+def _make_json_safe(val):
+    """Recursively convert Decimal, dates, sets into JSON-serializable primitives (int/float/str/list/dict)."""
+    if isinstance(val, Decimal):
+        return float(val)
+    elif isinstance(val, (date,)):
+        return val.isoformat()
+    elif isinstance(val, dict):
+        return {str(k): _make_json_safe(v) for k, v in val.items()}
+    elif isinstance(val, (list, tuple, set)):
+        return [_make_json_safe(x) for x in val]
+    return val
+
+
 def _calculate_payroll_breakdown(employee, cycle_start, cycle_end, salary_record, payroll_settings=None):
     """
     Core payroll calculation engine (two-layer architecture).
@@ -7603,33 +7616,33 @@ def generate_payslips(request, pk):
         def _serialize_list(lst):
             return [{'name': item['name'], 'amount': float(item['amount'])} for item in lst]
 
-        _salary_structure_val = {
+        _salary_structure_val = _make_json_safe({
             'earnings_list': _serialize_list(_bd.get('earnings_list', [])),
             'deductions_list': _serialize_list(_bd.get('deductions_list', [])),
             'bonus_total_included': str(_bonus_total),
             'gross_before_bonus': str(_bd['total_earnings'].quantize(Decimal('0.01'))),
             'advance_breakdown': _adv_breakdown,
             'attendance_snapshot': {
-                'calendar_days': _bd['calendar_days'],
-                'weekend_days': _bd['weekend_days'],
-                'holiday_days': _bd['holiday_days'],
-                'working_days': _bd['working_days'],
-                'present_days': _bd['present_working_days'],
-                'paid_leave_days': _bd['paid_leave_days'],
-                'half_days': _bd['half_days'],
-                'absent_days': _bd['absent_days'],
-                'daily_rate': float(_bd['daily_rate']),
-                'salary_divisor': float(_bd['salary_divisor']),
-                'divisor_label': _bd['divisor_label'],
-                'absent_deduction': float(_bd['absent_deduction']),
-                'weekend_worked_days': _bd['weekend_worked_days'],
-                'weekend_pay': float(_bd['weekend_pay']),
-                'holiday_worked_days': _bd['holiday_worked_days'],
-                'holiday_pay': float(_bd['holiday_pay']),
-                'ot_hours': float(_bd['total_ot_hours']),
-                'ot_pay': float(_bd['ot_pay']),
+                'calendar_days': int(_bd.get('calendar_days', 0)),
+                'weekend_days': int(_bd.get('weekend_days', 0)),
+                'holiday_days': int(_bd.get('holiday_days', 0)),
+                'working_days': int(_bd.get('working_days', 0)),
+                'present_days': float(_bd.get('present_working_days', 0)),
+                'paid_leave_days': float(_bd.get('paid_leave_days', 0)),
+                'half_days': float(_bd.get('half_days', 0)),
+                'absent_days': float(_bd.get('absent_days', 0)),
+                'daily_rate': float(_bd.get('daily_rate', 0)),
+                'salary_divisor': float(_bd.get('salary_divisor', 30)),
+                'divisor_label': str(_bd.get('divisor_label', 'Fixed 30 days')),
+                'absent_deduction': float(_bd.get('absent_deduction', 0)),
+                'weekend_worked_days': float(_bd.get('weekend_worked_days', 0)),
+                'weekend_pay': float(_bd.get('weekend_pay', 0)),
+                'holiday_worked_days': float(_bd.get('holiday_worked_days', 0)),
+                'holiday_pay': float(_bd.get('holiday_pay', 0)),
+                'ot_hours': float(_bd.get('total_ot_hours', 0)),
+                'ot_pay': float(_bd.get('ot_pay', 0)),
             },
-        }
+        })
 
         # If a soft-deleted payslip exists for this run + employee, permanently
         # remove it so the fresh generation creates a clean new record with a new
@@ -8571,26 +8584,26 @@ def _build_payslip_print_context(slip):
             _struct_updated['bonus_total_included'] = str(_bonus_total)
             _struct_updated['gross_before_bonus'] = str(bd['total_earnings'].quantize(Decimal('0.01')))
             _struct_updated['attendance_snapshot'] = {
-                'calendar_days': bd['calendar_days'],
-                'weekend_days': bd['weekend_days'],
-                'holiday_days': bd['holiday_days'],
-                'working_days': bd['working_days'],
-                'present_days': bd['present_working_days'],
-                'paid_leave_days': bd['paid_leave_days'],
-                'half_days': bd['half_days'],
-                'absent_days': bd['absent_days'],
-                'daily_rate': float(bd['daily_rate']),
-                'salary_divisor': float(bd['salary_divisor']),
-                'divisor_label': bd['divisor_label'],
-                'absent_deduction': float(bd['absent_deduction']),
-                'weekend_worked_days': bd['weekend_worked_days'],
-                'weekend_pay': float(bd['weekend_pay']),
-                'holiday_worked_days': bd['holiday_worked_days'],
-                'holiday_pay': float(bd['holiday_pay']),
-                'ot_hours': float(bd['total_ot_hours']),
-                'ot_pay': float(bd['ot_pay']),
+                'calendar_days': int(bd.get('calendar_days', 0)),
+                'weekend_days': int(bd.get('weekend_days', 0)),
+                'holiday_days': int(bd.get('holiday_days', 0)),
+                'working_days': int(bd.get('working_days', 0)),
+                'present_days': float(bd.get('present_working_days', 0)),
+                'paid_leave_days': float(bd.get('paid_leave_days', 0)),
+                'half_days': float(bd.get('half_days', 0)),
+                'absent_days': float(bd.get('absent_days', 0)),
+                'daily_rate': float(bd.get('daily_rate', 0)),
+                'salary_divisor': float(bd.get('salary_divisor', 30)),
+                'divisor_label': str(bd.get('divisor_label', 'Fixed 30 days')),
+                'absent_deduction': float(bd.get('absent_deduction', 0)),
+                'weekend_worked_days': float(bd.get('weekend_worked_days', 0)),
+                'weekend_pay': float(bd.get('weekend_pay', 0)),
+                'holiday_worked_days': float(bd.get('holiday_worked_days', 0)),
+                'holiday_pay': float(bd.get('holiday_pay', 0)),
+                'ot_hours': float(bd.get('total_ot_hours', 0)),
+                'ot_pay': float(bd.get('ot_pay', 0)),
             }
-            slip.salary_structure = _struct_updated
+            slip.salary_structure = _make_json_safe(_struct_updated)
             slip.save(update_fields=[
                 'basic_salary', 'absent_deduction', 'gross_salary',
                 'total_deductions', 'advance_deduction', 'net_salary',
@@ -8676,7 +8689,12 @@ def payslip_download(request, pk):
         slip.status = 'downloaded'
         slip.save(update_fields=['status', 'updated_at'])
 
-    context = _build_payslip_print_context(slip)
+    try:
+        context = _build_payslip_print_context(slip)
+    except Exception as exc:
+        hrm_logger.exception("Error generating payslip %s: %s", pk, exc)
+        return HttpResponse(f"Error generating payslip: {exc}", status=500)
+
     return render(request, 'hrm/payslip_print.html', context)
 
 
@@ -12140,26 +12158,26 @@ def payslip_finalize(request, pk):
                     salary_record=_emp_sal, payroll_settings=_ps,
                 )
                 struct['attendance_snapshot'] = {
-                    'calendar_days': _bd.get('calendar_days', 0),
-                    'weekend_days': _bd.get('weekend_days', 0),
-                    'holiday_days': _bd.get('holiday_days', 0),
-                    'working_days': _bd.get('working_days', 0),
-                    'present_days': _bd.get('present_working_days', 0),
-                    'paid_leave_days': _bd.get('paid_leave_days', 0),
-                    'half_days': _bd.get('half_days', 0),
-                    'absent_days': _bd.get('absent_days', 0),
+                    'calendar_days': int(_bd.get('calendar_days', 0)),
+                    'weekend_days': int(_bd.get('weekend_days', 0)),
+                    'holiday_days': int(_bd.get('holiday_days', 0)),
+                    'working_days': int(_bd.get('working_days', 0)),
+                    'present_days': float(_bd.get('present_working_days', 0)),
+                    'paid_leave_days': float(_bd.get('paid_leave_days', 0)),
+                    'half_days': float(_bd.get('half_days', 0)),
+                    'absent_days': float(_bd.get('absent_days', 0)),
                     'daily_rate': float(_bd.get('daily_rate', 0)),
                     'salary_divisor': float(_bd.get('salary_divisor', 30)),
-                    'divisor_label': _bd.get('divisor_label', 'Fixed 30 days'),
+                    'divisor_label': str(_bd.get('divisor_label', 'Fixed 30 days')),
                     'absent_deduction': float(_bd.get('absent_deduction', slip.absent_deduction)),
-                    'weekend_worked_days': _bd.get('weekend_worked_days', 0),
+                    'weekend_worked_days': float(_bd.get('weekend_worked_days', 0)),
                     'weekend_pay': float(_bd.get('weekend_pay', 0)),
-                    'holiday_worked_days': _bd.get('holiday_worked_days', 0),
+                    'holiday_worked_days': float(_bd.get('holiday_worked_days', 0)),
                     'holiday_pay': float(_bd.get('holiday_pay', 0)),
                     'ot_hours': float(_bd.get('total_ot_hours', 0)),
                     'ot_pay': float(_bd.get('ot_pay', 0)),
                 }
-                slip.salary_structure = struct
+                slip.salary_structure = _make_json_safe(struct)
             except Exception as exc:
                 hrm_logger.warning("payslip_finalize: attendance snapshot computation error for slip %s: %s", slip.pk, exc)
 
@@ -12332,26 +12350,26 @@ def payslip_bulk_action(request):
                             salary_record=_emp_sal, payroll_settings=_ps,
                         )
                         struct['attendance_snapshot'] = {
-                            'calendar_days': _bd.get('calendar_days', 0),
-                            'weekend_days': _bd.get('weekend_days', 0),
-                            'holiday_days': _bd.get('holiday_days', 0),
-                            'working_days': _bd.get('working_days', 0),
-                            'present_days': _bd.get('present_working_days', 0),
-                            'paid_leave_days': _bd.get('paid_leave_days', 0),
-                            'half_days': _bd.get('half_days', 0),
-                            'absent_days': _bd.get('absent_days', 0),
+                            'calendar_days': int(_bd.get('calendar_days', 0)),
+                            'weekend_days': int(_bd.get('weekend_days', 0)),
+                            'holiday_days': int(_bd.get('holiday_days', 0)),
+                            'working_days': int(_bd.get('working_days', 0)),
+                            'present_days': float(_bd.get('present_working_days', 0)),
+                            'paid_leave_days': float(_bd.get('paid_leave_days', 0)),
+                            'half_days': float(_bd.get('half_days', 0)),
+                            'absent_days': float(_bd.get('absent_days', 0)),
                             'daily_rate': float(_bd.get('daily_rate', 0)),
                             'salary_divisor': float(_bd.get('salary_divisor', 30)),
-                            'divisor_label': _bd.get('divisor_label', 'Fixed 30 days'),
+                            'divisor_label': str(_bd.get('divisor_label', 'Fixed 30 days')),
                             'absent_deduction': float(_bd.get('absent_deduction', s.absent_deduction)),
-                            'weekend_worked_days': _bd.get('weekend_worked_days', 0),
+                            'weekend_worked_days': float(_bd.get('weekend_worked_days', 0)),
                             'weekend_pay': float(_bd.get('weekend_pay', 0)),
-                            'holiday_worked_days': _bd.get('holiday_worked_days', 0),
+                            'holiday_worked_days': float(_bd.get('holiday_worked_days', 0)),
                             'holiday_pay': float(_bd.get('holiday_pay', 0)),
                             'ot_hours': float(_bd.get('total_ot_hours', 0)),
                             'ot_pay': float(_bd.get('ot_pay', 0)),
                         }
-                        s.salary_structure = struct
+                        s.salary_structure = _make_json_safe(struct)
                     except Exception as exc:
                         hrm_logger.warning("payslip_bulk_action: attendance snapshot error for slip %s: %s", s.pk, exc)
 

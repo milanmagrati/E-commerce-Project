@@ -1139,6 +1139,20 @@ class Payslip(models.Model):
             else:
                 seq = 1
             self.payslip_number = f"{prefix}-{seq:04d}"
+        if self.salary_structure and isinstance(self.salary_structure, (dict, list)):
+            def _clean_val(v):
+                from decimal import Decimal
+                from datetime import date, datetime
+                if isinstance(v, Decimal):
+                    return float(v)
+                elif isinstance(v, (date, datetime)):
+                    return v.isoformat()
+                elif isinstance(v, dict):
+                    return {str(k): _clean_val(val) for k, val in v.items()}
+                elif isinstance(v, (list, tuple, set)):
+                    return [_clean_val(x) for x in v]
+                return v
+            self.salary_structure = _clean_val(self.salary_structure)
         super().save(*args, **kwargs)
 
     def __str__(self):
