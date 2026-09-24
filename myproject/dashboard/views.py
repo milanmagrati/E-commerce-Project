@@ -500,6 +500,9 @@ def dashboard_view(request):
     can_view_sales_overview = is_admin_or_super or request.user.can_view_dashboard_sales_overview
     can_view_orders_overview = is_admin_or_super or request.user.can_view_dashboard_orders_overview
     can_view_orders_by_source = is_admin_or_super or request.user.can_view_dashboard_orders_by_source
+    can_view_dashboard_warehouse_info = is_admin_or_super or getattr(request.user, 'can_view_dashboard_warehouse_info', False)
+    can_view_dashboard_hourly_sales = is_admin_or_super or getattr(request.user, 'can_view_dashboard_hourly_sales', False)
+    can_view_dashboard_top_products = is_admin_or_super or getattr(request.user, 'can_view_dashboard_top_products', False)
 
     # ── Incomplete Attendance Alert (Dashboard widget) ──
     # Mirrors the default 7-day window used by the Attendance Policies page alert.
@@ -606,6 +609,171 @@ def dashboard_view(request):
                 for d in dates_list
             ]
 
+    # ── Warehouse Info & Daily Analytics (Nepal timezone) ──
+    from collections import defaultdict
+    import math
+
+    nepal_tz = pytz.timezone('Asia/Kathmandu')
+    now_nepal = timezone.now().astimezone(nepal_tz)
+    today_start = now_nepal.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = now_nepal.replace(hour=23, minute=59, second=59, microsecond=999999)
+    today_str = today_start.strftime('%Y-%m-%d')
+
+    warehouse_today_orders = 0
+    warehouse_delivered_today = 0
+    warehouse_confirmed_orders = 0
+    warehouse_dispatched_today = 0
+
+    if can_view_dashboard_warehouse_info:
+        warehouse_today_orders = orders.filter(
+            is_deleted=False,
+            created_at__gte=today_start,
+            created_at__lte=today_end,
+        ).count()
+
+        warehouse_delivered_today = orders.filter(
+            is_deleted=False
+        ).filter(
+            Q(delivered_at__gte=today_start, delivered_at__lte=today_end) |
+            Q(order_status__iexact='delivered', delivered_at__isnull=True, updated_at__gte=today_start, updated_at__lte=today_end)
+        ).distinct().count()
+
+        warehouse_confirmed_orders = orders.filter(
+            is_deleted=False,
+            order_status__iexact='confirmed',
+        ).count()
+
+        warehouse_dispatched_today = orders.filter(
+            is_deleted=False
+        ).filter(
+            Q(dispatch_date__gte=today_start, dispatch_date__lte=today_end) |
+            Q(order_status__iexact='dispatched', dispatch_date__isnull=True, updated_at__gte=today_start, updated_at__lte=today_end)
+        ).distinct().count()
+
+    hourly_labels = []
+    hourly_counts = []
+    hourly_revenues = []
+    peak_hour_str = '00:00'
+
+    if can_view_dashboard_hourly_sales:
+        hourly_map = {}
+        today_orders_qs = orders.filter(
+            is_deleted=False,
+            created_at__gte=today_start,
+            created_at__lte=today_end,
+        )
+        for o in today_orders_qs:
+            nepal_hour = o.created_at.astimezone(nepal_tz).hour
+            if nepal_hour not in hourly_map:
+                hourly_map[nepal_hour] = {'count': 0, 'revenue': 0}
+            hourly_map[nepal_hour]['count'] += 1
+            hourly_map[nepal_hour]['revenue'] += float(o.total_amount or 0)
+
+        hourly_labels = [f'{h:02d}:00' for h in range(24)]
+        hourly_counts = [hourly_map.get(h, {}).get('count', 0) for h in range(24)]
+        hourly_revenues = [hourly_map.get(h, {}).get('revenue', 0) for h in range(24)]
+        peak_h = max(range(24), key=lambda h: hourly_map.get(h, {}).get('count', 0)) if hourly_map else 0
+        peak_hour_str = f'{peak_h:02d}:00'
+
+    top_products_today = []
+    if can_view_dashboard_top_products:
+        today_items_qs = OrderItem.objects.filter(
+            order__is_deleted=False,
+            order__created_at__gte=today_start,
+            order__created_at__lte=today_end,
+        )
+        top_products_today = list(
+            today_items_qs
+            .values('product__name', 'product_variation__variation_name', 'product__product_type')
+            .annotate(qty=Sum('quantity'), revenue=Sum('total'))
+            .order_by('-qty')[:10]
+        )
+
+    # ── Smart Reorder Suggestions (Forecasting) ──
+    stock_alerts = []
+    try:
+        from inventory.forecasting import smart_daily_rate, days_of_stock_remaining, restock_urgency
+
+        now_utc = timezone.now()
+        last_30_start = now_utc - timedelta(days=30)
+        product_stock_raw = (
+            OrderItem.objects.filter(
+                order__is_deleted=False,
+                order__created_at__gte=last_30_start,
+                product__isnull=False,
+                product__is_deleted=False,
+            )
+            .values(
+                'product__id', 'product__name', 'product__stock', 'product__product_type',
+                'product_variation__id', 'product_variation__variation_name',
+                'product_variation__stock',
+            )
+            .annotate(_cnt=Count('id'))
+            .order_by('product__id', 'product_variation__id')
+        )
+
+        _all_daily_raw_qs = (
+            OrderItem.objects.filter(
+                order__is_deleted=False,
+                order__created_at__gte=last_30_start,
+                product__isnull=False,
+                product__is_deleted=False,
+            )
+            .values('product__id', 'product_variation__id', 'order__created_at', 'quantity')
+        )
+        _all_day_map = defaultdict(dict)
+        for _r in _all_daily_raw_qs:
+            _key = (_r['product__id'], _r['product_variation__id'])
+            _d = timezone.localtime(_r['order__created_at']).date()
+            _all_day_map[_key][_d] = _all_day_map[_key].get(_d, 0) + (_r['quantity'] or 0)
+
+        def _build_sales_list(prod_id, var_id):
+            dm = _all_day_map.get((prod_id, var_id), {})
+            sl = []
+            for _off in range(30):
+                _d = (last_30_start + timedelta(days=_off)).date()
+                sl.append(dm.get(_d, 0))
+            return sl
+
+        product_meta = {}
+        for row in product_stock_raw:
+            key = (row['product__id'], row['product_variation__id'])
+            if key not in product_meta:
+                stock = (row['product_variation__stock'] if row['product_variation__id'] else row['product__stock']) or 0
+                name = row['product__name'] or ''
+                variant = row['product_variation__variation_name'] or ''
+                display = f'{name} ({variant})' if variant else name
+                product_meta[key] = {'name': display or 'Unnamed Product', 'stock': stock}
+
+        for key, day_map in _all_day_map.items():
+            meta = product_meta.get(key)
+            if not meta:
+                continue
+            sales_list = _build_sales_list(key[0], key[1])
+            rate = smart_daily_rate(sales_list)
+            if rate <= 0:
+                continue
+            dl = days_of_stock_remaining(meta['stock'], sales_list)
+            urgency = restock_urgency(dl, lead_time_days=3)
+            if urgency != 'ok':
+                reorder_qty = math.ceil(rate * 30)
+                reorder_date = (now_utc + timedelta(days=max(dl - 3, 0))).strftime('%b %d')
+                stock_alerts.append({
+                    'name': meta['name'],
+                    'stock': meta['stock'],
+                    'days_left': dl,
+                    'avg_daily': round(rate, 1),
+                    'reorder_qty': reorder_qty,
+                    'reorder_date': reorder_date,
+                    'severity': 'danger' if urgency == 'critical' else ('warning' if urgency in ('urgent', 'low') else 'warning'),
+                    'urgency': urgency,
+                })
+        stock_alerts.sort(key=lambda x: x['days_left'])
+        stock_alerts = stock_alerts[:5]
+    except Exception as e:
+        logger.error("Error generating smart reorder suggestions: %s", e)
+        stock_alerts = []
+
     context = {
         'total_products': total_products,
         'total_orders': total_orders,
@@ -627,6 +795,20 @@ def dashboard_view(request):
         'monthly_sales': json.dumps(monthly_sales),
         'order_sources': json.dumps(order_sources),
         'can_view_total_revenue': request.user.can_view_total_revenue or request.user.role == 'administrator',
+        'can_view_dashboard_warehouse_info': can_view_dashboard_warehouse_info,
+        'warehouse_today_orders': warehouse_today_orders,
+        'warehouse_delivered_today': warehouse_delivered_today,
+        'warehouse_confirmed_orders': warehouse_confirmed_orders,
+        'warehouse_dispatched_today': warehouse_dispatched_today,
+        'can_view_dashboard_hourly_sales': can_view_dashboard_hourly_sales,
+        'hourly_labels': json.dumps(hourly_labels),
+        'hourly_counts': json.dumps(hourly_counts),
+        'hourly_revenues': json.dumps(hourly_revenues),
+        'peak_hour': peak_hour_str,
+        'can_view_dashboard_top_products': can_view_dashboard_top_products,
+        'top_products_today': top_products_today,
+        'stock_alerts': stock_alerts,
+        'today_str': today_str,
     }
     return render(request, 'dashboard.html', context)
 

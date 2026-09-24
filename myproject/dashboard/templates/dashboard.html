@@ -78,6 +78,180 @@
     {% endif %}
 </div>
 
+{% if can_view_dashboard_warehouse_info %}
+<!-- Warehouse Info Section -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <h5 class="fw-bold mb-0 text-secondary d-flex align-items-center gap-2">
+            <i class="fas fa-warehouse text-primary"></i> Warehouse Info
+        </h5>
+    </div>
+    <div class="col-xl-3 col-md-6 col-12">
+        <a href="{% url 'orders_list' %}?date_from={{ today_str }}&date_to={{ today_str }}" class="text-decoration-none d-block h-100">
+            <div class="card border-0 shadow-sm text-white h-100 warehouse-stat-card" style="background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%); border-radius: 12px; transition: transform 0.2s, box-shadow 0.2s;">
+                <div class="card-body p-3 d-flex align-items-center gap-3">
+                    <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 50px; height: 50px; background: rgba(255,255,255,0.2);">
+                        <i class="fas fa-shopping-bag fs-4 text-white"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="mb-0 fw-bold lh-1 text-white">{{ warehouse_today_orders }}</h3>
+                        <small class="text-white-50 text-uppercase fw-semibold" style="font-size: 0.75rem; letter-spacing: 0.5px;">Total Orders</small>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-xl-3 col-md-6 col-12">
+        <a href="{% url 'orders_list' %}?order_status=delivered" class="text-decoration-none d-block h-100">
+            <div class="card border-0 shadow-sm text-white h-100 warehouse-stat-card" style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); border-radius: 12px; transition: transform 0.2s, box-shadow 0.2s;">
+                <div class="card-body p-3 d-flex align-items-center gap-3">
+                    <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 50px; height: 50px; background: rgba(255,255,255,0.2);">
+                        <i class="fas fa-truck fs-4 text-white"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="mb-0 fw-bold lh-1 text-white">{{ warehouse_delivered_today }}</h3>
+                        <small class="text-white-50 text-uppercase fw-semibold" style="font-size: 0.75rem; letter-spacing: 0.5px;">Delivered Today</small>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-xl-3 col-md-6 col-12">
+        <a href="{% url 'orders_list' %}?order_status=confirmed" class="text-decoration-none d-block h-100">
+            <div class="card border-0 shadow-sm text-white h-100 warehouse-stat-card" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 12px; transition: transform 0.2s, box-shadow 0.2s;">
+                <div class="card-body p-3 d-flex align-items-center gap-3">
+                    <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 50px; height: 50px; background: rgba(255,255,255,0.2);">
+                        <i class="fas fa-check-circle fs-4 text-white"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="mb-0 fw-bold lh-1 text-white">{{ warehouse_confirmed_orders }}</h3>
+                        <small class="text-white-50 text-uppercase fw-semibold" style="font-size: 0.75rem; letter-spacing: 0.5px;">Confirmed Orders</small>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-xl-3 col-md-6 col-12">
+        <a href="{% url 'dispatch_management' %}" class="text-decoration-none d-block h-100">
+            <div class="card border-0 shadow-sm text-white h-100 warehouse-stat-card" style="background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); border-radius: 12px; transition: transform 0.2s, box-shadow 0.2s;">
+                <div class="card-body p-3 d-flex align-items-center gap-3">
+                    <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 50px; height: 50px; background: rgba(255,255,255,0.2);">
+                        <i class="fas fa-shipping-fast fs-4 text-white"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="mb-0 fw-bold lh-1 text-white">{{ warehouse_dispatched_today }}</h3>
+                        <small class="text-white-50 text-uppercase fw-semibold" style="font-size: 0.75rem; letter-spacing: 0.5px;">Dispatched Orders</small>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+{% endif %}
+
+{% if stock_alerts %}
+<!-- Smart Reorder Suggestions -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0 border-start border-4 border-warning" style="border-radius: 12px;">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-bold d-flex align-items-center gap-2">
+                    <i class="fas fa-truck-loading text-warning"></i>
+                    <span>Smart Reorder Suggestions</span>
+                    <span class="badge bg-warning text-dark">{{ stock_alerts|length }}</span>
+                </h6>
+                <a href="{% url 'sales_report' %}" class="btn btn-sm btn-outline-warning">
+                    <i class="fas fa-chart-line"></i> Sales Forecast
+                </a>
+            </div>
+            <div class="card-body p-3">
+                <div class="d-flex flex-column gap-2">
+                    {% for alert in stock_alerts %}
+                    <div class="p-3 rounded d-flex justify-content-between align-items-center flex-wrap gap-2 {% if alert.urgency == 'critical' %}bg-danger bg-opacity-10 border border-danger-subtle text-danger-emphasis{% elif alert.urgency == 'urgent' %}bg-warning bg-opacity-10 border border-warning-subtle text-warning-emphasis{% else %}bg-light border text-secondary{% endif %}">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <i class="fas fa-redo-alt fa-sm"></i>
+                            {% if alert.urgency == 'critical' %}<span class="badge bg-danger text-white fw-bold">CRITICAL</span>{% endif %}
+                            {% if alert.urgency == 'urgent' %}<span class="badge bg-warning text-dark fw-bold">URGENT</span>{% endif %}
+                            {% if alert.urgency == 'low' %}<span class="badge bg-secondary text-white fw-bold">LOW STOCK</span>{% endif %}
+                            <span>Reorder <strong>{{ alert.name }}</strong> by <strong>{{ alert.reorder_date }}</strong> (recommended qty: <strong>{{ alert.reorder_qty }}</strong>)</span>
+                        </div>
+                        <div class="small fw-semibold">
+                            {{ alert.avg_daily }} sold/day (EWS) &bull; {{ alert.stock }} in stock
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if can_view_dashboard_hourly_sales or can_view_dashboard_top_products %}
+<!-- Hourly Sales Breakdown & Top Products Row -->
+<div class="row g-4 mb-4">
+    {% if can_view_dashboard_hourly_sales %}
+    <div class="{% if can_view_dashboard_top_products %}col-xl-8 col-12{% else %}col-12{% endif %}">
+        <div class="card shadow-sm border-0 h-100" style="border-radius: 12px;">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold"><i class="fas fa-chart-bar" style="color:#4f46e5;"></i> Hourly Sales Breakdown (Today)</h6>
+                <span class="badge bg-light text-muted border">Peak: {{ peak_hour }}</span>
+            </div>
+            <div class="card-body">
+                <div style="height: 240px; position: relative;">
+                    <canvas id="hourlySalesChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if can_view_dashboard_top_products %}
+    <div class="{% if can_view_dashboard_hourly_sales %}col-xl-4 col-12{% else %}col-12{% endif %}">
+        <div class="card shadow-sm border-0 h-100" style="border-radius: 12px;">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold"><i class="fas fa-trophy" style="color:#d97706;"></i> Top Products Sold Today</h6>
+                <span class="text-muted small">Top {{ top_products_today|length }} items</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 260px; overflow-y: auto;">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width:32px;">#</th>
+                                <th>Product</th>
+                                <th class="text-center" style="width:55px;">Qty</th>
+                                <th class="text-end" style="width:85px;">Revenue</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in top_products_today %}
+                            <tr>
+                                <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+                                <td>
+                                    <div class="fw-semibold text-truncate" style="max-width: 170px;" title="{{ p.product__name|default:'Unknown' }}">{{ p.product__name|default:"Unknown" }}</div>
+                                    {% if p.product_variation__variation_name %}
+                                    <small class="text-muted">{{ p.product_variation__variation_name }}</small>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center fw-bold">{{ p.qty }}</td>
+                                <td class="text-end fw-bold text-success">Rs. {{ p.revenue|floatformat:0 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center py-4 text-muted">No products sold today</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
 <!-- Charts Row -->
 <div class="row g-4 mb-4">
     {% if can_view_sales_overview %}
@@ -858,6 +1032,11 @@
     height: 100% !important;
 }
 
+.warehouse-stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.15) !important;
+}
+
 .stat-card {
     border: none;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -885,6 +1064,74 @@
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+
+{% if can_view_dashboard_hourly_sales %}
+<script>
+    const hourlyEl = document.getElementById('hourlySalesChart');
+    if (hourlyEl) {
+        const hourlyLabels = {{ hourly_labels|safe }};
+        const hourlyCounts = {{ hourly_counts|safe }};
+        const hourlyRevenues = {{ hourly_revenues|safe }};
+        new Chart(hourlyEl.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: hourlyLabels,
+                datasets: [{
+                    label: 'Orders',
+                    data: hourlyCounts,
+                    backgroundColor: hourlyCounts.map(function(v) {
+                        var max = Math.max.apply(Math, hourlyCounts) || 1;
+                        var r = v / max;
+                        if (r > 0.7) return '#4f46e5';
+                        if (r > 0.4) return '#818cf8';
+                        if (r > 0) return '#c7d2fe';
+                        return '#e5e7eb';
+                    }),
+                    borderRadius: 4,
+                    maxBarThickness: 28,
+                    yAxisID: 'y'
+                }, {
+                    label: 'Revenue (Rs.)',
+                    data: hourlyRevenues,
+                    type: 'line',
+                    borderColor: '#059669',
+                    backgroundColor: 'rgba(5,150,105,0.08)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 2,
+                    pointHoverRadius: 5,
+                    borderWidth: 2,
+                    yAxisID: 'y1'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { position: 'top', labels: { usePointStyle: true, padding: 10, font: { size: 11 } } },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        padding: 8,
+                        cornerRadius: 6,
+                        callbacks: {
+                            label: function(ctx) {
+                                if (ctx.datasetIndex === 0) return 'Orders: ' + ctx.parsed.y;
+                                return 'Revenue: Rs. ' + ctx.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: { position: 'left', grid: { color: '#f3f4f6' }, ticks: { stepSize: 1 } },
+                    y1: { position: 'right', grid: { display: false }, ticks: { callback: function(v) { return 'Rs.' + (v >= 1000 ? (v/1000).toFixed(0) + 'k' : v); } } },
+                    x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0 } }
+                }
+            }
+        });
+    }
+</script>
+{% endif %}
 
 {% if can_view_incomplete_attendance_alert %}
 <script>

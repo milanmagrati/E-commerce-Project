@@ -152,6 +152,9 @@ class CustomUser(AbstractUser):
     can_view_dashboard_sales_overview = models.BooleanField(default=False, verbose_name="Sales Overview")
     can_view_dashboard_orders_overview = models.BooleanField(default=False, verbose_name="Orders Overview")
     can_view_dashboard_orders_by_source = models.BooleanField(default=False, verbose_name="Orders by Source")
+    can_view_dashboard_warehouse_info = models.BooleanField(default=False, verbose_name="Warehouse Info")
+    can_view_dashboard_hourly_sales = models.BooleanField(default=False, verbose_name="Hourly Sales Breakdown")
+    can_view_dashboard_top_products = models.BooleanField(default=False, verbose_name="Top Products Sold")
 
     # NCM LOGISTICS PERMISSIONS
     can_view_ncm_orders = models.BooleanField(default=False, verbose_name="Can View NCM Orders")
@@ -241,6 +244,7 @@ class CustomUser(AbstractUser):
                 'can_view_dashboard', 'can_view_total_revenue', 'can_view_low_stock_alerts',
                 'can_view_dashboard_incomplete_attendance', 'can_view_dashboard_sales_overview',
                 'can_view_dashboard_orders_overview', 'can_view_dashboard_orders_by_source',
+                'can_view_dashboard_warehouse_info', 'can_view_dashboard_hourly_sales', 'can_view_dashboard_top_products',
                 'can_view_orders', 'can_create_orders', 'can_edit_orders', 
                 'can_delete_orders', 'can_cancel_orders', 'can_view_on_hold_orders', 
                 'can_export_orders', 'can_view_orders_list', 'can_access_offer_price',

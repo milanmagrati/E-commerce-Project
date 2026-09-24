@@ -281,6 +281,9 @@ def user_create(request):
                     user.can_view_dashboard_sales_overview = False
                     user.can_view_dashboard_orders_overview = False
                     user.can_view_dashboard_orders_by_source = False
+                    user.can_view_dashboard_warehouse_info = False
+                    user.can_view_dashboard_hourly_sales = False
+                    user.can_view_dashboard_top_products = False
 
             user.save()
             if is_ajax:
@@ -407,6 +410,9 @@ def user_edit(request, user_id):
                 edit_user.can_view_dashboard_sales_overview = False
                 edit_user.can_view_dashboard_orders_overview = False
                 edit_user.can_view_dashboard_orders_by_source = False
+                edit_user.can_view_dashboard_warehouse_info = False
+                edit_user.can_view_dashboard_hourly_sales = False
+                edit_user.can_view_dashboard_top_products = False
 
         try:
             edit_user.save()
