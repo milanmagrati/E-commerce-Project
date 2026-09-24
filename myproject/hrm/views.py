@@ -12101,91 +12101,125 @@ def _recalculate_payslip(slip):
 
 @login_required
 def payslip_finalize(request, pk):
-    from .models import Payslip, PayslipAuditLog
-    slip = get_object_or_404(Payslip, pk=pk)
+    from .models import Payslip, PayslipAuditLog, PayrollSetting, EmployeeSalary
+    import calendar as _cal
+    import datetime as _dt
 
-    if request.method != 'POST':
-        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        slip = get_object_or_404(Payslip, pk=pk)
 
-    if slip.is_finalized:
-        return JsonResponse({'success': False, 'error': 'Payslip is already finalized.'})
+        if request.method != 'POST':
+            return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
 
-    struct = slip.salary_structure or {}
-    if 'attendance_snapshot' not in struct:
-        _ps = PayrollSetting.get_settings()
-        _emp_sal = (
-            EmployeeSalary.objects.filter(employee=slip.employee, is_active=True)
-            .prefetch_related('components')
-            .order_by('-effective_date')
-            .first()
-        )
-        _run = slip.payroll_run
-        _bd = _calculate_payroll_breakdown(
-            employee=slip.employee, cycle_start=_run.pay_period_start, cycle_end=_run.pay_period_end,
-            salary_record=_emp_sal, payroll_settings=_ps,
-        )
-        struct['attendance_snapshot'] = {
-            'calendar_days': _bd['calendar_days'],
-            'weekend_days': _bd['weekend_days'],
-            'holiday_days': _bd['holiday_days'],
-            'working_days': _bd['working_days'],
-            'present_days': _bd['present_working_days'],
-            'paid_leave_days': _bd['paid_leave_days'],
-            'half_days': _bd['half_days'],
-            'absent_days': _bd['absent_days'],
-            'daily_rate': float(_bd['daily_rate']),
-            'salary_divisor': float(_bd['salary_divisor']),
-            'divisor_label': _bd['divisor_label'],
-            'absent_deduction': float(_bd['absent_deduction']),
-            'weekend_worked_days': _bd['weekend_worked_days'],
-            'weekend_pay': float(_bd['weekend_pay']),
-            'holiday_worked_days': _bd['holiday_worked_days'],
-            'holiday_pay': float(_bd['holiday_pay']),
-            'ot_hours': float(_bd['total_ot_hours']),
-            'ot_pay': float(_bd['ot_pay']),
-        }
-        slip.salary_structure = struct
+        if slip.is_finalized:
+            return JsonResponse({'success': False, 'error': 'Payslip is already finalized.'})
 
-    slip.is_finalized = True
-    slip.finalized_by = request.user
-    slip.finalized_at = timezone.now()
-    slip.status = 'generated'
-    slip.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'status', 'salary_structure', 'updated_at'])
+        struct = slip.salary_structure or {}
+        if 'attendance_snapshot' not in struct:
+            try:
+                _ps = PayrollSetting.get_settings()
+                _emp_sal = (
+                    EmployeeSalary.objects.filter(employee=slip.employee, is_active=True)
+                    .prefetch_related('components')
+                    .order_by('-effective_date')
+                    .first()
+                )
+                _run = slip.payroll_run
+                if _run.pay_period_start and _run.pay_period_end:
+                    _c_start, _c_end = _run.pay_period_start, _run.pay_period_end
+                elif _run.month and _run.year:
+                    _c_start = _dt.date(_run.year, _run.month, 1)
+                    _c_end = _dt.date(_run.year, _run.month, _cal.monthrange(_run.year, _run.month)[1])
+                else:
+                    _today = timezone.localdate()
+                    _c_start = _dt.date(_today.year, _today.month, 1)
+                    _c_end = _dt.date(_today.year, _today.month, _cal.monthrange(_today.year, _today.month)[1])
 
-    PayslipAuditLog.objects.create(
-        payslip=slip,
-        action='Payslip Finalized',
-        detail=f'Finalized by {request.user.get_full_name() or request.user.username}. '
-               f'Net Salary: Rs.{slip.net_salary}. Protected from auto-regeneration.',
-        performed_by=request.user,
-    )
+                _bd = _calculate_payroll_breakdown(
+                    employee=slip.employee, cycle_start=_c_start, cycle_end=_c_end,
+                    salary_record=_emp_sal, payroll_settings=_ps,
+                )
+                struct['attendance_snapshot'] = {
+                    'calendar_days': _bd.get('calendar_days', 0),
+                    'weekend_days': _bd.get('weekend_days', 0),
+                    'holiday_days': _bd.get('holiday_days', 0),
+                    'working_days': _bd.get('working_days', 0),
+                    'present_days': _bd.get('present_working_days', 0),
+                    'paid_leave_days': _bd.get('paid_leave_days', 0),
+                    'half_days': _bd.get('half_days', 0),
+                    'absent_days': _bd.get('absent_days', 0),
+                    'daily_rate': float(_bd.get('daily_rate', 0)),
+                    'salary_divisor': float(_bd.get('salary_divisor', 30)),
+                    'divisor_label': _bd.get('divisor_label', 'Fixed 30 days'),
+                    'absent_deduction': float(_bd.get('absent_deduction', slip.absent_deduction)),
+                    'weekend_worked_days': _bd.get('weekend_worked_days', 0),
+                    'weekend_pay': float(_bd.get('weekend_pay', 0)),
+                    'holiday_worked_days': _bd.get('holiday_worked_days', 0),
+                    'holiday_pay': float(_bd.get('holiday_pay', 0)),
+                    'ot_hours': float(_bd.get('total_ot_hours', 0)),
+                    'ot_pay': float(_bd.get('ot_pay', 0)),
+                }
+                slip.salary_structure = struct
+            except Exception as exc:
+                hrm_logger.warning("payslip_finalize: attendance snapshot computation error for slip %s: %s", slip.pk, exc)
 
-    return JsonResponse({'success': True, 'message': f'Payslip for {slip.employee.full_name} has been finalized and locked.'})
+        slip.is_finalized = True
+        slip.finalized_by = request.user
+        slip.finalized_at = timezone.now()
+        slip.status = 'generated'
+        slip.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'status', 'salary_structure', 'updated_at'])
+
+        try:
+            PayslipAuditLog.objects.create(
+                payslip=slip,
+                action='Payslip Finalized',
+                detail=f'Finalized by {request.user.get_full_name() or request.user.username}. '
+                       f'Net Salary: Rs.{slip.net_salary}. Protected from auto-regeneration.',
+                performed_by=request.user,
+            )
+        except Exception as exc:
+            hrm_logger.warning("payslip_finalize: audit log creation failed: %s", exc)
+
+        return JsonResponse({'success': True, 'message': f'Payslip for {slip.employee.full_name} has been finalized and locked.'})
+    except Exception as e:
+        hrm_logger.exception("Error in payslip_finalize for pk=%s: %s", pk, e)
+        return JsonResponse({'success': False, 'error': f'Failed to finalize payslip: {str(e)}'}, status=500)
 
 
 @login_required
 def payslip_unfinalize(request, pk):
     """Allow HR to unlock a finalized payslip (with caution)."""
-    slip = get_object_or_404(Payslip, pk=pk)
+    from .models import Payslip, PayslipAuditLog
 
-    if request.method != 'POST':
-        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    try:
+        slip = get_object_or_404(Payslip, pk=pk)
 
-    if not slip.is_finalized:
-        return JsonResponse({'success': False, 'error': 'Payslip is not finalized.'})
+        if request.method != 'POST':
+            return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
 
-    slip.is_finalized = False
-    slip.finalized_by = None
-    slip.finalized_at = None
-    slip.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'updated_at'])
+        if not slip.is_finalized:
+            return JsonResponse({'success': False, 'error': 'Payslip is not finalized.'})
 
-    PayslipAuditLog.objects.create(
-        payslip=slip,
-        action='Payslip Un-finalized',
-        detail=f'Lock removed by {request.user.get_full_name() or request.user.username}.',
-        performed_by=request.user,
-    )
-    return JsonResponse({'success': True, 'message': 'Payslip unlocked and returned to draft.'})
+        slip.is_finalized = False
+        slip.finalized_by = None
+        slip.finalized_at = None
+        slip.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'updated_at'])
+
+        try:
+            PayslipAuditLog.objects.create(
+                payslip=slip,
+                action='Payslip Un-finalized',
+                detail=f'Lock removed by {request.user.get_full_name() or request.user.username}.',
+                performed_by=request.user,
+            )
+        except Exception as exc:
+            hrm_logger.warning("payslip_unfinalize: audit log creation failed: %s", exc)
+
+        return JsonResponse({'success': True, 'message': 'Payslip unlocked and returned to draft.'})
+    except Exception as e:
+        hrm_logger.exception("Error in payslip_unfinalize for pk=%s: %s", pk, e)
+        return JsonResponse({'success': False, 'error': f'Failed to unlock payslip: {str(e)}'}, status=500)
+
 
 
 
@@ -12249,134 +12283,162 @@ def payslip_permanent_delete(request, pk):
 
 @login_required
 def payslip_bulk_action(request):
-    """Bulk trash / restore / permanent-delete for the Payslips page
-    checkbox toolbar. One endpoint, dispatched by 'action' so the frontend
-    only has to POST the current selection once."""
-    if request.method != 'POST':
-        return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
+    """Bulk trash / restore / permanent-delete / finalize / unfinalize for Payslips"""
+    from .models import Payslip, PayslipAuditLog, PayrollSetting, EmployeeSalary
+    import calendar as _cal
+    import datetime as _dt
 
-    action = request.POST.get('action')
-    ids_raw = request.POST.get('ids', '')
-    ids = [int(x) for x in ids_raw.split(',') if x.strip().isdigit()]
-    if not ids:
-        return JsonResponse({'success': False, 'error': 'No payslips selected.'}, status=400)
+    try:
+        if request.method != 'POST':
+            return JsonResponse({'success': False, 'error': 'POST required.'}, status=405)
 
-    if action == 'finalize':
-        slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=False))
-        eligible = [s for s in slips if not s.is_finalized]
-        already = len(slips) - len(eligible)
-        _ps = None
-        now = timezone.now()
-        for s in eligible:
-            struct = s.salary_structure or {}
-            if 'attendance_snapshot' not in struct:
-                if _ps is None:
-                    _ps = PayrollSetting.get_settings()
-                _emp_sal = (
-                    EmployeeSalary.objects.filter(employee=s.employee, is_active=True)
-                    .prefetch_related('components')
-                    .order_by('-effective_date')
-                    .first()
-                )
-                _run = s.payroll_run
-                _bd = _calculate_payroll_breakdown(
-                    employee=s.employee, cycle_start=_run.pay_period_start, cycle_end=_run.pay_period_end,
-                    salary_record=_emp_sal, payroll_settings=_ps,
-                )
-                struct['attendance_snapshot'] = {
-                    'calendar_days': _bd['calendar_days'],
-                    'weekend_days': _bd['weekend_days'],
-                    'holiday_days': _bd['holiday_days'],
-                    'working_days': _bd['working_days'],
-                    'present_days': _bd['present_working_days'],
-                    'paid_leave_days': _bd['paid_leave_days'],
-                    'half_days': _bd['half_days'],
-                    'absent_days': _bd['absent_days'],
-                    'daily_rate': float(_bd['daily_rate']),
-                    'salary_divisor': float(_bd['salary_divisor']),
-                    'divisor_label': _bd['divisor_label'],
-                    'absent_deduction': float(_bd['absent_deduction']),
-                    'weekend_worked_days': _bd['weekend_worked_days'],
-                    'weekend_pay': float(_bd['weekend_pay']),
-                    'holiday_worked_days': _bd['holiday_worked_days'],
-                    'holiday_pay': float(_bd['holiday_pay']),
-                    'ot_hours': float(_bd['total_ot_hours']),
-                    'ot_pay': float(_bd['ot_pay']),
-                }
-                s.salary_structure = struct
-            s.is_finalized = True
-            s.finalized_by = request.user
-            s.finalized_at = now
-            s.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'salary_structure', 'updated_at'])
-            PayslipAuditLog.objects.create(
-                payslip=s,
-                action='Payslip Finalized',
-                detail=f'Bulk finalized by {request.user.get_full_name() or request.user.username}. '
-                       f'Net Salary: Rs.{s.net_salary}. Protected from auto-regeneration.',
-                performed_by=request.user,
-            )
-        msg = f'{len(eligible)} payslip(s) finalized and locked.'
-        if already:
-            msg += f' {already} were already locked.'
-        return JsonResponse({'success': True, 'message': msg, 'processed': len(eligible), 'skipped': already})
+        action = request.POST.get('action')
+        ids_raw = request.POST.get('ids', '')
+        ids = [int(x) for x in ids_raw.split(',') if x.strip().isdigit()]
+        if not ids:
+            return JsonResponse({'success': False, 'error': 'No payslips selected.'}, status=400)
 
-    elif action == 'unfinalize':
-        slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=False))
-        eligible = [s for s in slips if s.is_finalized]
-        already = len(slips) - len(eligible)
-        for s in eligible:
-            s.is_finalized = False
-            s.finalized_by = None
-            s.finalized_at = None
-            s.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'updated_at'])
-            PayslipAuditLog.objects.create(
-                payslip=s,
-                action='Payslip Un-finalized',
-                detail=f'Bulk unlocked by {request.user.get_full_name() or request.user.username}.',
-                performed_by=request.user,
-            )
-        msg = f'{len(eligible)} payslip(s) unlocked.'
-        if already:
-            msg += f' {already} were already unlocked.'
-        return JsonResponse({'success': True, 'message': msg, 'processed': len(eligible), 'skipped': already})
+        if action == 'finalize':
+            slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=False))
+            eligible = [s for s in slips if not s.is_finalized]
+            already = len(slips) - len(eligible)
+            _ps = None
+            now = timezone.now()
+            for s in eligible:
+                struct = s.salary_structure or {}
+                if 'attendance_snapshot' not in struct:
+                    try:
+                        if _ps is None:
+                            _ps = PayrollSetting.get_settings()
+                        _emp_sal = (
+                            EmployeeSalary.objects.filter(employee=s.employee, is_active=True)
+                            .prefetch_related('components')
+                            .order_by('-effective_date')
+                            .first()
+                        )
+                        _run = s.payroll_run
+                        if _run.pay_period_start and _run.pay_period_end:
+                            _c_start, _c_end = _run.pay_period_start, _run.pay_period_end
+                        elif _run.month and _run.year:
+                            _c_start = _dt.date(_run.year, _run.month, 1)
+                            _c_end = _dt.date(_run.year, _run.month, _cal.monthrange(_run.year, _run.month)[1])
+                        else:
+                            _today = timezone.localdate()
+                            _c_start = _dt.date(_today.year, _today.month, 1)
+                            _c_end = _dt.date(_today.year, _today.month, _cal.monthrange(_today.year, _today.month)[1])
 
-    elif action == 'trash':
-        slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=False))
-        locked = [s for s in slips if s.is_finalized]
-        eligible = [s for s in slips if not s.is_finalized]
-        for s in eligible:
-            _payslip_soft_delete_one(s, request.user if request.user.is_authenticated else None)
-        msg = f'{len(eligible)} payslip(s) moved to trash.'
-        if locked:
-            msg += f' {len(locked)} finalized payslip(s) were skipped -- unlock them first.'
-        missing = len(ids) - len(slips)
-        if missing:
-            msg += f' {missing} payslip(s) were no longer available.'
-        return JsonResponse({'success': True, 'message': msg, 'processed': len(eligible), 'skipped': len(locked) + missing})
+                        _bd = _calculate_payroll_breakdown(
+                            employee=s.employee, cycle_start=_c_start, cycle_end=_c_end,
+                            salary_record=_emp_sal, payroll_settings=_ps,
+                        )
+                        struct['attendance_snapshot'] = {
+                            'calendar_days': _bd.get('calendar_days', 0),
+                            'weekend_days': _bd.get('weekend_days', 0),
+                            'holiday_days': _bd.get('holiday_days', 0),
+                            'working_days': _bd.get('working_days', 0),
+                            'present_days': _bd.get('present_working_days', 0),
+                            'paid_leave_days': _bd.get('paid_leave_days', 0),
+                            'half_days': _bd.get('half_days', 0),
+                            'absent_days': _bd.get('absent_days', 0),
+                            'daily_rate': float(_bd.get('daily_rate', 0)),
+                            'salary_divisor': float(_bd.get('salary_divisor', 30)),
+                            'divisor_label': _bd.get('divisor_label', 'Fixed 30 days'),
+                            'absent_deduction': float(_bd.get('absent_deduction', s.absent_deduction)),
+                            'weekend_worked_days': _bd.get('weekend_worked_days', 0),
+                            'weekend_pay': float(_bd.get('weekend_pay', 0)),
+                            'holiday_worked_days': _bd.get('holiday_worked_days', 0),
+                            'holiday_pay': float(_bd.get('holiday_pay', 0)),
+                            'ot_hours': float(_bd.get('total_ot_hours', 0)),
+                            'ot_pay': float(_bd.get('ot_pay', 0)),
+                        }
+                        s.salary_structure = struct
+                    except Exception as exc:
+                        hrm_logger.warning("payslip_bulk_action: attendance snapshot error for slip %s: %s", s.pk, exc)
 
-    elif action == 'restore':
-        slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=True))
-        for s in slips:
-            s.restore()
-        missing = len(ids) - len(slips)
-        msg = f'{len(slips)} payslip(s) restored.'
-        if missing:
-            msg += f' {missing} were no longer in the trash.'
-        return JsonResponse({'success': True, 'message': msg, 'processed': len(slips), 'skipped': missing})
+                s.is_finalized = True
+                s.finalized_by = request.user
+                s.finalized_at = now
+                s.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'salary_structure', 'updated_at'])
+                try:
+                    PayslipAuditLog.objects.create(
+                        payslip=s,
+                        action='Payslip Finalized',
+                        detail=f'Bulk finalized by {request.user.get_full_name() or request.user.username}. '
+                               f'Net Salary: Rs.{s.net_salary}. Protected from auto-regeneration.',
+                        performed_by=request.user,
+                    )
+                except Exception as exc:
+                    hrm_logger.warning("payslip_bulk_action: audit log creation failed: %s", exc)
 
-    elif action == 'permanent_delete':
-        if not _is_hrm_admin(request.user):
-            return JsonResponse({'success': False, 'error': 'Only administrators can permanently delete payslips.'}, status=403)
-        slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=True))
-        count = len(slips)
-        Payslip.objects.filter(pk__in=[s.pk for s in slips]).delete()
-        missing = len(ids) - count
-        msg = f'{count} payslip(s) permanently deleted.'
-        if missing:
-            msg += f' {missing} were not eligible (not in the trash).'
-        return JsonResponse({'success': True, 'message': msg, 'processed': count, 'skipped': missing})
+            msg = f'{len(eligible)} payslip(s) finalized and locked.'
+            if already:
+                msg += f' {already} were already locked.'
+            return JsonResponse({'success': True, 'message': msg, 'processed': len(eligible), 'skipped': already})
 
-    return JsonResponse({'success': False, 'error': 'Unknown action.'}, status=400)
+        elif action == 'unfinalize':
+            slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=False))
+            eligible = [s for s in slips if s.is_finalized]
+            already = len(slips) - len(eligible)
+            for s in eligible:
+                s.is_finalized = False
+                s.finalized_by = None
+                s.finalized_at = None
+                s.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'updated_at'])
+                try:
+                    PayslipAuditLog.objects.create(
+                        payslip=s,
+                        action='Payslip Un-finalized',
+                        detail=f'Bulk unlocked by {request.user.get_full_name() or request.user.username}.',
+                        performed_by=request.user,
+                    )
+                except Exception as exc:
+                    hrm_logger.warning("payslip_bulk_action: audit log creation failed: %s", exc)
+
+            msg = f'{len(eligible)} payslip(s) unlocked.'
+            if already:
+                msg += f' {already} were already unlocked.'
+            return JsonResponse({'success': True, 'message': msg, 'processed': len(eligible), 'skipped': already})
+
+        elif action == 'trash':
+            slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=False))
+            locked = [s for s in slips if s.is_finalized]
+            eligible = [s for s in slips if not s.is_finalized]
+            for s in eligible:
+                _payslip_soft_delete_one(s, request.user if request.user.is_authenticated else None)
+            msg = f'{len(eligible)} payslip(s) moved to trash.'
+            if locked:
+                msg += f' {len(locked)} finalized payslip(s) were skipped -- unlock them first.'
+            missing = len(ids) - len(slips)
+            if missing:
+                msg += f' {missing} payslip(s) were no longer available.'
+            return JsonResponse({'success': True, 'message': msg, 'processed': len(eligible), 'skipped': len(locked) + missing})
+
+        elif action == 'restore':
+            slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=True))
+            for s in slips:
+                s.restore()
+            missing = len(ids) - len(slips)
+            msg = f'{len(slips)} payslip(s) restored.'
+            if missing:
+                msg += f' {missing} were no longer in the trash.'
+            return JsonResponse({'success': True, 'message': msg, 'processed': len(slips), 'skipped': missing})
+
+        elif action == 'permanent_delete':
+            if not _is_hrm_admin(request.user):
+                return JsonResponse({'success': False, 'error': 'Only administrators can permanently delete payslips.'}, status=403)
+            slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=True))
+            count = len(slips)
+            Payslip.objects.filter(pk__in=[s.pk for s in slips]).delete()
+            missing = len(ids) - count
+            msg = f'{count} payslip(s) permanently deleted.'
+            if missing:
+                msg += f' {missing} were not eligible (not in the trash).'
+            return JsonResponse({'success': True, 'message': msg, 'processed': count, 'skipped': missing})
+
+        return JsonResponse({'success': False, 'error': 'Unknown action.'}, status=400)
+    except Exception as e:
+        hrm_logger.exception("Error in payslip_bulk_action: %s", e)
+        return JsonResponse({'success': False, 'error': f'Bulk action failed: {str(e)}'}, status=500)
 
 
 @login_required

@@ -1625,9 +1625,11 @@ function selectAllMatching() {
 // ═══════════════════════ INDIVIDUAL FINALIZE / UNFINALIZE TOGGLE ═══════════════════════
 function togglePayslipLock(btn, pk) {
     const isLocked = btn.dataset.locked === '1';
+    const finalizeBaseUrl = "{% url 'hrm:payslip_finalize' pk=0 %}";
+    const unfinalizeBaseUrl = "{% url 'hrm:payslip_unfinalize' pk=0 %}";
     const actionUrl = isLocked
-        ? `{% url 'hrm:payslip_list' %}${pk}/unfinalize/`
-        : `{% url 'hrm:payslip_list' %}${pk}/finalize/`;
+        ? unfinalizeBaseUrl.replace('/0/', `/${pk}/`)
+        : finalizeBaseUrl.replace('/0/', `/${pk}/`);
     const actionLabel = isLocked ? 'unlock' : 'finalize & lock';
 
     btn.disabled = true;
@@ -1636,9 +1638,20 @@ function togglePayslipLock(btn, pk) {
 
     fetch(actionUrl, {
         method: 'POST',
-        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+        headers: { 
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
     })
-    .then(r => r.json())
+    .then(async r => {
+        const text = await r.text();
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            throw new Error(text && text.length < 200 ? text : `Server error (${r.status})`);
+        }
+    })
     .then(data => {
         btn.disabled = false;
         if (data.success) {
@@ -1673,10 +1686,10 @@ function togglePayslipLock(btn, pk) {
             alert(data.error || `Failed to ${actionLabel} payslip.`);
         }
     })
-    .catch(() => {
+    .catch(err => {
         btn.disabled = false;
         btn.innerHTML = origHtml;
-        alert(`Network error while trying to ${actionLabel} payslip.`);
+        alert(`Error: ${err.message || ('Network error while trying to ' + actionLabel + ' payslip.')}`);
     });
 }
 
@@ -1698,10 +1711,22 @@ function bulkAction(action) {
 
     fetch('{% url "hrm:payslip_bulk_action" %}', {
         method: 'POST',
-        headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 
+            'X-CSRFToken': '{{ csrf_token }}', 
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
         body: body.toString(),
     })
-    .then(r => r.json())
+    .then(async r => {
+        const text = await r.text();
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            throw new Error(text && text.length < 200 ? text : `Server error (${r.status})`);
+        }
+    })
     .then(data => {
         if (data.success) {
             alert(data.message);
@@ -1710,7 +1735,7 @@ function bulkAction(action) {
             alert(data.error || 'Bulk action failed.');
         }
     })
-    .catch(() => alert('Network error during bulk action.'));
+    .catch(err => alert(`Error: ${err.message || 'Network error during bulk action.'}`));
 }
 
 // ═══════════════════════ BULK DOWNLOAD / COMBINED PDF ═══════════════════════
