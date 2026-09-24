@@ -218,10 +218,9 @@
                     <table class="table table-hover mb-0 align-middle">
                         <thead class="table-light sticky-top">
                             <tr>
-                                <th style="width:32px;">#</th>
+                                <th style="width:36px;">#</th>
                                 <th>Product</th>
-                                <th class="text-center" style="width:55px;">Qty</th>
-                                <th class="text-end" style="width:85px;">Revenue</th>
+                                <th class="text-end" style="width:70px;">Qty</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -229,17 +228,16 @@
                             <tr>
                                 <td class="text-muted fw-bold">{{ forloop.counter }}</td>
                                 <td>
-                                    <div class="fw-semibold text-truncate" style="max-width: 170px;" title="{{ p.product__name|default:'Unknown' }}">{{ p.product__name|default:"Unknown" }}</div>
+                                    <div class="fw-semibold text-truncate" title="{{ p.product__name|default:'Unknown' }}">{{ p.product__name|default:"Unknown" }}</div>
                                     {% if p.product_variation__variation_name %}
                                     <small class="text-muted">{{ p.product_variation__variation_name }}</small>
                                     {% endif %}
                                 </td>
-                                <td class="text-center fw-bold">{{ p.qty }}</td>
-                                <td class="text-end fw-bold text-success">Rs. {{ p.revenue|floatformat:0 }}</td>
+                                <td class="text-end fw-bold fs-6">{{ p.qty }}</td>
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="4" class="text-center py-4 text-muted">No products sold today</td>
+                                <td colspan="3" class="text-center py-4 text-muted">No products sold today</td>
                             </tr>
                             {% endfor %}
                         </tbody>
