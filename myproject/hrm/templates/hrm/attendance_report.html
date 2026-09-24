@@ -2115,11 +2115,22 @@ function renderWeekView(data) {
         const dayNumHtml = (color) => pvDayNumHtml(iso, color, 'week');
 
         if (rec) {
+            const isWorking = ['present', 'late', 'half_day'].includes(rec.status) || Boolean(rec.clock_in && rec.clock_in !== '–' && rec.clock_in !== '-');
             const recIsHol = isHol || rec.is_holiday;
-            const sc = recIsHol ? STATUS_COLORS.holiday
-                : isWknd ? STATUS_COLORS.weekend
-                : (STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' });
-            const lbl = recIsHol ? 'Holiday' : isWknd ? 'Weekend' : esc(rec.status_display);
+            let sc, lbl;
+            if (isWorking) {
+                sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
+                lbl = esc(rec.status_display || rec.status);
+            } else if (recIsHol) {
+                sc = STATUS_COLORS.holiday;
+                lbl = 'Holiday';
+            } else if (isWknd) {
+                sc = STATUS_COLORS.weekend;
+                lbl = 'Weekend';
+            } else {
+                sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
+                lbl = esc(rec.status_display || rec.status);
+            }
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
                 <div class="day-lbl">${dayNames[jsDay]}</div>
                 ${dayNumHtml(sc.color)}
@@ -2220,11 +2231,22 @@ function renderCustomView(data) {
         const dayNumHtml = (color) => pvDayNumHtml(iso, color, 'week');
 
         if (rec) {
+            const isWorking = ['present', 'late', 'half_day'].includes(rec.status) || Boolean(rec.clock_in && rec.clock_in !== '–' && rec.clock_in !== '-');
             const recIsHol = isHol || rec.is_holiday;
-            const sc = recIsHol ? STATUS_COLORS.holiday
-                : isWknd ? STATUS_COLORS.weekend
-                : (STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' });
-            const lbl = recIsHol ? 'Holiday' : isWknd ? 'Weekend' : esc(rec.status_display);
+            let sc, lbl;
+            if (isWorking) {
+                sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
+                lbl = esc(rec.status_display || rec.status);
+            } else if (recIsHol) {
+                sc = STATUS_COLORS.holiday;
+                lbl = 'Holiday';
+            } else if (isWknd) {
+                sc = STATUS_COLORS.weekend;
+                lbl = 'Weekend';
+            } else {
+                sc = STATUS_COLORS[rec.status] || { bg:'#f1f5f9', color:'#94a3b8', dot:'#94a3b8' };
+                lbl = esc(rec.status_display || rec.status);
+            }
             cards += `<div class="pv-week-day" style="background:${sc.bg};border-color:${sc.dot};${isTd ? 'outline:2px solid #6366f1;outline-offset:2px;' : ''}">
                 <div class="day-lbl">${dayNames[jsDay]}</div>
                 ${dayNumHtml(sc.color)}
@@ -2329,23 +2351,26 @@ function renderMonthView(data) {
             const wh  = rec.working_hours ? rec.working_hours + 'h' : '';
             const lbl = (rec.status_display || rec.status).replace('_',' ');
 
-            // If the day is a company holiday, override the status display so
-            // the cell shows "Holiday" (amber background + chip) regardless of
-            // what attendance status the record carries. The clock-in time and
-            // hours are still shown so it's clear the employee worked.
-            // Same logic for weekend days — show the weekend colour but still
-            // expose the click-popup with the underlying status.
             const recIsHol = isHol || rec.is_holiday;
-            let cellClass, chipHtml;
-            if (recIsHol) {
+            const isWorking = ['present', 'late', 'half_day'].includes(rec.status) || Boolean(rec.clock_in && rec.clock_in !== '–' && rec.clock_in !== '-');
+
+            let cellClass, chipHtml, numColor;
+            if (isWorking) {
+                cellClass = `pv-cal-cell has-record pv-status-${rec.status}${isTd?' today':''}${isWknd?' wknd-cell':''}`;
+                chipHtml  = `<span class="cal-status-chip cal-chip-${rec.status}">${lbl}</span>`;
+                numColor  = 'inherit';
+            } else if (recIsHol) {
                 cellClass = `pv-cal-cell has-record pv-status-holiday hol-cell${isTd?' today':''}${isWknd?' wknd-cell':''}`;
                 chipHtml  = `<span class="cal-status-chip cal-chip-holiday">Holiday</span>`;
+                numColor  = '#854d0e';
             } else if (isWknd) {
                 cellClass = `pv-cal-cell has-record pv-status-weekend wknd-cell${isTd?' today':''}`;
                 chipHtml  = `<span class="cal-status-chip cal-chip-weekend">Weekend</span>`;
+                numColor  = '#9d174d';
             } else {
                 cellClass = `pv-cal-cell has-record pv-status-${rec.status}${isTd?' today':''}`;
                 chipHtml  = `<span class="cal-status-chip cal-chip-${rec.status}">${lbl}</span>`;
+                numColor  = 'inherit';
             }
 
             cells += `<div class="${cellClass}"
@@ -2360,7 +2385,7 @@ function renderMonthView(data) {
                           data-is-incomplete="${rec.is_incomplete?'1':'0'}"
                           data-notes="${esc(rec.notes||'')}"
                           onclick="pvShowCalPopup(event,this)">
-                ${numHtml(recIsHol ? '#854d0e' : isWknd ? '#9d174d' : 'inherit')}
+                ${numHtml(numColor)}
                 ${chipHtml}
                 <span class="cal-time"><i class="fas fa-sign-in-alt fa-xs me-1"></i>${ci}</span>
                 ${wh ? `<span class="cal-hours">${wh}</span>` : ''}
@@ -2455,8 +2480,10 @@ function pvShowCalPopup(evt, el) {
     evt.stopPropagation();
     const d     = el.dataset;
     const isHoliday = d.isHoliday === '1';
-    const sc    = isHoliday ? STATUS_COLORS.holiday : (STATUS_COLORS[d.status] || { bg:'#f1f5f9', color:'#64748b', dot:'#94a3b8', label: d.status });
-    const dispLabel = isHoliday ? 'Holiday' : (d.statusDisplay || sc.label);
+    const isWorking = ['present', 'late', 'half_day'].includes(d.status) || Boolean(d.clockIn && d.clockIn !== '–' && d.clockIn !== '-');
+    const isHolidayNonWorking = isHoliday && !isWorking;
+    const sc    = isHolidayNonWorking ? STATUS_COLORS.holiday : (STATUS_COLORS[d.status] || { bg:'#f1f5f9', color:'#64748b', dot:'#94a3b8', label: d.status });
+    const dispLabel = isHolidayNonWorking ? 'Holiday' : (d.statusDisplay || sc.label);
     let flags = '';
     if (d.isLate    === '1') flags += `<span class="badge me-1 mb-1" style="background:#fef3c7;color:#92400e;font-size:0.7rem;"><i class="fas fa-clock fa-xs me-1"></i>Late Arrival</span>`;
     if (d.isEarly   === '1') flags += `<span class="badge me-1 mb-1" style="background:#dbeafe;color:#1e3a8a;font-size:0.7rem;"><i class="fas fa-door-open fa-xs me-1"></i>Early Departure</span>`;
