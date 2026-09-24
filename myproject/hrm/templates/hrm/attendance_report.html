@@ -381,7 +381,7 @@
         letter-spacing:0.02em;
     }
     .pv-cal-cell .cal-time {
-        font-size:0.6rem; color:#6b7280;
+        font-size:0.6rem; color:#6b7280; line-height:1.25;
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;
     }
     .pv-cal-cell .cal-hours {
@@ -2348,8 +2348,10 @@ function renderMonthView(data) {
 
         if (rec) {
             const ci  = rec.clock_in  || '–';
+            const co  = rec.clock_out || '–';
             const wh  = rec.working_hours ? rec.working_hours + 'h' : '';
             const lbl = (rec.status_display || rec.status).replace('_',' ');
+            const hasPunch = (ci !== '–' && ci !== '-') || (co !== '–' && co !== '-');
 
             const recIsHol = isHol || rec.is_holiday;
             const isWorking = ['present', 'late', 'half_day'].includes(rec.status) || Boolean(rec.clock_in && rec.clock_in !== '–' && rec.clock_in !== '-');
@@ -2375,7 +2377,7 @@ function renderMonthView(data) {
 
             cells += `<div class="${cellClass}"
                           data-date="${iso}" data-status="${rec.status}" data-status-display="${lbl}"
-                          data-clock-in="${ci}" data-clock-out="${rec.clock_out||'–'}"
+                          data-clock-in="${ci}" data-clock-out="${co}"
                           data-working-hours="${rec.working_hours||''}"
                           data-overtime="${rec.overtime_hours||''}"
                           data-shift="${rec.shift||''}"
@@ -2387,7 +2389,7 @@ function renderMonthView(data) {
                           onclick="pvShowCalPopup(event,this)">
                 ${numHtml(numColor)}
                 ${chipHtml}
-                <span class="cal-time"><i class="fas fa-sign-in-alt fa-xs me-1"></i>${ci}</span>
+                ${hasPunch ? `<span class="cal-time" title="Check In"><i class="fas fa-sign-in-alt fa-xs text-success me-1"></i>${ci}</span><span class="cal-time" title="Check Out"><i class="fas fa-sign-out-alt fa-xs text-danger me-1"></i>${co}</span>` : ''}
                 ${wh ? `<span class="cal-hours">${wh}</span>` : ''}
             </div>`;
         } else if (isWknd) {

@@ -7609,6 +7609,26 @@ def generate_payslips(request, pk):
             'bonus_total_included': str(_bonus_total),
             'gross_before_bonus': str(_bd['total_earnings'].quantize(Decimal('0.01'))),
             'advance_breakdown': _adv_breakdown,
+            'attendance_snapshot': {
+                'calendar_days': _bd['calendar_days'],
+                'weekend_days': _bd['weekend_days'],
+                'holiday_days': _bd['holiday_days'],
+                'working_days': _bd['working_days'],
+                'present_days': _bd['present_working_days'],
+                'paid_leave_days': _bd['paid_leave_days'],
+                'half_days': _bd['half_days'],
+                'absent_days': _bd['absent_days'],
+                'daily_rate': float(_bd['daily_rate']),
+                'salary_divisor': float(_bd['salary_divisor']),
+                'divisor_label': _bd['divisor_label'],
+                'absent_deduction': float(_bd['absent_deduction']),
+                'weekend_worked_days': _bd['weekend_worked_days'],
+                'weekend_pay': float(_bd['weekend_pay']),
+                'holiday_worked_days': _bd['holiday_worked_days'],
+                'holiday_pay': float(_bd['holiday_pay']),
+                'ot_hours': float(_bd['total_ot_hours']),
+                'ot_pay': float(_bd['ot_pay']),
+            },
         }
 
         # If a soft-deleted payslip exists for this run + employee, permanently
@@ -8397,29 +8417,44 @@ def _build_payslip_print_context(slip):
 
     _ps = PayrollSetting.get_settings()
     
-    # Load snapshot from payslip (or fallback to dynamic if old data)
     _struct = slip.salary_structure or {}
-    if _struct.get('earnings_list') or _struct.get('deductions_list'):
-        earnings_list = _struct.get('earnings_list', [])
-        deductions_list = _struct.get('deductions_list', [])
-        # We still need attendance data for the calendar and context, so run calculation
-        # but override earnings and deductions!
-        bd = _calculate_payroll_breakdown(
-            employee=employee, cycle_start=cycle_start, cycle_end=cycle_end,
-            salary_record=salary_record, payroll_settings=_ps,
-        )
-        from decimal import Decimal
+    bd = _calculate_payroll_breakdown(
+        employee=employee, cycle_start=cycle_start, cycle_end=cycle_end,
+        salary_record=salary_record, payroll_settings=_ps,
+    )
+
+    if slip.is_finalized:
+        # Finalized / locked payslip: must preserve the frozen snapshot
+        att_snap = _struct.get('attendance_snapshot')
+        if att_snap:
+            bd['calendar_days'] = att_snap.get('calendar_days', bd['calendar_days'])
+            bd['weekend_days'] = att_snap.get('weekend_days', bd['weekend_days'])
+            bd['holiday_days'] = att_snap.get('holiday_days', bd['holiday_days'])
+            bd['working_days'] = att_snap.get('working_days', bd['working_days'])
+            bd['present_working_days'] = att_snap.get('present_days', bd['present_working_days'])
+            bd['paid_leave_days'] = att_snap.get('paid_leave_days', bd['paid_leave_days'])
+            bd['half_days'] = att_snap.get('half_days', bd['half_days'])
+            bd['absent_days'] = att_snap.get('absent_days', bd['absent_days'])
+            bd['daily_rate'] = Decimal(str(att_snap.get('daily_rate', bd['daily_rate'])))
+            bd['salary_divisor'] = Decimal(str(att_snap.get('salary_divisor', bd['salary_divisor'])))
+            bd['divisor_label'] = att_snap.get('divisor_label', bd['divisor_label'])
+            bd['absent_deduction'] = Decimal(str(att_snap.get('absent_deduction', slip.absent_deduction)))
+            bd['weekend_worked_days'] = att_snap.get('weekend_worked_days', bd['weekend_worked_days'])
+            bd['weekend_pay'] = Decimal(str(att_snap.get('weekend_pay', bd['weekend_pay'])))
+            bd['holiday_worked_days'] = att_snap.get('holiday_worked_days', bd['holiday_worked_days'])
+            bd['holiday_pay'] = Decimal(str(att_snap.get('holiday_pay', bd['holiday_pay'])))
+            bd['total_ot_hours'] = Decimal(str(att_snap.get('ot_hours', bd['total_ot_hours'])))
+            bd['ot_pay'] = Decimal(str(att_snap.get('ot_pay', bd['ot_pay'])))
+        else:
+            bd['absent_deduction'] = slip.absent_deduction
+            if bd['daily_rate'] > 0 and bd['absent_deduction'] > 0:
+                bd['absent_days'] = float((bd['absent_deduction'] / bd['daily_rate']).quantize(Decimal('0.01')))
         bd['basic_salary'] = slip.basic_salary or bd['basic_salary']
-        bd['absent_deduction'] = slip.absent_deduction
-        bd['net_basic'] = max(bd['basic_salary'] - slip.absent_deduction, Decimal('0'))
-        bd['earnings_list'] = earnings_list
-        bd['deductions_list'] = deductions_list
+        bd['net_basic'] = max(bd['basic_salary'] - bd['absent_deduction'], Decimal('0'))
+        earnings_list = list(_struct.get('earnings_list', bd['earnings_list']))
+        deductions_list = list(_struct.get('deductions_list', bd['deductions_list']))
     else:
-        # Fallback for old slips
-        bd = _calculate_payroll_breakdown(
-            employee=employee, cycle_start=cycle_start, cycle_end=cycle_end,
-            salary_record=salary_record, payroll_settings=_ps,
-        )
+        # Unfinalized payslip: use live breakdown from updated attendance and salary records
         earnings_list = list(bd['earnings_list'])
         deductions_list = list(bd['deductions_list'])
 
@@ -8491,25 +8526,6 @@ def _build_payslip_print_context(slip):
                 _adv.deducted_this_month = Decimal('0')
     elif _live_total > 0:
         advance_deduction = _live_total
-        if _stored_adv != advance_deduction:
-            # Base this on the payslip's own persisted gross/deductions (which
-            # already include any approved bonuses and manual adjustments),
-            # not the bare recalculated bd[] baseline -- otherwise this silently
-            # wipes out those amounts the moment an employee has a live advance
-            # that hasn't been recorded on the slip yet. Re-sync whenever the
-            # live total has drifted from what's stored (not just from zero) --
-            # e.g. a second advance disbursed, an installment edited, or a
-            # repayment posted elsewhere -- so the footer total below (which
-            # reads slip.advance_deduction) never falls behind the per-advance
-            # rows above it (which read the freshly recomputed amounts).
-            _new_net = max(slip.gross_salary - (slip.total_deductions + advance_deduction), Decimal('0'))
-            Payslip.objects.filter(pk=slip.pk).update(advance_deduction=advance_deduction, net_salary=_new_net)
-            # Re-read what we just wrote. The printed totals below are taken
-            # from `slip`, and a bare .update() leaves this instance holding
-            # the pre-advance values -- so the printed net salary would
-            # disagree with both the payslip list and the database.
-            slip.refresh_from_db(fields=['advance_deduction', 'net_salary'])
-            _refresh_payroll_run_totals(run)
         for _adv in all_employee_advances:
             if _adv.status not in ('disbursed', 'repaying'):
                 if not hasattr(_adv, 'deducted_this_month') or _adv.deducted_this_month is None:
@@ -8523,19 +8539,64 @@ def _build_payslip_print_context(slip):
         if getattr(_adv, 'deducted_this_month', Decimal('0')) > 0:
             deductions_list.append({'name': f'Advance ({_adv.advance_number})', 'amount': _adv.deducted_this_month})
 
-    if _struct.get('earnings_list') or _struct.get('deductions_list'):
+    if slip.is_finalized:
         total_deductions_comp = slip.total_deductions + slip.advance_deduction
         total_earnings = slip.gross_salary
         net_salary = slip.net_salary
+        _comp_ded = slip.total_deductions
     else:
-        # Fallback slips have no snapshot totals to trust, so unlike the
-        # struct branch above (where slip.gross_salary/total_deductions are
-        # already kept current by _recalculate_payslip), manual adjustments
-        # must be folded in here explicitly or they'd show as line items
-        # above while silently dropping out of the totals below.
-        total_deductions_comp = bd['other_deductions_total'] + advance_deduction + _adj_deductions_total
-        total_earnings = bd['total_earnings'] + _bonus_total + _adj_earnings_total
-        net_salary = max(total_earnings - total_deductions_comp, Decimal('0'))
+        _comp_ded = (bd['other_deductions_total'] + _adj_deductions_total).quantize(Decimal('0.01'))
+        total_deductions_comp = (_comp_ded + advance_deduction).quantize(Decimal('0.01'))
+        total_earnings = (bd['total_earnings'] + _bonus_total + _adj_earnings_total).quantize(Decimal('0.01'))
+        net_salary = max(total_earnings - total_deductions_comp, Decimal('0')).quantize(Decimal('0.01'))
+
+        # Auto-sync unfinalized payslip so DB and totals never drift from live attendance/salary components
+        if (slip.absent_deduction != bd['absent_deduction'] or
+            slip.basic_salary != bd['basic_salary'] or
+            slip.gross_salary != total_earnings or
+            slip.total_deductions != _comp_ded or
+            slip.advance_deduction != advance_deduction or
+            slip.net_salary != net_salary):
+
+            slip.basic_salary = bd['basic_salary']
+            slip.absent_deduction = bd['absent_deduction']
+            slip.gross_salary = total_earnings
+            slip.total_deductions = _comp_ded
+            slip.advance_deduction = advance_deduction
+            slip.net_salary = net_salary
+
+            _struct_updated = dict(slip.salary_structure or {})
+            _struct_updated['earnings_list'] = [{'name': item['name'], 'amount': float(item['amount'])} for item in bd['earnings_list']]
+            _struct_updated['deductions_list'] = [{'name': item['name'], 'amount': float(item['amount'])} for item in bd['deductions_list']]
+            _struct_updated['bonus_total_included'] = str(_bonus_total)
+            _struct_updated['gross_before_bonus'] = str(bd['total_earnings'].quantize(Decimal('0.01')))
+            _struct_updated['attendance_snapshot'] = {
+                'calendar_days': bd['calendar_days'],
+                'weekend_days': bd['weekend_days'],
+                'holiday_days': bd['holiday_days'],
+                'working_days': bd['working_days'],
+                'present_days': bd['present_working_days'],
+                'paid_leave_days': bd['paid_leave_days'],
+                'half_days': bd['half_days'],
+                'absent_days': bd['absent_days'],
+                'daily_rate': float(bd['daily_rate']),
+                'salary_divisor': float(bd['salary_divisor']),
+                'divisor_label': bd['divisor_label'],
+                'absent_deduction': float(bd['absent_deduction']),
+                'weekend_worked_days': bd['weekend_worked_days'],
+                'weekend_pay': float(bd['weekend_pay']),
+                'holiday_worked_days': bd['holiday_worked_days'],
+                'holiday_pay': float(bd['holiday_pay']),
+                'ot_hours': float(bd['total_ot_hours']),
+                'ot_pay': float(bd['ot_pay']),
+            }
+            slip.salary_structure = _struct_updated
+            slip.save(update_fields=[
+                'basic_salary', 'absent_deduction', 'gross_salary',
+                'total_deductions', 'advance_deduction', 'net_salary',
+                'salary_structure', 'updated_at'
+            ])
+            _refresh_payroll_run_totals(run)
 
     max_rows = max(len(earnings_list), len(deductions_list), 1)
     salary_rows = []
@@ -8587,7 +8648,7 @@ def _build_payslip_print_context(slip):
         'salary_rows': salary_rows,
         'total_earnings': total_earnings,
         'total_deductions': total_deductions_comp,
-        'salary_comp_deductions': slip.total_deductions if _struct.get('deductions_list') else bd['other_deductions_total'],
+        'salary_comp_deductions': _comp_ded,
         'advance_deduction': advance_deduction,
         'all_advances': all_employee_advances,
         'net_salary': net_salary,
@@ -12049,11 +12110,47 @@ def payslip_finalize(request, pk):
     if slip.is_finalized:
         return JsonResponse({'success': False, 'error': 'Payslip is already finalized.'})
 
+    struct = slip.salary_structure or {}
+    if 'attendance_snapshot' not in struct:
+        _ps = PayrollSetting.get_settings()
+        _emp_sal = (
+            EmployeeSalary.objects.filter(employee=slip.employee, is_active=True)
+            .prefetch_related('components')
+            .order_by('-effective_date')
+            .first()
+        )
+        _run = slip.payroll_run
+        _bd = _calculate_payroll_breakdown(
+            employee=slip.employee, cycle_start=_run.pay_period_start, cycle_end=_run.pay_period_end,
+            salary_record=_emp_sal, payroll_settings=_ps,
+        )
+        struct['attendance_snapshot'] = {
+            'calendar_days': _bd['calendar_days'],
+            'weekend_days': _bd['weekend_days'],
+            'holiday_days': _bd['holiday_days'],
+            'working_days': _bd['working_days'],
+            'present_days': _bd['present_working_days'],
+            'paid_leave_days': _bd['paid_leave_days'],
+            'half_days': _bd['half_days'],
+            'absent_days': _bd['absent_days'],
+            'daily_rate': float(_bd['daily_rate']),
+            'salary_divisor': float(_bd['salary_divisor']),
+            'divisor_label': _bd['divisor_label'],
+            'absent_deduction': float(_bd['absent_deduction']),
+            'weekend_worked_days': _bd['weekend_worked_days'],
+            'weekend_pay': float(_bd['weekend_pay']),
+            'holiday_worked_days': _bd['holiday_worked_days'],
+            'holiday_pay': float(_bd['holiday_pay']),
+            'ot_hours': float(_bd['total_ot_hours']),
+            'ot_pay': float(_bd['ot_pay']),
+        }
+        slip.salary_structure = struct
+
     slip.is_finalized = True
     slip.finalized_by = request.user
     slip.finalized_at = timezone.now()
     slip.status = 'generated'
-    slip.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'status', 'updated_at'])
+    slip.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'status', 'salary_structure', 'updated_at'])
 
     PayslipAuditLog.objects.create(
         payslip=slip,
@@ -12164,7 +12261,86 @@ def payslip_bulk_action(request):
     if not ids:
         return JsonResponse({'success': False, 'error': 'No payslips selected.'}, status=400)
 
-    if action == 'trash':
+    if action == 'finalize':
+        slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=False))
+        eligible = [s for s in slips if not s.is_finalized]
+        already = len(slips) - len(eligible)
+        _ps = None
+        now = timezone.now()
+        for s in eligible:
+            struct = s.salary_structure or {}
+            if 'attendance_snapshot' not in struct:
+                if _ps is None:
+                    _ps = PayrollSetting.get_settings()
+                _emp_sal = (
+                    EmployeeSalary.objects.filter(employee=s.employee, is_active=True)
+                    .prefetch_related('components')
+                    .order_by('-effective_date')
+                    .first()
+                )
+                _run = s.payroll_run
+                _bd = _calculate_payroll_breakdown(
+                    employee=s.employee, cycle_start=_run.pay_period_start, cycle_end=_run.pay_period_end,
+                    salary_record=_emp_sal, payroll_settings=_ps,
+                )
+                struct['attendance_snapshot'] = {
+                    'calendar_days': _bd['calendar_days'],
+                    'weekend_days': _bd['weekend_days'],
+                    'holiday_days': _bd['holiday_days'],
+                    'working_days': _bd['working_days'],
+                    'present_days': _bd['present_working_days'],
+                    'paid_leave_days': _bd['paid_leave_days'],
+                    'half_days': _bd['half_days'],
+                    'absent_days': _bd['absent_days'],
+                    'daily_rate': float(_bd['daily_rate']),
+                    'salary_divisor': float(_bd['salary_divisor']),
+                    'divisor_label': _bd['divisor_label'],
+                    'absent_deduction': float(_bd['absent_deduction']),
+                    'weekend_worked_days': _bd['weekend_worked_days'],
+                    'weekend_pay': float(_bd['weekend_pay']),
+                    'holiday_worked_days': _bd['holiday_worked_days'],
+                    'holiday_pay': float(_bd['holiday_pay']),
+                    'ot_hours': float(_bd['total_ot_hours']),
+                    'ot_pay': float(_bd['ot_pay']),
+                }
+                s.salary_structure = struct
+            s.is_finalized = True
+            s.finalized_by = request.user
+            s.finalized_at = now
+            s.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'salary_structure', 'updated_at'])
+            PayslipAuditLog.objects.create(
+                payslip=s,
+                action='Payslip Finalized',
+                detail=f'Bulk finalized by {request.user.get_full_name() or request.user.username}. '
+                       f'Net Salary: Rs.{s.net_salary}. Protected from auto-regeneration.',
+                performed_by=request.user,
+            )
+        msg = f'{len(eligible)} payslip(s) finalized and locked.'
+        if already:
+            msg += f' {already} were already locked.'
+        return JsonResponse({'success': True, 'message': msg, 'processed': len(eligible), 'skipped': already})
+
+    elif action == 'unfinalize':
+        slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=False))
+        eligible = [s for s in slips if s.is_finalized]
+        already = len(slips) - len(eligible)
+        for s in eligible:
+            s.is_finalized = False
+            s.finalized_by = None
+            s.finalized_at = None
+            s.save(update_fields=['is_finalized', 'finalized_by', 'finalized_at', 'updated_at'])
+            PayslipAuditLog.objects.create(
+                payslip=s,
+                action='Payslip Un-finalized',
+                detail=f'Bulk unlocked by {request.user.get_full_name() or request.user.username}.',
+                performed_by=request.user,
+            )
+        msg = f'{len(eligible)} payslip(s) unlocked.'
+        if already:
+            msg += f' {already} were already unlocked.'
+        return JsonResponse({'success': True, 'message': msg, 'processed': len(eligible), 'skipped': already})
+
+    elif action == 'trash':
         slips = list(Payslip.objects.filter(pk__in=ids, is_deleted=False))
         locked = [s for s in slips if s.is_finalized]
         eligible = [s for s in slips if not s.is_finalized]

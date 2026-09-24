@@ -763,9 +763,58 @@
 .ps-bulk-btn:hover { opacity: .88; }
 .ps-bulk-btn:disabled { opacity: .5; cursor: not-allowed; }
 .ps-bulk-btn-light { background: #fff; color: #1a7f4b; }
+.ps-bulk-btn-lock { background: #064e3b; color: #ecfdf5; border: 1.5px solid #34d399; }
+.ps-bulk-btn-lock:hover { background: #065f46; color: #fff; }
+.ps-bulk-btn-unlock { background: rgba(255,255,255,.16); color: #fff; border: 1.5px solid rgba(255,255,255,.5); }
+.ps-bulk-btn-unlock:hover { background: rgba(255,255,255,.28); color: #fff; }
 .ps-bulk-btn-danger { background: #dc2626; color: #fff; }
 .ps-bulk-btn-outline { background: rgba(255,255,255,.12); color: #fff; border: 1.5px solid rgba(255,255,255,.5); }
 .ps-bulk-btn-clear { background: transparent; color: #fff; text-decoration: underline; padding: 8px 6px; }
+
+/* ── Status column & Lock toggle ──────────────────────────── */
+.ps-status-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    vertical-align: middle;
+}
+.ps-lock-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2.5px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .15s ease-in-out;
+    line-height: 1.35;
+    white-space: nowrap;
+    border: 1px solid transparent;
+}
+.ps-lock-toggle.is-locked {
+    background: #d1fae5;
+    color: #065f46;
+    border-color: #86efac;
+}
+.ps-lock-toggle.is-locked:hover {
+    background: #fee2e2;
+    color: #b91c1c;
+    border-color: #fca5a5;
+}
+.ps-lock-toggle.is-unlocked {
+    background: #f1f5f9;
+    color: #64748b;
+    border-color: #cbd5e1;
+}
+.ps-lock-toggle.is-unlocked:hover {
+    background: #ecfdf5;
+    color: #047857;
+    border-color: #86efac;
+}
+.ps-lock-toggle .ps-lock-icon {
+    font-size: 10px;
+}
 
 /* Row highlight when checked */
 .ps-table tbody tr.ps-row-selected { background: #f0fdf4; }
@@ -933,6 +982,8 @@
         <button type="button" class="ps-bulk-select-all" id="psSelectAllMatching" onclick="selectAllMatching()" style="display:none"></button>
         <div class="ps-bulk-actions">
             {% if not is_trash %}
+            <button type="button" class="ps-bulk-btn ps-bulk-btn-lock" onclick="bulkAction('finalize')" title="Finalize and lock selected payslips"><i class="fas fa-lock"></i> Finalize & Lock</button>
+            <button type="button" class="ps-bulk-btn ps-bulk-btn-unlock" onclick="bulkAction('unfinalize')" title="Unlock selected payslips"><i class="fas fa-lock-open"></i> Unlock</button>
             <button type="button" class="ps-bulk-btn ps-bulk-btn-light" onclick="openCombinedPdfModal()"><i class="fas fa-file-pdf"></i> Generate Combined PDF</button>
             <button type="button" class="ps-bulk-btn ps-bulk-btn-outline" onclick="bulkDownload()"><i class="fas fa-download"></i> Bulk Download</button>
             <button type="button" class="ps-bulk-btn ps-bulk-btn-danger" onclick="bulkAction('trash')"><i class="fas fa-trash-alt"></i> Move to Trash</button>
@@ -1067,10 +1118,17 @@
                         </td>
                         <td><span class="ps-cell-net">रू {{ slip.net_salary|floatformat:2 }}</span></td>
                         <td>
-                            <span class="ps-badge ps-badge-{{ slip.status }}">{{ slip.get_status_display }}</span>
-                            {% if slip.is_finalized %}
-                            <span class="ps-badge" style="background:#d1fae5;color:#065f46;margin-left:4px;" title="Finalized — protected from auto-regeneration"><i class="fas fa-lock" style="font-size:9px"></i> Locked</span>
-                            {% endif %}
+                            <div class="ps-status-group">
+                                <span class="ps-badge ps-badge-{{ slip.status }}">{{ slip.get_status_display }}</span>
+                                <button type="button" 
+                                        class="ps-lock-toggle {% if slip.is_finalized %}is-locked{% else %}is-unlocked{% endif %}" 
+                                        onclick="togglePayslipLock(this, {{ slip.pk }})" 
+                                        data-locked="{% if slip.is_finalized %}1{% else %}0{% endif %}"
+                                        title="{% if slip.is_finalized %}Finalized & Locked — Click to Unlock{% else %}Unlocked / Draft — Click to Finalize & Lock{% endif %}">
+                                    <i class="fas {% if slip.is_finalized %}fa-lock{% else %}fa-lock-open{% endif %} ps-lock-icon"></i>
+                                    <span class="ps-lock-text">{% if slip.is_finalized %}Locked{% else %}Unlock{% endif %}</span>
+                                </button>
+                            </div>
                         </td>
                         <td class="d-none d-xxl-table-cell">{{ slip.generated_on|date:"Y-m-d"|default:"-" }}</td>
                         <td>
@@ -1564,10 +1622,70 @@ function selectAllMatching() {
         .catch(() => alert('Network error while selecting all matching payslips.'));
 }
 
-// ═══════════════════════ BULK TRASH / RESTORE / PURGE ═══════════════════════
+// ═══════════════════════ INDIVIDUAL FINALIZE / UNFINALIZE TOGGLE ═══════════════════════
+function togglePayslipLock(btn, pk) {
+    const isLocked = btn.dataset.locked === '1';
+    const actionUrl = isLocked
+        ? `{% url 'hrm:payslip_list' %}${pk}/unfinalize/`
+        : `{% url 'hrm:payslip_list' %}${pk}/finalize/`;
+    const actionLabel = isLocked ? 'unlock' : 'finalize & lock';
+
+    btn.disabled = true;
+    const origHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin ps-lock-icon"></i>';
+
+    fetch(actionUrl, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        if (data.success) {
+            const newLocked = !isLocked;
+            btn.dataset.locked = newLocked ? '1' : '0';
+            btn.className = `ps-lock-toggle ${newLocked ? 'is-locked' : 'is-unlocked'}`;
+            btn.title = newLocked ? 'Finalized & Locked — Click to Unlock' : 'Unlocked / Draft — Click to Finalize & Lock';
+            btn.innerHTML = `<i class="fas ${newLocked ? 'fa-lock' : 'fa-lock-open'} ps-lock-icon"></i> <span class="ps-lock-text">${newLocked ? 'Locked' : 'Unlock'}</span>`;
+
+            const tr = btn.closest('tr');
+            if (tr) {
+                const delBtn = tr.querySelector('.ps-act-delete');
+                if (delBtn) {
+                    if (newLocked) {
+                        delBtn.disabled = true;
+                        delBtn.style.opacity = '0.5';
+                        delBtn.style.cursor = 'not-allowed';
+                        delBtn.title = 'Unlock first to delete';
+                    } else {
+                        delBtn.disabled = false;
+                        delBtn.style.opacity = '';
+                        delBtn.style.cursor = '';
+                        delBtn.title = 'Move to Trash';
+                    }
+                }
+            }
+            if (typeof alertify !== 'undefined') {
+                alertify.success(data.message || (newLocked ? 'Payslip locked.' : 'Payslip unlocked.'));
+            }
+        } else {
+            btn.innerHTML = origHtml;
+            alert(data.error || `Failed to ${actionLabel} payslip.`);
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+        alert(`Network error while trying to ${actionLabel} payslip.`);
+    });
+}
+
+// ═══════════════════════ BULK ACTIONS ═══════════════════════
 function bulkAction(action) {
     if (selectedIds.size === 0) return;
     const labels = {
+        finalize: `Finalize and lock ${selectedIds.size} payslip(s)? They will be protected from auto-regeneration.`,
+        unfinalize: `Unlock ${selectedIds.size} payslip(s)?`,
         trash: `Move ${selectedIds.size} payslip(s) to the trash?`,
         restore: `Restore ${selectedIds.size} payslip(s)?`,
         permanent_delete: `Permanently delete ${selectedIds.size} payslip(s)? This CANNOT be undone.`,

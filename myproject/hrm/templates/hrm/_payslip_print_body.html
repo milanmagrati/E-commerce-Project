@@ -149,7 +149,7 @@
                 <td class="amt-col2 empty-cell">&nbsp;</td>
             </tr>
             <!-- Absent Deduction -->
-            {% if absent_days > 0 %}
+            {% if absent_days > 0 or absent_deduction > 0 %}
             <tr style="background:#fff5f5;">
                 <td class="earn-col" style="color:#c00;">Absent Deduction ({{ absent_days }} days &times; Rs.{{ daily_rate|floatformat:2 }})</td>
                 <td class="amt-col" style="color:#c00;">- Rs{{ absent_deduction|floatformat:2 }}</td>
