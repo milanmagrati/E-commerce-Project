@@ -6028,13 +6028,17 @@ NON_REDIRECTABLE_RTV_STATUSES = ('returned', 'delivered', 'sent to vendor')
 
 #: Same rule applied to the linked local order's stored NCM status, which can
 #: carry branch-qualified variants ("Returned to Warehouse") rather than an
-#: exact match.
-NON_REDIRECTABLE_NCM_STATUS_REGEX = r'delivered|returned|sent to vendor'
+#: exact match. Also matches return hubs (Nayabuspark) and return dispatches.
+NON_REDIRECTABLE_NCM_STATUS_REGEX = (
+    r'delivered|returned|sent to vendor|nayabuspark|naya\s*buspark|'
+    r'dispatched to.*return|arrived at.*return|dispatched to.*nayabuspark|arrived at.*nayabuspark'
+)
 
 #: The linked order's own system status, when it is already past redirection.
 #: 'return_arrived' is the stage NCM's "Arrived at RETURN (BRANCH)" resolves to —
 #: the parcel finished the journey back, so there is nothing left to redirect.
-NON_REDIRECTABLE_ORDER_STATUSES = frozenset(('delivered', 'return_arrived'))
+#: Also includes 'return' and 'returned' completed return end states.
+NON_REDIRECTABLE_ORDER_STATUSES = frozenset(('delivered', 'return_arrived', 'return', 'returned'))
 
 
 def _rtv_is_non_redirectable(rtv_last_status, local_order=None):
@@ -6043,10 +6047,16 @@ def _rtv_is_non_redirectable(rtv_last_status, local_order=None):
     Used after a live NCM refresh to tell whether a row that is currently on
     screen would still be listed on a reload.
     """
+    from services.ncm_service import NCMService
+
     if (rtv_last_status or '').strip().lower() in NON_REDIRECTABLE_RTV_STATUSES:
+        return True
+    if NCMService.is_return_movement_or_dispatched(rtv_last_status):
         return True
     if local_order is None:
         return False
+    if NCMService.is_return_movement_or_dispatched(local_order.ncm_status):
+        return True
     if re.search(NON_REDIRECTABLE_NCM_STATUS_REGEX, (local_order.ncm_status or ''), re.IGNORECASE):
         return True
     # 'return_arrived' alongside 'delivered': both are end states for
@@ -6069,33 +6079,21 @@ REDIRECT_ELIGIBLE_STATUS_PREFIXES = ('arrived', 'pickup complete', 'returned to 
 def _rtv_is_redirect_eligible(rtv_last_status, local_ncm_status=None):
     """True once NCM reports the package is at a branch it can be redirected FROM.
 
-    Two ways to fail. A parcel still travelling ("Dispatched to Return (...)")
-    is not a candidate: NCM's redirect endpoint refuses it outright. Nor is one
-    that has already finished the journey back — "Arrived at RETURN (BRANCH)"
-    starts with the same word as a parcel waiting at its delivery branch, but
-    the parcel is at NCM's return counter, past the point where a redirect is
-    physically possible. Only an arrival at a *delivery* branch counts, which
-    is what NCM's own "Arrived" in that rejection message means.
+    A returned package can only be redirected while it is physically sitting
+    at the destination delivery branch (e.g. "Arrived at POKHARA", "Arrived at
+    NAYA THIMI").
 
-    That distinction is the whole difference between:
+    It is INELIGIBLE if:
+    1. It has been dispatched after RTV or is in transit (e.g. "Dispatched to
+       NAYABUSPARK", "Dispatched to RETURN (TINKUNE)", "Dispatched", "In Transit").
+       Once dispatched, it has left the branch and is travelling back to Kathmandu.
+    2. It has returned or is returning to a return hub (mentioning "NAYABUSPARK",
+       "RETURN", etc.).
+    3. It has arrived at the return counter ("Arrived at RETURN ...",
+       "Arrived at NAYA BUSPARK").
 
-        "Arrived at POKHARA"             -> redirect it to another Pokhara
-                                            customer, saving the return leg
-        "Arrived at RETURN NAYA BUSPARK" -> too late, it came all the way back
-
-    This gates what possible_redirection_list shows (its SQL filter mirrors
-    this function) and what the save endpoints accept.
-
-    A return-leg arrival on EITHER stored copy vetoes the row, rather than just
-    failing that one copy. Everywhere else the two copies are OR'd, because
-    either can lag and "at a branch" is a state a parcel enters and leaves. A
-    return-leg arrival is not like that: it is monotonic — a parcel does not
-    un-arrive at the return counter — so the copy reporting it is the fresher
-    one by definition, whatever the other says. This is not hypothetical: NCM's
-    vendor/orders endpoint (which feeds RTVOrder.last_status) answers with the
-    coarse word "Arrived", while the tracking endpoint that writes
-    Order.ncm_status gives the branch-qualified "Arrived at RETURN NAYA
-    BUSPARK". OR-ing those left the parcel listed on the coarse copy alone.
+    Crucially: if EITHER the RTV row OR the linked local order indicates that the
+    parcel was dispatched or is on the return leg, that VETOES redirection.
     """
     # Imported here, not at module level: services.ncm_service imports from
     # dashboard, so a top-level import would close the cycle.
@@ -6104,9 +6102,24 @@ def _rtv_is_redirect_eligible(rtv_last_status, local_ncm_status=None):
     normalized = [
         ' '.join((text or '').strip().lower().split())
         for text in (rtv_last_status, local_ncm_status)
+        if (text or '').strip()
     ]
-    if any(NCMService.is_return_arrival(text) for text in normalized):
+    if not normalized:
         return False
+
+    # VETO: If ANY status copy reports return arrival, return movement, or dispatch/in-transit
+    for text in normalized:
+        if NCMService.is_return_arrival(text):
+            return False
+        if any(hub in text for hub in ('nayabuspark', 'naya buspark', 'nayabus park')):
+            return False
+        if text.startswith('dispatched') or text.startswith('in transit') or text == 'in_transit':
+            return False
+        if text.startswith('returned') and text != 'returned to warehouse':
+            return False
+        if 'return' in text and not text.startswith('returned to warehouse'):
+            return False
+
     return any(
         text.startswith(prefix)
         for text in normalized
@@ -6122,23 +6135,28 @@ def _redirect_ineligible_message(*statuses):
     looking for a redirect that will never unlock.
 
     Takes every status copy the caller holds and names the one that actually
-    blocked it: a return-leg arrival wins, since it is what vetoed the row, and
-    it is frequently on the copy the caller would not have quoted first (the RTV
-    row usually carries NCM's coarse "Arrived").
+    blocked it: return-leg movement / arrival wins, since it is what vetoed
+    the row.
     """
     from services.ncm_service import NCMService
 
     known = [(s or '').strip() for s in statuses if (s or '').strip()]
-    status = next((s for s in known if NCMService.is_return_arrival(s)),
-                  known[0] if known else 'unknown')
-    if NCMService.is_return_arrival(status):
-        return (
-            f"This package has already returned to the courier's return branch "
-            f"(NCM status: {status}). Redirection is only possible while it is still "
-            "at the delivery branch — this one has to be received back instead."
-        )
+    for s in known:
+        s_lower = s.lower()
+        if NCMService.is_return_arrival(s) or 'nayabuspark' in s_lower or 'naya buspark' in s_lower:
+            return (
+                f"This package has already returned to the courier's return branch/hub "
+                f"(NCM status: {s}). Redirection is only possible while it is still "
+                "at the delivery branch — this one has to be received back instead."
+            )
+        if s_lower.startswith('dispatched') or 'in transit' in s_lower:
+            return (
+                f"This package has been dispatched / is in transit (NCM status: {s}). "
+                "Redirection is only possible while it is physically sitting at the delivery branch."
+            )
+    status = known[0] if known else 'unknown'
     return (
-        f"This package is still in transit (NCM status: {status}). "
+        f"This package is not currently at a delivery branch (NCM status: {status}). "
         "Redirect becomes available once NCM marks it Arrived at the delivery "
         "branch, Pickup Complete, or Returned to Warehouse."
     )
@@ -6243,7 +6261,7 @@ def _rtv_redirect_eligibility(rtv_rec, local_ncm_status, ncm_order_id, api_confi
 
     stored = rtv_rec.last_status if rtv_rec else ''
     for text in (stored, local_ncm_status):
-        if NCMService.is_return_arrival(text):
+        if NCMService.is_return_movement_or_dispatched(text):
             return False, text
     if _rtv_listed_on_stale_order_status(stored, local_ncm_status):
         live = _live_ncm_status(ncm_order_id, api_config_id)
@@ -6420,25 +6438,32 @@ def possible_redirection_list(request):
         _eligible_rtv_q |= Q(last_status__istartswith=_prefix)
         _eligible_order_q |= Q(ncm_status__istartswith=_prefix)
 
-    # ...minus the return-leg arrivals ("Arrived at RETURN NAYA BUSPARK"): same
-    # leading word, but the parcel has come all the way back and NCM will not
-    # redirect it from there. Applied as a veto over the whole row rather than
-    # per status copy, matching _rtv_is_redirect_eligible() — a return-leg
-    # arrival is monotonic, so whichever copy reports it is the fresher one. In
-    # practice the RTV copy carries NCM's coarse "Arrived" (from vendor/orders)
-    # while the order copy carries the branch-qualified wording, so OR-ing them
-    # kept the parcel listed on the coarse copy alone.
-    _return_leg_ncm_ids = Order.objects.filter(
+    # ...minus parcels that have been dispatched after RTV, are in return transit,
+    # or have reached return hubs (Nayabuspark, Return counters).
+    # Applied as a veto over the whole row rather than per status copy, matching
+    # _rtv_is_redirect_eligible(). Whichever copy reports dispatch or return
+    # movement is the fresher one.
+    _return_movement_order_q = (
+        Q(ncm_status__icontains='nayabuspark') |
+        Q(ncm_status__icontains='naya buspark') |
+        Q(ncm_status__istartswith='dispatched') |
+        Q(ncm_status__istartswith='in transit') |
+        (Q(ncm_status__icontains='return') & ~Q(ncm_status__istartswith='returned to warehouse'))
+    )
+    _return_movement_ncm_ids = Order.objects.filter(
         is_deleted=False,
         ncm_order_id__isnull=False,
         ncm_order_id__in=rtvs.values('order_id'),
-        ncm_status__istartswith='arrived',
-        ncm_status__icontains='return',
-    ).values('ncm_order_id')
+    ).filter(_return_movement_order_q).values('ncm_order_id')
 
-    rtvs = rtvs.exclude(
-        Q(last_status__istartswith='arrived') & Q(last_status__icontains='return')
-    ).exclude(order_id__in=_return_leg_ncm_ids)
+    _return_movement_rtv_q = (
+        Q(last_status__icontains='nayabuspark') |
+        Q(last_status__icontains='naya buspark') |
+        Q(last_status__istartswith='dispatched') |
+        Q(last_status__istartswith='in transit') |
+        (Q(last_status__icontains='return') & ~Q(last_status__istartswith='returned to warehouse'))
+    )
+    rtvs = rtvs.exclude(_return_movement_rtv_q).exclude(order_id__in=_return_movement_ncm_ids)
 
     # The linked local order's ncm_status counts too: the NCM webhook and the
     # order detail page's load-time sync both write it, and either can be ahead

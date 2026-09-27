@@ -671,7 +671,7 @@ class NCMService:
     #: "Dispatched to RETURN (TINKUNE)", which don't exactly match any fixed
     #: key. Only the literal "Returned to Warehouse" string (handled as an
     #: exact dict entry below) represents confirmed arrival.
-    RETURN_STATUS_KEYWORDS = ('return', 'rtv', 'sent to vendor')
+    RETURN_STATUS_KEYWORDS = ('return', 'rtv', 'sent to vendor', 'nayabuspark', 'naya buspark')
 
     #: NCM status texts that mean the return leg is FINISHED - the parcel has
     #: physically arrived back with the vendor/warehouse. The earlier hops
@@ -705,28 +705,69 @@ class NCMService:
 
     @staticmethod
     def is_return_arrival(ncm_status) -> bool:
-        """True for NCM's "Arrived at RETURN <branch>" hop.
+        """True for NCM's return-leg arrival hops.
 
         NCM appends the branch a parcel just reached to its movement statuses,
-        and marks the return leg by prefixing that branch with the word RETURN:
+        and marks the return leg by prefixing that branch with the word RETURN
+        or by arriving at the central return hub (Nayabuspark):
 
-            "Arrived at POKHARA"                -> at the delivery branch
-            "Dispatched to RETURN NAYA BUSPARK" -> travelling back
-            "Arrived at RETURN NAYA BUSPARK"    -> at NCM's return counter
+            "Arrived at POKHARA"                -> at the delivery branch (redirectable)
+            "Dispatched to RETURN NAYA BUSPARK" -> travelling back (not redirectable)
+            "Arrived at RETURN NAYA BUSPARK"    -> at NCM's return counter (not redirectable)
+            "Arrived at NAYA BUSPARK"           -> at NCM's return counter (not redirectable)
 
-        Only the middle one reads as in-transit today; the last one starts with
-        "Arrived", which used to make it indistinguishable from a parcel sitting
-        at its *delivery* branch. That mattered twice over: the parcel is past
-        the point where NCM will accept a redirect, and 'return_processing'
-        ("still on its way back") understates where it actually is.
-
-        Matched as "starts with Arrived AND names a RETURN branch" - the same
-        test dashboard.views mirrors in SQL, so the two can never disagree.
+        Matched as "starts with Arrived AND (names a RETURN branch OR NAYA BUSPARK return hub)".
         "Returned to Warehouse" is NOT this: it starts with "Returned" and is a
         completed return (see is_return_completed).
         """
         text = ' '.join((ncm_status or '').strip().lower().split())
-        return text.startswith('arrived') and 'return' in text
+        if not text.startswith('arrived'):
+            return False
+        return (
+            'return' in text
+            or 'nayabuspark' in text
+            or 'naya buspark' in text
+            or 'nayabus park' in text
+        )
+
+    @staticmethod
+    def is_return_dispatch_or_transit(ncm_status) -> bool:
+        """True when an NCM status indicates dispatch or in-transit movement.
+
+        For orders in the RTV pipeline (or marked RTV), any dispatch or in-transit
+        status means the parcel has physically left the delivery branch and is
+        travelling back towards Kathmandu/Nayabuspark return hubs.
+        """
+        text = ' '.join((ncm_status or '').strip().lower().split())
+        if not text:
+            return False
+        return (
+            text.startswith('dispatched')
+            or text.startswith('in transit')
+            or text == 'in_transit'
+        )
+
+    @staticmethod
+    def is_return_movement_or_dispatched(ncm_status) -> bool:
+        """True when an NCM status indicates that the parcel is in return transit,
+        dispatched back, or has reached a return hub.
+
+        Used to gate redirection eligibility: parcels matching this are NEVER redirectable.
+        """
+        text = ' '.join((ncm_status or '').strip().lower().split())
+        if not text:
+            return False
+        if NCMService.is_return_arrival(text):
+            return True
+        if any(hub in text for hub in ('nayabuspark', 'naya buspark', 'nayabus park')):
+            return True
+        if NCMService.is_return_dispatch_or_transit(text):
+            return True
+        if NCMService.is_return_completed(text):
+            return True
+        if 'return' in text and not text.startswith('returned to warehouse'):
+            return True
+        return False
 
     @staticmethod
     def is_return_completed(ncm_status) -> bool:

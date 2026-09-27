@@ -1264,19 +1264,38 @@ const CSRF_TOKEN = document.querySelector('[name=csrfmiddlewaretoken]')?.value
 // Mirror of NCMService.is_return_arrival (services/ncm_service.py). NCM names
 // the branch a parcel just reached, prefixing it with RETURN on the way back:
 // "Arrived at POKHARA" is still redirectable, "Arrived at RETURN NAYA BUSPARK"
-// means it came all the way home and never will be. Both start with "Arrived",
-// so the disabled-button copy has to tell them apart or it tells the operator
-// to wait for something that already happened.
+// or "Arrived at NAYA BUSPARK" means it came all the way home and never will be.
 function isReturnLegArrival(status) {
     const text = (status || '').trim().toLowerCase().replace(/\s+/g, ' ');
-    return text.startsWith('arrived') && text.includes('return');
+    return text.startsWith('arrived') && (
+        text.includes('return') ||
+        text.includes('nayabuspark') ||
+        text.includes('naya buspark') ||
+        text.includes('nayabus park')
+    );
+}
+
+function isReturnMovementOrDispatched(status) {
+    const text = (status || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!text) return false;
+    if (isReturnLegArrival(text)) return true;
+    if (text.includes('nayabuspark') || text.includes('naya buspark') || text.includes('nayabus park')) return true;
+    if (text.startsWith('dispatched') || text.startsWith('in transit') || text === 'in_transit') return true;
+    if (text.includes('return') && !text.startsWith('returned to warehouse')) return true;
+    return false;
 }
 
 function redirectIneligibleReason(status) {
-    if (isReturnLegArrival(status)) {
-        return 'Already returned to the courier’s return branch'
+    const text = (status || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (isReturnLegArrival(status) || text.includes('nayabuspark') || text.includes('naya buspark')) {
+        return 'Already returned / returning to the courier’s return branch'
             + (status ? ' (' + status + ')' : '')
             + ' — redirection is only possible while it is still at the delivery branch.';
+    }
+    if (text.startsWith('dispatched') || text.includes('in transit')) {
+        return 'Dispatched / In transit'
+            + (status ? ' (' + status + ')' : '')
+            + ' — package has already left the branch or is in return transit and cannot be redirected.';
     }
     return 'Not yet redirectable — NCM reports this package is still in transit'
         + (status ? ' (' + status + ')' : '')
@@ -1571,7 +1590,9 @@ function populateDetailModal(order, rtv) {
     if (!isRedirectEligible) {
         odIneligibleHint.innerHTML = isReturnLegArrival(rtv.last_status)
             ? '<i class="fas fa-warehouse me-1"></i>Already back at the return branch — not redirectable'
-            : '<i class="fas fa-truck-loading me-1"></i>Not yet redirectable — still in transit';
+            : (isReturnMovementOrDispatched(rtv.last_status)
+                ? '<i class="fas fa-truck-moving me-1"></i>Dispatched / in return transit — not redirectable'
+                : '<i class="fas fa-truck-loading me-1"></i>Not yet redirectable — still in transit');
     }
     odRedirectBtn.onclick = isRedirectEligible ? function() {
         bootstrap.Modal.getInstance(document.getElementById('orderDetailModal')).hide();
@@ -1820,7 +1841,8 @@ function populateRedirectModal(order, rtv) {
                 // nothing defaults to it, instead of letting the operator fill
                 // out the whole form only to have NCM reject it at submit time.
                 const _tooLate = isReturnLegArrival(rtv.last_status);
-                const _why = _tooLate ? 'already returned to the return branch' : 'not yet, still in transit';
+                const _dispatched = isReturnMovementOrDispatched(rtv.last_status);
+                const _why = _tooLate ? 'already returned to the return branch' : (_dispatched ? 'dispatched / returning' : 'not yet, still in transit');
                 sendToSelect.innerHTML += `<option value="ncm_redirect" disabled>NCM — Redirect Order (ID: ${order.ncm_order_id}) — ${_why}${rtv.last_status ? ' (' + escHtml(rtv.last_status) + ')' : ''}</option>`;
             }
             sendToSelect.innerHTML += '<option value="ncm">NCM — Create New Order</option>';

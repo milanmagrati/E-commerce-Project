@@ -114,13 +114,24 @@ def main():
           _rtv_is_redirect_eligible('Arrived at RETURN NAYA BUSPARK') is False)
     check("'Arrived at RETURN (TINKUNE)' is NOT eligible",
           _rtv_is_redirect_eligible('Arrived at RETURN (TINKUNE)') is False)
-    # A return-leg arrival vetoes the whole row, not just the copy carrying it:
-    # a parcel does not un-arrive at the return counter, so whichever copy says
-    # so is the fresher one. NCM's vendor/orders endpoint answers with the
-    # coarse "Arrived" while its tracking endpoint gives the branch-qualified
-    # wording, so OR-ing them left the parcel listed on the coarse copy alone.
+    check("'Arrived at NAYA BUSPARK' is NOT eligible",
+          _rtv_is_redirect_eligible('Arrived at NAYA BUSPARK') is False)
+    check("'Dispatched to NAYABUSPARK' is NOT eligible",
+          _rtv_is_redirect_eligible('Dispatched to NAYABUSPARK') is False)
+    check("'Dispatched to RETURN (TINKUNE)' is NOT eligible",
+          _rtv_is_redirect_eligible('Dispatched to RETURN (TINKUNE)') is False)
+    check("'Arrived at NAYA THIMI' IS eligible",
+          _rtv_is_redirect_eligible('Arrived at NAYA THIMI') is True)
+    check("'Arrived at BIRTAMODE' IS eligible",
+          _rtv_is_redirect_eligible('Arrived at BIRTAMODE') is True)
+    # A return-leg arrival or dispatch vetoes the whole row, not just the copy carrying it:
+    # Whichever copy says it left the branch or reached a return hub vetoes the coarse "Arrived".
     check("a return-leg order copy vetoes a coarse 'Arrived' on the RTV row",
           _rtv_is_redirect_eligible('Arrived', 'Arrived at RETURN NAYA BUSPARK') is False)
+    check("a Nayabuspark arrival order copy vetoes a coarse 'Arrived' on the RTV row",
+          _rtv_is_redirect_eligible('Arrived', 'Arrived at NAYA BUSPARK') is False)
+    check("a Nayabuspark dispatch order copy vetoes a coarse 'Arrived' on the RTV row",
+          _rtv_is_redirect_eligible('Arrived', 'Dispatched to NAYABUSPARK') is False)
     check("...and a return-leg RTV copy vetoes an at-branch order copy",
           _rtv_is_redirect_eligible('Arrived at RETURN NAYA BUSPARK', 'Arrived at POKHARA') is False)
 
