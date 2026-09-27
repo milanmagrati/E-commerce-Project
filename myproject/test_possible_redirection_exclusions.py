@@ -116,6 +116,12 @@ def main():
         'ZZ-EXTRA',
         [('ZZ Test Serum', 2), ('ZZ Test Vitamin', 1), ('ZZ Test Shampoo', 1)],
     )
+    # Dispatched order with identical products - must NOT be offered!
+    dispatched_order = make_order(
+        'ZZ-DISPATCHED',
+        [('ZZ Test Serum', 2), ('ZZ Test Vitamin', 1)],
+        order_status='dispatched',
+    )
 
     print("\n[1] Exact-correspondence matching")
     resp = client.get('/orders/possible-redirection/')
@@ -135,6 +141,8 @@ def main():
           'ZZ-QTY' not in matched_numbers, f"(got {matched_numbers})")
     check("order carrying an extra product is NOT offered",
           'ZZ-EXTRA' not in matched_numbers, f"(got {matched_numbers})")
+    check("dispatched order with identical products is NOT offered",
+          'ZZ-DISPATCHED' not in matched_numbers, f"(got {matched_numbers})")
 
     print("\n[2] Every displayed RTV Product Ref belongs to the matched order")
     for row in entry['matching_rows']:

@@ -6005,6 +6005,13 @@ def _iter_matching_orders(match_sources, branch_orders, exclude_ids=frozenset())
     for order in branch_orders:
         if order.id in exclude_ids:
             continue
+        # Only genuinely confirmed, undispatched orders can receive a redirection.
+        _os = (order.order_status or '').strip().lower()
+        _s = (order.status or '').strip().lower()
+        if _os != 'confirmed' or _s in {
+            'dispatched', 'in_transit', 'delivered', 'cancelled', 'returned', 'return', 'redirected',
+        }:
+            continue
         order_items = list(order.items.all())
         for src in match_sources:
             refs = _align_rtv_items_to_order(src, order_items)
@@ -6535,13 +6542,24 @@ def possible_redirection_list(request):
         _cbq = Q()
         for _br in _all_branches:
             _cbq |= Q(branch_city__iexact=_br)
-        # One DB query — full fields so results can be rendered in the template.
+        # One DB query — strictly confirmed orders only. Dispatched, in-transit,
+        # delivered, cancelled, returned, or already-booked NCM orders must NEVER
+        # be suggested as redirect targets.
+        _candidate_excluded_statuses = (
+            'dispatched', 'in_transit', 'delivered', 'cancelled', 'returned',
+            'return', 'return_processing', 'return_arrived', 'completed', 'redirected',
+        )
         _confirmed_orders = list(
             Order.objects.filter(is_deleted=False)
                 .filter(_cbq)
-                .filter(
-                    Q(order_status__iexact='confirmed') | Q(status__iexact='confirmed')
-                )
+                .filter(order_status__iexact='confirmed')
+                .exclude(status__in=_candidate_excluded_statuses)
+                .exclude(order_status__in=_candidate_excluded_statuses)
+                .exclude(ncm_status__istartswith='dispatched')
+                .exclude(ncm_status__istartswith='in transit')
+                .exclude(ncm_status__istartswith='delivered')
+                .exclude(ncm_status__istartswith='returned')
+                .exclude(ncm_order_id__isnull=False)
                 .prefetch_related(
                     _Pf('items', queryset=OrderItem.objects.only(
                         'id', 'order_id', 'product_name', 'quantity', 'price', 'total',
