@@ -6005,12 +6005,16 @@ def _iter_matching_orders(match_sources, branch_orders, exclude_ids=frozenset())
     for order in branch_orders:
         if order.id in exclude_ids:
             continue
-        # Only genuinely confirmed, undispatched orders can receive a redirection.
         _os = (order.order_status or '').strip().lower()
         _s = (order.status or '').strip().lower()
-        if _os != 'confirmed' or _s in {
-            'dispatched', 'in_transit', 'delivered', 'cancelled', 'returned', 'return', 'redirected',
-        }:
+        # Skip any order that is already dispatched, in-transit, delivered, cancelled, returned, or redirected
+        _skip_statuses = {
+            'dispatched', 'in_transit', 'in transit', 'delivered', 'cancelled', 'returned', 'return', 'redirected',
+        }
+        if _os in _skip_statuses or _s in _skip_statuses:
+            continue
+        # Order must be confirmed in either order_status or status
+        if _os != 'confirmed' and _s != 'confirmed':
             continue
         order_items = list(order.items.all())
         for src in match_sources:
@@ -6114,17 +6118,21 @@ def _rtv_is_redirect_eligible(rtv_last_status, local_ncm_status=None):
     if not normalized:
         return False
 
-    # VETO: If ANY status copy reports return arrival, return movement, or dispatch/in-transit
+    # VETO: If ANY status copy reports return arrival, return movement, or post-RTV return dispatch
     for text in normalized:
         if NCMService.is_return_arrival(text):
             return False
         if any(hub in text for hub in ('nayabuspark', 'naya buspark', 'nayabus park')):
             return False
-        if text.startswith('dispatched') or text.startswith('in transit') or text == 'in_transit':
+        if (
+            text.startswith('dispatched to return')
+            or text.startswith('dispatched to nayabus')
+            or text.startswith('dispatched to kathmandu')
+            or text.startswith('arrived at return')
+            or text.startswith('arrived at nayabus')
+        ):
             return False
         if text.startswith('returned') and text != 'returned to warehouse':
-            return False
-        if 'return' in text and not text.startswith('returned to warehouse'):
             return False
 
     return any(
@@ -6351,10 +6359,28 @@ def possible_redirection_list(request):
     def _apply_rtv_request_filters(qs):
         """Apply the page's search/portal/date filters to an RTVOrder queryset."""
         if search_query:
-            qs = qs.annotate(_oid_str=Cast('order_id', output_field=CharField()))
-            qs = qs.filter(
-                Q(_oid_str__icontains=search_query) | Q(comment__icontains=search_query)
+            _sq = search_query.strip()
+            # Also search linked local order numbers (e.g. T5656, T15914, T15641)
+            _matching_ncm_ids = list(
+                Order.objects.filter(is_deleted=False)
+                    .filter(
+                        Q(order_number__icontains=_sq) |
+                        Q(customer_name__icontains=_sq) |
+                        Q(customer_phone__icontains=_sq)
+                    )
+                    .exclude(ncm_order_id__isnull=True)
+                    .values_list('ncm_order_id', flat=True)
             )
+            qs = qs.annotate(_oid_str=Cast('order_id', output_field=CharField()))
+            _q = (
+                Q(_oid_str__icontains=_sq) |
+                Q(comment__icontains=_sq) |
+                Q(receiver_name__icontains=_sq) |
+                Q(receiver_phone__icontains=_sq)
+            )
+            if _matching_ncm_ids:
+                _q |= Q(order_id__in=_matching_ncm_ids)
+            qs = qs.filter(_q)
 
         if api_config_filter:
             qs = qs.filter(api_config_id=api_config_filter)
@@ -6453,9 +6479,11 @@ def possible_redirection_list(request):
     _return_movement_order_q = (
         Q(ncm_status__icontains='nayabuspark') |
         Q(ncm_status__icontains='naya buspark') |
-        Q(ncm_status__istartswith='dispatched') |
-        Q(ncm_status__istartswith='in transit') |
-        (Q(ncm_status__icontains='return') & ~Q(ncm_status__istartswith='returned to warehouse'))
+        Q(ncm_status__istartswith='dispatched to return') |
+        Q(ncm_status__istartswith='arrived at return') |
+        Q(ncm_status__istartswith='dispatched to nayabus') |
+        Q(ncm_status__istartswith='arrived at nayabus') |
+        Q(ncm_status__istartswith='dispatched to kathmandu')
     )
     _return_movement_ncm_ids = Order.objects.filter(
         is_deleted=False,
@@ -6466,9 +6494,11 @@ def possible_redirection_list(request):
     _return_movement_rtv_q = (
         Q(last_status__icontains='nayabuspark') |
         Q(last_status__icontains='naya buspark') |
-        Q(last_status__istartswith='dispatched') |
-        Q(last_status__istartswith='in transit') |
-        (Q(last_status__icontains='return') & ~Q(last_status__istartswith='returned to warehouse'))
+        Q(last_status__istartswith='dispatched to return') |
+        Q(last_status__istartswith='arrived at return') |
+        Q(last_status__istartswith='dispatched to nayabus') |
+        Q(last_status__istartswith='arrived at nayabus') |
+        Q(last_status__istartswith='dispatched to kathmandu')
     )
     rtvs = rtvs.exclude(_return_movement_rtv_q).exclude(order_id__in=_return_movement_ncm_ids)
 
@@ -6492,14 +6522,24 @@ def possible_redirection_list(request):
     rtvs = _apply_rtv_request_filters(rtvs)
 
     # ── Single-pass: fetch confirmed orders once, reuse for pre-filter + display ──
-    # Collect (order_id, to_branch, product_description) for all RTVs that
-    # have to_branch set — product_description may be empty (branch-only match).
     from django.db.models import Prefetch as _Pf
-    _all_rtv_tuples = list(
-        rtvs.filter(to_branch__isnull=False)
-            .exclude(to_branch='')
-            .values_list('order_id', 'to_branch', 'product_description')
-    )
+    # Collect (order_id, to_branch, product_description) for all RTVs.
+    # If to_branch on RTVOrder is empty, fall back to the linked local Order's branch.
+    _raw_rtv_list = list(rtvs.values('order_id', 'to_branch', 'product_description'))
+    _missing_branch_oids = [r['order_id'] for r in _raw_rtv_list if not (r.get('to_branch') or '').strip()]
+    _fallback_branch_by_oid = {}
+    if _missing_branch_oids:
+        for _lo in Order.objects.filter(is_deleted=False, ncm_order_id__in=_missing_branch_oids).only('ncm_order_id', 'branch_city', 'ncm_destination_branch'):
+            _fb = (_lo.branch_city or _lo.ncm_destination_branch or '').strip()
+            if _fb:
+                _fallback_branch_by_oid[_lo.ncm_order_id] = _fb
+
+    _all_rtv_tuples = []
+    for r in _raw_rtv_list:
+        _tb = (r.get('to_branch') or '').strip() or _fallback_branch_by_oid.get(r['order_id'], '')
+        if _tb:
+            _all_rtv_tuples.append((r['order_id'], _tb, r.get('product_description') or ''))
+
     # Pre-fetch local order item names (used for display AND as matching fallback
     # when the RTV's product_description is empty).
     _all_ncm_ids_for_prefetch = {row[0] for row in _all_rtv_tuples}
@@ -6534,32 +6574,36 @@ def possible_redirection_list(request):
 
     # _confirmed_branch_map: uppercase branch_city → [Order objects] — built once,
     # reused for both the pre-filter and the per-entry matching_orders display.
-    # NOTE: branch is stored in branch_city (not ncm_destination_branch which is
-    # often empty), and to_branch on RTVOrder is the delivery branch name.
+    # Matches against both branch_city and ncm_destination_branch.
     _confirmed_branch_map = {}
     if _all_rtv_tuples:
-        _all_branches = {row[1] for row in _all_rtv_tuples}
+        _all_branches = {row[1].strip() for row in _all_rtv_tuples if row[1].strip()}
         _cbq = Q()
         for _br in _all_branches:
-            _cbq |= Q(branch_city__iexact=_br)
-        # One DB query — strictly confirmed orders only. Dispatched, in-transit,
-        # delivered, cancelled, returned, or already-booked NCM orders must NEVER
+            _cbq |= Q(branch_city__iexact=_br) | Q(ncm_destination_branch__iexact=_br)
+            if '(' in _br:
+                _base = _br.split('(')[0].strip()
+                if _base:
+                    _cbq |= Q(branch_city__iexact=_base) | Q(ncm_destination_branch__iexact=_base)
+        # One DB query — confirmed orders only. Dispatched, in-transit,
+        # delivered, cancelled, returned, or redirected orders must NEVER
         # be suggested as redirect targets.
         _candidate_excluded_statuses = (
-            'dispatched', 'in_transit', 'delivered', 'cancelled', 'returned',
+            'dispatched', 'in_transit', 'in transit', 'delivered', 'cancelled', 'returned',
             'return', 'return_processing', 'return_arrived', 'completed', 'redirected',
         )
         _confirmed_orders = list(
             Order.objects.filter(is_deleted=False)
                 .filter(_cbq)
-                .filter(order_status__iexact='confirmed')
+                .filter(
+                    Q(order_status__iexact='confirmed') | Q(status__iexact='confirmed')
+                )
                 .exclude(status__in=_candidate_excluded_statuses)
                 .exclude(order_status__in=_candidate_excluded_statuses)
                 .exclude(ncm_status__istartswith='dispatched')
                 .exclude(ncm_status__istartswith='in transit')
                 .exclude(ncm_status__istartswith='delivered')
                 .exclude(ncm_status__istartswith='returned')
-                .exclude(ncm_order_id__isnull=False)
                 .prefetch_related(
                     _Pf('items', queryset=OrderItem.objects.only(
                         'id', 'order_id', 'product_name', 'quantity', 'price', 'total',
@@ -6577,8 +6621,14 @@ def possible_redirection_list(request):
                 )
         )
         for _o in _confirmed_orders:
-            _k = (_o.branch_city or '').upper()
-            _confirmed_branch_map.setdefault(_k, []).append(_o)
+            for _br_val in (_o.branch_city, _o.ncm_destination_branch):
+                if _br_val and _br_val.strip():
+                    _c_norm = _br_val.strip().upper()
+                    _confirmed_branch_map.setdefault(_c_norm, []).append(_o)
+                    if '(' in _c_norm:
+                        _base_c = _c_norm.split('(')[0].strip()
+                        if _base_c:
+                            _confirmed_branch_map.setdefault(_base_c, []).append(_o)
         # Determine which RTVs have at least one matching confirmed order.
         # Matching rules:
         #   - Branch must match (rtv.to_branch == order.branch_city, case-insensitive)
@@ -6588,8 +6638,10 @@ def possible_redirection_list(request):
         #   - If RTV has no product_description, branch match alone is sufficient.
         _has_match_ids = set()
         for _oid, _tbranch, _pdesc in _all_rtv_tuples:
-            _bk = (_tbranch or '').upper()
+            _bk = (_tbranch or '').strip().upper()
             _branch_orders = _confirmed_branch_map.get(_bk, [])
+            if not _branch_orders and '(' in _bk:
+                _branch_orders = _confirmed_branch_map.get(_bk.split('(')[0].strip(), [])
             if not _branch_orders:
                 continue
             _desc = (_pdesc or '').strip()
@@ -6706,11 +6758,12 @@ def possible_redirection_list(request):
     # order id → NCM ids of the RTV rows above that also match it. One confirmed
     # order can genuinely be the right destination for several RTVs, so instead
     # of hiding it from all but the first row we show it everywhere and name the
-    # rows contesting it.
     _suggested_by_order_id = {}
     for entry in rtv_entries:
-        _bk = (entry['rtv'].to_branch or '').upper()
+        _bk = (entry['rtv'].to_branch or '').strip().upper() or (entry.get('branch_city') or '').strip().upper()
         _branch_candidates = _confirmed_branch_map.get(_bk, [])
+        if not _branch_candidates and '(' in _bk:
+            _branch_candidates = _confirmed_branch_map.get(_bk.split('(')[0].strip(), [])
         _ncm_id = entry['ncm_order_id']
         # Use RTV's product_description for matching, fallback to linked local order names if empty
         _desc = (entry['rtv'].product_description or '').strip()

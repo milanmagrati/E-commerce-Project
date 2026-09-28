@@ -53,18 +53,18 @@ def check(label, condition, detail=''):
 
 
 def make_order(number, products, **extra):
-    """products: list of (name, qty)."""
-    order = Order.objects.create(
-        order_number=number,
-        customer_name=f'Cust {number}',
-        customer_phone='9800000000',
-        shipping_address='Test address',
-        branch_city=BRANCH,
-        order_status='confirmed',
-        status='confirmed',
-        total_amount=1000,
-        **extra,
-    )
+    fields = {
+        'order_number': number,
+        'customer_name': f'Cust {number}',
+        'customer_phone': '9800000000',
+        'shipping_address': 'Test address',
+        'branch_city': BRANCH,
+        'order_status': 'confirmed',
+        'status': 'confirmed',
+        'total_amount': 1000,
+    }
+    fields.update(extra)
+    order = Order.objects.create(**fields)
     for name, qty in products:
         OrderItem.objects.create(
             order=order, product_name=name, quantity=qty, price=100, total=100 * qty,

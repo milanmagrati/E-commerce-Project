@@ -732,27 +732,29 @@ class NCMService:
 
     @staticmethod
     def is_return_dispatch_or_transit(ncm_status) -> bool:
-        """True when an NCM status indicates dispatch or in-transit movement.
+        """True when an NCM status indicates dispatch on the return leg.
 
-        For orders in the RTV pipeline (or marked RTV), any dispatch or in-transit
-        status means the parcel has physically left the delivery branch and is
-        travelling back towards Kathmandu/Nayabuspark return hubs.
+        Specifically matches dispatch towards central return hubs (Nayabuspark, Kathmandu, Return branch).
         """
         text = ' '.join((ncm_status or '').strip().lower().split())
         if not text:
             return False
         return (
-            text.startswith('dispatched')
-            or text.startswith('in transit')
-            or text == 'in_transit'
+            text.startswith('dispatched to return')
+            or text.startswith('dispatched to nayabus')
+            or text.startswith('dispatched to kathmandu')
+            or text.startswith('arrived at return')
+            or text.startswith('arrived at nayabus')
         )
 
     @staticmethod
     def is_return_movement_or_dispatched(ncm_status) -> bool:
-        """True when an NCM status indicates that the parcel is in return transit,
-        dispatched back, or has reached a return hub.
+        """True when an NCM status indicates that the parcel is in return transit back
+        towards return hubs or has reached a return hub.
 
         Used to gate redirection eligibility: parcels matching this are NEVER redirectable.
+        Does NOT match initial at-branch RTV statuses like 'Order Marked Return', 'Return Initiated',
+        or 'Return Approved'.
         """
         text = ' '.join((ncm_status or '').strip().lower().split())
         if not text:
@@ -764,8 +766,6 @@ class NCMService:
         if NCMService.is_return_dispatch_or_transit(text):
             return True
         if NCMService.is_return_completed(text):
-            return True
-        if 'return' in text and not text.startswith('returned to warehouse'):
             return True
         return False
 
