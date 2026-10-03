@@ -232,6 +232,27 @@
                                                 <input type="checkbox" class="form-check-input" name="can_delete_products" id="can_delete_products" {% if edit_user.can_delete_products %}checked{% endif %}>
                                                 <label for="can_delete_products">Delete Products</label>
                                             </div>
+
+                                            <!-- Pricing & Discounts -->
+                                            <div class="mt-2 pt-2 border-top">
+                                                <small class="text-muted fw-bold d-block mb-1"><i class="fas fa-dollar-sign text-success"></i> Pricing & Discounts</small>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_view_cost_price" id="can_view_cost_price" {% if edit_user.can_view_cost_price %}checked{% endif %}>
+                                                    <label for="can_view_cost_price">View Cost Price</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_edit_prices" id="can_edit_prices" {% if edit_user.can_edit_prices %}checked{% endif %}>
+                                                    <label for="can_edit_prices">Edit Prices</label>
+                                                </div>
+                                                <div class="perm-item">
+                                                    <input type="checkbox" class="form-check-input" name="can_give_discounts" id="can_give_discounts" {% if edit_user.can_give_discounts %}checked{% endif %}>
+                                                    <label for="can_give_discounts">Give Discounts</label>
+                                                </div>
+                                                <div class="perm-item flex-column align-items-start pt-2">
+                                                    <label class="form-label fw-bold small mb-1" for="max_discount_percent">Max Discount %</label>
+                                                    <input type="number" class="form-control form-control-sm" name="max_discount_percent" id="max_discount_percent" value="{{ edit_user.max_discount_percent|default:'0.00' }}" min="0" max="100" step="0.01" {% if not edit_user.can_give_discounts %}disabled{% endif %}>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -754,40 +775,6 @@
                                     </div>
                                 </div>
 
-                                <!-- Pricing & Discounts Module -->
-                                <div class="col-12 mb-3">
-                                    <div class="perm-card">
-                                        <div class="perm-card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                                            <i class="fas fa-dollar-sign"></i> Pricing & Discount Module
-                                        </div>
-                                        <div class="perm-card-body">
-                                            <div class="row">
-                                                <div class="col-md-3">
-                                                    <div class="perm-item">
-                                                        <input type="checkbox" class="form-check-input" name="can_view_cost_price" id="can_view_cost_price" {% if edit_user.can_view_cost_price %}checked{% endif %}>
-                                                        <label for="can_view_cost_price">View Cost Price</label>
-                                                    </div>
-                                                </div>
-                                                <div class="col-md-3">
-                                                    <div class="perm-item">
-                                                        <input type="checkbox" class="form-check-input" name="can_edit_prices" id="can_edit_prices" {% if edit_user.can_edit_prices %}checked{% endif %}>
-                                                        <label for="can_edit_prices">Edit Prices</label>
-                                                    </div>
-                                                </div>
-                                                <div class="col-md-3">
-                                                    <div class="perm-item">
-                                                        <input type="checkbox" class="form-check-input" name="can_give_discounts" id="can_give_discounts" {% if edit_user.can_give_discounts %}checked{% endif %}>
-                                                        <label for="can_give_discounts">Give Discounts</label>
-                                                    </div>
-                                                </div>
-                                                <div class="col-md-3">
-                                                    <label class="form-label fw-bold small">Max Discount %</label>
-                                                    <input type="number" class="form-control" name="max_discount_percent" id="max_discount_percent" value="{{ edit_user.max_discount_percent|default:'0.00' }}" min="0" max="100" step="0.01" {% if not edit_user.can_give_discounts %}disabled{% endif %}>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                         {% else %}

@@ -18,12 +18,12 @@
         </button>
         {% endif %}
 
-        {% if user_permissions.can_edit_prices or user_permissions.is_administrator %}
+        {% if user_permissions.can_edit_products or user_permissions.can_edit_prices or user_permissions.is_administrator %}
         <a href="{% url 'product_edit' product.id %}" class="btn btn-warning">
           <i class="fas fa-edit"></i> Edit
         </a>
         {% else %}
-        <button class="btn btn-warning disabled" title="You don't have permission to edit prices">
+        <button class="btn btn-warning disabled" title="You don't have permission to edit products">
           <i class="fas fa-lock"></i> Edit (Restricted)
         </button>
         {% endif %}

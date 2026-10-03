@@ -127,10 +127,11 @@
             <div class="card-body">
                 <div class="row">
                     {% if user_permissions.can_edit_prices or user_permissions.is_administrator %}
-                    <div class="col-md-4 mb-3">
+                    <div class="{% if user_permissions.can_view_cost_price or user_permissions.is_administrator %}col-md-4{% else %}col-md-6{% endif %} mb-3">
                         <label class="form-label fw-bold">Selling Price (रू) <span class="text-danger">*</span></label>
                         {{ form.price }}
                     </div>
+                    {% if user_permissions.can_view_cost_price or user_permissions.is_administrator %}
                     <div class="col-md-4 mb-3" id="costPriceField">
                         <label class="form-label fw-bold">Cost Price (रू) <span class="text-danger">*</span></label>
 
@@ -170,7 +171,8 @@
                             <small class="text-muted"><i class="fas fa-info-circle"></i> Auto-calculated from components</small>
                         </div>
                     </div>
-                    <div class="col-md-4 mb-3" id="stockField">
+                    {% endif %}
+                    <div class="{% if user_permissions.can_view_cost_price or user_permissions.is_administrator %}col-md-4{% else %}col-md-6{% endif %} mb-3" id="stockField">
                         <label class="form-label fw-bold">Stock Quantity <span class="text-danger">*</span></label>
                         {{ form.stock }}
                     </div>
@@ -180,6 +182,10 @@
                             <i class="fas fa-lock me-2"></i>
                             <strong>Pricing Restricted:</strong> You don't have permission to edit pricing. Contact your administrator to request access.
                         </div>
+                    </div>
+                    <div class="col-md-6 mb-3" id="stockField">
+                        <label class="form-label fw-bold">Stock Quantity <span class="text-danger">*</span></label>
+                        {{ form.stock }}
                     </div>
                     {% endif %}
                 </div>

@@ -1602,8 +1602,11 @@ from dashboard.product_theme_views import (product_theme_form_context,
 @login_required
 @permission_required('can_create_products')
 def product_add(request):
+    can_view_cost_price = bool(getattr(request.user, 'can_view_cost_price', False) or getattr(request.user, 'role', '') == 'administrator' or request.user.is_superuser)
+    can_edit_prices = bool(getattr(request.user, 'can_edit_prices', False) or getattr(request.user, 'role', '') == 'administrator' or request.user.is_superuser)
+
     if request.method == 'POST':
-        form = ProductForm(request.POST, request.FILES)
+        form = ProductForm(request.POST, request.FILES, can_view_cost_price=can_view_cost_price, can_edit_prices=can_edit_prices)
 
         if form.is_valid():
             product = form.save(commit=False)
@@ -1765,7 +1768,7 @@ def product_add(request):
             ctx.update(product_theme_form_context(None, request.POST))
             return render(request, 'product_form.html', ctx)
     else:
-        form = ProductForm()
+        form = ProductForm(can_view_cost_price=can_view_cost_price, can_edit_prices=can_edit_prices)
         formset = ProductVariationFormSet()
 
     # Respect cleared=1 param from Clear & Start Fresh to delete any temp uploaded image
@@ -1796,8 +1799,10 @@ def product_add(request):
         'temp_image_url': temp_url,
         'temp_image_path': temp_path,
         'user_permissions': {
-            'can_edit_prices': request.user.can_edit_prices,
-            'can_view_cost_price': request.user.can_view_cost_price,
+            'can_create_products': getattr(request.user, 'can_create_products', False),
+            'can_edit_products': getattr(request.user, 'can_edit_products', False),
+            'can_edit_prices': can_edit_prices,
+            'can_view_cost_price': can_view_cost_price,
             'is_administrator': request.user.role == 'administrator',
         }
     }
@@ -1810,18 +1815,15 @@ def product_add(request):
 @permission_required('can_edit_products')
 def product_edit(request, product_id):
     product = get_object_or_404(Product, pk=product_id, is_deleted=False)
-
-    # Check permission to edit prices
-    if not request.user.can_edit_prices and request.user.role != 'administrator':
-        messages.error(request, 'You do not have permission to edit product prices.')
-        return redirect('product_detail', product_id=product_id)
+    can_view_cost_price = bool(getattr(request.user, 'can_view_cost_price', False) or getattr(request.user, 'role', '') == 'administrator' or request.user.is_superuser)
+    can_edit_prices = bool(getattr(request.user, 'can_edit_prices', False) or getattr(request.user, 'role', '') == 'administrator' or request.user.is_superuser)
 
     # Get existing variant options
     variant_option = product.variant_options.filter(option_name='Variant').first()
     size_option = product.variant_options.filter(option_name='Size').first()
 
     if request.method == 'POST':
-        form = ProductForm(request.POST, request.FILES, instance=product)
+        form = ProductForm(request.POST, request.FILES, instance=product, can_view_cost_price=can_view_cost_price, can_edit_prices=can_edit_prices)
         formset = ProductVariationFormSet(request.POST, request.FILES, instance=product)
 
         if form.is_valid():
@@ -1991,7 +1993,7 @@ def product_edit(request, product_id):
         variant_option = product.variant_options.filter(option_name='Variant').first()
         size_option = product.variant_options.filter(option_name='Size').first()
 
-        form = ProductForm(instance=product, initial={
+        form = ProductForm(instance=product, can_view_cost_price=can_view_cost_price, can_edit_prices=can_edit_prices, initial={
             'variant_options': variant_option.option_values if variant_option else '',
             'size_options': size_option.option_values if size_option else ''
         })
@@ -2027,8 +2029,9 @@ def product_edit(request, product_id):
         'temp_image_url': temp_url,
         'temp_image_path': temp_path,
         'user_permissions': {
-            'can_edit_prices': request.user.can_edit_prices,
-            'can_view_cost_price': request.user.can_view_cost_price,
+            'can_edit_products': getattr(request.user, 'can_edit_products', True),
+            'can_edit_prices': can_edit_prices,
+            'can_view_cost_price': can_view_cost_price,
             'is_administrator': request.user.role == 'administrator',
         },
         'bundle_components': list(product.bundle_components.select_related('component_product').all()) if product.product_type == 'bundle' else [],
@@ -2141,6 +2144,7 @@ def product_detail(request, product_id):
 
     # Get user permissions
     user_permissions = {
+        'can_edit_products': getattr(request.user, 'can_edit_products', False),
         'can_view_cost_price': request.user.can_view_cost_price,
         'can_edit_prices': request.user.can_edit_prices,
         'can_give_discounts': request.user.can_give_discounts,

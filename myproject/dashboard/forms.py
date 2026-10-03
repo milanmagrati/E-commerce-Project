@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django import forms
 from .models import Product, Order, Category, ProductAttribute, ProductAttributeValue, ProductVariation, ProductImage, Customer
 
@@ -45,6 +46,38 @@ class ProductForm(forms.ModelForm):
             'manufactured_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
             'expiry_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
         }
+
+    def __init__(self, *args, **kwargs):
+        can_view_cost_price = kwargs.pop('can_view_cost_price', True)
+        can_edit_prices = kwargs.pop('can_edit_prices', True)
+        super().__init__(*args, **kwargs)
+        self.can_view_cost_price = can_view_cost_price
+        self.can_edit_prices = can_edit_prices
+
+        if not can_view_cost_price:
+            self.fields['cost_price'].required = False
+            self.fields['cost_price_type'].required = False
+
+        if not can_edit_prices:
+            self.fields['price'].required = False
+            self.fields['cost_price'].required = False
+            self.fields['cost_price_type'].required = False
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if not getattr(self, 'can_edit_prices', True):
+            if self.instance and self.instance.pk:
+                cleaned_data['price'] = self.instance.price
+                cleaned_data['cost_price'] = self.instance.cost_price
+                cleaned_data['cost_price_type'] = self.instance.cost_price_type
+        elif not getattr(self, 'can_view_cost_price', True):
+            if self.instance and self.instance.pk:
+                cleaned_data['cost_price'] = self.instance.cost_price
+                cleaned_data['cost_price_type'] = self.instance.cost_price_type
+            else:
+                cleaned_data['cost_price'] = cleaned_data.get('cost_price') or Decimal('0.00')
+                cleaned_data['cost_price_type'] = cleaned_data.get('cost_price_type') or 'fixed'
+        return cleaned_data
 class ProductVariationForm(forms.ModelForm):
     class Meta:
         model = ProductVariation
@@ -91,30 +124,6 @@ class ProductAttributeValueForm(forms.ModelForm):
         widgets = {
             'attribute': forms.Select(attrs={'class': 'form-select'}),
             'value': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Small, Red, etc.'})
-        }
-
-
-class ProductForm(forms.ModelForm):
-    class Meta:
-        model = Product
-        fields = ['name', 'slug', 'description', 'category', 'product_type',
-                  'price', 'cost_price', 'cost_price_type', 'stock', 'stock_status',
-                  'manufactured_date', 'expiry_date', 'image', 'is_active']
-        widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control'}),
-            'slug': forms.TextInput(attrs={'class': 'form-control'}),
-            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
-            'category': forms.Select(attrs={'class': 'form-select'}),
-            'product_type': forms.Select(attrs={'class': 'form-select'}),
-            'price': forms.NumberInput(attrs={'class': 'form-control'}),
-            'cost_price': forms.NumberInput(attrs={'class': 'form-control'}),
-            'cost_price_type': forms.HiddenInput(),
-            'stock': forms.NumberInput(attrs={'class': 'form-control'}),
-            'stock_status': forms.Select(attrs={'class': 'form-select'}),
-            'image': forms.FileInput(attrs={'class': 'form-control'}),
-            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-            'manufactured_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
-            'expiry_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
         }
 
 
