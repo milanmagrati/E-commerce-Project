@@ -1440,43 +1440,6 @@
                         </li>
                         {% endif %}
 
-                        <!-- Asset Management -->
-                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_asset_management %}
-                        <li>
-                            <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmAssetManagement"
-                                aria-expanded="false" class="d-flex justify-content-between align-items-center">
-                                Asset Management <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
-                            </a>
-                            <ul class="collapse list-unstyled ps-3" id="hrmAssetManagement">
-                                <li
-                                    class="{% if request.resolver_match.url_name == 'asset_type_list' %}active{% endif %}">
-                                    <a href="{% url 'hrm:asset_type_list' %}">Asset Types</a>
-                                </li>
-                                <li class="{% if request.resolver_match.url_name == 'asset_list' %}active{% endif %}">
-                                    <a href="{% url 'hrm:asset_list' %}">Assets</a>
-                                </li>
-                                <li
-                                    class="{% if request.resolver_match.url_name == 'asset_dashboard' %}active{% endif %}">
-                                    <a href="{% url 'hrm:asset_dashboard' %}">Dashboard</a>
-                                </li>
-                                <li
-                                    class="{% if request.resolver_match.url_name == 'asset_depreciation' %}active{% endif %}">
-                                    <a href="{% url 'hrm:asset_depreciation' %}">Depreciation</a>
-                                </li>
-                            </ul>
-                        </li>
-                        {% endif %}
-
-                        <!-- Contract Management -->
-                        <li class="{% if request.resolver_match.url_name == 'contract_list' %}active{% endif %}">
-                            <a href="{% url 'hrm:contract_list' %}">Contract Management</a>
-                        </li>
-
-                        <!-- Document Management -->
-                        <li class="{% if request.resolver_match.url_name == 'document_list' %}active{% endif %}">
-                            <a href="{% url 'hrm:document_list' %}">Document Management</a>
-                        </li>
-
                         <!-- Attendance (nested submenu) -->
                         {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_attendance %}
                         <li>
@@ -1575,6 +1538,43 @@
                             </ul>
                         </li>
                         {% endif %}
+
+                        <!-- Asset Management -->
+                        {% if user.is_superuser or user.role == 'administrator' or user.can_view_hrm_asset_management %}
+                        <li>
+                            <a href="#" data-bs-toggle="collapse" data-bs-target="#hrmAssetManagement"
+                                aria-expanded="false" class="d-flex justify-content-between align-items-center">
+                                Asset Management <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
+                            </a>
+                            <ul class="collapse list-unstyled ps-3" id="hrmAssetManagement">
+                                <li
+                                    class="{% if request.resolver_match.url_name == 'asset_type_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:asset_type_list' %}">Asset Types</a>
+                                </li>
+                                <li class="{% if request.resolver_match.url_name == 'asset_list' %}active{% endif %}">
+                                    <a href="{% url 'hrm:asset_list' %}">Assets</a>
+                                </li>
+                                <li
+                                    class="{% if request.resolver_match.url_name == 'asset_dashboard' %}active{% endif %}">
+                                    <a href="{% url 'hrm:asset_dashboard' %}">Dashboard</a>
+                                </li>
+                                <li
+                                    class="{% if request.resolver_match.url_name == 'asset_depreciation' %}active{% endif %}">
+                                    <a href="{% url 'hrm:asset_depreciation' %}">Depreciation</a>
+                                </li>
+                            </ul>
+                        </li>
+                        {% endif %}
+
+                        <!-- Contract Management -->
+                        <li class="{% if request.resolver_match.url_name == 'contract_list' %}active{% endif %}">
+                            <a href="{% url 'hrm:contract_list' %}">Contract Management</a>
+                        </li>
+
+                        <!-- Document Management -->
+                        <li class="{% if request.resolver_match.url_name == 'document_list' %}active{% endif %}">
+                            <a href="{% url 'hrm:document_list' %}">Document Management</a>
+                        </li>
 
                         <!-- Leave Management -->
                         <li>
