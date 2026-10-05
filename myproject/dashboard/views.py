@@ -6887,7 +6887,7 @@ POSSIBLE_REDIRECTION_REFRESH_THROTTLE_SECONDS = 45
 #: rows' own last_status is refreshed for free from the one bulk response and is
 #: what actually decides whether a row stays listed, so capping this only
 #: spreads the linked-order catch-up over successive refreshes.
-POSSIBLE_REDIRECTION_REFRESH_MAX_ORDER_WRITES = 10
+POSSIBLE_REDIRECTION_REFRESH_MAX_ORDER_WRITES = 100
 
 
 @login_required
@@ -7073,7 +7073,7 @@ def possible_redirection_refresh_status(request):
                                  or _corrects_stale_eligibility)):
                         order_writes_attempted += 1
                         try:
-                            if sync_order_status_from_raw(svc, local, raw_status, request.user):
+                            if sync_order_status_from_raw(svc, local, raw_status, request.user, fetch_event_times=False):
                                 orders_updated += 1
                         except Exception:
                             logger.warning('Possible-redirection refresh: could not persist '

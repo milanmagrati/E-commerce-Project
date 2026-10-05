@@ -2315,7 +2315,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Shared across tabs, same as the comment sync above, so several open
         // tabs don't each fire the request.
         var lastStatusRefresh = parseInt(localStorage.getItem('pr_last_status_refresh') || '0', 10);
-        if (!force && Date.now() - lastStatusRefresh < 90000) { // 90-second cooldown
+        if (!force && Date.now() - lastStatusRefresh < 45000) { // 45-second cooldown
             return;
         }
         localStorage.setItem('pr_last_status_refresh', String(Date.now()));
@@ -2469,11 +2469,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // covers the whole page, and the cooldown inside makes the extra triggers
     // nearly free.
     //
-    // A row the view flagged as unverified overrides that cooldown, once, on
-    // this load — that is what makes going straight to this page (rather than
-    // via an order detail page) enough to clear a parcel NCM has already moved
-    // back into transit.
-    statusRefresh(document.querySelector('tr.order-row[data-status-uncertain]') !== null);
+    // Always verify on load: active candidate rows are checked with NCM
+    // so parcels that have started return transit are immediately removed.
+    // The server cache throttle (45s) prevents spamming NCM on repeat reloads.
+    statusRefresh(true);
     setInterval(statusRefresh, 300000);
     document.addEventListener('visibilitychange', function () {
         if (!document.hidden) { statusRefresh(); }

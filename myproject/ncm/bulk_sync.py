@@ -120,7 +120,22 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None,
         if included_statuses:
             ncm_orders = ncm_orders.filter(status__in=included_statuses)
         else:
-            ncm_orders = ncm_orders.exclude(status__in=DEFAULT_TERMINAL_STATUSES)
+            from dashboard.models import RTVOrder
+            from services.ncm_service import NCMService
+            from django.db.models import Q
+            # Active RTV orders: orders with an active RTVOrder that haven't arrived/completed return yet
+            _terminal_rtv_statuses = list(NCMService.RETURN_COMPLETED_STATUSES) + ['return_arrived']
+            active_rtv_ncm_ids = list(
+                RTVOrder.objects.filter(vendor_return=True)
+                .exclude(last_status__in=_terminal_rtv_statuses)
+                .values_list('order_id', flat=True)
+            )
+            if active_rtv_ncm_ids:
+                ncm_orders = ncm_orders.filter(
+                    ~Q(status__in=DEFAULT_TERMINAL_STATUSES) | Q(ncm_order_id__in=active_rtv_ncm_ids)
+                )
+            else:
+                ncm_orders = ncm_orders.exclude(status__in=DEFAULT_TERMINAL_STATUSES)
 
     summary = {'total_orders': 0, 'updated_count': 0, 'errors': [], 'deadline_reached': False}
 
@@ -347,6 +362,14 @@ def _sync_one_order(svc, order, raw_status, user, fetch_event_times=True):
         update_fields.append('delivered_at')
 
     order.save(update_fields=list(dict.fromkeys(update_fields)))
+
+    # Keep linked RTVOrder.last_status in sync with Order.ncm_status
+    if order.ncm_order_id:
+        try:
+            from dashboard.models import RTVOrder
+            RTVOrder.objects.filter(order_id=order.ncm_order_id).update(last_status=new_status)
+        except Exception:
+            pass
 
     OrderActivityLog.objects.create(
         order=order,
