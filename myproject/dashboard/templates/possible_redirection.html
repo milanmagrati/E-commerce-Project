@@ -2323,6 +2323,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var ids = Array.prototype.map.call(rows, function (r) { return r.dataset.ncmId; });
         var body = new URLSearchParams();
         body.append('ncm_ids', ids.join(','));
+        if (force) { body.append('force', '1'); }
 
         fetch('{% url "possible_redirection_refresh_status" %}', {
             method: 'POST',

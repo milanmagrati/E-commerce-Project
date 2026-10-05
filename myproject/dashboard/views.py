@@ -6942,8 +6942,9 @@ def possible_redirection_refresh_status(request):
     if not ncm_ids:
         return JsonResponse(_empty)
 
+    force = request.POST.get('force') == '1'
     _throttle_key = 'possible_redirection_status_refresh'
-    if cache.get(_throttle_key):
+    if not force and cache.get(_throttle_key):
         return JsonResponse(dict(_empty, throttled=True))
     cache.set(_throttle_key, True, POSSIBLE_REDIRECTION_REFRESH_THROTTLE_SECONDS)
 
@@ -7016,6 +7017,17 @@ def possible_redirection_refresh_status(request):
 
             for rtv in chunk:
                 raw_status = statuses.get(str(rtv.order_id))
+                if raw_status is None:
+                    # NCM's bulk /orders/statuses often omits RTV orders (returns them in 'errors').
+                    # Fall back to fetch_order_status_raw to get the real status timeline!
+                    try:
+                        from services.ncm_service import fetch_order_status_raw
+                        detail_res, _ = fetch_order_status_raw(rtv.order_id, api_config_id=rtv.api_config_id)
+                        if detail_res.get('success') and detail_res.get('data'):
+                            d = detail_res['data']
+                            raw_status = d[0] if isinstance(d, list) and d else d
+                    except Exception:
+                        pass
                 local = local_orders.get(rtv.order_id)
 
                 if raw_status is not None:

@@ -196,6 +196,19 @@ def run_bulk_ncm_status_sync(user=None, order_ids=None, fetch_event_times=None,
 
             for order in chunk_orders:
                 raw_status = status_data.get(str(order.ncm_order_id))
+                if raw_status is None and (
+                    order.status in RETURN_PIPELINE_STATUSES
+                    or (order.ncm_order_id in active_rtv_ncm_ids if 'active_rtv_ncm_ids' in locals() else False)
+                ):
+                    # NCM's bulk /orders/statuses omits RTV orders (returns in 'errors').
+                    # Call get_order_status for the latest status entry!
+                    try:
+                        detail_res = svc.get_order_status(order.ncm_order_id)
+                        if detail_res.get('success') and detail_res.get('data'):
+                            d = detail_res['data']
+                            raw_status = d[0] if isinstance(d, list) and d else d
+                    except Exception:
+                        pass
                 if raw_status is None:
                     continue
                 try:
