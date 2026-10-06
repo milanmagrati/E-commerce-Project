@@ -6719,8 +6719,57 @@ def possible_redirection_list(request):
     rtvs_page = paginator.get_page(page_number)
 
     # Build enriched entries for the template
-    rtv_entries = []
+    # Proactively verify live NCM status for candidates before rendering,
+    # ensuring parcels in return transit or return hubs are dropped immediately.
+    from services.ncm_service import fetch_order_status_raw, NCMService
+    from ncm.bulk_sync import sync_order_status_from_raw
+
+    verified_candidates = []
     for rtv in rtvs_page.object_list:
+        local_order = linked_orders.get(rtv.order_id)
+        try:
+            detail_res, resolved_cfg_id = fetch_order_status_raw(
+                rtv.order_id, api_config_id=rtv.api_config_id, use_cache=True
+            )
+            if detail_res and detail_res.get('success') and detail_res.get('data'):
+                d = detail_res['data']
+                raw_entry = d[0] if isinstance(d, list) and d else d
+                if isinstance(raw_entry, dict):
+                    live_status = raw_entry.get('status') or raw_entry.get('Status') or ''
+                    if live_status and live_status != rtv.last_status:
+                        rtv.last_status = live_status
+                        rtv.save(update_fields=['last_status'])
+                    if local_order:
+                        try:
+                            active_svc = NCMService(api_config_id=resolved_cfg_id) if resolved_cfg_id else (
+                                NCMService(api_config_id=rtv.api_config_id) if rtv.api_config_id else NCMService()
+                            )
+                            sync_order_status_from_raw(active_svc, local_order, raw_entry, fetch_event_times=False)
+                            local_order.refresh_from_db(fields=['ncm_status', 'status', 'order_status'])
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        # If live NCM status reveals the parcel is in return transit or finished return,
+        # drop it immediately so it never renders as a candidate.
+        _ls = (rtv.last_status or '').strip()
+        _los = (local_order.ncm_status or '').strip() if local_order else ''
+        if (
+            NCMService.is_return_arrival(_ls)
+            or NCMService.is_return_arrival(_los)
+            or NCMService.is_return_dispatch_or_transit(_ls)
+            or NCMService.is_return_dispatch_or_transit(_los)
+            or any(h in _ls.lower() or h in _los.lower() for h in ('nayabuspark', 'naya buspark'))
+            or _ls.lower() in ('delivered', 'returned', 'sent to vendor')
+            or _los.lower() in ('delivered', 'returned', 'sent to vendor')
+        ):
+            continue
+
+        verified_candidates.append(rtv)
+
+    rtv_entries = []
+    for rtv in verified_candidates:
         local_order = linked_orders.get(rtv.order_id)
         entry = {
             'rtv': rtv,
