@@ -6997,35 +6997,36 @@ def possible_redirection_refresh_status(request):
 
         for _start in range(0, len(group), _CHUNK):
             chunk = group[_start:_start + _CHUNK]
+            statuses = {}
             try:
                 result = svc.get_bulk_order_statuses([str(r.order_id) for r in chunk])
+                if result.get('success'):
+                    _data = result.get('data') or {}
+                    _res = _data.get('result') if isinstance(_data, dict) else None
+                    if isinstance(_res, dict):
+                        statuses = _res
             except Exception:
                 logger.warning('Possible-redirection refresh: NCM status request failed '
                                'for config %s', config_id, exc_info=True)
                 errors += 1
-                continue
-
-            if not result.get('success'):
-                errors += 1
-                continue
-
-            _data = result.get('data') or {}
-            statuses = _data.get('result') if isinstance(_data, dict) else None
-            if not isinstance(statuses, dict):
-                errors += 1
-                continue
 
             for rtv in chunk:
                 raw_status = statuses.get(str(rtv.order_id))
+                active_svc = svc
                 if raw_status is None:
                     # NCM's bulk /orders/statuses often omits RTV orders (returns them in 'errors').
                     # Fall back to fetch_order_status_raw to get the real status timeline!
                     try:
                         from services.ncm_service import fetch_order_status_raw
-                        detail_res, _ = fetch_order_status_raw(rtv.order_id, api_config_id=rtv.api_config_id)
+                        detail_res, resolved_cfg_id = fetch_order_status_raw(rtv.order_id, api_config_id=rtv.api_config_id)
                         if detail_res.get('success') and detail_res.get('data'):
                             d = detail_res['data']
                             raw_status = d[0] if isinstance(d, list) and d else d
+                            if resolved_cfg_id and resolved_cfg_id != config_id:
+                                try:
+                                    active_svc = NCMService(api_config_id=resolved_cfg_id)
+                                except Exception:
+                                    pass
                     except Exception:
                         pass
                 local = local_orders.get(rtv.order_id)
@@ -7085,7 +7086,7 @@ def possible_redirection_refresh_status(request):
                                  or _corrects_stale_eligibility)):
                         order_writes_attempted += 1
                         try:
-                            if sync_order_status_from_raw(svc, local, raw_status, request.user, fetch_event_times=False):
+                            if sync_order_status_from_raw(active_svc, local, raw_status, request.user, fetch_event_times=False):
                                 orders_updated += 1
                         except Exception:
                             logger.warning('Possible-redirection refresh: could not persist '
