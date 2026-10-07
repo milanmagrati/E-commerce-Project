@@ -2338,15 +2338,22 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(function (data) {
             if (!data || !data.success) { return; }
             if (data.dropped && data.dropped.length) {
+                // Loop guard: the server already verifies candidates before
+                // rendering, so a freshly loaded page should rarely have anything
+                // to drop. If it still does, reload at most once a minute rather
+                // than chasing a status that keeps flipping between NCM's coarse
+                // ("Arrived") and branch-qualified ("Arrived at X") wording.
+                var lastAuto = parseInt(sessionStorage.getItem('pr_last_auto_reload') || '0', 10);
+                if (Date.now() - lastAuto < 60000) { return; }
+                sessionStorage.setItem('pr_last_auto_reload', String(Date.now()));
                 statusReload(
                     data.dropped.length + ' order(s) no longer redirectable — removing from the list',
                     'text-bg-warning'
                 );
-            } else if (data.rtv_updated || data.orders_updated) {
-                // Statuses moved but the rows are still candidates — reload so
-                // the badges match what NCM just told us.
-                statusReload('NCM status updated', 'text-bg-success');
             }
+            // A mere status-wording update on rows that remain candidates no
+            // longer reloads the page: it changes nothing actionable, and it was
+            // the cause of the page reloading over and over.
         })
         .catch(function () { /* silent fail */ });
     }
@@ -2473,7 +2480,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Always verify on load: active candidate rows are checked with NCM
     // so parcels that have started return transit are immediately removed.
     // The server cache throttle (45s) prevents spamming NCM on repeat reloads.
-    statusRefresh(true);
+    statusRefresh(false);
     setInterval(statusRefresh, 300000);
     document.addEventListener('visibilitychange', function () {
         if (!document.hidden) { statusRefresh(); }
