@@ -16,6 +16,9 @@
             </p>
         </div>
         <div class="d-flex gap-2">
+            <a href="{% url 'ncm_bulk_log_labels' bulk_log.id %}" target="_blank" class="btn btn-danger">
+                <i class="fas fa-print"></i> Print Labels ({{ export_counts.success }})
+            </a>
             {% comment %}
             Export sits left of "Back to Bulk Logs" - it is the one thing staff
             reach for repeatedly here. The scopes are the statuses the table

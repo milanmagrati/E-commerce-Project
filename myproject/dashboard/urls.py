@@ -9,6 +9,7 @@ from . import bulk_invoice_views
 from . import product_theme_views
 from . import store_label_views
 from . import page_views
+from . import ncm_label_views
 
 
 urlpatterns = [
@@ -374,6 +375,8 @@ urlpatterns = [
     # ✅ NCM BULK ORDER LOGS
     # ncm_bulk_logs_list removed - use logistics/bulk-logs/?provider=ncm instead
     path('ncm-bulk-logs/<int:log_id>/', views.ncm_bulk_log_detail, name='ncm_bulk_log_detail'),
+    path('ncm-bulk-logs/<int:log_id>/labels/', ncm_label_views.ncm_bulk_log_labels, name='ncm_bulk_log_labels'),
+    path('ncm-bulk-logs/labels/', ncm_label_views.ncm_labels_print, name='ncm_labels_print'),
     # Export one batch (?format=xlsx|csv & ?scope=all|success|failed|skipped)
     path('ncm-bulk-logs/<int:log_id>/export/', views.ncm_bulk_log_export, name='ncm_bulk_log_export'),
     path('ncm-bulk-logs/<int:log_id>/trash/', views.ncm_bulk_log_trash, name='ncm_bulk_log_trash'),

@@ -181,6 +181,9 @@
                     <div class="col-md-5">
                         <select name="bulk_action" class="form-select form-select-sm">
                             <option value="">-- Select Bulk Action --</option>
+                            {% if provider != 'pnd' %}
+                            <option value="print_labels">Print Shipment Labels (NCM)</option>
+                            {% endif %}
                             <option value="move_to_trash">Move to Trash</option>
                             {% if can_manage_batches %}
                             <option value="terminate">Terminate (stop processing batches)</option>
@@ -328,6 +331,11 @@
                                             <i class="fas fa-eye"></i>
                                         </a>
                                         {% else %}
+                                        <a href="{% url 'ncm_bulk_log_labels' log.id %}"
+                                           target="_blank"
+                                           class="btn btn-outline-primary btn-sm" title="Print Shipment Labels">
+                                            <i class="fas fa-print"></i>
+                                        </a>
                                         <a href="{% url 'ncm_bulk_log_detail' log.id %}"
                                            class="btn btn-outline-info btn-sm" title="View Details">
                                             <i class="fas fa-eye"></i>
@@ -899,6 +907,21 @@ document.getElementById('bulkActionForm')?.addEventListener('submit', function(e
     const action = document.querySelector('select[name="bulk_action"]').value;
     if (!action) {
         alert('Please select a bulk action.');
+        return false;
+    }
+    if (action === 'print_labels') {
+        const ncmIds = [];
+        checked.forEach(cb => {
+            if (cb.dataset.provider !== 'pnd') {
+                ncmIds.push(cb.value);
+            }
+        });
+        if (ncmIds.length === 0) {
+            alert('Please select at least one NCM batch to print shipment labels.');
+            return false;
+        }
+        const url = '{% url "ncm_labels_print" %}?batch_ids=' + encodeURIComponent(ncmIds.join(','));
+        window.open(url, '_blank');
         return false;
     }
     if (action === 'move_to_trash') {

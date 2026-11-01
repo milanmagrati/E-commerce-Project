@@ -629,6 +629,49 @@ class NCMService:
             data['comment'] = comment
         return self._make_request('POST', url, data=data)
 
+    #: IDs per label request. NCM's label endpoint takes a JSON array; keep the
+    #: request small so one bad ID or a slow response cannot sink a whole batch.
+    LABEL_CHUNK_SIZE = 50
+
+    def get_order_labels(self, ncm_order_ids):
+        """Fetch label data for NCM orders (POST /vendor/order/label/).
+
+        NCM does not return a printable sticker - only the data needed to draw
+        one (branches, receiver, COD ...) for each ID in the array we send.
+
+        Returns {'success', 'labels': [...], 'errors': [str, ...]}. `success` is
+        True when at least one label came back; callers decide what to do about
+        IDs that are missing from `labels`.
+        """
+        ids = []
+        for raw in ncm_order_ids or []:
+            try:
+                ids.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        ids = list(dict.fromkeys(ids))
+
+        labels = []
+        errors = []
+        url = f"{self.base_url_v2}/vendor/order/label/"
+        for start in range(0, len(ids), self.LABEL_CHUNK_SIZE):
+            chunk = ids[start:start + self.LABEL_CHUNK_SIZE]
+            result = self._make_request('POST', url, data={'ids': chunk})
+            if not result.get('success'):
+                errors.append(str(result.get('error') or 'NCM label request failed'))
+                continue
+            payload = result.get('data')
+            if isinstance(payload, dict):
+                chunk_labels = payload.get('labels')
+            else:
+                chunk_labels = payload
+            if isinstance(chunk_labels, list):
+                labels.extend(l for l in chunk_labels if isinstance(l, dict))
+            else:
+                errors.append('Unexpected label response shape from NCM')
+
+        return {'success': bool(labels), 'labels': labels, 'errors': errors}
+
     def create_exchange_order(self, ncm_order_id: int):
         """Create an exchange order in NCM system.
         

@@ -1,0 +1,717 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Print Orders{% if bulk_log %} — {{ bulk_log.batch_number }}{% endif %} | NCM Shipment Labels</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, Helvetica, "Noto Sans Devanagari", sans-serif;
+            background: #eef2f6;
+            color: #111;
+        }
+
+        /* ==================== SCREEN CONTROLS (NCM Bulk Print UI) ==================== */
+        .screen-shell {
+            max-width: 1080px;
+            margin: 24px auto;
+            padding: 0 16px;
+        }
+        .btn-go-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #6c757d;
+            color: #fff;
+            text-decoration: none;
+            padding: 9px 18px;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        .btn-go-back:hover {
+            background: #5a6268;
+            color: #fff;
+        }
+        .control-card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+            padding: 28px 32px;
+            margin-bottom: 24px;
+        }
+        .control-card h1 {
+            margin: 0 0 18px;
+            font-size: 26px;
+            font-weight: 700;
+            color: #274c5e;
+        }
+        .control-subtitle {
+            font-size: 13px;
+            color: #64748b;
+            margin-top: -12px;
+            margin-bottom: 16px;
+        }
+        .field-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 8px;
+        }
+        .chips-box {
+            border: 1px solid #cbd5e1;
+            border-radius: 5px;
+            padding: 10px 12px;
+            min-height: 54px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            background: #fff;
+        }
+        .order-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: #e2e8f0;
+            border: 1px solid #94a3b8;
+            color: #334155;
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 13px;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.15s ease;
+        }
+        .order-chip.excluded {
+            opacity: 0.4;
+            text-decoration: line-through;
+            background: #f1f5f9;
+        }
+        .order-chip .chip-x {
+            font-weight: 700;
+            color: #475569;
+        }
+        .select-all-row {
+            margin-top: 8px;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #475569;
+        }
+        .print-type-select {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 5px;
+            background: #fff;
+            color: #334155;
+            margin-bottom: 18px;
+        }
+        .btn-ncm-print {
+            background: #cf142b;
+            color: #fff;
+            border: none;
+            border-radius: 999px;
+            padding: 11px 28px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-ncm-print:hover {
+            background: #b01024;
+        }
+        .btn-ncm-print:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        .print-hints {
+            margin-top: 12px;
+            font-size: 13px;
+            color: #475569;
+            line-height: 1.55;
+        }
+        .print-hints ul {
+            margin: 6px 0 0 18px;
+            padding: 0;
+        }
+        .notice-banner {
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 14px;
+        }
+        .notice-warning {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            color: #92400e;
+        }
+        .notice-danger {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+        }
+
+        /* ==================== STICKER / LABEL DESIGN ==================== */
+        .labels-preview-wrap {
+            max-width: 1080px;
+            margin: 0 auto 48px;
+            padding: 0 16px;
+        }
+        .labels-sheet {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            align-items: center;
+        }
+
+        .ncm-sticker {
+            width: 196mm;
+            min-height: 132mm;
+            background: #fff;
+            color: #000;
+            border: 1.5px solid #222;
+            padding: 6mm 8mm 5mm;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .ncm-sticker.is-hidden {
+            display: none !important;
+        }
+
+        /* Row 1: Header URL */
+        .stk-brand {
+            font-size: 14.5pt;
+            font-weight: 700;
+            letter-spacing: 0.1px;
+            margin-bottom: 2mm;
+        }
+
+        /* Row 2: Date | Zone | ORD */
+        .stk-meta-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1.2fr;
+            align-items: baseline;
+            margin-bottom: 2.5mm;
+        }
+        .stk-date {
+            font-size: 14pt;
+            font-weight: 400;
+        }
+        .stk-zone {
+            font-size: 14pt;
+            font-weight: 700;
+            text-align: center;
+        }
+        .stk-ord {
+            font-size: 16.5pt;
+            text-align: right;
+            white-space: nowrap;
+        }
+        .stk-ord strong {
+            font-weight: 800;
+        }
+
+        /* Row 3: Branches on left + QR Code on right */
+        .stk-branch-qr-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 6mm;
+            margin-bottom: 3mm;
+        }
+        .stk-branches {
+            flex: 1;
+            min-width: 0;
+        }
+        .stk-from-branch {
+            font-size: 18pt;
+            font-weight: 400;
+            line-height: 1.22;
+            margin-bottom: 1.5mm;
+        }
+        .stk-to-code {
+            font-size: 21pt;
+            font-weight: 400;
+            line-height: 1.22;
+            margin-bottom: 1.5mm;
+        }
+        .stk-to-name {
+            font-size: 21pt;
+            font-weight: 800;
+            letter-spacing: 3.5px;
+            line-height: 1.2;
+            margin-bottom: 1.5mm;
+            word-break: break-word;
+        }
+        .stk-districts {
+            font-size: 12.5pt;
+            font-weight: 400;
+            letter-spacing: 0.4px;
+        }
+
+        .stk-qr-box {
+            width: 34mm;
+            height: 34mm;
+            position: relative;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .stk-qr-target svg {
+            width: 34mm !important;
+            height: 34mm !important;
+            display: block;
+        }
+        .stk-qr-logo {
+            position: absolute;
+            width: 7.5mm;
+            height: 7.5mm;
+            background: #fff;
+            padding: 0.6mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        /* Row 4: From / Phone  |  Type / COD */
+        .stk-mid-grid {
+            display: grid;
+            grid-template-columns: 1.25fr 1fr;
+            gap: 4mm;
+            align-items: baseline;
+            margin-bottom: 2.5mm;
+        }
+        .stk-line {
+            font-size: 12.5pt;
+            line-height: 1.38;
+        }
+        .stk-line .val-lg {
+            font-size: 14.5pt;
+        }
+        .stk-line strong {
+            font-size: 14.5pt;
+            font-weight: 700;
+        }
+
+        /* Row 5: Barcode on left | Receiver To/Phone/Address on right */
+        .stk-lower-grid {
+            display: grid;
+            grid-template-columns: 1.1fr 1.15fr;
+            gap: 4mm;
+            align-items: center;
+            margin-bottom: 2mm;
+        }
+        .stk-barcode-box {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        .stk-barcode-svg {
+            max-width: 76mm;
+            height: 22mm;
+        }
+        .stk-barcode-text {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 11pt;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-align: center;
+            width: 68mm;
+            margin-top: -1mm;
+        }
+
+        /* Row 6: Description & Instruction */
+        .stk-desc-block {
+            font-size: 11.5pt;
+            line-height: 1.35;
+            margin-bottom: 2mm;
+        }
+        .stk-desc-line {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Row 7: Nepali Tagline Box */
+        .stk-tagline {
+            border: 1px dashed #555;
+            padding: 1.8mm 3mm;
+            font-size: 11pt;
+            font-weight: 700;
+            font-style: italic;
+            line-height: 1.35;
+        }
+
+        /* ==================== LAYOUT VARIANTS ==================== */
+        /* Thermal 100x150mm (1 per page) */
+        .labels-sheet.layout-thermal_1 .ncm-sticker {
+            width: 100mm;
+            min-height: 146mm;
+            padding: 4mm 4.5mm;
+        }
+        .labels-sheet.layout-thermal_1 .stk-brand { font-size: 10.5pt; }
+        .labels-sheet.layout-thermal_1 .stk-date,
+        .labels-sheet.layout-thermal_1 .stk-zone { font-size: 10pt; }
+        .labels-sheet.layout-thermal_1 .stk-ord { font-size: 11.5pt; }
+        .labels-sheet.layout-thermal_1 .stk-from-branch { font-size: 12.5pt; }
+        .labels-sheet.layout-thermal_1 .stk-to-code { font-size: 14pt; }
+        .labels-sheet.layout-thermal_1 .stk-to-name { font-size: 14.5pt; letter-spacing: 2px; }
+        .labels-sheet.layout-thermal_1 .stk-districts { font-size: 9.5pt; }
+        .labels-sheet.layout-thermal_1 .stk-qr-box,
+        .labels-sheet.layout-thermal_1 .stk-qr-target svg { width: 25mm !important; height: 25mm !important; }
+        .labels-sheet.layout-thermal_1 .stk-line { font-size: 9.5pt; }
+        .labels-sheet.layout-thermal_1 .stk-line .val-lg,
+        .labels-sheet.layout-thermal_1 .stk-line strong { font-size: 10.5pt; }
+        .labels-sheet.layout-thermal_1 .stk-barcode-svg { max-width: 44mm; height: 16mm; }
+        .labels-sheet.layout-thermal_1 .stk-barcode-text { width: 42mm; font-size: 9pt; }
+        .labels-sheet.layout-thermal_1 .stk-desc-block { font-size: 9.5pt; }
+        .labels-sheet.layout-thermal_1 .stk-tagline { font-size: 8.5pt; }
+
+        /* A4 (4 per page - 2x2 grid) */
+        .labels-sheet.layout-a4_4 {
+            flex-direction: row;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 4mm;
+        }
+        .labels-sheet.layout-a4_4 .ncm-sticker {
+            width: 98mm;
+            min-height: 136mm;
+            padding: 4mm;
+        }
+        .labels-sheet.layout-a4_4 .stk-brand { font-size: 10pt; }
+        .labels-sheet.layout-a4_4 .stk-date,
+        .labels-sheet.layout-a4_4 .stk-zone { font-size: 9.5pt; }
+        .labels-sheet.layout-a4_4 .stk-ord { font-size: 11pt; }
+        .labels-sheet.layout-a4_4 .stk-from-branch { font-size: 12pt; }
+        .labels-sheet.layout-a4_4 .stk-to-code { font-size: 13.5pt; }
+        .labels-sheet.layout-a4_4 .stk-to-name { font-size: 14pt; letter-spacing: 2px; }
+        .labels-sheet.layout-a4_4 .stk-districts { font-size: 9pt; }
+        .labels-sheet.layout-a4_4 .stk-qr-box,
+        .labels-sheet.layout-a4_4 .stk-qr-target svg { width: 24mm !important; height: 24mm !important; }
+        .labels-sheet.layout-a4_4 .stk-line { font-size: 9pt; }
+        .labels-sheet.layout-a4_4 .stk-line .val-lg,
+        .labels-sheet.layout-a4_4 .stk-line strong { font-size: 10pt; }
+        .labels-sheet.layout-a4_4 .stk-barcode-svg { max-width: 42mm; height: 15mm; }
+        .labels-sheet.layout-a4_4 .stk-barcode-text { width: 40mm; font-size: 8.5pt; }
+        .labels-sheet.layout-a4_4 .stk-desc-block { font-size: 9pt; }
+        .labels-sheet.layout-a4_4 .stk-tagline { font-size: 8pt; }
+
+        /* ==================== PRINT MEDIA RULES ==================== */
+        @media print {
+            @page {
+                margin: 4mm;
+            }
+            body {
+                background: #fff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .labels-preview-wrap {
+                max-width: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            .labels-sheet {
+                gap: 4mm !important;
+            }
+            .ncm-sticker {
+                border: 1px solid #000;
+                box-shadow: none !important;
+            }
+            /* Page-break rules injected dynamically by JS based on active stickers + layout */
+            .ncm-sticker.page-break-after {
+                page-break-after: always;
+                break-after: page;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="screen-shell no-print">
+    <a href="{{ back_url }}" class="btn-go-back">&#10094; Go Back</a>
+
+    <div class="control-card">
+        <h1>Bulk Print Orders</h1>
+        {% if bulk_log %}
+        <div class="control-subtitle">
+            Batch <strong>{{ bulk_log.batch_number }}</strong> &middot; {{ label_count }} printable NCM label{{ label_count|pluralize }}
+        </div>
+        {% elif batches %}
+        <div class="control-subtitle">
+            {{ batches|length }} batch{{ batches|length|pluralize:"es" }} selected &middot; {{ label_count }} printable NCM label{{ label_count|pluralize }}
+        </div>
+        {% endif %}
+
+        {% if api_errors %}
+        <div class="notice-banner notice-danger">
+            <strong>NCM API warning:</strong> {{ api_errors|join:"; " }}
+            {% if missing_from_api_ids %}
+            (Used local order data as fallback for {{ missing_from_api_ids|length }} order{{ missing_from_api_ids|pluralize }}.)
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if skipped_rows %}
+        <div class="notice-banner notice-warning">
+            <strong>{{ skipped_rows|length }} order{{ skipped_rows|pluralize }} skipped</strong> (not sent to NCM or cancelled):
+            {% for s in skipped_rows|slice:":10" %}{{ s.order_number }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if skipped_rows|length > 10 %} and {{ skipped_rows|length|add:"-10" }} more{% endif %}.
+        </div>
+        {% endif %}
+
+        {% if truncated_count %}
+        <div class="notice-banner notice-warning">
+            Showing the first {{ label_count }} labels ({{ truncated_count }} additional order{{ truncated_count|pluralize }} omitted to keep printing fast).
+        </div>
+        {% endif %}
+
+        <label class="field-label">Select Orders (<span id="activeOrderCount">{{ label_count }}</span> / {{ label_count }})</label>
+        <div class="chips-box" id="orderChipsBox">
+            {% for lbl in labels %}
+            <span class="order-chip" data-ncm-id="{{ lbl.ncm_order_id }}" title="Order {{ lbl.order_number }} — click to toggle">
+                <span class="chip-x">&times;</span> #{{ lbl.ncm_order_id }}
+            </span>
+            {% empty %}
+            <span style="color:#94a3b8;font-size:13px;">No printable NCM orders found in this batch.</span>
+            {% endfor %}
+        </div>
+
+        <div class="select-all-row">
+            <label for="selectAllOrders" style="cursor:pointer;">Select all</label>
+            <input type="checkbox" id="selectAllOrders" checked style="width:16px;height:16px;cursor:pointer;">
+        </div>
+
+        <label class="field-label" for="printTypeSelect">Print Type</label>
+        <select id="printTypeSelect" class="print-type-select">
+            {% for key, title in print_layouts %}
+            <option value="{{ key }}" {% if key == layout %}selected{% endif %}>{{ title }}</option>
+            {% endfor %}
+        </select>
+
+        <div>
+            <button type="button" class="btn-ncm-print" id="printBtn" {% if not labels %}disabled{% endif %} onclick="window.print()">
+                Print
+            </button>
+        </div>
+
+        <div class="print-hints">
+            <div>** Please use following settings for printing new label design **</div>
+            <ul>
+                <li>Paper Size : A4 (or 100&times;150mm for Thermal)</li>
+                <li>Margins : None</li>
+                <li>Scale : Default / Custom (50&ndash;100)
+                    <br>If top/bottom part is cut off, change the scale value accordingly.
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== PRINTABLE STICKERS ==================== -->
+<div class="labels-preview-wrap">
+    <div class="labels-sheet layout-{{ layout }}" id="labelsSheet">
+        {% for lbl in labels %}
+        <div class="ncm-sticker" data-ncm-id="{{ lbl.ncm_order_id }}">
+            <div>
+                <!-- Row 1: NCM Header -->
+                <div class="stk-brand">Nepal Can Move | www.nepalcanmove.com</div>
+
+                <!-- Row 2: Date | Zone | ORD -->
+                <div class="stk-meta-row">
+                    <div class="stk-date">{{ lbl.date_str }}</div>
+                    <div class="stk-zone">{{ lbl.zone }}</div>
+                    <div class="stk-ord">ORD: <strong>{{ lbl.ncm_order_id }}</strong></div>
+                </div>
+
+                <!-- Row 3: Branch Hierarchy & QR Code -->
+                <div class="stk-branch-qr-row">
+                    <div class="stk-branches">
+                        <div class="stk-from-branch">{{ lbl.from_branch_spaced }}</div>
+                        {% if lbl.to_branch_code_spaced %}
+                        <div class="stk-to-code">{{ lbl.to_branch_code_spaced }}</div>
+                        {% endif %}
+                        <div class="stk-to-name">{{ lbl.to_branch_name }}</div>
+                        <div class="stk-districts">{{ lbl.district_line }}</div>
+                    </div>
+                    <div class="stk-qr-box">
+                        <div class="stk-qr-target" data-qr="{{ lbl.ncm_order_id }}"></div>
+                        <!-- Center NCM red emblem inside QR code -->
+                        <div class="stk-qr-logo" aria-hidden="true">
+                            <svg viewBox="0 0 36 36" width="100%" height="100%">
+                                <path d="M6 12 H30 M18 6 V30 M11 6 V20 H25 M25 16 V30" stroke="#e11d48" stroke-width="4" fill="none" stroke-linecap="square"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 4: From / Phone | Type / COD -->
+                <div class="stk-mid-grid">
+                    <div>
+                        <div class="stk-line">From: <span class="val-lg">{{ lbl.sender_name }}</span></div>
+                        <div class="stk-line">Phone: <span class="val-lg">{{ lbl.sender_phone }}</span></div>
+                    </div>
+                    <div>
+                        <div class="stk-line">Type: <span class="val-lg">{{ lbl.delivery_type }}</span></div>
+                        <div class="stk-line">COD: <span class="val-lg">Rs. {{ lbl.cod_formatted }}</span></div>
+                    </div>
+                </div>
+
+                <!-- Row 5: Code128 Barcode (T18320) | Receiver To / Phone / Address -->
+                <div class="stk-lower-grid">
+                    <div class="stk-barcode-box">
+                        <svg class="stk-barcode-svg" data-barcode="{{ lbl.barcode_value }}"></svg>
+                        <div class="stk-barcode-text">{{ lbl.barcode_value }}</div>
+                    </div>
+                    <div>
+                        <div class="stk-line">To: <strong>{{ lbl.receiver_name }}</strong></div>
+                        <div class="stk-line">Phone: <strong>{{ lbl.receiver_phone }}{% if lbl.receiver_phone2 %}, {{ lbl.receiver_phone2 }}{% endif %}</strong></div>
+                        <div class="stk-line">Address: <span class="val-lg">{{ lbl.receiver_address }}</span></div>
+                    </div>
+                </div>
+
+                <!-- Row 6: Description & Instruction -->
+                <div class="stk-desc-block">
+                    <div class="stk-desc-line">Description: {{ lbl.description }}</div>
+                    <div class="stk-desc-line">Instruction: {{ lbl.instruction }}</div>
+                </div>
+            </div>
+
+            <!-- Row 7: Nepali Tagline -->
+            <div class="stk-tagline">
+                नेपालीको माया र विश्वासलाई श्रद्धापूर्वक काँधमा बोकेर, अन्तर्राष्ट्रिय मनसम्म पुर्‍याउन निरन्तर समर्पित । &ndash; Nepal Can
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script src="{% static 'vendor/qrcode-generator.js' %}"></script>
+<script src="{% static 'vendor/JsBarcode.all.min.js' %}"></script>
+<script>
+(function () {
+    // 1. Render QR codes (NCM order ID)
+    document.querySelectorAll('.stk-qr-target[data-qr]').forEach(function (el) {
+        var val = String(el.getAttribute('data-qr') || '').trim();
+        if (!val || typeof qrcode !== 'function') return;
+        try {
+            var qr = qrcode(0, 'M');
+            qr.addData(val);
+            qr.make();
+            el.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+        } catch (e) {}
+    });
+
+    // 2. Render Code128 Barcodes (local order number, e.g. T18320)
+    document.querySelectorAll('svg.stk-barcode-svg[data-barcode]').forEach(function (svg) {
+        var val = String(svg.getAttribute('data-barcode') || '').trim();
+        if (!val || typeof JsBarcode !== 'function') return;
+        try {
+            JsBarcode(svg, val, {
+                format: 'CODE128',
+                width: 1.8,
+                height: 55,
+                displayValue: false,
+                margin: 0
+            });
+        } catch (e) {}
+    });
+
+    // 3. Page-break calculation based on Print Type (2 per page, 1 per page, 4 per page)
+    var sheet = document.getElementById('labelsSheet');
+    var printTypeSelect = document.getElementById('printTypeSelect');
+    var selectAllCb = document.getElementById('selectAllOrders');
+    var activeCountEl = document.getElementById('activeOrderCount');
+    var printBtn = document.getElementById('printBtn');
+
+    function perPageForLayout(layout) {
+        if (layout === 'a4_2') return 2;
+        if (layout === 'a4_4') return 4;
+        return 1; // thermal_1 or a4_1
+    }
+
+    function refreshPaginationAndCounts() {
+        var layout = printTypeSelect ? printTypeSelect.value : 'a4_2';
+        if (sheet) {
+            sheet.className = 'labels-sheet layout-' + layout;
+        }
+        var perPage = perPageForLayout(layout);
+        var stickers = Array.prototype.slice.call(document.querySelectorAll('.ncm-sticker'));
+        var visible = [];
+        stickers.forEach(function (st) {
+            st.classList.remove('page-break-after');
+            if (!st.classList.contains('is-hidden')) {
+                visible.push(st);
+            }
+        });
+        visible.forEach(function (st, idx) {
+            var pos = idx + 1;
+            if (pos % perPage === 0 && pos < visible.length) {
+                st.classList.add('page-break-after');
+            }
+        });
+        if (activeCountEl) activeCountEl.textContent = String(visible.length);
+        if (printBtn) printBtn.disabled = visible.length === 0;
+        if (selectAllCb) {
+            selectAllCb.checked = visible.length === stickers.length && stickers.length > 0;
+        }
+    }
+
+    // 4. Interactive order chips & Select All
+    document.querySelectorAll('.order-chip[data-ncm-id]').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+            var id = chip.getAttribute('data-ncm-id');
+            var excluded = chip.classList.toggle('excluded');
+            var st = document.querySelector('.ncm-sticker[data-ncm-id="' + id + '"]');
+            if (st) {
+                st.classList.toggle('is-hidden', excluded);
+            }
+            refreshPaginationAndCounts();
+        });
+    });
+
+    if (selectAllCb) {
+        selectAllCb.addEventListener('change', function () {
+            var includeAll = selectAllCb.checked;
+            document.querySelectorAll('.order-chip[data-ncm-id]').forEach(function (chip) {
+                chip.classList.toggle('excluded', !includeAll);
+            });
+            document.querySelectorAll('.ncm-sticker[data-ncm-id]').forEach(function (st) {
+                st.classList.toggle('is-hidden', !includeAll);
+            });
+            refreshPaginationAndCounts();
+        });
+    }
+
+    if (printTypeSelect) {
+        printTypeSelect.addEventListener('change', refreshPaginationAndCounts);
+    }
+
+    refreshPaginationAndCounts();
+})();
+</script>
+</body>
+</html>
